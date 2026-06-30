@@ -1,0 +1,295 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Copy, RefreshCw, Plus } from "lucide-react";
+
+import {
+  listCompanies,
+  createCompany,
+  setCompanyStatus,
+  topUpPoints,
+  setAccessEnd,
+  regenerateCustomLink,
+  setRequireClientCompany,
+} from "@/lib/admin.functions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+type CompanyRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  access_end: string | null;
+  points_balance: number;
+  custom_link: string;
+  require_client_company: boolean;
+  status: "pending" | "approved" | "suspended";
+  created_at: string;
+};
+
+export const Route = createFileRoute("/_authenticated/admin/")({
+  head: () => ({ meta: [{ title: "Companies — Admin" }] }),
+  component: CompaniesPage,
+});
+
+function statusVariant(s: CompanyRow["status"]) {
+  if (s === "approved") return "default" as const;
+  if (s === "pending") return "secondary" as const;
+  return "destructive" as const;
+}
+
+function CompaniesPage() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listCompanies);
+  const { data, isLoading } = useQuery({
+    queryKey: ["companies"],
+    queryFn: () => listFn() as Promise<CompanyRow[]>,
+  });
+
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold">Companies</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Approve access, manage points, and share booking links.
+          </p>
+        </div>
+        <CreateCompanyDialog onCreated={() => qc.invalidateQueries({ queryKey: ["companies"] })} />
+      </header>
+
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Company</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Points</TableHead>
+                <TableHead>Access until</TableHead>
+                <TableHead>Custom link</TableHead>
+                <TableHead>Require client co.</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
+              ) : !data?.length ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No companies yet.</TableCell></TableRow>
+              ) : (
+                data.map((c) => <CompanyRowView key={c.id} c={c} />)
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompanyRowView({ c }: { c: CompanyRow }) {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["companies"] });
+  const statusFn = useServerFn(setCompanyStatus);
+  const regenFn = useServerFn(regenerateCustomLink);
+  const reqFn = useServerFn(setRequireClientCompany);
+
+  const statusMut = useMutation({
+    mutationFn: (status: CompanyRow["status"]) => statusFn({ data: { id: c.id, status } }),
+    onSuccess: () => { toast.success("Status updated"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const regenMut = useMutation({
+    mutationFn: () => regenFn({ data: { id: c.id } }),
+    onSuccess: () => { toast.success("Link regenerated"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const reqMut = useMutation({
+    mutationFn: (value: boolean) => reqFn({ data: { id: c.id, value } }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const linkUrl = typeof window !== "undefined" ? `${window.location.origin}/c/${c.custom_link}` : `/c/${c.custom_link}`;
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="font-medium">{c.name}</div>
+        <div className="text-xs text-muted-foreground">{c.email}</div>
+      </TableCell>
+      <TableCell>
+        <Badge variant={statusVariant(c.status)} className="capitalize">{c.status}</Badge>
+      </TableCell>
+      <TableCell className="text-right font-mono">{c.points_balance}</TableCell>
+      <TableCell className="text-sm">
+        {c.access_end ? new Date(c.access_end).toLocaleDateString() : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <code className="text-xs bg-muted px-2 py-1 rounded max-w-[180px] truncate">{linkUrl}</code>
+          <Button size="icon" variant="ghost" onClick={() => { navigator.clipboard.writeText(linkUrl); toast.success("Copied"); }}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => regenMut.mutate()} title="Regenerate">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Switch checked={c.require_client_company} onCheckedChange={(v) => reqMut.mutate(v)} />
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-2 flex-wrap">
+          <Select value={c.status} onValueChange={(v) => statusMut.mutate(v as CompanyRow["status"])}>
+            <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
+            </SelectContent>
+          </Select>
+          <TopUpDialog company={c} onDone={invalidate} />
+          <AccessDialog company={c} onDone={invalidate} />
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function CreateCompanyDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const fn = useServerFn(createCompany);
+  const mut = useMutation({
+    mutationFn: () => fn({ data: { name, email, phone } }),
+    onSuccess: () => {
+      toast.success("Company created");
+      setOpen(false); setName(""); setEmail(""); setPhone("");
+      onCreated();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button><Plus className="h-4 w-4 mr-2" />Add company</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New company</DialogTitle>
+          <DialogDescription>Creates a pending company with a unique booking link.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="cc-name">Name</Label>
+            <Input id="cc-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cc-email">Email</Label>
+            <Input id="cc-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={255} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cc-phone">Phone (optional)</Label>
+            <Input id="cc-phone" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={40} />
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : "Create"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TopUpDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [points, setPoints] = useState<string>("");
+  const [note, setNote] = useState("");
+  const fn = useServerFn(topUpPoints);
+  const mut = useMutation({
+    mutationFn: () => fn({ data: { company_id: company.id, points: Number(points), note: note || undefined } }),
+    onSuccess: () => { toast.success("Points updated"); setOpen(false); setPoints(""); setNote(""); onDone(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">Points</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adjust points — {company.name}</DialogTitle>
+          <DialogDescription>Current balance: <strong>{company.points_balance}</strong>. Use a negative number to deduct.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="tp-points">Amount</Label>
+            <Input id="tp-points" type="number" step={1} value={points} onChange={(e) => setPoints(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tp-note">Note (optional)</Label>
+            <Input id="tp-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={mut.isPending || !points}>{mut.isPending ? "Saving…" : "Apply"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccessDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState<string>("30");
+  const fn = useServerFn(setAccessEnd);
+  const mut = useMutation({
+    mutationFn: () => fn({ data: { id: company.id, days: Number(days) } }),
+    onSuccess: () => { toast.success("Access expiry set"); setOpen(false); onDone(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">Access</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Set access expiry — {company.name}</DialogTitle>
+          <DialogDescription>Sets access_end to N days from now (UTC).</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ac-days">Days from today</Label>
+            <Input id="ac-days" type="number" min={0} max={3650} step={1} value={days} onChange={(e) => setDays(e.target.value)} required />
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : "Save"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
