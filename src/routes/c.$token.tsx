@@ -11,12 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/c/$token")({
-  head: ({ loaderData }) => ({
-    meta: [
-      { title: loaderData?.name ? `Book transport — ${loaderData.name}` : "Book transport" },
-      { name: "description", content: "Request a crew transfer." },
-    ],
-  }),
+  head: ({ loaderData }) => {
+    const name = (loaderData as { name?: string } | undefined)?.name;
+    return {
+      meta: [
+        { title: name ? `Book transport — ${name}` : "Book transport" },
+        { name: "description", content: "Request a crew transfer." },
+      ],
+    };
+  },
   loader: async ({ params }) => {
     const company = await getCompanyByLink({ data: { token: params.token } });
     if (!company) throw notFound();
