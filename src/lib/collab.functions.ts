@@ -177,27 +177,21 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
-    // Verify connection exists in provider or sync mode
     const { data: conn } = await context.supabase
       .from("coordinator_connections").select("id, mode, status")
       .or(`and(owner_company_id.eq.${c.id},partner_company_id.eq.${data.partner_company_id}),and(owner_company_id.eq.${data.partner_company_id},partner_company_id.eq.${c.id})`)
       .eq("status", "active").maybeSingle();
     if (!conn) throw new Error("No active connection with that partner");
 
-    // Charge sender
     const { error: chErr } = await context.supabase.rpc("charge_feature", {
       _company_id: c.id, _feature: "dispatch_partner", _job_id: data.job_id, _note: "Dispatch to partner",
     });
     if (chErr) throw new Error(chErr.message);
 
-    const { error } = await context.supabase.from("jobs").update({
-      executor_company_id: data.partner_company_id,
-      origin_company_id: c.id,
-      dispatch_status: "pending",
-      dispatched_at: new Date().toISOString(),
-      dispatch_decided_at: null,
-      dispatch_note: data.note ?? null,
-    }).eq("id", data.job_id).eq("company_id", c.id);
+    // RPC validates ownership, appends hop, updates chain (supports multi-hop)
+    const { error } = await context.supabase.rpc("dispatch_job_forward", {
+      _job_id: data.job_id, _to_company: data.partner_company_id, _note: data.note ?? "",
+    });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -226,43 +220,43 @@ export const respondToDispatch = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
-    const c = await myCompany(context);
-    if (data.decision === "accepted") {
-      // Adopt the job into B's company so it appears on the dispatch board.
-      const { error } = await context.supabase.from("jobs").update({
-        company_id: c.id,
-        dispatch_status: "accepted",
-        dispatch_decided_at: new Date().toISOString(),
-        dispatch_note: data.note ?? null,
-      }).eq("id", data.job_id).eq("executor_company_id", c.id);
-      if (error) throw new Error(error.message);
-    } else {
-      // Reject: hand back to origin
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: job } = await supabaseAdmin.from("jobs").select("origin_company_id")
-        .eq("id", data.job_id).maybeSingle();
-      const { error } = await context.supabase.from("jobs").update({
-        executor_company_id: job?.origin_company_id ?? null,
-        dispatch_status: "rejected",
-        dispatch_decided_at: new Date().toISOString(),
-        dispatch_note: data.note ?? null,
-      }).eq("id", data.job_id).eq("executor_company_id", c.id);
-      if (error) throw new Error(error.message);
-    }
+    const { error } = await context.supabase.rpc("respond_dispatch", {
+      _job_id: data.job_id, _decision: data.decision, _note: data.note ?? "",
+    });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
-// Jobs I dispatched out (read-only view for A)
+// Jobs anywhere in a chain I originated (read-only view for A across all downstream hops)
 export const listOutboundDispatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
     const { data, error } = await context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, status, dispatch_status, dispatch_note, dispatched_at, executor_company_id, executor:executor_company_id(id,name), driver_id, drivers(name), pax(id,name)")
-      .eq("origin_company_id", c.id)
+      .select("id, from_location, to_location, date, time, pickup_at, status, dispatch_status, dispatch_note, dispatched_at, executor_company_id, executor:executor_company_id(id,name), driver_id, drivers(name), pax(id,name), dispatch_chain_company_ids, origin_company_id")
+      .contains("dispatch_chain_company_ids", [c.id])
       .neq("executor_company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (error) throw new Error(error.message);
     return data ?? [];
   });
+
+// Full hop history for a single job — used by the "chain" timeline dialog.
+export const listJobChain = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { data: hops, error } = await context.supabase
+      .from("job_dispatch_hops")
+      .select("id, hop_index, from_company_id, to_company_id, status, note, dispatched_at, decided_at, from_company:from_company_id(id,name), to_company:to_company_id(id,name)")
+      .eq("job_id", data.job_id)
+      .order("hop_index", { ascending: true });
+    if (error) throw new Error(error.message);
+    const { data: job } = await context.supabase
+      .from("jobs")
+      .select("id, executor_company_id, origin_company_id, status, driver_id, drivers(name), executor:executor_company_id(id,name), origin:origin_company_id(id,name)")
+      .eq("id", data.job_id).maybeSingle();
+    return { hops: hops ?? [], job };
+  });
+
