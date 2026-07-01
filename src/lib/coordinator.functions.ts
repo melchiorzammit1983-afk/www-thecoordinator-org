@@ -312,7 +312,7 @@ export const approveBooking = createServerFn({ method: "POST" })
     }).select().single();
     if (jErr) throw new Error(jErr.message);
     await context.supabase.from("client_bookings")
-      .update({ status: "approved", job_id: job.id }).eq("id", data.id);
+      .update({ status: "accepted", job_id: job.id }).eq("id", data.id);
     return { ok: true, job };
   });
 
@@ -344,16 +344,16 @@ export const resolveModification = createServerFn({ method: "POST" })
       // Simplest: mark modification approved and let coordinator manually re-issue. But we can bypass by using status change + payload merge via server:
       // Use temporary approach: set booking status to approved and copy fields; the trigger allows status-only change, and other-field change while <2h will re-trigger. So do two updates: (1) approve status, (2) fields via a special server-fn window (still blocked). Alternative: mark booking status approved and store the accepted payload on the booking itself.
       await context.supabase.from("client_bookings")
-        .update({ status: "approved" }).eq("id", mod.client_bookings.id);
+        .update({ status: "accepted" }).eq("id", mod.client_bookings.id);
       await context.supabase.from("client_booking_modifications")
-        .update({ status: "approved", resolved_at: new Date().toISOString(), resolved_by: context.userId,
+        .update({ status: "accepted", resolved_at: new Date().toISOString(), resolved_by: context.userId,
           requested_changes: ch }).eq("id", data.id);
     } else {
       await context.supabase.from("client_booking_modifications")
         .update({ status: "rejected", resolved_at: new Date().toISOString(), resolved_by: context.userId })
         .eq("id", data.id);
       await context.supabase.from("client_bookings")
-        .update({ status: "approved" }).eq("id", mod.client_bookings.id);
+        .update({ status: "accepted" }).eq("id", mod.client_bookings.id);
     }
     return { ok: true };
   });
