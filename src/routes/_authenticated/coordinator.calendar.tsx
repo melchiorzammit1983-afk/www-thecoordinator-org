@@ -36,6 +36,8 @@ type Job = {
   driver_id: string | null;
   vehicle: string | null;
   clientcompanyname: string | null;
+  driver_accepted_at: string | null;
+  deletion_requested_at: string | null;
   drivers?: { name: string } | null;
   pax?: { id: string; name: string }[];
 };
