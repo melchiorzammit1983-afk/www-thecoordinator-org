@@ -73,7 +73,9 @@ function CalendarPage() {
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const qc = useQueryClient();
+
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
