@@ -41,12 +41,15 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
-      .eq("company_id", link.company_id)
       .is("driver_hidden_at", null)
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
-    if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+    if (link.subject_id) {
+      q = q.eq("driver_id", link.subject_id);
+    } else {
+      q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
+    }
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
     const jobs = (jobsRaw ?? []).map((j: any) => ({
