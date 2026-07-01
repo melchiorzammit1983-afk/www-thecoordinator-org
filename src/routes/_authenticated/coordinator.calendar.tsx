@@ -228,9 +228,13 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
+  const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
+  const cardClass = delayed
+    ? "rounded-md border-2 border-destructive bg-destructive/10 p-2 shadow-sm hover:shadow transition-shadow"
+    : "rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow";
+  const flightCode = job.from_flight || job.to_flight || job.flightorship;
   return (
-    <div ref={setNodeRef} style={style}
-      className="rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow">
+    <div ref={setNodeRef} style={style} className={cardClass}>
       <div className="flex items-start gap-2">
         <button className="text-muted-foreground touch-none" {...attributes} {...listeners}>
           <GripVertical className="h-4 w-4" />
@@ -240,6 +244,11 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
           <div className="text-sm font-medium truncate">{job.from_location} → {job.to_location}</div>
           {job.clientcompanyname && <div className="text-xs text-muted-foreground truncate">{job.clientcompanyname}</div>}
           {driverName && <div className="text-xs mt-1">👤 {driverName}</div>}
+          {delayed && (
+            <div className="text-[11px] font-medium text-destructive mt-1">
+              ✈ {flightCode} {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
+            </div>
+          )}
           <div className="flex gap-1 mt-1 flex-wrap">
             {paxCount > 0 && (
               <button
@@ -251,7 +260,7 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             )}
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
             {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
-            {job.flightorship && <Badge variant="secondary" className="text-[10px]">{job.flightorship}</Badge>}
+            {flightCode && !delayed && <Badge variant="secondary" className="text-[10px]">✈ {flightCode}</Badge>}
             {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
             {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
           </div>
