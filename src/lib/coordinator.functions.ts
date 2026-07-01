@@ -292,7 +292,7 @@ export const listDrivers = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const { data, error } = await context.supabase.from("drivers")
-      .select("id, name, phone, email, vehicle, status")
+      .select("id, name, phone, email, vehicle, status, seats_available, availability_note, profile_updated_at")
       .eq("company_id", c.id).order("name");
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -426,7 +426,7 @@ export const generateMagicLink = createServerFn({ method: "POST" })
       kind: z.enum(["driver", "client"]),
       subject_id: z.string().uuid().nullable(),
       subject_label: z.string().trim().min(1).max(200),
-      ttl_hours: z.number().int().min(1).max(24 * 30),
+      ttl_hours: z.number().int().min(1).max(24 * 366),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -453,6 +453,24 @@ export const revokeMagicLink = createServerFn({ method: "POST" })
       .eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const extendMagicLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      ttl_hours: z.number().int().min(1).max(24 * 366),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
+    const { error } = await context.supabase.from("magic_links")
+      .update({ expires_at, revoked_at: null })
+      .eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, expires_at };
   });
 
 // ---------- TOPUP REQUEST ----------

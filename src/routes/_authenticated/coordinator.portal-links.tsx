@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
-  listMagicLinks, generateMagicLink, revokeMagicLink, listDrivers,
+  listMagicLinks, generateMagicLink, revokeMagicLink, listDrivers, extendMagicLink,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy, Trash2, Link2 } from "lucide-react";
+import { Copy, Trash2, Link2, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-links")({
   head: () => ({ meta: [{ title: "Portal Links — Coordinator" }] }),
@@ -65,6 +65,19 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
     mutationFn: (id: string) => revokeFn({ data: { id } }),
     onSuccess: () => { toast.success("Revoked"); qc.invalidateQueries({ queryKey: ["magic-links"] }); },
   });
+  const extendFn = useServerFn(extendMagicLink);
+  const extendMut = useMutation({
+    mutationFn: (v: { id: string; ttl_hours: number }) => extendFn({ data: v }),
+    onSuccess: () => { toast.success("Extended"); qc.invalidateQueries({ queryKey: ["magic-links"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  function promptExtend(id: string) {
+    const raw = prompt("Extend link by how many hours? (24 = 1 day, 168 = 7 days, 720 = 30 days, 8760 = 1 year)", "168");
+    if (!raw) return;
+    const hours = Math.max(1, Math.min(24 * 366, Number(raw) | 0));
+    if (!hours) return;
+    extendMut.mutate({ id, ttl_hours: hours });
+  }
 
   const rows = (data ?? []).filter((r) => r.kind === kind);
 
@@ -99,6 +112,10 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
                 <SelectItem value="24">24 hours</SelectItem>
                 <SelectItem value="72">3 days</SelectItem>
                 <SelectItem value="168">7 days</SelectItem>
+                <SelectItem value="720">30 days</SelectItem>
+                <SelectItem value="2160">90 days</SelectItem>
+                <SelectItem value="4380">6 months</SelectItem>
+                <SelectItem value="8760">1 year</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -141,7 +158,11 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
                       : new Date(r.expires_at) < new Date() ? <span className="text-destructive">Expired</span>
                       : `in ${formatDistanceToNowStrict(new Date(r.expires_at))}`}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="icon" variant="ghost" title="Extend expiry"
+                      onClick={() => promptExtend(r.id)}>
+                      <Clock className="h-3.5 w-3.5" />
+                    </Button>
                     {!isDead && <Button size="icon" variant="ghost" onClick={() => revokeMut.mutate(r.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                   </TableCell>
                 </TableRow>

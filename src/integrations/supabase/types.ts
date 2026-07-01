@@ -263,34 +263,43 @@ export type Database = {
       }
       drivers: {
         Row: {
+          availability_note: string | null
           company_id: string
           created_at: string
           email: string | null
           id: string
           name: string
           phone: string | null
+          profile_updated_at: string | null
+          seats_available: number | null
           status: Database["public"]["Enums"]["driver_status"]
           updated_at: string
           vehicle: string | null
         }
         Insert: {
+          availability_note?: string | null
           company_id: string
           created_at?: string
           email?: string | null
           id?: string
           name: string
           phone?: string | null
+          profile_updated_at?: string | null
+          seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
           updated_at?: string
           vehicle?: string | null
         }
         Update: {
+          availability_note?: string | null
           company_id?: string
           created_at?: string
           email?: string | null
           id?: string
           name?: string
           phone?: string | null
+          profile_updated_at?: string | null
+          seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
           updated_at?: string
           vehicle?: string | null
@@ -386,6 +395,7 @@ export type Database = {
           deletion_requested_at: string | null
           deletion_requested_by: string | null
           driver_accepted_at: string | null
+          driver_hidden_at: string | null
           driver_id: string | null
           flight_status: string | null
           flight_status_note: string | null
@@ -394,6 +404,7 @@ export type Database = {
           from_flight: string | null
           from_location: string
           id: string
+          payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
           points_charged: Json
           qr_strict_mode: boolean
@@ -413,6 +424,7 @@ export type Database = {
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
           driver_accepted_at?: string | null
+          driver_hidden_at?: string | null
           driver_id?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
@@ -421,6 +433,7 @@ export type Database = {
           from_flight?: string | null
           from_location: string
           id?: string
+          payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
@@ -440,6 +453,7 @@ export type Database = {
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
           driver_accepted_at?: string | null
+          driver_hidden_at?: string | null
           driver_id?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
@@ -448,6 +462,7 @@ export type Database = {
           from_flight?: string | null
           from_location?: string
           id?: string
+          payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
@@ -729,6 +744,7 @@ export type Database = {
         | "delayed"
         | "noshow"
         | "completed"
+      payment_status: "pending" | "paid"
       topup_request_status: "pending" | "fulfilled" | "rejected"
     }
     CompositeTypes: {
@@ -895,6 +911,7 @@ export const Constants = {
         "noshow",
         "completed",
       ],
+      payment_status: ["pending", "paid"],
       topup_request_status: ["pending", "fulfilled", "rejected"],
     },
   },

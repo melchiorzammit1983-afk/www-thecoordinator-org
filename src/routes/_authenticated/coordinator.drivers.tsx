@@ -38,20 +38,24 @@ function DriversPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>Email</TableHead>
               <TableHead>Vehicle</TableHead>
+              <TableHead>Seats</TableHead>
+              <TableHead>Availability</TableHead>
+              <TableHead>Profile updated</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(data ?? []).length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">No drivers yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No drivers yet.</TableCell></TableRow>
             ) : (data ?? []).map((d) => (
               <TableRow key={d.id}>
                 <TableCell className="font-medium">{d.name}</TableCell>
                 <TableCell>{d.phone ?? "—"}</TableCell>
-                <TableCell>{d.email ?? "—"}</TableCell>
                 <TableCell>{d.vehicle ?? "—"}</TableCell>
+                <TableCell>{d.seats_available ?? "—"}</TableCell>
+                <TableCell className="max-w-[240px] truncate" title={d.availability_note ?? ""}>{d.availability_note ?? "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{d.profile_updated_at ? new Date(d.profile_updated_at).toLocaleString() : "—"}</TableCell>
                 <TableCell><Badge variant="outline" className="capitalize">{d.status}</Badge></TableCell>
               </TableRow>
             ))}

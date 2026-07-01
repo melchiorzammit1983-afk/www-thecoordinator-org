@@ -30,20 +30,103 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const link = await resolveToken(data.token, "driver");
     if (!link) return null;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const today = new Date().toISOString().slice(0, 10);
-    const weekOut = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id")
       .eq("company_id", link.company_id)
-      .or(`and(date.gte.${today},date.lte.${weekOut}),deletion_requested_at.not.is.null`)
+      .is("driver_hidden_at", null)
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
     if (link.subject_id) q = q.eq("driver_id", link.subject_id);
     const { data: jobs, error } = await q;
     if (error) throw new Error(error.message);
-    return { link, jobs: jobs ?? [] };
+    let driver: { id: string; name: string; seats_available: number | null; availability_note: string | null; profile_updated_at: string | null } | null = null;
+    if (link.subject_id) {
+      const { data: drv } = await supabaseAdmin.from("drivers")
+        .select("id, name, seats_available, availability_note, profile_updated_at")
+        .eq("id", link.subject_id).maybeSingle();
+      driver = drv ?? null;
+    }
+    return { link, jobs: jobs ?? [], driver };
   });
+
+export const updateDriverProfile = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      name: z.string().trim().min(1).max(120).optional(),
+      seats_available: z.number().int().min(0).max(200).nullable().optional(),
+      availability_note: z.string().trim().max(500).nullable().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link || !link.subject_id) throw new Error("driver_link_required");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const patch: Record<string, unknown> = { profile_updated_at: new Date().toISOString() };
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.seats_available !== undefined) patch.seats_available = data.seats_available;
+    if (data.availability_note !== undefined) patch.availability_note = data.availability_note;
+    const { error } = await supabaseAdmin.from("drivers")
+      .update(patch as never).eq("id", link.subject_id).eq("company_id", link.company_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const setJobPaymentStatus = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      status: z.enum(["pending", "paid"]),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs")
+      .update({ payment_status: data.status as never }).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const hideJobForDriver = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs")
+      .update({ driver_hidden_at: new Date().toISOString() }).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getDriverStatement = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      payment: z.enum(["all", "paid", "pending"]).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let q = supabaseAdmin.from("jobs")
+      .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status, points_charged")
+      .eq("company_id", link.company_id)
+      .order("date", { ascending: true }).order("time", { ascending: true });
+    if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+    if (data.from) q = q.gte("date", data.from);
+    if (data.to) q = q.lte("date", data.to);
+    if (data.payment && data.payment !== "all") q = q.eq("payment_status", data.payment);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
 
 export const driverAcceptJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
