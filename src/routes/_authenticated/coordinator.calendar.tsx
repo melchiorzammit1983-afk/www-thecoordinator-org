@@ -247,6 +247,7 @@ type CardCtx = {
   onEdit: (j: Job) => void;
   onPax: (j: Job) => void;
   onChat: (j: Job) => void;
+  onOpenDetails: (j: Job) => void;
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
   unread: Record<string, number>;
