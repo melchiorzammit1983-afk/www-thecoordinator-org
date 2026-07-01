@@ -300,6 +300,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </div>
         </div>
 
+        {/* Progress */}
+        {accepted && (
+          <div className="mt-3 rounded-lg border bg-muted/30 p-2.5 space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip progress</div>
+            <TripProgress status={job.status} />
+          </div>
+        )}
+
         {/* Meta chips */}
         <div className="flex flex-wrap gap-1.5 mt-3">
           {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
