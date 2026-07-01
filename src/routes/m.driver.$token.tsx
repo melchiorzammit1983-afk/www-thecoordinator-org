@@ -69,10 +69,10 @@ type Driver = {
 };
 
 const STATUS_FLOW: Array<{ value: string; label: string }> = [
-  { value: "en_route", label: "En route" },
-  { value: "arrived", label: "Arrived" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" },
+  { value: "en_route", label: "On the way to pickup" },
+  { value: "arrived", label: "Arrived at pickup" },
+  { value: "in_progress", label: "Passengers on board — en route" },
+  { value: "completed", label: "Trip finished" },
 ];
 
 function DriverManifest() {
