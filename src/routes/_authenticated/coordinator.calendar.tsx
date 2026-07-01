@@ -5,11 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import { toast } from "sonner";
-import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2 } from "lucide-react";
+import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle } from "lucide-react";
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus,
+  checkFlightStatus, shareJobToDriver,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -276,13 +276,52 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
+            {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
             <DeleteButton job={job} />
           </div>
+
         </div>
       </div>
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
       <SplitDialog open={openSplit} onOpenChange={setOpenSplit} job={job} />
     </div>
+  );
+}
+
+function ShareToDriverButton({ job, paxCount, driverName }: { job: Job; paxCount: number; driverName?: string }) {
+  const shareFn = useServerFn(shareJobToDriver);
+  const shareMut = useMutation({
+    mutationFn: () => shareFn({ data: { job_id: job.id } }) as Promise<any>,
+    onSuccess: (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      const when = res.job.pickup_at
+        ? new Date(res.job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
+      const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
+      const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
+      const lines = [
+        `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
+        `🕒 ${when}`,
+        `📍 ${from || "?"} → ${to || "?"}`,
+        `👥 ${res.job.pax_count ?? paxCount} pax`,
+      ];
+      if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
+      lines.push("", `Open your manifest: ${url}`);
+      const text = encodeURIComponent(lines.join("\n"));
+      window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Button
+      size="sm" variant="ghost"
+      className="h-7 px-2 text-emerald-600"
+      title="Share trip with driver on WhatsApp"
+      onClick={() => shareMut.mutate()}
+      disabled={shareMut.isPending}
+    >
+      <MessageCircle className="h-3 w-3" />
+    </Button>
   );
 }
 
