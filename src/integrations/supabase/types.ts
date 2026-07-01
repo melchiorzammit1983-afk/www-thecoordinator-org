@@ -617,6 +617,7 @@ export type Database = {
           pickup_at: string | null
           points_charged: Json
           qr_strict_mode: boolean
+          self_assigned_user_id: string | null
           status: Database["public"]["Enums"]["job_status"]
           time: string
           to_flight: string | null
@@ -655,6 +656,7 @@ export type Database = {
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
+          self_assigned_user_id?: string | null
           status?: Database["public"]["Enums"]["job_status"]
           time: string
           to_flight?: string | null
@@ -693,6 +695,7 @@ export type Database = {
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
+          self_assigned_user_id?: string | null
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
           to_flight?: string | null
