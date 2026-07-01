@@ -168,6 +168,7 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
           </Select>
           <TopUpDialog company={c} onDone={invalidate} />
           <AccessDialog company={c} onDone={invalidate} />
+          <CoordinatorDialog company={c} onDone={invalidate} />
         </div>
       </TableCell>
     </TableRow>
