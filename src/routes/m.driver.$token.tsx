@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { QrScanner } from "@/components/driver/QrScanner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User,
