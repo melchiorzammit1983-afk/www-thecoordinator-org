@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { getClientBookings } from "@/lib/coordinator-public.functions";
 import { Badge } from "@/components/ui/badge";
 
-export const Route = createFileRoute("/m/clients/$token")({
+export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
   component: ClientPortal,
 });
