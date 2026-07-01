@@ -963,3 +963,199 @@ export const setJobLabels = createServerFn({ method: "POST" })
     await syncJobLabels(context, c.id, data.job_id, data.label_ids);
     return { ok: true };
   });
+
+// ---------- STATEMENT / REPORT ----------
+
+const statementInput = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  status: z.array(z.string()).optional(),
+  payment_status: z.array(z.string()).optional(),
+  driver_ids: z.array(z.string().uuid()).optional(),
+  include_unassigned: z.boolean().optional(),
+  label_ids: z.array(z.string().uuid()).optional(),
+  company_scope: z.enum(["own", "chain", "all"]).default("own"),
+  partner_company_ids: z.array(z.string().uuid()).optional(),
+  flight_contains: z.string().trim().max(40).optional(),
+  flight_status: z.array(z.string()).optional(),
+  from_contains: z.string().trim().max(120).optional(),
+  to_contains: z.string().trim().max(120).optional(),
+  pax_contains: z.string().trim().max(120).optional(),
+  search: z.string().trim().max(200).optional(),
+  deletion_only: z.boolean().optional(),
+  row_mode: z.enum(["trip", "pax"]).default("trip"),
+});
+
+export const buildStatement = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => statementInput.parse(i ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const HARD_CAP = 5000;
+
+    // Base query — RLS already restricts to own + chain-visible jobs.
+    let q = context.supabase.from("jobs")
+      .select(`
+        id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids,
+        from_location, to_location, date, time, pickup_at, status, payment_status,
+        flightorship, from_flight, to_flight, flight_status, flight_status_note,
+        clientcompanyname, vehicle, driver_id, driver_accepted_at, deletion_requested_at,
+        created_at, updated_at, dispatch_status,
+        drivers(id,name,phone,vehicle),
+        pax(id,name,status,boarded_at),
+        job_labels(trip_labels(id,name,color)),
+        job_dispatch_hops(hop_index,from_company_id,to_company_id,status,decided_at,note,created_at)
+      `)
+      .order("pickup_at", { ascending: true })
+      .limit(HARD_CAP + 1);
+
+    // Company scope filter
+    if (data.company_scope === "own") {
+      q = q.eq("company_id", c.id);
+    } else if (data.company_scope === "chain") {
+      q = q.contains("dispatch_chain_company_ids", [c.id]);
+    }
+    if (data.partner_company_ids?.length) {
+      q = q.in("company_id", data.partner_company_ids);
+    }
+
+    if (data.from) q = q.gte("date", data.from);
+    if (data.to) q = q.lte("date", data.to);
+    if (data.status?.length) q = q.in("status", data.status);
+    if (data.payment_status?.length) q = q.in("payment_status", data.payment_status);
+    if (data.flight_status?.length) q = q.in("flight_status", data.flight_status);
+    if (data.flight_contains) q = q.or(`from_flight.ilike.%${data.flight_contains}%,to_flight.ilike.%${data.flight_contains}%,flightorship.ilike.%${data.flight_contains}%`);
+    if (data.from_contains) q = q.ilike("from_location", `%${data.from_contains}%`);
+    if (data.to_contains) q = q.ilike("to_location", `%${data.to_contains}%`);
+    if (data.deletion_only) q = q.not("deletion_requested_at", "is", null);
+    if (data.search) {
+      const s = data.search.replace(/[%,]/g, "");
+      q = q.or(`from_location.ilike.%${s}%,to_location.ilike.%${s}%,flightorship.ilike.%${s}%,from_flight.ilike.%${s}%,to_flight.ilike.%${s}%,clientcompanyname.ilike.%${s}%`);
+    }
+
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    let jobs: any[] = rows ?? [];
+
+    // Driver filter (post-fetch so we can support "unassigned")
+    if (data.driver_ids?.length || data.include_unassigned) {
+      const ids = new Set(data.driver_ids ?? []);
+      jobs = jobs.filter((j) =>
+        (data.include_unassigned && !j.driver_id) || (j.driver_id && ids.has(j.driver_id))
+      );
+    }
+    // Label filter (post-fetch)
+    if (data.label_ids?.length) {
+      const wanted = new Set(data.label_ids);
+      jobs = jobs.filter((j) => {
+        const ls = (j.job_labels ?? []).map((x: any) => x.trip_labels?.id).filter(Boolean);
+        return ls.some((id: string) => wanted.has(id));
+      });
+    }
+    // Pax name filter
+    if (data.pax_contains) {
+      const needle = data.pax_contains.toLowerCase();
+      jobs = jobs.filter((j) =>
+        (j.pax ?? []).some((p: any) => (p.name ?? "").toLowerCase().includes(needle))
+      );
+    }
+
+    const truncated = jobs.length > HARD_CAP;
+    if (truncated) jobs = jobs.slice(0, HARD_CAP);
+
+    // Fetch company names for chain via admin (RLS on companies restricts to own).
+    const companyIds = new Set<string>();
+    for (const j of jobs) {
+      if (j.company_id) companyIds.add(j.company_id);
+      if (j.origin_company_id) companyIds.add(j.origin_company_id);
+      if (j.executor_company_id) companyIds.add(j.executor_company_id);
+      for (const id of j.dispatch_chain_company_ids ?? []) companyIds.add(id);
+      for (const h of j.job_dispatch_hops ?? []) {
+        if (h.from_company_id) companyIds.add(h.from_company_id);
+        if (h.to_company_id) companyIds.add(h.to_company_id);
+      }
+    }
+    const nameById: Record<string, string> = {};
+    if (companyIds.size) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: comps } = await supabaseAdmin.from("companies")
+        .select("id,name").in("id", Array.from(companyIds));
+      for (const cp of comps ?? []) nameById[cp.id] = cp.name;
+    }
+
+    // Points ledger totals per job
+    const jobIds = jobs.map((j) => j.id);
+    const pointsByJob: Record<string, number> = {};
+    if (jobIds.length) {
+      const { data: led } = await context.supabase.from("points_ledger")
+        .select("job_id,points_deducted").in("job_id", jobIds);
+      for (const r of led ?? []) {
+        pointsByJob[r.job_id] = (pointsByJob[r.job_id] ?? 0) + (r.points_deducted ?? 0);
+      }
+    }
+
+    // Shape DTO
+    const shaped = jobs.map((j) => {
+      const hops = (j.job_dispatch_hops ?? []).slice().sort((a: any, b: any) => a.hop_index - b.hop_index);
+      const chainIds: string[] = j.dispatch_chain_company_ids ?? [];
+      const chainNames = [j.origin_company_id, ...chainIds]
+        .filter((id, i, arr) => id && arr.indexOf(id) === i)
+        .map((id) => nameById[id] ?? "—");
+      const labels = (j.job_labels ?? []).map((x: any) => x.trip_labels).filter(Boolean);
+      const pax = j.pax ?? [];
+      return {
+        id: j.id,
+        date: j.date,
+        time: j.time,
+        pickup_at: j.pickup_at,
+        status: j.status,
+        payment_status: j.payment_status,
+        from_location: j.from_location,
+        to_location: j.to_location,
+        flight: j.from_flight || j.to_flight || j.flightorship || "",
+        flight_status: j.flight_status ?? "",
+        flight_status_note: j.flight_status_note ?? "",
+        client: j.clientcompanyname ?? "",
+        vehicle: j.vehicle ?? "",
+        driver_name: j.drivers?.name ?? "",
+        driver_phone: j.drivers?.phone ?? "",
+        driver_vehicle: j.drivers?.vehicle ?? "",
+        pax_count: pax.length,
+        pax_names: pax.map((p: any) => p.name).join(", "),
+        pax_boarded: pax.filter((p: any) => !!p.boarded_at).length,
+        labels: labels.map((l: any) => l.name).join(", "),
+        label_colors: labels.map((l: any) => l.color).join(", "),
+        company_name: nameById[j.company_id] ?? "",
+        origin_company: nameById[j.origin_company_id ?? ""] ?? "",
+        executor_company: nameById[j.executor_company_id ?? j.company_id] ?? "",
+        chain: chainNames.join(" → "),
+        chain_hops: hops.length,
+        dispatch_status: j.dispatch_status ?? "",
+        driver_accepted_at: j.driver_accepted_at,
+        deletion_requested_at: j.deletion_requested_at,
+        created_at: j.created_at,
+        points_charged: pointsByJob[j.id] ?? 0,
+        hops: hops.map((h: any) => ({
+          index: h.hop_index,
+          from: nameById[h.from_company_id] ?? "",
+          to: nameById[h.to_company_id] ?? "",
+          status: h.status,
+          decided_at: h.decided_at,
+          note: h.note ?? "",
+        })),
+        pax_rows: pax.map((p: any) => ({
+          id: p.id, name: p.name, status: p.status, boarded_at: p.boarded_at,
+        })),
+      };
+    });
+
+    return {
+      generated_at: new Date().toISOString(),
+      company: { id: c.id, name: c.name },
+      rows: shaped,
+      total_trips: shaped.length,
+      total_pax: shaped.reduce((s, r) => s + r.pax_count, 0),
+      total_points: shaped.reduce((s, r) => s + r.points_charged, 0),
+      truncated,
+    };
+  });
