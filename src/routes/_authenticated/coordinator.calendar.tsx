@@ -63,12 +63,13 @@ type Job = {
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
-  drivers?: { name: string } | null;
-  pax?: { id: string; name: string }[];
+  drivers?: { name: string; vehicle?: string | null; phone?: string | null; seats_available?: number | null; availability_note?: string | null } | null;
+  pax?: { id: string; name: string; status?: string | null; boarded_at?: string | null }[];
   labels?: TLabel[];
   external?: boolean;
   executor_name?: string | null;
   external_driver_name?: string | null;
+  payment_status?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
