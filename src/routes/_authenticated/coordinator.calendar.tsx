@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
+import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
+import { Users } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
