@@ -228,10 +228,17 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
-  const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
-  const cardClass = delayed
+  const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
+  const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
+  const assignedPending = !!job.driver_id && !job.driver_accepted_at;
+  const cardClass = problem
     ? "rounded-md border-2 border-destructive bg-destructive/10 p-2 shadow-sm hover:shadow transition-shadow"
+    : assignedAccepted
+    ? "rounded-md border-2 border-emerald-500 bg-emerald-500/10 p-2 shadow-sm hover:shadow transition-shadow"
+    : assignedPending
+    ? "rounded-md border-2 border-amber-500 bg-amber-500/10 p-2 shadow-sm hover:shadow transition-shadow"
     : "rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow";
+  const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
   return (
     <div ref={setNodeRef} style={style} className={cardClass}>
