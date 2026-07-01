@@ -439,7 +439,16 @@ export type Database = {
       booking_status: "pending" | "accepted" | "rejected"
       company_status: "pending" | "approved" | "suspended"
       driver_status: "available" | "busy" | "offline"
-      feature_name: "tracking" | "bulkupload" | "client_booking" | "qr"
+      feature_name:
+        | "tracking"
+        | "bulkupload"
+        | "client_booking"
+        | "qr"
+        | "magic_link_driver"
+        | "magic_link_client"
+        | "split_job"
+        | "clone_job"
+        | "recurring_schedule"
       group_status: "pending" | "assigned" | "active" | "completed"
       job_status: "pending" | "active" | "completed"
       pax_status:
@@ -579,7 +588,17 @@ export const Constants = {
       booking_status: ["pending", "accepted", "rejected"],
       company_status: ["pending", "approved", "suspended"],
       driver_status: ["available", "busy", "offline"],
-      feature_name: ["tracking", "bulkupload", "client_booking", "qr"],
+      feature_name: [
+        "tracking",
+        "bulkupload",
+        "client_booking",
+        "qr",
+        "magic_link_driver",
+        "magic_link_client",
+        "split_job",
+        "clone_job",
+        "recurring_schedule",
+      ],
       group_status: ["pending", "assigned", "active", "completed"],
       job_status: ["pending", "active", "completed"],
       pax_status: [
