@@ -31,7 +31,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     if (!link) return null;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at)")
       .eq("company_id", link.company_id)
       .is("driver_hidden_at", null)
       .order("pickup_at", { ascending: true, nullsFirst: false })
@@ -47,7 +47,60 @@ export const getDriverManifest = createServerFn({ method: "GET" })
         .eq("id", link.subject_id).maybeSingle();
       driver = drv ?? null;
     }
-    return { link, jobs: jobs ?? [], driver };
+    // Unread coordinator messages per job
+    const jobIds = (jobs ?? []).map((j: { id: string }) => j.id);
+    let unread: Record<string, number> = {};
+    if (jobIds.length) {
+      const { data: msgs } = await supabaseAdmin.from("trip_messages")
+        .select("job_id").in("job_id", jobIds).eq("sender_kind", "coordinator").is("read_by_driver_at", null);
+      unread = (msgs ?? []).reduce((acc: Record<string, number>, m: { job_id: string }) => {
+        acc[m.job_id] = (acc[m.job_id] ?? 0) + 1; return acc;
+      }, {});
+    }
+    const jobsWithUnread = (jobs ?? []).map((j: { id: string }) => ({ ...j, unread_messages: unread[j.id] ?? 0 }));
+    return { link, jobs: jobsWithUnread, driver };
+  });
+
+// ---------- Trip messages (driver side) ----------
+
+export const listTripMessages = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at")
+      .eq("job_id", data.job_id).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    const unreadIds = (rows ?? []).filter((r) => r.sender_kind === "coordinator" && !r.read_by_driver_at).map((r) => r.id);
+    if (unreadIds.length) {
+      await supabaseAdmin.from("trip_messages")
+        .update({ read_by_driver_at: new Date().toISOString() } as never)
+        .in("id", unreadIds);
+    }
+    return rows ?? [];
+  });
+
+export const postTripMessage = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      body: z.string().trim().min(1).max(4000),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: data.body,
+    } as never);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const updateDriverProfile = createServerFn({ method: "POST" })
