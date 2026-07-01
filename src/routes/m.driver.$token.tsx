@@ -292,6 +292,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           {job.status && job.status !== "pending" && (
             <Badge variant="outline" className="text-[10px] capitalize">{job.status.replace("_", " ")}</Badge>
           )}
+          {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
         </div>
 
         {/* Passengers preview (always visible) */}
