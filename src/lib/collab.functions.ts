@@ -358,8 +358,11 @@ export const respondToDispatch = createServerFn({ method: "POST" })
       }).eq("id", data.job_id);
       if (updateError) throw new Error(updateError.message);
     }
-    return { ok: true };
+    const { data: acceptedRow } = await supabaseAdmin
+      .from("jobs").select("id, date").eq("id", data.job_id).maybeSingle();
+    return { ok: true, id: data.job_id, date: acceptedRow?.date ?? null, decision: data.decision };
   });
+
 
 // Jobs anywhere in a chain I originated (read-only view for A across all downstream hops)
 export const listOutboundDispatches = createServerFn({ method: "GET" })
