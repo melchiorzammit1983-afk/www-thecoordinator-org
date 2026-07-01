@@ -124,18 +124,29 @@ export const listConnections = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
-    const { data, error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
       .from("coordinator_connections")
-      .select("id, owner_company_id, partner_company_id, mode, status, permissions, accepted_at, revoked_at, created_at, owner:owner_company_id(id,name), partner:partner_company_id(id,name)")
+      .select("id, owner_company_id, partner_company_id, mode, status, permissions, accepted_at, revoked_at, created_at")
       .or(`owner_company_id.eq.${c.id},partner_company_id.eq.${c.id}`)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data ?? []).map((row: any) => ({
+    const rows = data ?? [];
+    const ids = Array.from(new Set(rows.flatMap((r: any) => [r.owner_company_id, r.partner_company_id])));
+    const { data: comps } = await supabaseAdmin.from("companies").select("id, name").in("id", ids);
+    const nameById = new Map((comps ?? []).map((x: any) => [x.id, x.name]));
+    return rows.map((row: any) => ({
       ...row,
+      owner: { id: row.owner_company_id, name: nameById.get(row.owner_company_id) ?? "Unknown" },
+      partner: { id: row.partner_company_id, name: nameById.get(row.partner_company_id) ?? "Unknown" },
       i_am_owner: row.owner_company_id === c.id,
-      other: row.owner_company_id === c.id ? row.partner : row.owner,
+      other: {
+        id: row.owner_company_id === c.id ? row.partner_company_id : row.owner_company_id,
+        name: nameById.get(row.owner_company_id === c.id ? row.partner_company_id : row.owner_company_id) ?? "Unknown",
+      },
     }));
   });
+
 
 export const updateConnectionPermissions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
