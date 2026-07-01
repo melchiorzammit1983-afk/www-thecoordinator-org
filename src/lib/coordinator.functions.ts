@@ -169,6 +169,7 @@ export const createJob = createServerFn({ method: "POST" })
     if (Object.keys(charged).length) {
       await context.supabase.from("jobs").update({ points_charged: charged }).eq("id", row.id);
     }
+    await syncJobLabels(context, c.id, row.id, data.label_ids);
     return row;
   });
 
