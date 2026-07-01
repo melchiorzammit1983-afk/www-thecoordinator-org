@@ -1,0 +1,9 @@
+# Crew Change
+
+> Operations console for crew-change transport companies: dispatch board, driver manifests, client booking portals, magic-link auth, and point-based operations.
+
+Crew Change helps transport operators run crew-change movements: coordinators build trips on an interactive dispatch board, assign drivers, share magic links with drivers and clients, and audit every trip against a points ledger.
+
+## Pages
+
+- [Home](/): Product overview and entry point to the console.
