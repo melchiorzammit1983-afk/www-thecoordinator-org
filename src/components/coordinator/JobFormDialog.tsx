@@ -213,6 +213,7 @@ function ManualForm({
           />
         </div>
       )}
+      <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
         label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
         cost={qrCost} balance={balance} checked={qr} onChange={setQr}
