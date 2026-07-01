@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(ctx: { supabase: any; userId: string }) {
-  const { data, error } = await ctx.supabase.rpc("is_admin", { _user_id: ctx.userId });
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("is_admin", { _user_id: ctx.userId });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin only");
 }
