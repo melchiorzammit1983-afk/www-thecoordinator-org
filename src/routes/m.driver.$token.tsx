@@ -48,6 +48,7 @@ type Job = {
   drivers?: { name: string } | null;
   pax?: Pax[];
   unread_messages?: number;
+  labels?: { id: string; name: string; color: string }[];
 };
 
 type Driver = {
