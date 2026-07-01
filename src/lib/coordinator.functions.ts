@@ -82,7 +82,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     let q = context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, self_assigned_user_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
@@ -887,81 +887,3 @@ export const setJobLabels = createServerFn({ method: "POST" })
     await syncJobLabels(context, c.id, data.job_id, data.label_ids);
     return { ok: true };
   });
-
-// ---------- ASSIGNABLE TARGETS (drivers + partners + self) ----------
-
-export const listAssignableTargets = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const c = await resolveCompany(context);
-    const { data: drivers } = await context.supabase.from("drivers")
-      .select("id, name, vehicle, seats_available, availability_note")
-      .eq("company_id", c.id).order("name");
-    const { data: conns } = await context.supabase.from("coordinator_connections")
-      .select("id, owner_company_id, partner_company_id, status")
-      .or(`owner_company_id.eq.${c.id},partner_company_id.eq.${c.id}`)
-      .eq("status", "active");
-    const partnerIds = (conns ?? []).map((r: any) =>
-      r.owner_company_id === c.id ? r.partner_company_id : r.owner_company_id);
-    let partners: { id: string; name: string }[] = [];
-    if (partnerIds.length) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data } = await supabaseAdmin.from("companies").select("id, name").in("id", partnerIds);
-      partners = (data ?? []) as { id: string; name: string }[];
-    }
-    return {
-      drivers: (drivers ?? []) as any[],
-      partners,
-      self: { id: c.id, name: `Me (${c.name})` },
-    };
-  });
-
-// ---------- SELF-ASSIGN + STATUS ----------
-
-export const assignSelf = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
-  .handler(async ({ data, context }) => {
-    const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
-      .update({
-        self_assigned_user_id: context.userId,
-        driver_id: null,
-        driver_accepted_at: new Date().toISOString(),
-      })
-      .eq("id", data.job_id).eq("company_id", c.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const unassignSelf = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
-  .handler(async ({ data, context }) => {
-    const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
-      .update({ self_assigned_user_id: null, driver_accepted_at: null })
-      .eq("id", data.job_id).eq("company_id", c.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-const SELF_JOB_STATUSES = ["pending", "active", "en_route", "arrived", "in_progress", "completed"] as const;
-
-export const updateJobStatus = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      status: z.enum(SELF_JOB_STATUSES),
-    }).parse(i),
-  )
-  .handler(async ({ data, context }) => {
-    const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
-      .update({ status: data.status })
-      .eq("id", data.job_id).eq("company_id", c.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
