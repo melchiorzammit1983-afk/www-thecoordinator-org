@@ -82,7 +82,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     let q = context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, drivers(name)")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, drivers(name), pax(id,name)")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
