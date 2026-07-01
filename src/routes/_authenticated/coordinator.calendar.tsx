@@ -3,14 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { format, addDays, startOfWeek, parseISO } from "date-fns";
+import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
-import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send } from "lucide-react";
-import { listConnections, dispatchJobToPartner } from "@/lib/collab.functions";
+import {
+  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff,
+} from "lucide-react";
+import {
+  listConnections, dispatchJobToPartner,
+  listIncomingDispatches, listOutboundDispatches, respondToDispatch,
+} from "@/lib/collab.functions";
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver,
+  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,15 +25,20 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
+  DropdownMenuTrigger, DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
-import { getUnreadCountsCoord } from "@/lib/coordinator.functions";
-import { Users, MessagesSquare } from "lucide-react";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
+import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
-  head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
+  head: () => ({ meta: [{ title: "Dispatch — Coordinator" }] }),
   component: CalendarPage,
 });
 
@@ -62,6 +73,7 @@ function CalendarPage() {
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const qc = useQueryClient();
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
@@ -94,7 +106,25 @@ function CalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  // Live refresh on partner/chain updates
+  useEffect(() => {
+    const ch = supabase
+      .channel("dispatch-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => {
+        qc.invalidateQueries({ queryKey: ["jobs"] });
+        qc.invalidateQueries({ queryKey: ["collab"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "job_dispatch_hops" }, () => {
+        qc.invalidateQueries({ queryKey: ["collab"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_messages" }, () => {
+        qc.invalidateQueries({ queryKey: ["coord-unread"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
 
   // Poll live flight statuses every 3 min for jobs with a flight in view.
   const flightFn = useServerFn(checkFlightStatus);
@@ -119,34 +149,51 @@ function CalendarPage() {
   }
 
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
+  const cardCtx: CardCtx = {
+    onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
+    onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
+    drivers: drivers ?? [],
+    unread: unreadByJob ?? {},
+  };
 
   return (
-    <div className="p-4 md:p-6">
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">Dispatch board</h1>
-          <div className="ml-2 flex rounded-md border overflow-hidden">
+    <div className="p-3 sm:p-4 md:p-6 space-y-4">
+      {/* Header — mobile-friendly stacked */}
+      <header className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-lg sm:text-xl font-semibold truncate">Dispatch board</h1>
+          <Button size="sm" onClick={() => setOpenNew(true)}>
+            <Plus className="h-4 w-4 mr-1" /> New
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-md border overflow-hidden">
             <button className={`px-3 py-1.5 text-xs ${view==="day"?"bg-primary text-primary-foreground":"bg-background"}`} onClick={() => setView("day")}>Day</button>
             <button className={`px-3 py-1.5 text-xs ${view==="week"?"bg-primary text-primary-foreground":"bg-background"}`} onClick={() => setView("week")}>Week</button>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? -1 : -7))}>‹</Button>
-          <div className="text-sm font-medium min-w-[140px] text-center flex items-center gap-1 justify-center">
-            <CalIcon className="h-3.5 w-3.5" />
-            {view === "day" ? format(anchor, "EEE, d MMM yyyy") : `${format(range.days[0], "d MMM")} – ${format(range.days[6], "d MMM")}`}
+          <div className="flex items-center gap-1 ml-auto">
+            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? -1 : -7))}>‹</Button>
+            <div className="text-xs sm:text-sm font-medium min-w-[130px] text-center flex items-center gap-1 justify-center">
+              <CalIcon className="h-3.5 w-3.5" />
+              {view === "day" ? format(anchor, "EEE, d MMM") : `${format(range.days[0], "d MMM")} – ${format(range.days[6], "d MMM")}`}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
-          <Button size="sm" onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New trip</Button>
         </div>
       </header>
 
+      {/* Inbound (pending my decision) */}
+      <InboundBoard ctx={cardCtx} />
+
+      {/* Outbound (my trips currently at partners) */}
+      <OutboundBoard />
+
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+          <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} ctx={cardCtx} />
+            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
 
@@ -171,52 +218,153 @@ function CalendarPage() {
   );
 }
 
-type RowProps = { onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: Record<string, number> };
+type CardCtx = {
+  onEdit: (j: Job) => void;
+  onPax: (j: Job) => void;
+  onChat: (j: Job) => void;
+  onAssign: (j: Job, driverId: string | null) => void;
+  drivers: Driver[];
+  unread: Record<string, number>;
+};
 
-function UnassignedColumn({ jobs, onEdit, onPax, onChat, unread }: { jobs: Job[] } & RowProps) {
+/* ------------------------------ Inbound / Outbound ------------------------------ */
+
+function InboundBoard({ ctx }: { ctx: CardCtx }) {
+  const listIn = useServerFn(listIncomingDispatches);
+  const respond = useServerFn(respondToDispatch);
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(true);
+  const q = useQuery({ queryKey: ["collab", "incoming"], queryFn: () => listIn(), refetchInterval: 20_000 });
+  const respondMut = useMutation({
+    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) => await respond({ data: v }),
+    onSuccess: () => {
+      toast.success("Done");
+      qc.invalidateQueries({ queryKey: ["collab"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const items: any[] = q.data ?? [];
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded-lg border bg-card">
+      <button
+        type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
+      >
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <Inbox className="h-4 w-4 text-primary" />
+        <span>Inbound — pending your decision</span>
+        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
+      </button>
+      {open && (
+        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((j: any) => (
+            <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <Badge variant="outline">from {j.origin?.name ?? "partner"}</Badge>
+                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
+                <span className="ml-auto text-muted-foreground">{(j.pax ?? []).length} pax</span>
+              </div>
+              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
+              {j.dispatch_note && <div className="text-xs text-muted-foreground">"{j.dispatch_note}"</div>}
+              <ChainTimeline jobId={j.id} />
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}>Accept</Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}>Reject</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OutboundBoard() {
+  const listOut = useServerFn(listOutboundDispatches);
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: ["collab", "outbound"], queryFn: () => listOut(), refetchInterval: 20_000 });
+  const items: any[] = q.data ?? [];
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded-lg border bg-card">
+      <button
+        type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
+      >
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <PlaneTakeoff className="h-4 w-4 text-primary" />
+        <span>Outbound — trips at partners (live)</span>
+        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
+      </button>
+      {open && (
+        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((j: any) => (
+            <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <Badge variant="outline">at {j.executor?.name ?? "partner"}</Badge>
+                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
+                <Badge variant={j.dispatch_status === "accepted" ? "default" : j.dispatch_status === "rejected" ? "destructive" : "secondary"}>{j.dispatch_status}</Badge>
+                {j.drivers?.name && <Badge variant="secondary">👤 {j.drivers.name}</Badge>}
+                <span className="ml-auto text-muted-foreground">{j.status}</span>
+              </div>
+              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
+              <ChainTimeline jobId={j.id} />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ------------------------------ Columns ------------------------------ */
+
+function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   return (
-    <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[420px] ${isOver ? "ring-2 ring-primary" : ""}`}>
+    <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
       <div className="space-y-2">
-        {jobs.length === 0 && <div className="text-xs text-muted-foreground py-8 text-center">Everything is assigned 🎉</div>}
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
+        {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
+        {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} />)}
       </div>
     </div>
   );
 }
 
-function DriverLanes({ drivers, jobs, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[] } & RowProps) {
+function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(drivers.length, 1)}, minmax(220px, 1fr))` }}>
+      <div className="grid gap-3 sm:auto-cols-[minmax(240px,1fr)] sm:grid-flow-col">
         {drivers.length === 0 && (
           <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread} />
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} ctx={ctx} />
         ))}
       </div>
     </div>
   );
 }
 
-function DriverLane({ driver, jobs, onEdit, onPax, onChat, unread }: { driver: Driver; jobs: Job[] } & RowProps) {
+function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
   return (
-    <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[380px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
-      <div className="text-sm font-medium">{driver.name}</div>
-      <div className="text-xs text-muted-foreground mb-2">{driver.vehicle ?? "—"}</div>
+    <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[220px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
+      <div className="text-sm font-medium truncate">{driver.name}</div>
+      <div className="text-xs text-muted-foreground mb-2 truncate">{driver.vehicle ?? "—"}</div>
       <div className="space-y-2">
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} />)}
       </div>
     </div>
   );
 }
 
-function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[]; days: Date[] } & RowProps) {
+function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]; days: Date[]; ctx: CardCtx }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
@@ -224,12 +372,12 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { driv
           const key = format(d, "yyyy-MM-dd");
           const dayJobs = jobs.filter((j) => j.date === key);
           return (
-            <div key={key} className="rounded-md border p-2 min-h-[380px]">
+            <div key={key} className="rounded-md border p-2 min-h-[220px]">
               <div className="text-sm font-medium">{format(d, "EEE")}</div>
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
               <div className="space-y-2">
                 {dayJobs.map((j) => (
-                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0}
+                  <TripCard key={j.id} job={j} ctx={ctx}
                     driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
                 ))}
               </div>
@@ -241,87 +389,151 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { driv
   );
 }
 
+/* ------------------------------ Trip card ------------------------------ */
 
-
-function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: number; driverName?: string }) {
+function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
+  const [openDispatch, setOpenDispatch] = useState(false);
+
   const paxCount = job.pax?.length ?? 0;
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
-    : {};
+  const unread = ctx.unread[job.id] ?? 0;
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
-  const cardClass = problem
-    ? "relative rounded-md border-2 border-destructive bg-destructive/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
+
+  // Color priority: red > blue(unread) > green > amber > default
+  const tone = problem
+    ? "border-destructive bg-destructive/10"
+    : unread > 0
+    ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
     : assignedAccepted
-    ? "relative rounded-md border-2 border-emerald-500 bg-emerald-500/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
+    ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedPending
-    ? "relative rounded-md border-2 border-amber-500 bg-amber-500/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
-    : "relative rounded-md border bg-background p-2 pl-3 shadow-sm hover:shadow transition-shadow";
+    ? "border-amber-500/70 bg-amber-500/5"
+    : "border-border bg-background";
+
+  const style: React.CSSProperties = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
+    : {};
+
   const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
   const labels = job.labels ?? [];
+  const shownDriver = driverName ?? job.drivers?.name ?? null;
+
   return (
-    <div ref={setNodeRef} style={style} className={cardClass}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone}`}
+    >
       <LabelStripe labels={labels} />
-      <div className="flex items-start gap-2">
-        <button className="text-muted-foreground touch-none" {...attributes} {...listeners}>
+
+      {/* Tap area — opens edit */}
+      <button
+        type="button"
+        onClick={() => ctx.onEdit(job)}
+        className="w-full text-left"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
+              <span>·</span>
+              <span>{job.date}</span>
+              {unread > 0 && (
+                <span className="ml-auto inline-flex items-center gap-1 text-blue-600 font-medium">
+                  <MessagesSquare className="h-3 w-3" /> {unread} new
+                </span>
+              )}
+            </div>
+            <div className="text-sm font-semibold truncate mt-0.5">
+              {job.from_location} <span className="text-muted-foreground">→</span> {job.to_location}
+            </div>
+            {job.clientcompanyname && (
+              <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
+            )}
+            {shownDriver && (
+              <div className="text-[11px] mt-0.5 truncate">
+                <span className="text-muted-foreground">Driver:</span> <span className="font-medium">{shownDriver}</span>
+                {assignedAccepted && <span className="ml-1 text-emerald-600">✓ accepted</span>}
+                {assignedPending && <span className="ml-1 text-amber-600">• pending</span>}
+              </div>
+            )}
+            {delayed && (
+              <div className="text-[11px] font-medium text-destructive mt-0.5 truncate">
+                ✈ {flightCode} {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-1 mt-1">
+              {paxCount > 0 && (
+                <Badge variant="secondary" className="text-[10px] gap-1">
+                  <Users className="h-3 w-3" /> {paxCount}
+                </Badge>
+              )}
+              {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
+              {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
+              {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
+              {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
+              {labels.map((l) => <LabelChip key={l.id} label={l} />)}
+            </div>
+          </div>
+        </div>
+      </button>
+
+      {/* Top-right controls: drag (desktop) + menu */}
+      <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
+        <button
+          className="hidden sm:inline-flex text-muted-foreground p-1 touch-none"
+          {...attributes} {...listeners}
+          aria-label="Drag"
+        >
           <GripVertical className="h-4 w-4" />
         </button>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted-foreground">{job.time?.slice(0, 5)} · {job.date}</div>
-          <div className="text-sm font-medium truncate">{job.from_location} → {job.to_location}</div>
-          {job.clientcompanyname && <div className="text-xs text-muted-foreground truncate">{job.clientcompanyname}</div>}
-          {driverName && <div className="text-xs mt-1">👤 {driverName}</div>}
-          {delayed && (
-            <div className="text-[11px] font-medium text-destructive mt-1">
-              ✈ {flightCode} {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
-            </div>
-          )}
-          <div className="flex gap-1 mt-1 flex-wrap">
-            {paxCount > 0 && (
-              <button
-                type="button" onClick={() => onPax(job)}
-                className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 hover:bg-primary/20"
-              >
-                <Users className="h-3 w-3" /> {paxCount} pax
-              </button>
-            )}
-            {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
-            {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
-            {flightCode && !delayed && <Badge variant="secondary" className="text-[10px]">✈ {flightCode}</Badge>}
-            {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
-            {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
-            {labels.map((l) => <LabelChip key={l.id} label={l} />)}
-          </div>
-          <div className="flex gap-1 mt-2">
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
-            {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
-            <DispatchToPartnerButton job={job} />
-            <Button size="sm" variant="ghost" className="h-7 px-2 relative" onClick={() => onChat(job)} title="Chat">
-              <MessagesSquare className="h-3 w-3" />
-              {unread > 0 && (
-                <span className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground text-[9px] h-4 min-w-4 px-1 grid place-items-center font-semibold">{unread}</span>
-              )}
-            </Button>
-            <DeleteButton job={job} />
-          </div>
-
-        </div>
+        <TripMenu
+          job={job} ctx={ctx}
+          onOpenSplit={() => setOpenSplit(true)}
+          onOpenClone={() => setOpenClone(true)}
+          onOpenDispatch={() => setOpenDispatch(true)}
+          driverName={shownDriver ?? undefined}
+        />
       </div>
+
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
       <SplitDialog open={openSplit} onOpenChange={setOpenSplit} job={job} />
+      <DispatchDialog open={openDispatch} onOpenChange={setOpenDispatch} job={job} />
     </div>
   );
 }
 
-function ShareToDriverButton({ job, paxCount, driverName }: { job: Job; paxCount: number; driverName?: string }) {
+function TripMenu({
+  job, ctx, onOpenSplit, onOpenClone, onOpenDispatch, driverName,
+}: {
+  job: Job; ctx: CardCtx;
+  onOpenSplit: () => void; onOpenClone: () => void; onOpenDispatch: () => void;
+  driverName?: string;
+}) {
+  const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
+  const pending = !!job.deletion_requested_at;
+  const qc = useQueryClient();
+  const delFn = useServerFn(deleteJob);
+  const cancelFn = useServerFn(cancelDeletionRequest);
+  const delMut = useMutation({
+    mutationFn: () => delFn({ data: { job_id: job.id } }),
+    onSuccess: (res: { deleted: boolean; pending: boolean }) => {
+      toast.success(res.pending ? "Deletion requested — awaiting driver approval" : "Deleted");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const cancelMut = useMutation({
+    mutationFn: () => cancelFn({ data: { job_id: job.id } }),
+    onSuccess: () => { toast.success("Deletion cancelled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
     mutationFn: () => shareFn({ data: { job_id: job.id } }) as Promise<any>,
@@ -336,7 +548,7 @@ function ShareToDriverButton({ job, paxCount, driverName }: { job: Job; paxCount
         `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
         `🕒 ${when}`,
         `📍 ${from || "?"} → ${to || "?"}`,
-        `👥 ${res.job.pax_count ?? paxCount} pax`,
+        `👥 ${res.job.pax_count ?? (job.pax?.length ?? 0)} pax`,
       ];
       if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
       lines.push("", `Open your manifest: ${url}`);
@@ -345,62 +557,84 @@ function ShareToDriverButton({ job, paxCount, driverName }: { job: Job; paxCount
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
   return (
-    <Button
-      size="sm" variant="ghost"
-      className="h-7 px-2 text-emerald-600"
-      title="Share trip with driver on WhatsApp"
-      onClick={() => shareMut.mutate()}
-      disabled={shareMut.isPending}
-    >
-      <MessageCircle className="h-3 w-3" />
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Actions">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>Trip actions</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => ctx.onPax(job)}>
+          <Users className="h-4 w-4 mr-2" /> Passengers
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => ctx.onChat(job)}>
+          <MessagesSquare className="h-4 w-4 mr-2" /> Chat
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Users className="h-4 w-4 mr-2" /> Assign driver
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-56">
+              <DropdownMenuItem onClick={() => ctx.onAssign(job, null)}>— Unassign —</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {ctx.drivers.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No drivers</div>
+              )}
+              {ctx.drivers.map((d) => (
+                <DropdownMenuItem key={d.id} onClick={() => ctx.onAssign(job, d.id)}>
+                  {d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+        {job.driver_id && (
+          <DropdownMenuItem onClick={() => shareMut.mutate()} disabled={shareMut.isPending}>
+            <MessageCircle className="h-4 w-4 mr-2 text-emerald-600" /> Share on WhatsApp
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onOpenSplit}>
+          <Split className="h-4 w-4 mr-2" /> Split into vehicles
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpenClone}>
+          <Copy className="h-4 w-4 mr-2" /> Clone…
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpenDispatch}>
+          <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {pending ? (
+          <DropdownMenuItem
+            onClick={() => { if (confirm("Cancel the pending deletion request?")) cancelMut.mutate(); }}
+            className="text-amber-600"
+          >
+            <Trash2 className="h-4 w-4 mr-2" /> Cancel deletion request
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => {
+              const msg = requiresApproval
+                ? "Driver has accepted. Deletion will require their approval. Continue?"
+                : "Delete this trip?";
+              if (confirm(msg)) delMut.mutate();
+            }}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="h-4 w-4 mr-2" /> Delete trip
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function DeleteButton({ job }: { job: Job }) {
-  const qc = useQueryClient();
-  const delFn = useServerFn(deleteJob);
-  const cancelFn = useServerFn(cancelDeletionRequest);
-  const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
-  const pending = !!job.deletion_requested_at;
-
-  const delMut = useMutation({
-    mutationFn: () => delFn({ data: { job_id: job.id } }),
-    onSuccess: (res: { deleted: boolean; pending: boolean }) => {
-      toast.success(res.pending ? "Deletion requested — waiting for driver approval" : "Deleted");
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const cancelMut = useMutation({
-    mutationFn: () => cancelFn({ data: { job_id: job.id } }),
-    onSuccess: () => { toast.success("Deletion request cancelled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  function onClick() {
-    if (pending) {
-      if (confirm("Cancel the pending deletion request?")) cancelMut.mutate();
-      return;
-    }
-    const msg = requiresApproval
-      ? "This driver has already accepted this trip. Deletion will be sent to them for approval. Continue?"
-      : "Delete this trip?";
-    if (confirm(msg)) delMut.mutate();
-  }
-
-  return (
-    <Button
-      size="sm" variant="ghost"
-      className={`h-7 px-2 ${pending ? "text-amber-600" : "text-destructive"}`}
-      onClick={onClick}
-      title={pending ? "Cancel deletion request" : requiresApproval ? "Request deletion (driver must approve)" : "Delete trip"}
-    >
-      <Trash2 className="h-3 w-3" />
-    </Button>
-  );
-}
+/* ------------------------------ Dialogs ------------------------------ */
 
 function CloneDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
   const [target, setTarget] = useState(job.date);
@@ -454,8 +688,7 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   );
 }
 
-function DispatchToPartnerButton({ job }: { job: Job }) {
-  const [open, setOpen] = useState(false);
+function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
   const [partnerId, setPartnerId] = useState<string>("");
   const [note, setNote] = useState("");
   const qc = useQueryClient();
@@ -464,39 +697,34 @@ function DispatchToPartnerButton({ job }: { job: Job }) {
   const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
   const mut = useMutation({
     mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
-    onSuccess: () => { toast.success("Dispatched"); setOpen(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onSuccess: () => { toast.success("Dispatched"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
     onError: (e: any) => toast.error(e.message),
   });
   return (
-    <>
-      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpen(true)} title="Dispatch to partner">
-        <Send className="h-3 w-3" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Dispatch to partner</DialogTitle>
-            <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription></DialogHeader>
-          <div className="space-y-3">
-            {(conns.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>}
-            <div className="space-y-1">
-              {(conns.data ?? []).filter((c: any) => c.status === "active").map((c: any) => (
-                <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
-                  <input type="radio" name="partner" checked={partnerId === c.other.id} onChange={() => setPartnerId(c.other.id)} />
-                  <span className="font-medium">{c.other?.name}</span>
-                  <Badge variant="outline" className="ml-auto">{c.mode}</Badge>
-                </label>
-              ))}
-            </div>
-            <div>
-              <Label>Note (optional)</Label>
-              <Input value={note} onChange={(e) => setNote(e.target.value)} />
-            </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Dispatch to partner</DialogTitle>
+          <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription></DialogHeader>
+        <div className="space-y-3">
+          {(conns.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>}
+          <div className="space-y-1">
+            {(conns.data ?? []).filter((c: any) => c.status === "active").map((c: any) => (
+              <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
+                <input type="radio" name="partner" checked={partnerId === c.other.id} onChange={() => setPartnerId(c.other.id)} />
+                <span className="font-medium">{c.other?.name}</span>
+                <Badge variant="outline" className="ml-auto">{c.mode}</Badge>
+              </label>
+            ))}
           </div>
-          <DialogFooter>
-            <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>Dispatch</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          <div>
+            <Label>Note (optional)</Label>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>Dispatch</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
