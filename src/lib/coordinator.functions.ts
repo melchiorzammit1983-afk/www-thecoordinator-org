@@ -308,16 +308,84 @@ export const cancelDeletionRequest = createServerFn({ method: "POST" })
 
 // ---------- DRIVERS ----------
 
+async function syncVirtualDrivers(ctx: Ctx, companyId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // Self coordinator-driver
+  const { data: me } = await supabaseAdmin.from("companies")
+    .select("id, name, owner_user_id").eq("id", companyId).maybeSingle();
+  if (me?.owner_user_id) {
+    await supabaseAdmin.from("drivers").upsert({
+      company_id: companyId, kind: "coordinator",
+      linked_user_id: me.owner_user_id,
+      name: `${me.name} (me)`, status: "active",
+    }, { onConflict: "company_id", ignoreDuplicates: false }).select();
+  }
+  // Partner drivers for active connections
+  const { data: conns } = await supabaseAdmin.from("coordinator_connections")
+    .select("owner_company_id, partner_company_id, status")
+    .or(`owner_company_id.eq.${companyId},partner_company_id.eq.${companyId}`)
+    .eq("status", "active");
+  const partnerIds = (conns ?? [])
+    .map((c: any) => c.owner_company_id === companyId ? c.partner_company_id : c.owner_company_id);
+  if (partnerIds.length) {
+    const { data: partners } = await supabaseAdmin.from("companies")
+      .select("id, name").in("id", partnerIds);
+    for (const p of partners ?? []) {
+      const { data: exists } = await supabaseAdmin.from("drivers")
+        .select("id").eq("company_id", companyId).eq("kind", "partner")
+        .eq("linked_company_id", p.id).maybeSingle();
+      if (!exists) {
+        await supabaseAdmin.from("drivers").insert({
+          company_id: companyId, kind: "partner",
+          linked_company_id: p.id,
+          name: `${p.name} (partner)`, status: "active",
+        });
+      }
+    }
+  }
+}
+
 export const listDrivers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
+    try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const { data, error } = await context.supabase.from("drivers")
-      .select("id, name, phone, email, vehicle, status, seats_available, availability_note, profile_updated_at")
-      .eq("company_id", c.id).order("name");
+      .select("id, name, phone, email, vehicle, status, seats_available, availability_note, profile_updated_at, kind, linked_company_id, linked_user_id")
+      .eq("company_id", c.id).order("kind").order("name");
     if (error) throw new Error(error.message);
     return data ?? [];
   });
+
+export const getMyDrivingLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    await syncVirtualDrivers(context, c.id);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: self } = await supabaseAdmin.from("drivers")
+      .select("id, name").eq("company_id", c.id).eq("kind", "coordinator").maybeSingle();
+    if (!self) throw new Error("Could not create self driver");
+    // Reuse an active long-lived link or make a new one (1 year)
+    const { data: existing } = await supabaseAdmin.from("magic_links")
+      .select("token, expires_at, revoked_at")
+      .eq("company_id", c.id).eq("kind", "driver").eq("subject_id", self.id)
+      .is("revoked_at", null).gt("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: false }).limit(1).maybeSingle();
+    let token = existing?.token as string | undefined;
+    if (!token) {
+      token = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      const expires_at = new Date(Date.now() + 365 * 86_400_000).toISOString();
+      const { error } = await supabaseAdmin.from("magic_links").insert({
+        company_id: c.id, kind: "driver", subject_id: self.id,
+        subject_label: self.name, token, expires_at, created_by: context.userId,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return { token, path: `/m/driver/${token}` };
+  });
+
 
 export const createDriver = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
