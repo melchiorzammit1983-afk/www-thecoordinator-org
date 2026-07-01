@@ -99,6 +99,10 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
                 <SelectItem value="24">24 hours</SelectItem>
                 <SelectItem value="72">3 days</SelectItem>
                 <SelectItem value="168">7 days</SelectItem>
+                <SelectItem value="720">30 days</SelectItem>
+                <SelectItem value="2160">90 days</SelectItem>
+                <SelectItem value="4380">6 months</SelectItem>
+                <SelectItem value="8760">1 year</SelectItem>
               </SelectContent>
             </Select>
           </div>
