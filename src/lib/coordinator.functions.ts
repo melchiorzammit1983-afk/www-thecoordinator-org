@@ -742,9 +742,9 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: je } = await supabaseAdmin.from("jobs")
-      .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight,vehicle,driver_id,company_id,executor_company_id,drivers(name)")
+      .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight,vehicle,driver_id,company_id,executor_company_id,origin_company_id,dispatch_chain_company_ids,drivers(name)")
       .eq("id", data.job_id)
-      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`).single();
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`).single();
     if (je || !job) throw new Error("Trip not found");
     if (!job.driver_id) throw new Error("Assign a driver first");
     const nowIso = new Date().toISOString();
