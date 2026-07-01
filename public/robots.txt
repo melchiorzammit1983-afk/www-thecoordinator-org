@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://transfersmt.lovable.app/sitemap.xml
