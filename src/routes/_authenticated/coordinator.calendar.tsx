@@ -514,6 +514,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
+              {job.external && (
+                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
+                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
+                </Badge>
+              )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
           </div>
