@@ -1,62 +1,49 @@
-# Driver portal: full trip details, chat, and UI refresh
+# Trip labels (colored tags on cards)
 
-## Problems in current build
-1. Driver card only shows from/to, date/time, company. It hides room numbers, passenger names, pax count, notes, flight numbers/status, vehicle details — so the driver's view is not "the same as what the coordinator entered".
-2. Passenger list is only reachable via the "Open trip" dialog and only after Accept. Driver can't see names before approval.
-3. No communication channel between driver and coordinator on a specific trip.
-4. Mobile UI is functional but visually plain (flat cards, no hierarchy, buttons wrap awkwardly on 375px).
+Let coordinators create reusable colored labels (e.g. "VIP Crew", "Urgent", "Airport run") and attach one or more to a trip. On the dispatch board each trip card gets a left-edge color stripe plus small named chips.
 
-## What I'll build
+## Database
 
-### 1. Full trip details visible to driver (before & after acceptance)
-Extend `getDriverManifest` to also return, per job:
-- All jobs columns already fetched **plus** `from_flight`, `to_flight`, `flight_status`, `flight_status_note`, `flight_status_updated_at`, `points_charged` (for notes), assigned driver name.
-- Passenger roster inline: `pax` rows (`name`, `room_number`, `status`) — so names are visible on the card without opening the dialog and without needing to accept first.
-- Linked `client_bookings` details (room_number, client name/surname, contact) merged where a pax is tied to a booking.
+New table `trip_labels` (per company):
+- `id`, `company_id`, `name`, `color` (hex like `#E11D48`), `sort_order`, timestamps
+- Unique `(company_id, lower(name))`
+- RLS: coordinator (company owner) can CRUD their own company's labels; admin full access
+- GRANTs for `authenticated` + `service_role`
 
-The card will render a compact "Passengers (N)" section always visible, listing names + room numbers. Onboard/scan actions stay gated behind Accept (only boarding requires acceptance; visibility does not).
+Join table `job_labels`:
+- `job_id` → `jobs(id)` on delete cascade
+- `label_id` → `trip_labels(id)` on delete cascade
+- PK `(job_id, label_id)`
+- RLS: same company scope via `jobs.company_id`
 
-### 2. Card layout — parity with coordinator input
-Add to the card:
-- Vehicle badge, flight badges (From flight ✈ / To flight ✈) with live status color (green on-time, amber delayed, red cancelled) sourced from `flight_status`.
-- Room numbers next to each passenger.
-- Notes/points_charged summary if present.
-- Total pax count.
+No changes to `jobs`.
 
-Every field the coordinator can enter in `JobFormDialog` will have a corresponding read-only display on the driver card, so the two views match 1:1.
+## Server functions (`src/lib/coordinator.functions.ts`)
 
-### 3. Trip chat (driver ↔ coordinator)
-New table `public.trip_messages`:
-- `id`, `job_id` (FK jobs, cascade), `company_id`, `sender_kind` (`driver`|`coordinator`), `sender_label` (driver name or coordinator email), `body`, `created_at`, `read_by_driver_at`, `read_by_coordinator_at`.
-- GRANTs + RLS: coordinators (company owner or admin) can select/insert on their company's rows. No direct anon/authenticated public policy — drivers reach it only via magic-link server functions using `supabaseAdmin` after token validation.
+- `listLabels()` → labels for current company
+- `createLabel({ name, color })`
+- `updateLabel({ id, name?, color? })`
+- `deleteLabel({ id })`
+- `setJobLabels({ job_id, label_ids: string[] })` — replace set for a job
+- Extend `listJobs` result to include `labels: { id, name, color }[]` (via a joined select on `job_labels(trip_labels(*))`)
+- Extend `createJob` / `updateJob` input with optional `label_ids` and persist through `setJobLabels`
+- `createJobsBulk` accepts an optional `label_ids` array applied to every created job
 
-Server functions in `coordinator-public.functions.ts`:
-- `listTripMessages({ token, job_id })` — driver reads (validates token + job ownership, marks coordinator messages read).
-- `postTripMessage({ token, job_id, body })` — driver posts.
+## UI
 
-Server functions in `coordinator.functions.ts`:
-- `listTripMessagesCoord({ job_id })` and `postTripMessageCoord({ job_id, body })` using `requireSupabaseAuth`.
+**Label manager** — new route `src/routes/_authenticated/coordinator.labels.tsx` with a simple table: create/rename/recolor/delete. Color picker = preset swatches (10 tasteful hues) + custom hex input. Linked from the coordinator sidebar.
 
-UI:
-- Driver: new "Messages" button on each card opening a chat sheet; unread badge from unread coordinator messages.
-- Coordinator: chat button on `TripCard` in `coordinator.calendar.tsx` opening a similar sheet; unread badge from unread driver messages. Auto-refresh every 15s (polling — no realtime wiring needed).
+**Job form** (`src/components/coordinator/JobFormDialog.tsx`) — new "Labels" section (multi-select chips) present on both the single-trip tab and the bulk-paste tab. Includes an inline "+ New label" quick-create that opens a mini popover (name + color) and appends the new label to the selection.
 
-### 4. Driver mobile UI refresh
-Only presentation in `src/routes/m.driver.$token.tsx` and a new `TripCardDriver` component:
-- Sticky header with driver name, seats, availability chip, and profile/statement buttons collapsed into an icon menu on small screens.
-- Card: gradient border tinted by state (default / accepted-green / warning-amber / danger-red), rounded-2xl, subtle shadow, larger 18–22px type for from/to, monospace time chip, day-of-week pill.
-- Action row uses a 2-column grid on ≤400px so buttons never wrap awkwardly; primary action (Accept → Open trip → next status) is full-width and prominent; secondary actions collapse into an overflow menu (Delete, Mark paid, Statement).
-- Passenger list is a clean bulleted list with room chips; "Boarded" shown with a green check.
-- Empty state gets an illustration/icon and friendlier copy.
-- Uses existing design tokens only — no hardcoded colors.
+**Trip card** (`src/routes/_authenticated/coordinator.calendar.tsx` → `TripCard`):
+- Left-edge vertical color stripe (4 px) using the first label's color; if multiple labels, render a stacked gradient of up to 3 colors
+- Small rounded chips under the route line: `● VIP Crew` etc. (dot uses label color, chip background = 10% tint)
+- Stripe/chips coexist with existing status border (green/orange/red). Border keeps meaning status; stripe = category.
 
-## Technical notes
-- Migration adds `trip_messages` table + policies + grants (single migration, GRANTs before RLS as required).
-- No changes to auth/routing; magic-link flow unchanged.
-- Coordinator chat UI added as a Dialog opened from `TripCard`, so no new routes.
-- Polling every 10–15s via `useQuery` `refetchInterval` — keeps things simple.
+**Driver portal card** (`src/routes/m.driver.$token.tsx`) — show the same chips (read-only) so drivers see "VIP Crew" too. Extend `getDriverManifest` in `src/lib/coordinator-public.functions.ts` to include labels.
 
 ## Out of scope
-- Push notifications, realtime websockets.
-- File/image attachments in chat (text only for now).
-- Coordinator ↔ client chat (only driver ↔ coordinator per user request).
+
+- Filtering by label (can add later to the search/filters toolbar)
+- Per-user color themes or icon per label
+- Label analytics

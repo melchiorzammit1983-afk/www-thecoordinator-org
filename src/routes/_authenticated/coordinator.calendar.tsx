@@ -23,6 +23,7 @@ import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { getUnreadCountsCoord } from "@/lib/coordinator.functions";
 import { Users, MessagesSquare } from "lucide-react";
+import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
@@ -48,6 +49,7 @@ type Job = {
   deletion_requested_at: string | null;
   drivers?: { name: string } | null;
   pax?: { id: string; name: string }[];
+  labels?: TLabel[];
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -252,16 +254,18 @@ function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job:
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
   const cardClass = problem
-    ? "rounded-md border-2 border-destructive bg-destructive/10 p-2 shadow-sm hover:shadow transition-shadow"
+    ? "relative rounded-md border-2 border-destructive bg-destructive/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
     : assignedAccepted
-    ? "rounded-md border-2 border-emerald-500 bg-emerald-500/10 p-2 shadow-sm hover:shadow transition-shadow"
+    ? "relative rounded-md border-2 border-emerald-500 bg-emerald-500/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
     : assignedPending
-    ? "rounded-md border-2 border-amber-500 bg-amber-500/10 p-2 shadow-sm hover:shadow transition-shadow"
-    : "rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow";
+    ? "relative rounded-md border-2 border-amber-500 bg-amber-500/10 p-2 pl-3 shadow-sm hover:shadow transition-shadow"
+    : "relative rounded-md border bg-background p-2 pl-3 shadow-sm hover:shadow transition-shadow";
   const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
+  const labels = job.labels ?? [];
   return (
     <div ref={setNodeRef} style={style} className={cardClass}>
+      <LabelStripe labels={labels} />
       <div className="flex items-start gap-2">
         <button className="text-muted-foreground touch-none" {...attributes} {...listeners}>
           <GripVertical className="h-4 w-4" />
@@ -290,6 +294,7 @@ function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job:
             {flightCode && !delayed && <Badge variant="secondary" className="text-[10px]">✈ {flightCode}</Badge>}
             {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
             {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
+            {labels.map((l) => <LabelChip key={l.id} label={l} />)}
           </div>
           <div className="flex gap-1 mt-2">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>

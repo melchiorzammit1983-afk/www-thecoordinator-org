@@ -82,14 +82,17 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     let q = context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name)")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
     if (data.to) q = q.lte("date", data.to);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    return (rows ?? []).map((r: any) => ({
+      ...r,
+      labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
+    }));
   });
 
 const jobInput = z.object({
@@ -105,7 +108,23 @@ const jobInput = z.object({
   tracking_enabled: z.boolean().default(false),
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
+  label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
+
+async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
+  if (!labelIds) return;
+  // Verify labels belong to the same company
+  let allowed: string[] = [];
+  if (labelIds.length) {
+    const { data: rows } = await ctx.supabase.from("trip_labels")
+      .select("id").eq("company_id", companyId).in("id", labelIds);
+    allowed = (rows ?? []).map((r: { id: string }) => r.id);
+  }
+  await ctx.supabase.from("job_labels").delete().eq("job_id", jobId);
+  if (allowed.length) {
+    await ctx.supabase.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
+  }
+}
 
 async function chargeIfNeeded(
   ctx: Ctx, companyId: string, feature: string, jobId: string | null, charged: Record<string, boolean>,
@@ -150,6 +169,7 @@ export const createJob = createServerFn({ method: "POST" })
     if (Object.keys(charged).length) {
       await context.supabase.from("jobs").update({ points_charged: charged }).eq("id", row.id);
     }
+    await syncJobLabels(context, c.id, row.id, data.label_ids);
     return row;
   });
 
@@ -177,6 +197,7 @@ export const updateJob = createServerFn({ method: "POST" })
       points_charged: charged,
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
+    await syncJobLabels(context, c.id, data.id, data.label_ids);
     return { ok: true };
   });
 
@@ -570,6 +591,7 @@ const bulkTripInput = z.object({
     clientcompanyname: z.string().trim().max(200).optional().default(""),
     pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   })).min(1).max(50),
+  label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
 
 export const createJobsBulk = createServerFn({ method: "POST" })
@@ -602,6 +624,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         const { error: pErr } = await context.supabase.from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
+      await syncJobLabels(context, c.id, job.id, data.label_ids);
     }
     return { created };
   });
@@ -782,4 +805,85 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     const acc: Record<string, number> = {};
     for (const m of (data ?? []) as { job_id: string }[]) acc[m.job_id] = (acc[m.job_id] ?? 0) + 1;
     return acc;
+  });
+
+// ---------- TRIP LABELS ----------
+
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+
+export const listLabels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const { data, error } = await context.supabase.from("trip_labels")
+      .select("id, name, color, sort_order")
+      .eq("company_id", c.id)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as { id: string; name: string; color: string; sort_order: number }[];
+  });
+
+export const createLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      name: z.string().trim().min(1).max(60),
+      color: z.string().regex(HEX_COLOR).default("#3B82F6"),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: row, error } = await context.supabase.from("trip_labels").insert({
+      company_id: c.id, name: data.name, color: data.color,
+    }).select("id, name, color, sort_order").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const updateLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().trim().min(1).max(60).optional(),
+      color: z.string().regex(HEX_COLOR).optional(),
+      sort_order: z.number().int().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.color !== undefined) patch.color = data.color;
+    if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
+    const { error } = await context.supabase.from("trip_labels")
+      .update(patch as never).eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { error } = await context.supabase.from("trip_labels")
+      .delete().eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const setJobLabels = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), label_ids: z.array(z.string().uuid()).max(20) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: job, error } = await context.supabase.from("jobs")
+      .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
+    if (error || !job) throw new Error("Job not found");
+    await syncJobLabels(context, c.id, data.job_id, data.label_ids);
+    return { ok: true };
   });

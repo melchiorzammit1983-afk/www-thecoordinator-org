@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useFeatureCost, useMyCompany } from "@/hooks/use-coordinator";
+import { LabelPicker } from "@/components/coordinator/LabelPicker";
 import { Coins, Users, PencilLine } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -32,6 +33,7 @@ type Job = {
   vehicle: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
+  labels?: { id: string; name: string; color: string }[];
 };
 
 type Prefill = Partial<{
@@ -110,6 +112,7 @@ function ManualForm({
   const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
+  const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
 
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
@@ -131,6 +134,7 @@ function ManualForm({
         clientcompanyname: client, vehicle,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
+        label_ids: labelIds,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -140,7 +144,7 @@ function ManualForm({
           flightorship: fromFlight || toFlight || "",
           from_flight: fromFlight, to_flight: toFlight,
           clientcompanyname: client, pax,
-        }] } });
+        }], label_ids: labelIds } });
       } else {
         await createFn({ data: payload });
       }
@@ -209,6 +213,7 @@ function ManualForm({
           />
         </div>
       )}
+      <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
         label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
         cost={qrCost} balance={balance} checked={qr} onChange={setQr}
@@ -226,6 +231,7 @@ function ManualForm({
 
 function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
+  const [labelIds, setLabelIds] = useState<string[]>([]);
   const parsed = useMemo(() => parseTrips(raw), [raw]);
   const valid = parsed.filter((t) => t.errors.length === 0);
   const incomplete = parsed.filter((t) => t.errors.length > 0);
@@ -239,7 +245,7 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
       flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
       from_flight: t.from_flight, to_flight: t.to_flight,
       pax: t.pax,
-    })) } }),
+    })), label_ids: labelIds } }),
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -297,6 +303,7 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
           ))}
         </div>
       )}
+      <LabelPicker value={labelIds} onChange={setLabelIds} />
       <DialogFooter>
         <Button disabled={mut.isPending || valid.length === 0} onClick={() => mut.mutate()}>
           {mut.isPending ? "Creating…" : `Create ${valid.length} trip${valid.length === 1 ? "" : "s"}`}

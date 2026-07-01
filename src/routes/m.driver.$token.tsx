@@ -9,6 +9,7 @@ import {
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
 import { Badge } from "@/components/ui/badge";
+import { LabelChip } from "@/components/coordinator/LabelChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +49,7 @@ type Job = {
   drivers?: { name: string } | null;
   pax?: Pax[];
   unread_messages?: number;
+  labels?: { id: string; name: string; color: string }[];
 };
 
 type Driver = {
@@ -221,8 +223,19 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : job.time?.slice(0, 5);
 
+  const labels = job.labels ?? [];
+  const stripeStyle = labels.length
+    ? {
+        background:
+          labels.length === 1
+            ? labels[0].color
+            : `linear-gradient(to right, ${labels.slice(0, 3).map((l, i, a) => `${l.color} ${(i / a.length) * 100}% ${((i + 1) / a.length) * 100}%`).join(", ")})`,
+      }
+    : undefined;
+
   return (
     <article className={`rounded-2xl border-2 bg-card shadow-sm overflow-hidden transition ${borderClass}`}>
+      {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
       {/* Header strip */}
       <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
         <div className="flex items-center gap-2 min-w-0">
@@ -290,6 +303,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           {job.status && job.status !== "pending" && (
             <Badge variant="outline" className="text-[10px] capitalize">{job.status.replace("_", " ")}</Badge>
           )}
+          {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
         </div>
 
         {/* Passengers preview (always visible) */}
