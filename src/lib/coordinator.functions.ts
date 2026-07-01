@@ -721,3 +721,65 @@ export const movePaxToJob = createServerFn({ method: "POST" })
     if (uErr) throw new Error(uErr.message);
     return { ok: true };
   });
+
+// ---------- Trip messages (coordinator side) ----------
+
+async function assertJobInCompany(ctx: Ctx, jobId: string) {
+  const c = await resolveCompany(ctx);
+  const { data, error } = await ctx.supabase.from("jobs")
+    .select("id, company_id").eq("id", jobId).eq("company_id", c.id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Job not found");
+  return { company: c };
+}
+
+export const listTripMessagesCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const { data: rows, error } = await context.supabase.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at")
+      .eq("job_id", data.job_id).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
+      r.sender_kind === "driver" && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
+    if (unreadIds.length) {
+      await context.supabase.from("trip_messages")
+        .update({ read_by_coordinator_at: new Date().toISOString() })
+        .in("id", unreadIds);
+    }
+    return rows ?? [];
+  });
+
+export const postTripMessageCoord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), body: z.string().trim().min(1).max(4000) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { company } = await assertJobInCompany(context, data.job_id);
+    const { data: userRow } = await context.supabase.auth.getUser();
+    const label = userRow?.user?.email ?? "Coordinator";
+    const { error } = await context.supabase.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: company.id,
+      sender_kind: "coordinator",
+      sender_label: label,
+      body: data.body,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getUnreadCountsCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const { data, error } = await context.supabase.from("trip_messages")
+      .select("job_id").eq("company_id", c.id).eq("sender_kind", "driver").is("read_by_coordinator_at", null);
+    if (error) throw new Error(error.message);
+    const acc: Record<string, number> = {};
+    for (const m of (data ?? []) as { job_id: string }[]) acc[m.job_id] = (acc[m.job_id] ?? 0) + 1;
+    return acc;
+  });
