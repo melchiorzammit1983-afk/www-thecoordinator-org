@@ -294,6 +294,7 @@ function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job:
             {flightCode && !delayed && <Badge variant="secondary" className="text-[10px]">✈ {flightCode}</Badge>}
             {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
             {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
+            {labels.map((l) => <LabelChip key={l.id} label={l} />)}
           </div>
           <div className="flex gap-1 mt-2">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>
