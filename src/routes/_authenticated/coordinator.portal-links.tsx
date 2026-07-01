@@ -81,6 +81,43 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
     extendMut.mutate({ id, ttl_hours: hours });
   }
 
+  const previewFn = useServerFn(getMagicLinkPreview);
+  async function shareOnWhatsApp(id: string, url: string, label: string) {
+    try {
+      const preview = kind === "driver"
+        ? await (previewFn({ data: { id } }) as Promise<any>)
+        : null;
+      const lines: string[] = [];
+      lines.push(kind === "driver"
+        ? `🚐 ${preview?.company?.name ?? "Crew transport"} — driver manifest`
+        : `🚐 Client booking portal`);
+      lines.push(`For: ${label}`);
+      if (preview && preview.jobs?.length) {
+        const totalPax = Object.values(preview.paxByJob as Record<string, number>)
+          .reduce((a, b) => a + b, 0);
+        lines.push(`Upcoming: ${preview.jobs.length} trip${preview.jobs.length === 1 ? "" : "s"} · ${totalPax} pax`);
+        lines.push("");
+        for (const j of preview.jobs.slice(0, 5)) {
+          const when = j.pickup_at
+            ? new Date(j.pickup_at).toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+            : `${j.date}${j.time ? " " + j.time.slice(0,5) : ""}`;
+          const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
+          const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
+          const n = preview.paxByJob[j.id] ?? 0;
+          lines.push(`• ${when} — ${from || "?"} → ${to || "?"} (${n} pax)`);
+        }
+        if (preview.jobs.length > 5) lines.push(`…and ${preview.jobs.length - 5} more`);
+        lines.push("");
+      }
+      lines.push(`Open: ${url}`);
+      const text = encodeURIComponent(lines.join("\n"));
+      window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not build preview");
+    }
+  }
+
+
   const rows = (data ?? []).filter((r) => r.kind === kind);
 
   return (
