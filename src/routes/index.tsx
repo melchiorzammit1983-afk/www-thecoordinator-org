@@ -4,8 +4,35 @@ import { ArrowRight } from "lucide-react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Crew Change Admin" },
-      { name: "description", content: "Operations console for crew-change transport companies." },
+      { title: "Crew Change — Operations Console for Transport Companies" },
+      { name: "description", content: "Approve companies, manage points, generate booking links, and audit every crew-change transport trip from one dashboard." },
+      { property: "og:title", content: "Crew Change — Operations Console for Transport Companies" },
+      { property: "og:description", content: "Approve companies, manage points, generate booking links, and audit every crew-change transport trip from one dashboard." },
+      { property: "og:url", content: "https://transfersmt.lovable.app/" },
+      { property: "og:type", content: "website" },
+    ],
+    links: [{ rel: "canonical", href: "https://transfersmt.lovable.app/" }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "Crew Change",
+          url: "https://transfersmt.lovable.app/",
+        }),
+      },
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Service",
+          name: "Crew Change Transport Management",
+          provider: { "@type": "Organization", name: "Crew Change" },
+          serviceType: "Crew-change transport dispatch",
+          description: "Dispatch board, driver manifests, client booking portals, magic-link auth, and point-based operations for crew-change transport companies.",
+        }),
+      },
     ],
   }),
   component: Index,
