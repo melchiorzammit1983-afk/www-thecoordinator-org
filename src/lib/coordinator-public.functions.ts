@@ -1,21 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { Database } from "@/integrations/supabase/types";
 
-function publicClient() {
-  return createClient<Database>(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_PUBLISHABLE_KEY!,
-    { auth: { storage: undefined, persistSession: false, autoRefreshToken: false } },
-  );
+async function getAdminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
-  const supabase = publicClient();
-  const { data, error } = await supabase.rpc("lookup_magic_link", { _token: token });
+  const supabaseAdmin = await getAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("magic_links")
+    .select("id, company_id, kind, subject_id, subject_label, expires_at, revoked_at")
+    .eq("token", token)
+    .is("revoked_at", null)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  const row = Array.isArray(data) ? data[0] : data;
+  const row = data;
   if (!row) return null;
   if (row.kind !== expectedKind) return null;
   if (row.revoked_at) return null;
