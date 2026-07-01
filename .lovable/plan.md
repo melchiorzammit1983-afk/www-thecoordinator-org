@@ -1,84 +1,82 @@
 
-# Coordinator Collaboration
+# Multi-hop dispatch visibility
 
-Add a new "Collaborate" tab so a coordinator (A) can connect to another coordinator (B) either as a **Sync partner** (shared workspace with granular permissions A chooses) or as a **Provider** (A dispatches jobs to B; B runs them with B's drivers). Points are always paid by the sender (A).
+Today a job dispatched from A → B is visible to A because we set `origin_company_id = A` and `executor_company_id = B`. When B accepts, we overwrite `company_id = B` so it lands on B's board. If B then dispatches to C (or C to D), A loses sight of the trip — `origin_company_id` still says A, but `dispatched_at`, `dispatch_status`, `dispatch_note`, and any driver/status updates only reflect the last hop. This plan makes the full chain observable to every upstream coordinator, in real time, without letting anyone reassign someone else's drivers.
 
-## 1. Database (migrations)
+## 1. Data model — track the chain, not just the last hop
 
-New tables (all company-scoped, RLS, GRANTs):
+New table `job_dispatch_hops` (append-only history of every handoff for a job):
 
-- **coordinator_connections**
-  - `owner_company_id` (A — inviter), `partner_company_id` (B — accepter)
-  - `mode` enum: `sync` | `provider`
-  - `status` enum: `pending` | `active` | `revoked` | `rejected`
-  - `permissions` jsonb — set by A at invite time. Keys (booleans):
-    `view_jobs`, `edit_jobs`, `create_jobs`, `view_drivers`, `assign_drivers`,
-    `view_chat`, `post_chat`, `view_pax`, `edit_pax`. **Never** includes top-up/points.
-  - `accepted_at`, `revoked_at`, timestamps
-  - Unique `(least(owner,partner), greatest(owner,partner))` to prevent dupes
+- `job_id` (fk jobs)
+- `hop_index` int (0 = original creator, 1 = first partner, …)
+- `from_company_id`, `to_company_id`
+- `status` enum: `pending` | `accepted` | `rejected` | `cancelled`
+- `note`, `dispatched_at`, `decided_at`
+- unique `(job_id, hop_index)`
 
-- **connection_invites**
-  - `code` (short random, unique), `owner_company_id`, `mode`, `permissions` jsonb,
-    `expires_at`, `used_at`, `used_by_company_id`
-  - Used for the share-code handshake
+Keep the existing columns on `jobs` (`origin_company_id`, `executor_company_id`, `dispatch_status`, `dispatched_at`, `dispatch_decided_at`, `dispatch_note`) as the "current hop" convenience view — every insert into `job_dispatch_hops` also updates those fields on the job. A single source of truth (`hops`) plus a denormalised head (`jobs.*`) keeps existing UI working.
 
-- **jobs** additions (migration):
-  - `origin_company_id` uuid — who created the job (A)
-  - `executor_company_id` uuid — who runs it (B when dispatched; else same as origin)
-  - `dispatch_status` enum nullable: `pending` | `accepted` | `rejected`
-  - `dispatched_at`, `dispatch_decided_at`, `dispatch_note`
-  - Existing `company_id` becomes the executor scope for driver/pax/chat RLS
+Add `jobs.dispatch_chain_company_ids uuid[]` — ordered list of every company that has ever touched the trip (creator + each accepter). Maintained by the same helpers that write hops. This one column powers cross-company RLS reads without recursive joins.
 
-- **driver_status_updates**: already exists; ensure Realtime publication added so A can subscribe to B's driver status for shared jobs.
+Enable Realtime on `job_dispatch_hops` (`jobs`, `driver_status_updates`, `pax` are already published).
 
-RLS updates so a partner company can SELECT/UPDATE rows on the other's tables only when an **active connection** grants that specific permission (via a `has_connection_permission(auth_company, target_company, perm)` security-definer function). Provider mode grants B implicit access to the specific jobs A dispatched to B (and their pax/chat), never A's whole workspace.
+## 2. RLS — upstream companies can always read, never write drivers
 
-## 2. Server functions (`src/lib/collab.functions.ts`)
+Replace the current cross-company read policy on `jobs`, `pax`, `driver_status_updates`, `trip_messages`, `job_dispatch_hops`:
 
-- `createConnectionInvite({ mode, permissions, ttlDays })` → returns `code` + share URL
-- `redeemConnectionInvite({ code })` → creates `coordinator_connections` row `active`
-- `listConnections()` / `revokeConnection({ id })` / `updateConnectionPermissions({ id, permissions })` (owner only)
-- `dispatchJobToPartner({ job_id, partner_company_id, note? })` → sets executor, `dispatch_status='pending'`, charges A via `charge_feature`
-- `respondToDispatch({ job_id, decision, note? })` (B) → accept/reject; on accept, job appears on B's dispatch board
-- `listIncomingDispatches()` (B) — pending queue
-- Extend `listJobs` (A) to include partner-executed jobs with a read-only `partner_executor` flag and to surface `driver_name` + latest status from B's driver
-- Realtime: subscribe A's board to `driver_status_updates` for jobs where `origin_company_id = A`
+- SELECT allowed if `auth`'s company is `= ANY(jobs.dispatch_chain_company_ids)` OR it is the current `executor_company_id`.
+- UPDATE on `jobs` restricted to the current `executor_company_id` (owner of the current hop). Upstream reads only.
+- Driver assignment (`jobs.driver_id`) writable only by the current executor — enforced by the existing policies plus a trigger that rejects driver_id changes from anyone other than `executor_company_id`.
+- `driver_status_updates` insert stays restricted to the driver/executor; SELECT opens up to the whole chain.
+- Chat: `trip_messages` SELECT opens to the chain; POST stays per-hop permission (`view_chat` / `post_chat` in sync mode, or executor + origin in provider mode).
 
-Points: `dispatchJobToPartner` deducts from A's balance using a new `feature_costs` entry `dispatch_partner`. B is never charged.
+`has_connection_permission` stays for sync-mode granular perms; chain visibility is orthogonal (any past participant reads).
 
-## 3. UI
+## 3. Server functions
 
-New sidebar entry **Collaborate** in `coordinator.tsx` navigation.
+Extend `src/lib/collab.functions.ts`:
 
-- `src/routes/_authenticated/coordinator.collaborate.tsx`
-  - Header actions: **New invite** (dialog: pick Sync/Provider, permission checkboxes for Sync, TTL) → copyable share code + link
-  - **Redeem code** input to accept an invite
-  - Table of active connections: partner name, mode, permissions summary, "Edit permissions", "Revoke"
-  - Tabs: **My connections** / **Incoming invites**
+- `dispatchJobToPartner` — now the same fn works for any hop:
+  - verify caller's company `= jobs.executor_company_id` (only the current owner can forward)
+  - reject if `partner_company_id` already appears in `dispatch_chain_company_ids` (no cycles)
+  - append a `job_dispatch_hops` row, update jobs head, push partner into `dispatch_chain_company_ids`, charge caller 1 point via `charge_feature('dispatch_partner')`
+- `respondToDispatch` — on accept, set `company_id = caller`, mark hop `accepted`, keep origin intact
+- New `listJobChain({ job_id })` — returns ordered hops + participating company names + current driver name/status; used by a "Chain" tab on the trip card and by the outbound dashboard
+- Extend `listOutboundDispatches` (A's view): return every job where A appears in the chain but is not the current executor, with fields `current_executor`, `current_hop_status`, `driver_name`, latest `driver_status_updates.status` and `updated_at`, and the full hop list
+- Extend `listJobs` to include chain-visible jobs in a read-only tint when A is upstream but not the current owner (opt-in flag `include_chain: true`, off by default so the calendar isn't cluttered — surfaced instead through the Outbound board)
 
-- Dispatch board (`coordinator.calendar.tsx`)
-  - New "Dispatch to partner" action on a trip card (visible when connections exist) → picks a partner, sends
-  - Partner-executed trips render with a distinct badge and read-only status stream (driver name + status pulled from B)
+## 4. Realtime hook
 
-- New page `coordinator.incoming.tsx` (B) — pending partner dispatches with Accept/Reject and optional note. Accepted jobs land on B's normal dispatch board where B splits pax to B's drivers as today.
+New `src/hooks/useChainJobRealtime.ts`:
 
-- Trip chat (`TripChatDialog`) — if connection permission `view_chat`/`post_chat` allows, A can read/post on partner-executed jobs.
+- Subscribe to `jobs`, `job_dispatch_hops`, `driver_status_updates`, `pax` filtered by the set of job ids the current company has chain visibility on.
+- Mount from `coordinator.incoming.tsx` (outbound tab) and the trip detail dialog.
+- Invalidate the relevant React Query keys on every event.
 
-## 4. Realtime & visibility
+## 5. UI
 
-- Enable Realtime on `jobs`, `driver_status_updates`, `pax` for cross-company subscribers.
-- A's calendar subscribes to updates for jobs where `origin_company_id = A.company_id` and renders driver name + status just like an internal driver (read-only). A cannot reassign B's drivers.
+- `coordinator.incoming.tsx` — Outbound section becomes a full "Trips I sent" board:
+  - columns: pickup, route, current executor, current hop status, driver, live status, chain depth
+  - expandable row: hop timeline (A → B → C → …), with badges per hop (`pending` / `accepted` / `rejected`), note, timestamp, and the currently assigned driver at each accepted hop
+  - live updates via the new realtime hook
+- Trip card on dispatch board — new small "chain" chip when `hop_count > 1`; click opens the same hop timeline dialog.
+- Chat (`TripChatDialog`) — participant list shows every company in the chain (read for all upstream; posting still gated by connection perms of the current hop).
+- Driver portal is unchanged: the driver only sees the current executor's manifest.
 
-## 5. Out of scope (for this iteration)
+## 6. Points & safeguards
 
-- Bi-directional Sync of top-ups, billing, or points balance (explicitly excluded per your rule)
-- Multi-hop dispatch (B forwarding to C)
-- Partner analytics dashboard
-- Per-driver ratings across companies
+- Points are charged only to the company doing the forward (existing behaviour). Origin never pays for downstream hops.
+- Cycle guard rejects forwarding back to any earlier company in the chain.
+- Rejection sends the trip back to the previous hop (not the origin) — chain shrinks by one, `dispatch_chain_company_ids` trimmed accordingly. Origin sees the reject event in the timeline.
+
+## 7. Out of scope
+
+- Per-hop payment splits or settlement between companies
+- Driver ratings across the chain
+- Allowing origin to override a downstream driver assignment
 
 ## Technical notes
 
-- All new tables get `GRANT SELECT, INSERT, UPDATE, DELETE ... TO authenticated; GRANT ALL ... TO service_role;` in the same migration.
-- Cross-company visibility is enforced via a SECURITY DEFINER helper `has_connection_permission(_viewer_company, _target_company, _perm text)` to avoid RLS recursion.
-- Points deduction reuses existing `charge_feature` RPC.
-- Add a Realtime subscription hook `useJobRealtime(companyId)` in `src/hooks/`, mounted from the calendar and cleaned up on unmount.
+- Migration writes `job_dispatch_hops` (+ GRANTs + RLS), adds `dispatch_chain_company_ids uuid[]` to `jobs`, backfills existing dispatched rows so the two current participants appear in the chain array, adds triggers/policies described above, and adds `job_dispatch_hops` to `supabase_realtime` publication.
+- All chain reads use `dispatch_chain_company_ids && ARRAY[auth_company]` in policies (indexable via GIN) — no recursion, no security definer needed beyond what already exists.
+- `charge_feature('dispatch_partner')` is reused; no new feature cost row required.
