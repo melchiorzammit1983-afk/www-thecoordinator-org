@@ -29,14 +29,61 @@ export type Database = {
         }
         Relationships: []
       }
+      client_booking_modifications: {
+        Row: {
+          booking_id: string
+          created_at: string
+          id: string
+          requested_at: string
+          requested_changes: Json
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          id?: string
+          requested_at?: string
+          requested_changes: Json
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          id?: string
+          requested_at?: string
+          requested_changes?: Json
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_booking_modifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "client_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_bookings: {
         Row: {
           client_email: string
           company_id: string
           created_at: string
+          date: string | null
           from_location: string
           id: string
+          job_id: string | null
           name: string
+          pickup_at: string | null
           room_number: string | null
           status: Database["public"]["Enums"]["booking_status"]
           surname: string
@@ -48,9 +95,12 @@ export type Database = {
           client_email: string
           company_id: string
           created_at?: string
+          date?: string | null
           from_location: string
           id?: string
+          job_id?: string | null
           name: string
+          pickup_at?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           surname: string
@@ -62,9 +112,12 @@ export type Database = {
           client_email?: string
           company_id?: string
           created_at?: string
+          date?: string | null
           from_location?: string
           id?: string
+          job_id?: string | null
           name?: string
+          pickup_at?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           surname?: string
@@ -78,6 +131,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -126,6 +186,35 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      company_coordinator_invites: {
+        Row: {
+          company_id: string
+          created_at: string
+          email: string
+          id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          email: string
+          id?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_coordinator_invites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       driver_status_updates: {
         Row: {
@@ -176,29 +265,35 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          email: string | null
           id: string
           name: string
           phone: string | null
           status: Database["public"]["Enums"]["driver_status"]
           updated_at: string
+          vehicle: string | null
         }
         Insert: {
           company_id: string
           created_at?: string
+          email?: string | null
           id?: string
           name: string
           phone?: string | null
           status?: Database["public"]["Enums"]["driver_status"]
           updated_at?: string
+          vehicle?: string | null
         }
         Update: {
           company_id?: string
           created_at?: string
+          email?: string | null
           id?: string
           name?: string
           phone?: string | null
           status?: Database["public"]["Enums"]["driver_status"]
           updated_at?: string
+          vehicle?: string | null
         }
         Relationships: [
           {
@@ -288,46 +383,118 @@ export type Database = {
           company_id: string
           created_at: string
           date: string
+          driver_id: string | null
           flightorship: string | null
           from_location: string
           id: string
+          pickup_at: string | null
+          points_charged: Json
+          qr_strict_mode: boolean
           status: Database["public"]["Enums"]["job_status"]
           time: string
           to_location: string
           tracking_enabled: boolean
           updated_at: string
+          vehicle: string | null
         }
         Insert: {
           clientcompanyname?: string | null
           company_id: string
           created_at?: string
           date: string
+          driver_id?: string | null
           flightorship?: string | null
           from_location: string
           id?: string
+          pickup_at?: string | null
+          points_charged?: Json
+          qr_strict_mode?: boolean
           status?: Database["public"]["Enums"]["job_status"]
           time: string
           to_location: string
           tracking_enabled?: boolean
           updated_at?: string
+          vehicle?: string | null
         }
         Update: {
           clientcompanyname?: string | null
           company_id?: string
           created_at?: string
           date?: string
+          driver_id?: string | null
           flightorship?: string | null
           from_location?: string
           id?: string
+          pickup_at?: string | null
+          points_charged?: Json
+          qr_strict_mode?: boolean
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
           to_location?: string
           tracking_enabled?: boolean
           updated_at?: string
+          vehicle?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      magic_links: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          kind: Database["public"]["Enums"]["magic_link_kind"]
+          revoked_at: string | null
+          subject_id: string | null
+          subject_label: string | null
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          kind: Database["public"]["Enums"]["magic_link_kind"]
+          revoked_at?: string | null
+          subject_id?: string | null
+          subject_label?: string | null
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["magic_link_kind"]
+          revoked_at?: string | null
+          subject_id?: string | null
+          subject_label?: string | null
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "magic_links_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -428,12 +595,66 @@ export type Database = {
           },
         ]
       }
+      topup_requests: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          note: string | null
+          points_requested: number
+          requested_by: string
+          status: Database["public"]["Enums"]["topup_request_status"]
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          points_requested: number
+          requested_by: string
+          status?: Database["public"]["Enums"]["topup_request_status"]
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          points_requested?: number
+          requested_by?: string
+          status?: Database["public"]["Enums"]["topup_request_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topup_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      charge_feature: {
+        Args: {
+          _company_id: string
+          _feature: Database["public"]["Enums"]["feature_name"]
+          _job_id: string
+          _note: string
+        }
+        Returns: number
+      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_company_owner: {
+        Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       booking_status: "pending" | "accepted" | "rejected"
@@ -451,6 +672,7 @@ export type Database = {
         | "recurring_schedule"
       group_status: "pending" | "assigned" | "active" | "completed"
       job_status: "pending" | "active" | "completed"
+      magic_link_kind: "driver" | "client"
       pax_status:
         | "pending"
         | "verified"
@@ -458,6 +680,7 @@ export type Database = {
         | "delayed"
         | "noshow"
         | "completed"
+      topup_request_status: "pending" | "fulfilled" | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -601,6 +824,7 @@ export const Constants = {
       ],
       group_status: ["pending", "assigned", "active", "completed"],
       job_status: ["pending", "active", "completed"],
+      magic_link_kind: ["driver", "client"],
       pax_status: [
         "pending",
         "verified",
@@ -609,6 +833,7 @@ export const Constants = {
         "noshow",
         "completed",
       ],
+      topup_request_status: ["pending", "fulfilled", "rejected"],
     },
   },
 } as const
