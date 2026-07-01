@@ -1178,6 +1178,7 @@ export type Database = {
         | "en_route"
         | "arrived"
         | "in_progress"
+        | "cancelled"
       magic_link_kind: "driver" | "client"
       pax_status:
         | "pending"
@@ -1348,6 +1349,7 @@ export const Constants = {
         "en_route",
         "arrived",
         "in_progress",
+        "cancelled",
       ],
       magic_link_kind: ["driver", "client"],
       pax_status: [
