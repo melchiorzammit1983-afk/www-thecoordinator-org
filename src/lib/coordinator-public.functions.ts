@@ -201,8 +201,10 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("driver_accept_job", { _token: data.token, _job_id: data.job_id });
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs").update({
+      driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
+    } as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -214,8 +216,9 @@ export const driverApproveDeletion = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("driver_approve_deletion", { _token: data.token, _job_id: data.job_id });
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!job.deletion_requested_at) throw new Error("no_deletion_requested");
+    const { error } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -226,8 +229,8 @@ export const getClientBookings = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "client");
     if (!link) return null;
-    const supabase = publicClient();
-    const q = supabase.from("client_bookings")
+    const supabaseAdmin = await getAdminClient();
+    const q = supabaseAdmin.from("client_bookings")
       .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number")
       .eq("company_id", link.company_id)
       .order("pickup_at", { ascending: true, nullsFirst: false });
