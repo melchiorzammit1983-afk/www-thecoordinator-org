@@ -780,3 +780,56 @@ function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChan
     </Dialog>
   );
 }
+
+/* ------------------------------ Self status row ------------------------------ */
+
+const SELF_STATUS_FLOW: Array<{ value: string; label: string }> = [
+  { value: "pending", label: "Pending" },
+  { value: "en_route", label: "En route" },
+  { value: "arrived", label: "Arrived" },
+  { value: "in_progress", label: "In progress" },
+  { value: "completed", label: "Completed" },
+];
+
+function SelfStatusRow({ job }: { job: Job }) {
+  const qc = useQueryClient();
+  const fn = useServerFn(updateJobStatus);
+  const unassignFn = useServerFn(unassignSelf);
+  const statusMut = useMutation({
+    mutationFn: (status: string) => fn({ data: { job_id: job.id, status: status as any } }),
+    onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const releaseMut = useMutation({
+    mutationFn: () => unassignFn({ data: { job_id: job.id } }),
+    onSuccess: () => { toast.success("Released"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <div className="mt-2 flex flex-wrap gap-1 border-t pt-2" onClick={(e) => e.stopPropagation()}>
+      {SELF_STATUS_FLOW.map((s) => (
+        <button
+          key={s.value}
+          type="button"
+          disabled={statusMut.isPending || job.status === s.value}
+          onClick={(e) => { e.stopPropagation(); statusMut.mutate(s.value); }}
+          className={`text-[10px] px-2 py-0.5 rounded border ${
+            job.status === s.value
+              ? "bg-emerald-500/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 font-medium"
+              : "bg-background hover:bg-muted border-border"
+          }`}
+        >
+          {s.label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); releaseMut.mutate(); }}
+        className="ml-auto text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted"
+      >
+        Release
+      </button>
+    </div>
+  );
+}
+
