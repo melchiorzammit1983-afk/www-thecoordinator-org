@@ -806,3 +806,84 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     for (const m of (data ?? []) as { job_id: string }[]) acc[m.job_id] = (acc[m.job_id] ?? 0) + 1;
     return acc;
   });
+
+// ---------- TRIP LABELS ----------
+
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+
+export const listLabels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const { data, error } = await context.supabase.from("trip_labels")
+      .select("id, name, color, sort_order")
+      .eq("company_id", c.id)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as { id: string; name: string; color: string; sort_order: number }[];
+  });
+
+export const createLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      name: z.string().trim().min(1).max(60),
+      color: z.string().regex(HEX_COLOR).default("#3B82F6"),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: row, error } = await context.supabase.from("trip_labels").insert({
+      company_id: c.id, name: data.name, color: data.color,
+    }).select("id, name, color, sort_order").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const updateLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().trim().min(1).max(60).optional(),
+      color: z.string().regex(HEX_COLOR).optional(),
+      sort_order: z.number().int().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.color !== undefined) patch.color = data.color;
+    if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
+    const { error } = await context.supabase.from("trip_labels")
+      .update(patch).eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteLabel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { error } = await context.supabase.from("trip_labels")
+      .delete().eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const setJobLabels = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), label_ids: z.array(z.string().uuid()).max(20) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: job, error } = await context.supabase.from("jobs")
+      .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
+    if (error || !job) throw new Error("Job not found");
+    await syncJobLabels(context, c.id, data.job_id, data.label_ids);
+    return { ok: true };
+  });
