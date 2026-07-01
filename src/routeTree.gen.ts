@@ -24,6 +24,7 @@ import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './route
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorLabelsRouteImport } from './routes/_authenticated/coordinator.labels'
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
+import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
 import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
@@ -108,6 +109,12 @@ const AuthenticatedCoordinatorDriversRoute =
     path: '/drivers',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorCollaborateRoute =
+  AuthenticatedCoordinatorCollaborateRouteImport.update({
+    id: '/collaborate',
+    path: '/collaborate',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorCalendarRoute =
   AuthenticatedCoordinatorCalendarRouteImport.update({
     id: '/calendar',
@@ -137,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
@@ -154,6 +162,7 @@ export interface FileRoutesByTo {
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
@@ -175,6 +184,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/_authenticated/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/admin/feature-costs'
     | '/admin/ledger'
     | '/coordinator/calendar'
+    | '/coordinator/collaborate'
     | '/coordinator/drivers'
     | '/coordinator/labels'
     | '/coordinator/pending'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/admin/feature-costs'
     | '/admin/ledger'
     | '/coordinator/calendar'
+    | '/coordinator/collaborate'
     | '/coordinator/drivers'
     | '/coordinator/labels'
     | '/coordinator/pending'
@@ -233,6 +245,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
     | '/_authenticated/coordinator/calendar'
+    | '/_authenticated/coordinator/collaborate'
     | '/_authenticated/coordinator/drivers'
     | '/_authenticated/coordinator/labels'
     | '/_authenticated/coordinator/pending'
@@ -360,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorDriversRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/collaborate': {
+      id: '/_authenticated/coordinator/collaborate'
+      path: '/collaborate'
+      fullPath: '/coordinator/collaborate'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCollaborateRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/calendar': {
       id: '/_authenticated/coordinator/calendar'
       path: '/calendar'
@@ -401,6 +421,7 @@ const AuthenticatedAdminRouteWithChildren =
 
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
+  AuthenticatedCoordinatorCollaborateRoute: typeof AuthenticatedCoordinatorCollaborateRoute
   AuthenticatedCoordinatorDriversRoute: typeof AuthenticatedCoordinatorDriversRoute
   AuthenticatedCoordinatorLabelsRoute: typeof AuthenticatedCoordinatorLabelsRoute
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
@@ -412,6 +433,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
   {
     AuthenticatedCoordinatorCalendarRoute:
       AuthenticatedCoordinatorCalendarRoute,
+    AuthenticatedCoordinatorCollaborateRoute:
+      AuthenticatedCoordinatorCollaborateRoute,
     AuthenticatedCoordinatorDriversRoute: AuthenticatedCoordinatorDriversRoute,
     AuthenticatedCoordinatorLabelsRoute: AuthenticatedCoordinatorLabelsRoute,
     AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
