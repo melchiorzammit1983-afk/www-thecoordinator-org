@@ -1,9 +1,11 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { whoAmI } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,15 +23,6 @@ export const Route = createFileRoute("/auth")({
     ],
     links: [{ rel: "canonical", href: "https://transfersmt.lovable.app/auth" }],
   }),
-  beforeLoad: async () => {
-    if (typeof window === "undefined") return;
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) return;
-    const email = data.session.user.email?.toLowerCase();
-    if (email === "melchior.zammit@outlook.com") throw redirect({ to: "/admin" });
-    throw redirect({ to: "/coordinator" });
-  },
-
   component: AuthPage,
 });
 
@@ -39,6 +32,27 @@ const credsSchema = z.object({
 });
 
 function AuthPage() {
+  const navigate = useNavigate();
+  const whoAmIFn = useServerFn(whoAmI);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function redirectSignedInUser() {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session || cancelled) return;
+      try {
+        const identity = await whoAmIFn();
+        if (!cancelled) navigate({ to: identity?.isAdmin ? "/admin" : "/coordinator", replace: true });
+      } catch {
+        if (!cancelled) navigate({ to: "/coordinator", replace: true });
+      }
+    }
+    redirectSignedInUser();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, whoAmIFn]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
@@ -79,6 +93,7 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const whoAmIFn = useServerFn(whoAmI);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,8 +110,12 @@ function SignInForm() {
       return;
     }
     toast.success("Signed in");
-    const dest = parsed.data.email.toLowerCase() === "melchior.zammit@outlook.com" ? "/admin" : "/coordinator";
-    window.location.assign(dest);
+    try {
+      const identity = await whoAmIFn();
+      window.location.assign(identity?.isAdmin ? "/admin" : "/coordinator");
+    } catch {
+      window.location.assign("/coordinator");
+    }
   }
 
   return (
