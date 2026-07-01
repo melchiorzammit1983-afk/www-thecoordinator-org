@@ -65,6 +65,19 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
     mutationFn: (id: string) => revokeFn({ data: { id } }),
     onSuccess: () => { toast.success("Revoked"); qc.invalidateQueries({ queryKey: ["magic-links"] }); },
   });
+  const extendFn = useServerFn(extendMagicLink);
+  const extendMut = useMutation({
+    mutationFn: (v: { id: string; ttl_hours: number }) => extendFn({ data: v }),
+    onSuccess: () => { toast.success("Extended"); qc.invalidateQueries({ queryKey: ["magic-links"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  function promptExtend(id: string) {
+    const raw = prompt("Extend link by how many hours? (24 = 1 day, 168 = 7 days, 720 = 30 days, 8760 = 1 year)", "168");
+    if (!raw) return;
+    const hours = Math.max(1, Math.min(24 * 366, Number(raw) | 0));
+    if (!hours) return;
+    extendMut.mutate({ id, ttl_hours: hours });
+  }
 
   const rows = (data ?? []).filter((r) => r.kind === kind);
 
