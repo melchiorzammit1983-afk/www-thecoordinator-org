@@ -4,8 +4,50 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
 
+type FeatureName = "dispatch_partner";
+
+async function getAdminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
+async function chargeFeature(companyId: string, feature: FeatureName, jobId: string | null, note: string) {
+  const supabaseAdmin = await getAdminClient();
+  const { data: costRow, error: costError } = await supabaseAdmin
+    .from("feature_costs")
+    .select("points_cost")
+    .eq("feature_name", feature)
+    .maybeSingle();
+  if (costError) throw new Error(costError.message);
+  const cost = Number(costRow?.points_cost ?? 0);
+  const { data: company, error: companyError } = await supabaseAdmin
+    .from("companies")
+    .select("points_balance")
+    .eq("id", companyId)
+    .single();
+  if (companyError || !company) throw new Error("company_not_found");
+  const balance = Number(company.points_balance ?? 0);
+  if (cost > 0 && balance < cost) throw new Error("insufficient_points");
+  if (cost > 0) {
+    const { error: updateError } = await supabaseAdmin
+      .from("companies")
+      .update({ points_balance: balance - cost })
+      .eq("id", companyId);
+    if (updateError) throw new Error(updateError.message);
+  }
+  const { error: ledgerError } = await supabaseAdmin.from("points_ledger").insert({
+    company_id: companyId,
+    job_id: jobId,
+    feature_used: feature,
+    points_deducted: cost,
+    note,
+  });
+  if (ledgerError) throw new Error(ledgerError.message);
+}
+
 async function myCompany(ctx: Ctx) {
-  const { data, error } = await ctx.supabase
+  const supabaseAdmin = await getAdminClient();
+  const { data, error } = await supabaseAdmin
     .from("companies").select("id, name")
     .eq("owner_user_id", ctx.userId).maybeSingle();
   if (error) throw new Error(error.message);
@@ -41,9 +83,10 @@ export const createConnectionInvite = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const code = randCode(8);
     const expires_at = new Date(Date.now() + data.ttlDays * 86_400_000).toISOString();
-    const { data: row, error } = await context.supabase.from("connection_invites").insert({
+    const { data: row, error } = await supabaseAdmin.from("connection_invites").insert({
       code,
       owner_company_id: c.id,
       mode: data.mode,
@@ -58,7 +101,8 @@ export const listMyInvites = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
-    const { data, error } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
       .from("connection_invites").select("*")
       .eq("owner_company_id", c.id)
       .order("created_at", { ascending: false });
@@ -71,7 +115,8 @@ export const revokeInvite = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
-    const { error } = await context.supabase.from("connection_invites")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("connection_invites")
       .update({ expires_at: new Date().toISOString() })
       .eq("id", data.id).eq("owner_company_id", c.id);
     if (error) throw new Error(error.message);
@@ -83,7 +128,7 @@ export const redeemConnectionInvite = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ code: z.string().trim().min(4).max(32) }).parse(i))
   .handler(async ({ data, context }) => {
     const partner = await myCompany(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await getAdminClient();
     const { data: invite, error: iErr } = await supabaseAdmin
       .from("connection_invites").select("*")
       .eq("code", data.code.toUpperCase()).maybeSingle();
@@ -124,7 +169,7 @@ export const listConnections = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("coordinator_connections")
       .select("id, owner_company_id, partner_company_id, mode, status, permissions, accepted_at, revoked_at, created_at")
@@ -155,7 +200,8 @@ export const updateConnectionPermissions = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
-    const { error } = await context.supabase.from("coordinator_connections")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("coordinator_connections")
       .update({ permissions: data.permissions })
       .eq("id", data.id).eq("owner_company_id", c.id);
     if (error) throw new Error(error.message);
@@ -167,7 +213,8 @@ export const revokeConnection = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
-    const { error } = await context.supabase.from("coordinator_connections")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("coordinator_connections")
       .update({ status: "revoked", revoked_at: new Date().toISOString() })
       .eq("id", data.id)
       .or(`owner_company_id.eq.${c.id},partner_company_id.eq.${c.id}`);
@@ -188,22 +235,54 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await myCompany(context);
-    const { data: conn } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data: conn } = await supabaseAdmin
       .from("coordinator_connections").select("id, mode, status")
       .or(`and(owner_company_id.eq.${c.id},partner_company_id.eq.${data.partner_company_id}),and(owner_company_id.eq.${data.partner_company_id},partner_company_id.eq.${c.id})`)
       .eq("status", "active").maybeSingle();
     if (!conn) throw new Error("No active connection with that partner");
 
-    const { error: chErr } = await context.supabase.rpc("charge_feature", {
-      _company_id: c.id, _feature: "dispatch_partner", _job_id: data.job_id, _note: "Dispatch to partner",
-    });
-    if (chErr) throw new Error(chErr.message);
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job) throw new Error("Trip not found");
+    if ((job.executor_company_id ?? job.company_id) !== c.id) throw new Error("Only the current executor can dispatch this trip");
+    if (data.partner_company_id === c.id) throw new Error("Cannot dispatch to yourself");
+    const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
+    if (chain.includes(data.partner_company_id)) throw new Error("This dispatch would create a loop");
 
-    // RPC validates ownership, appends hop, updates chain (supports multi-hop)
-    const { error } = await context.supabase.rpc("dispatch_job_forward", {
-      _job_id: data.job_id, _to_company: data.partner_company_id, _note: data.note ?? "",
+    await chargeFeature(c.id, "dispatch_partner", data.job_id, "Dispatch to partner");
+
+    const { data: hops, error: hopReadError } = await supabaseAdmin
+      .from("job_dispatch_hops")
+      .select("hop_index")
+      .eq("job_id", data.job_id)
+      .order("hop_index", { ascending: false })
+      .limit(1);
+    if (hopReadError) throw new Error(hopReadError.message);
+    const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
+    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").insert({
+      job_id: data.job_id,
+      hop_index: nextIndex,
+      from_company_id: c.id,
+      to_company_id: data.partner_company_id,
+      status: "pending",
+      note: data.note ?? "",
     });
-    if (error) throw new Error(error.message);
+    if (hopError) throw new Error(hopError.message);
+    const { error: updateError } = await supabaseAdmin.from("jobs").update({
+      origin_company_id: job.origin_company_id ?? job.company_id,
+      executor_company_id: data.partner_company_id,
+      dispatch_status: "pending",
+      dispatched_at: new Date().toISOString(),
+      dispatch_decided_at: null,
+      dispatch_note: data.note ?? "",
+      dispatch_chain_company_ids: [...chain, data.partner_company_id],
+    }).eq("id", data.job_id);
+    if (updateError) throw new Error(updateError.message);
     return { ok: true };
   });
 
@@ -211,7 +290,8 @@ export const listIncomingDispatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
-    const { data, error } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
       .from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, vehicle, clientcompanyname, dispatch_status, dispatch_note, dispatched_at, origin_company_id, origin:origin_company_id(id,name), pax(id,name)")
       .eq("executor_company_id", c.id)
@@ -231,10 +311,53 @@ export const respondToDispatch = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("respond_dispatch", {
-      _job_id: data.job_id, _decision: data.decision, _note: data.note ?? "",
-    });
-    if (error) throw new Error(error.message);
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, dispatch_chain_company_ids")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job) throw new Error("Trip not found");
+    if (job.executor_company_id !== c.id) throw new Error("This dispatch is not waiting for your company");
+    const { data: hops, error: hopReadError } = await supabaseAdmin
+      .from("job_dispatch_hops")
+      .select("id, from_company_id")
+      .eq("job_id", data.job_id)
+      .eq("to_company_id", c.id)
+      .eq("status", "pending")
+      .order("hop_index", { ascending: false })
+      .limit(1);
+    if (hopReadError) throw new Error(hopReadError.message);
+    const hop = hops?.[0];
+    if (!hop) throw new Error("No pending dispatch found");
+    const decidedAt = new Date().toISOString();
+    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").update({
+      status: data.decision,
+      decided_at: decidedAt,
+      note: data.note ?? null,
+    }).eq("id", hop.id);
+    if (hopError) throw new Error(hopError.message);
+    if (data.decision === "accepted") {
+      const { error: updateError } = await supabaseAdmin.from("jobs").update({
+        company_id: c.id,
+        dispatch_status: "accepted",
+        dispatch_decided_at: decidedAt,
+        dispatch_note: data.note ?? null,
+      }).eq("id", data.job_id);
+      if (updateError) throw new Error(updateError.message);
+    } else {
+      const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
+      const { error: updateError } = await supabaseAdmin.from("jobs").update({
+        executor_company_id: hop.from_company_id,
+        dispatch_status: "rejected",
+        dispatch_decided_at: decidedAt,
+        dispatch_note: data.note ?? null,
+        dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
+      }).eq("id", data.job_id);
+      if (updateError) throw new Error(updateError.message);
+    }
     return { ok: true };
   });
 
@@ -243,7 +366,8 @@ export const listOutboundDispatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await myCompany(context);
-    const { data, error } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
       .from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, status, dispatch_status, dispatch_note, dispatched_at, executor_company_id, executor:executor_company_id(id,name), driver_id, drivers(name), pax(id,name), dispatch_chain_company_ids, origin_company_id")
       .contains("dispatch_chain_company_ids", [c.id])
@@ -258,16 +382,25 @@ export const listJobChain = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    const { data: hops, error } = await context.supabase
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, status, driver_id, drivers(name), executor:executor_company_id(id,name), origin:origin_company_id(id,name), dispatch_chain_company_ids")
+      .eq("id", data.job_id).maybeSingle();
+    const visible = !!job && (
+      job.company_id === c.id ||
+      job.executor_company_id === c.id ||
+      job.origin_company_id === c.id ||
+      (Array.isArray(job.dispatch_chain_company_ids) && job.dispatch_chain_company_ids.includes(c.id))
+    );
+    if (!visible) throw new Error("Trip not found");
+    const { data: hops, error } = await supabaseAdmin
       .from("job_dispatch_hops")
       .select("id, hop_index, from_company_id, to_company_id, status, note, dispatched_at, decided_at, from_company:from_company_id(id,name), to_company:to_company_id(id,name)")
       .eq("job_id", data.job_id)
       .order("hop_index", { ascending: true });
     if (error) throw new Error(error.message);
-    const { data: job } = await context.supabase
-      .from("jobs")
-      .select("id, executor_company_id, origin_company_id, status, driver_id, drivers(name), executor:executor_company_id(id,name), origin:origin_company_id(id,name)")
-      .eq("id", data.job_id).maybeSingle();
     return { hops: hops ?? [], job };
   });
 

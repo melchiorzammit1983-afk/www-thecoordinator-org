@@ -3,10 +3,26 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
+type FeatureName =
+  | "tracking"
+  | "bulkupload"
+  | "client_booking"
+  | "qr"
+  | "magic_link_driver"
+  | "magic_link_client"
+  | "split_job"
+  | "clone_job"
+  | "recurring_schedule"
+  | "dispatch_partner";
+
+async function getAdminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
 
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await getAdminClient();
     const { data: u } = await supabaseAdmin.auth.admin.getUserById(userId);
     const email = u.user?.email?.toLowerCase();
     if (!email) return false;
@@ -18,7 +34,7 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
 }
 
 async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const supabaseAdmin = await getAdminClient();
   const isAdmin = await checkIsAdmin(ctx.userId);
   if (isAdmin && companyIdOverride) {
     const { data, error } = await supabaseAdmin
@@ -42,7 +58,7 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
 export const getMyCompany = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("companies")
       .select("id, points_balance, name, status, access_end, require_client_company, custom_link")
@@ -65,15 +81,16 @@ export const getDashboardSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const todayIso = new Date().toISOString().slice(0, 10);
     const [{ count: pending }, { count: unassigned }, { count: todayJobs }, { count: driverCount }] = await Promise.all([
-      context.supabase.from("client_bookings").select("id", { count: "exact", head: true })
+      supabaseAdmin.from("client_bookings").select("id", { count: "exact", head: true })
         .eq("company_id", c.id).in("status", ["pending", "modification_pending"]),
-      context.supabase.from("jobs").select("id", { count: "exact", head: true })
+      supabaseAdmin.from("jobs").select("id", { count: "exact", head: true })
         .eq("company_id", c.id).is("driver_id", null),
-      context.supabase.from("jobs").select("id", { count: "exact", head: true })
+      supabaseAdmin.from("jobs").select("id", { count: "exact", head: true })
         .eq("company_id", c.id).eq("date", todayIso),
-      context.supabase.from("drivers").select("id", { count: "exact", head: true })
+      supabaseAdmin.from("drivers").select("id", { count: "exact", head: true })
         .eq("company_id", c.id),
     ]);
     return {
@@ -97,7 +114,8 @@ export const listJobs = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    let q = context.supabase
+    const supabaseAdmin = await getAdminClient();
+    let q = supabaseAdmin
       .from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
       .eq("company_id", c.id)
@@ -130,30 +148,55 @@ const jobInput = z.object({
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
   if (!labelIds) return;
+  const supabaseAdmin = await getAdminClient();
   // Verify labels belong to the same company
   let allowed: string[] = [];
   if (labelIds.length) {
-    const { data: rows } = await ctx.supabase.from("trip_labels")
+    const { data: rows } = await supabaseAdmin.from("trip_labels")
       .select("id").eq("company_id", companyId).in("id", labelIds);
     allowed = (rows ?? []).map((r: { id: string }) => r.id);
   }
-  await ctx.supabase.from("job_labels").delete().eq("job_id", jobId);
+  await supabaseAdmin.from("job_labels").delete().eq("job_id", jobId);
   if (allowed.length) {
-    await ctx.supabase.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
+    await supabaseAdmin.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
   }
 }
 
 async function chargeIfNeeded(
-  ctx: Ctx, companyId: string, feature: string, jobId: string | null, charged: Record<string, boolean>,
+  ctx: Ctx, companyId: string, feature: FeatureName, jobId: string | null, charged: Record<string, boolean>,
 ) {
   if (charged[feature]) return;
-  const { error } = await ctx.supabase.rpc("charge_feature", {
-    _company_id: companyId, _feature: feature, _job_id: jobId, _note: `Feature: ${feature}`,
-  });
-  if (error) {
-    if (String(error.message).includes("insufficient_points")) throw new Error("insufficient_points");
-    throw new Error(error.message);
+  const supabaseAdmin = await getAdminClient();
+  const { data: costRow, error: costError } = await supabaseAdmin
+    .from("feature_costs")
+    .select("points_cost")
+    .eq("feature_name", feature)
+    .maybeSingle();
+  if (costError) throw new Error(costError.message);
+  const cost = Number(costRow?.points_cost ?? 0);
+  const { data: company, error: companyError } = await supabaseAdmin
+    .from("companies")
+    .select("points_balance")
+    .eq("id", companyId)
+    .single();
+  if (companyError || !company) throw new Error("company_not_found");
+  const balance = Number(company.points_balance ?? 0);
+  if (cost > 0 && balance < cost) throw new Error("insufficient_points");
+  if (cost > 0) {
+    const { error: updateError } = await supabaseAdmin
+      .from("companies")
+      .update({ points_balance: balance - cost })
+      .eq("id", companyId);
+    if (updateError) throw new Error(updateError.message);
   }
+  const { error: ledgerError } = await supabaseAdmin.from("points_ledger").insert({
+    company_id: companyId,
+    job_id: jobId,
+    feature_used: feature,
+    points_deducted: cost,
+    note: `Feature: ${feature}`,
+  });
+  if (ledgerError) throw new Error(ledgerError.message);
   charged[feature] = true;
 }
 
@@ -375,7 +418,8 @@ export const listDrivers = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
-    const { data, error } = await context.supabase.from("drivers")
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("drivers")
       .select("id, name, phone, email, vehicle, status, seats_available, availability_note, profile_updated_at, kind, linked_company_id, linked_user_id")
       .eq("company_id", c.id).order("kind").order("name");
     if (error) throw new Error(error.message);
@@ -387,7 +431,7 @@ export const getMyDrivingLink = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     await syncVirtualDrivers(context, c.id);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await getAdminClient();
     const { data: self } = await supabaseAdmin.from("drivers")
       .select("id, name").eq("company_id", c.id).eq("kind", "coordinator").maybeSingle();
     if (!self) throw new Error("Could not create self driver");
@@ -842,7 +886,8 @@ export const movePaxToJob = createServerFn({ method: "POST" })
 
 async function assertJobInCompany(ctx: Ctx, jobId: string) {
   const c = await resolveCompany(ctx);
-  const { data, error } = await ctx.supabase.from("jobs")
+  const supabaseAdmin = await getAdminClient();
+  const { data, error } = await supabaseAdmin.from("jobs")
     .select("id, company_id").eq("id", jobId).eq("company_id", c.id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Job not found");
@@ -854,14 +899,15 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
-    const { data: rows, error } = await context.supabase.from("trip_messages")
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
       .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at")
       .eq("job_id", data.job_id).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
       r.sender_kind === "driver" && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
     if (unreadIds.length) {
-      await context.supabase.from("trip_messages")
+      await supabaseAdmin.from("trip_messages")
         .update({ read_by_coordinator_at: new Date().toISOString() })
         .in("id", unreadIds);
     }
@@ -875,9 +921,10 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { company } = await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await context.supabase.auth.getUser();
     const label = userRow?.user?.email ?? "Coordinator";
-    const { error } = await context.supabase.from("trip_messages").insert({
+    const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: company.id,
       sender_kind: "coordinator",
@@ -892,7 +939,8 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
-    const { data, error } = await context.supabase.from("trip_messages")
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("trip_messages")
       .select("job_id").eq("company_id", c.id).eq("sender_kind", "driver").is("read_by_coordinator_at", null);
     if (error) throw new Error(error.message);
     const acc: Record<string, number> = {};
