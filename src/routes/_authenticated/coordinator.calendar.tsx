@@ -225,7 +225,9 @@ type CardCtx = {
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
   unread: Record<string, number>;
+  highlightId?: string | null;
 };
+
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
 
