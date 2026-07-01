@@ -591,6 +591,7 @@ const bulkTripInput = z.object({
     clientcompanyname: z.string().trim().max(200).optional().default(""),
     pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   })).min(1).max(50),
+  label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
 
 export const createJobsBulk = createServerFn({ method: "POST" })
@@ -623,6 +624,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         const { error: pErr } = await context.supabase.from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
+      await syncJobLabels(context, c.id, job.id, data.label_ids);
     }
     return { created };
   });
