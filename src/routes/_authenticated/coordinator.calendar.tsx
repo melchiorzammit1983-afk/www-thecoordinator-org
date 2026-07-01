@@ -15,7 +15,8 @@ import {
 } from "@/lib/collab.functions";
 
 import {
-  listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
+  listJobs, listAssignableTargets, assignDriver, assignSelf, unassignSelf,
+  updateJobStatus, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
