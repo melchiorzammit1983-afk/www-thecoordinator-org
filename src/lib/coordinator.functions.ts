@@ -135,7 +135,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     let q = supabaseAdmin
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
@@ -821,6 +821,12 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!key) return { checked: 0, updated: 0, configured: false };
 
+    const fmt = (iso: string | null) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+    };
+
     let updated = 0;
     for (const j of jobs ?? []) {
       const code = (j.from_flight || j.to_flight || "").toUpperCase();
@@ -835,16 +841,37 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
         const status = String(f.flight_status ?? "").toLowerCase(); // scheduled|active|landed|cancelled|incident|diverted
         const dep = f.departure ?? {};
         const arr = f.arrival ?? {};
-        const delayMin = Number(dep.delay ?? arr.delay ?? 0) || 0;
+        // from_flight = pax arriving before pickup → use arrival; to_flight = drop-off → use departure
+        const side: any = j.from_flight ? arr : dep;
+        const scheduledIso: string | null = side?.scheduled ?? null;
+        const estimatedIso: string | null = side?.estimated ?? side?.actual ?? null;
+        const delayMin = Number(side?.delay ?? dep.delay ?? arr.delay ?? 0) || 0;
+
+        let mismatch = false;
+        if (scheduledIso && j.pickup_at) {
+          const s = new Date(scheduledIso).getTime();
+          const p = new Date(j.pickup_at).getTime();
+          if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) mismatch = true;
+        }
+
+        const newTime = fmt(estimatedIso) || fmt(scheduledIso);
+        const pickTime = fmt(j.pickup_at);
         const mapped =
           status === "cancelled" ? "cancelled" :
+          mismatch ? "time_mismatch" :
           status === "landed" ? "landed" :
           delayMin >= 15 ? "delayed" : status || "unknown";
-        const note = delayMin ? `Delayed ${delayMin} min` : status;
+        const note =
+          mapped === "cancelled" ? "CANCELLED" :
+          mapped === "time_mismatch" ? `Flight ${newTime || "?"} vs pickup ${pickTime || "?"}` :
+          mapped === "delayed" ? `New time ${newTime || "?"}${delayMin ? ` (+${delayMin}m)` : ""}` :
+          status;
         await supabaseAdmin.from("jobs").update({
           flight_status: mapped,
           flight_status_note: note,
           flight_status_updated_at: new Date().toISOString(),
+          flight_scheduled_at: scheduledIso,
+          flight_estimated_at: estimatedIso,
         }).eq("id", j.id).eq("company_id", c.id);
         updated++;
       } catch { /* ignore per-flight errors */ }
