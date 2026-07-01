@@ -64,6 +64,9 @@ type Job = {
   drivers?: { name: string } | null;
   pax?: { id: string; name: string }[];
   labels?: TLabel[];
+  external?: boolean;
+  executor_name?: string | null;
+  external_driver_name?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
