@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useFeatureCost, useMyCompany } from "@/hooks/use-coordinator";
+import { LabelPicker } from "@/components/coordinator/LabelPicker";
 import { Coins, Users, PencilLine } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
