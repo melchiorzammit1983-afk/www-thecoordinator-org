@@ -198,8 +198,10 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
   )
   .handler(async ({ data }) => {
-    const supabase = publicClient();
-    const { error } = await supabase.rpc("driver_accept_job", { _token: data.token, _job_id: data.job_id });
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("driver_accept_job", { _token: data.token, _job_id: data.job_id });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -209,11 +211,14 @@ export const driverApproveDeletion = createServerFn({ method: "POST" })
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
   )
   .handler(async ({ data }) => {
-    const supabase = publicClient();
-    const { error } = await supabase.rpc("driver_approve_deletion", { _token: data.token, _job_id: data.job_id });
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("driver_approve_deletion", { _token: data.token, _job_id: data.job_id });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const getClientBookings = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ token: z.string().min(8).max(128) }).parse(i))
