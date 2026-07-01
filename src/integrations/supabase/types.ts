@@ -666,6 +666,8 @@ export type Database = {
           driver_hidden_at: string | null
           driver_id: string | null
           executor_company_id: string | null
+          flight_estimated_at: string | null
+          flight_scheduled_at: string | null
           flight_status: string | null
           flight_status_note: string | null
           flight_status_updated_at: string | null
@@ -705,6 +707,8 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           executor_company_id?: string | null
+          flight_estimated_at?: string | null
+          flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
@@ -744,6 +748,8 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           executor_company_id?: string | null
+          flight_estimated_at?: string | null
+          flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
