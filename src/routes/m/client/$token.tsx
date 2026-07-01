@@ -40,7 +40,7 @@ function ClientPortal() {
       <header className="border-b bg-background px-4 py-4">
         <div className="max-w-3xl mx-auto">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">Your bookings</div>
-          <div className="text-xl font-semibold">{data.link.subject_label ?? "Client portal"}</div>
+          <h1 className="text-xl font-semibold">{data.link.subject_label ?? "Client portal"}</h1>
         </div>
       </header>
       <main className="max-w-3xl mx-auto p-4 space-y-3">
