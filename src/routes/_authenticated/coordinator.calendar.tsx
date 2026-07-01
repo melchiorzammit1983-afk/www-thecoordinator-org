@@ -47,6 +47,7 @@ function CalendarPage() {
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [openNew, setOpenNew] = useState(false);
   const [editJob, setEditJob] = useState<Job | null>(null);
+  const [paxJob, setPaxJob] = useState<Job | null>(null);
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
