@@ -84,12 +84,12 @@ function IncomingPage() {
           {(outbound.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nothing dispatched yet.</p>}
           {(outbound.data ?? []).map((j: any) => {
             const depth = (j.dispatch_chain_company_ids ?? []).length;
-            const open = expanded[j.id];
+            const open = !collapsed[j.id];
             return (
               <div key={j.id} className="border rounded-md p-3 space-y-2">
                 <button
                   type="button"
-                  onClick={() => setExpanded((s) => ({ ...s, [j.id]: !s[j.id] }))}
+                  onClick={() => setCollapsed((s: Record<string, boolean>) => ({ ...s, [j.id]: !s[j.id] ? true : false }))}
                   className="flex items-center gap-2 flex-wrap w-full text-left"
                 >
                   {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
