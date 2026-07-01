@@ -132,21 +132,62 @@ export const listJobs = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    let q = supabaseAdmin
-      .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))")
-      .eq("company_id", c.id)
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name), job_labels(trip_labels(id,name,color))";
+
+    let mineQ = supabaseAdmin.from("jobs").select(cols)
+      .eq("company_id", c.id).order("pickup_at", { ascending: true });
+    if (data.from) mineQ = mineQ.gte("date", data.from);
+    if (data.to) mineQ = mineQ.lte("date", data.to);
+
+    let outQ = supabaseAdmin.from("jobs").select(cols + ", executor:executor_company_id(id,name)")
+      .contains("dispatch_chain_company_ids", [c.id])
+      .neq("company_id", c.id)
+      .not("status", "in", "(completed,cancelled)")
       .order("pickup_at", { ascending: true });
-    if (data.from) q = q.gte("date", data.from);
-    if (data.to) q = q.lte("date", data.to);
-    const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
-    return (rows ?? []).map((r: any) => ({
+    if (data.from) outQ = outQ.gte("date", data.from);
+    if (data.to) outQ = outQ.lte("date", data.to);
+
+    const [mineRes, outRes, partnersRes] = await Promise.all([
+      mineQ,
+      outQ,
+      supabaseAdmin.from("drivers")
+        .select("id, linked_company_id")
+        .eq("company_id", c.id).eq("kind", "partner"),
+    ]);
+    if (mineRes.error) throw new Error(mineRes.error.message);
+    if (outRes.error) throw new Error(outRes.error.message);
+
+    const partnerMap: Record<string, string> = {};
+    for (const d of partnersRes.data ?? []) {
+      if (d.linked_company_id) partnerMap[d.linked_company_id] = d.id;
+    }
+
+    const mine = (mineRes.data ?? []).map((r: any) => ({
       ...r,
+      external: false,
       labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
     }));
+    const out = (outRes.data ?? []).map((r: any) => {
+      const executorName = r.executor?.name ?? "Partner";
+      const realDriver = r.drivers?.name ?? null;
+      return {
+        ...r,
+        external: true,
+        executor_name: executorName,
+        external_driver_name: realDriver,
+        // route into partner's virtual driver lane on my board
+        driver_id: partnerMap[r.executor_company_id ?? ""] ?? null,
+        drivers: realDriver
+          ? { name: `${executorName} → ${realDriver}` }
+          : { name: executorName },
+        labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
+      };
+    });
+    return [...mine, ...out];
   });
+
 
 const jobInput = z.object({
   from_location: z.string().trim().min(1).max(255),

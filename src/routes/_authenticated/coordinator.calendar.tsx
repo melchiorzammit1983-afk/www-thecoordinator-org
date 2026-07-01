@@ -64,6 +64,9 @@ type Job = {
   drivers?: { name: string } | null;
   pax?: { id: string; name: string }[];
   labels?: TLabel[];
+  external?: boolean;
+  executor_name?: string | null;
+  external_driver_name?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -465,11 +468,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     >
       <LabelStripe labels={labels} />
 
-      {/* Tap area — opens edit */}
+      {/* Tap area — opens edit (disabled for partner-owned trips) */}
       <button
         type="button"
-        onClick={() => ctx.onEdit(job)}
+        onClick={() => { if (!job.external) ctx.onEdit(job); }}
         className="w-full text-left"
+        disabled={!!job.external}
       >
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
@@ -511,6 +515,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
+              {job.external && (
+                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
+                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
+                </Badge>
+              )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
           </div>
