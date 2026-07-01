@@ -522,12 +522,25 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {(job.status && job.status !== "pending" && job.status !== "active") && (
+              <div className="mt-1.5">
+                <TripProgress status={job.status} compact />
+              </div>
+            )}
             <div className="flex flex-wrap gap-1 mt-1">
-              {paxCount > 0 && (
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  <Users className="h-3 w-3" /> {paxCount}
-                </Badge>
-              )}
+              {paxCount > 0 && (() => {
+                const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
+                const allAboard = onboard === paxCount;
+                return (
+                  <Badge
+                    variant={allAboard ? "default" : "secondary"}
+                    className={`text-[10px] gap-1 ${allAboard ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+                  >
+                    <Users className="h-3 w-3" /> {onboard > 0 ? `${onboard}/${paxCount}` : paxCount}
+                    {allAboard && " ✓"}
+                  </Badge>
+                );
+              })()}
               {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
