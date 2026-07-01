@@ -1,89 +1,68 @@
+## Goal
+Make the transport app much more reliable and safe by fixing the current backend permission failures, security scan issues, noisy UI warnings, and fragile mobile/runtime paths, then testing the important dashboards and portals.
 
-## Coordinator Statement / Report Builder
+## What I found from the audit
+- **Current hard error:** `checkFlightStatus` in `src/lib/coordinator.functions.ts` still uses the signed-in user database client, which triggers restricted backend policies and causes `permission denied for function company_of`.
+- **Same risk in many coordinator actions:** `createJob`, `updateJob`, assign/delete/split trips, bookings, magic links, labels, statements, pax moves, and flight checks still use `context.supabase` after resolving the company. Those calls can trigger restricted policy functions like `company_of`, `job_in_my_chain`, and `is_company_owner`.
+- **Security scan issues remain:** security-definer function execute warnings still exist, and there is one important privilege-escalation finding: partner companies may be able to update `coordinator_connections.permissions` directly through backend policies.
+- **Public token flow can be safer:** driver/client magic-link server functions still rely on database RPCs for token lookup / driver accept / deletion approval. These can be replaced with server-side validated direct logic so sensitive SQL functions do not need to be executable by public users.
+- **UI warning noise:** console shows missing dialog descriptions; several dialogs still likely need `DialogDescription` for accessibility and clean logs.
+- **Performance is healthy:** database health is good; slowest query is low latency, so no urgent performance rewrite is needed.
 
-A new page under the coordinator sidebar — **Statements** (`/coordinator/statements`) — where the coordinator builds a detailed trip statement, filters the data, picks which columns to include, previews it in-page, and exports it as CSV or XLSX (and prints to PDF via the browser).
+## Implementation plan
 
-### 1. Data scope
+### 1. Stop coordinator permission-denied errors
+- Refactor `src/lib/coordinator.functions.ts` so coordinator server functions consistently use the trusted server database client **after** `resolveCompany()` verifies the user/company.
+- Replace remaining risky `context.supabase.from(...)` calls in coordinator operations with server-side queries plus explicit company checks.
+- Keep user authorization manual and strict:
+  - coordinator can only act on their own company or visible dispatch chain records
+  - admin override only through existing admin allow-list validation
+  - public/driver/client portals still require valid magic tokens
 
-One row per trip (job) visible to the coordinator's company (own jobs + jobs where their company is anywhere in the dispatch chain, respecting existing RLS). Optional expansions:
+### 2. Remove public dependency on sensitive SQL RPC functions
+- In `src/lib/coordinator-public.functions.ts`, replace:
+  - `lookup_magic_link` RPC with direct server-side token lookup using the trusted server client
+  - `driver_accept_job` RPC with direct validated job update
+  - `driver_approve_deletion` RPC with direct validated deletion approval
+- Preserve all existing token checks: kind, expiry, revoked status, company match, and driver match.
 
-- **Per-passenger rows** (one row per pax on the trip) — toggle.
-- **Include dispatch chain hops** as an extra sub-table under each trip in the preview, and as an extra `Chain` column (A → B → C with status/timestamps) in the flat export.
+### 3. Fix security findings safely
+- Add a database migration to:
+  - revoke public/signed-in execute access from sensitive security-definer functions
+  - lock down `coordinator_connections` updates so partners cannot grant themselves permissions or change connection mode
+  - keep app functionality working through authorized server functions
+- Re-run the security scan/linter.
+- Mark only the fixed findings as fixed with the security tool after verification.
 
-### 2. Filters (all optional, combinable)
+### 4. Clean UI/runtime warnings
+- Add missing `DialogDescription` to dialogs that currently trigger Radix accessibility warnings.
+- Check key mobile screens for overflow and unreadable layouts:
+  - coordinator drivers
+  - dispatch board
+  - admin dashboard tabs
+  - driver manifest
+  - client portal
 
-- Date range (pickup date, from / to)
-- Status (multi-select: pending, assigned, accepted, en_route, arrived, in_progress, completed, cancelled)
-- Payment status (paid / pending / unpaid)
-- Company scope: own only / include partner (chain) trips / specific partner company (multi-select from connections)
-- Driver (multi-select, incl. "me" and partner virtual drivers) + "Unassigned"
-- Label (multi-select from trip_labels)
-- Flight number (text, contains)
-- Flight status (on-time / delayed / cancelled / any)
-- From / To location (text, contains)
-- Passenger name (text, contains — matches pax.name/surname)
-- Room number (text)
-- Free-text search (name, flight, from, to, room, notes)
-- Has unread chat messages (yes/no)
-- Deletion-requested only (yes/no)
+### 5. Add route-level resilience where missing
+- Ensure critical routes have graceful error states instead of blank/crashed screens:
+  - coordinator dashboard pages
+  - admin pages
+  - driver magic-link portal
+  - client magic-link portal
+- Error screens will offer retry/navigation, not expose technical backend details.
 
-Filter state lives in the URL via `validateSearch` so statements are shareable/reloadable.
+### 6. Verify with tests and live checks
+- Use Playwright against the running app to open and inspect:
+  - landing page
+  - auth/admin auth pages
+  - coordinator drivers page
+  - coordinator dispatch board
+  - driver/client token routes where available
+- Check server logs after changes for:
+  - no `permission denied for function company_of/is_admin/job_in_my_chain/is_company_owner`
+  - no client runtime crashes
+  - reduced/no dialog accessibility warnings
+- Run targeted app checks and backend security/linter checks.
 
-### 3. Column picker
-
-Checkbox list, grouped, with a "Select all / Reset to defaults" control. Ordering via drag handles.
-
-- **Trip**: Date, Pickup time, Status, Payment status, Label(s), Notes, Created at
-- **Route**: From, To, Flight number, Flight status, Airline, Scheduled dep/arr, Actual dep/arr
-- **People**: Driver name, Driver phone, Driver vehicle, Passenger count, Passenger names, Room numbers
-- **Chain**: Origin company, Executor company, Full chain (A → B → C), Hop count, Dispatch status
-- **Ops**: Accepted at, En route at, Arrived at, Completed at, Deletion requested at
-- **Costs**: Points charged for this trip (from points_ledger)
-
-Defaults: Date, Pickup time, From, To, Flight, Driver, Pax count, Status, Payment status.
-
-### 4. Preview + export
-
-- Live preview table (sticky header, virtualized if >200 rows) with the selected columns and filters applied.
-- Header shows: company name, generated-at timestamp, active filters as chips, row count, totals row (trips, pax, points).
-- Actions: **Export CSV**, **Export XLSX**, **Print / Save PDF** (uses browser print with a print-only stylesheet), **Copy link** (URL with filters).
-- File name pattern: `statement_{companyslug}_{yyyy-mm-dd}_{yyyy-mm-dd}.csv`.
-
-### 5. Sidebar entry
-
-Add **Statements** (icon: `FileText`) between "Labels" and "Collaborate" in `src/routes/_authenticated/coordinator.tsx` NAV.
-
-### Technical details
-
-- New route: `src/routes/_authenticated/coordinator.statements.tsx` with `validateSearch` (zod) for all filter fields + selected columns array + row-mode (`trip` | `pax`).
-- New server fn `buildStatement` in `src/lib/coordinator.functions.ts`:
-  - `.middleware([requireSupabaseAuth])`, input = filter object + `rowMode` + `includeChain`.
-  - Resolves caller company via existing `resolveCompany`.
-  - Queries `jobs` with the same RLS the coordinator already has (own + chain via existing policies), joins `drivers`, `job_labels → trip_labels`, `pax`, `job_dispatch_hops`, `companies` (for origin/executor/chain names via `supabaseAdmin` for name lookup only, matching the pattern already used in `listConnections`), and `points_ledger` (sum per job).
-  - Applies filters server-side; returns plain DTO array (SSR-safe).
-  - Hard cap 5000 rows; response includes `truncated: boolean`.
-- Client: TanStack Query `queryKey: ["statement", filters]`; preview uses `useSuspenseQuery`.
-- CSV export: build string in-browser from DTO, `Blob` + `<a download>`.
-- XLSX export: add `xlsx` (SheetJS `xlsx` package, pure-JS, Worker-safe) via `bun add xlsx`; build workbook client-side.
-- PDF: no dependency — dedicated `@media print` block hides sidebar/header, prints preview only.
-- Column picker persists last selection in `localStorage` under `statement:columns:v1`.
-- No schema changes required. No new tables, no migrations.
-
-```text
-Sidebar → Statements
-┌─ Filters (collapsible) ────────────────┐  ┌─ Columns ─────────┐
-│ Date  Status  Payment  Company  Driver │  │ ☑ Date            │
-│ Label Flight  From     To       Pax    │  │ ☑ Time  ⋮         │
-│ Search…                                │  │ ☑ From  ⋮         │
-└────────────────────────────────────────┘  │ ☐ Chain           │
-[ Reset ] [ Copy link ]  Rows: 128         └───────────────────┘
-[ Export CSV ] [ Export XLSX ] [ Print / PDF ]
-─── Preview ───────────────────────────────────────────────────
-| Date | Time | From | To | Flight | Driver | Pax | Status |
-```
-
-### Out of scope (call out, not building)
-
-- Scheduled/emailed statements.
-- Aggregations beyond totals row (charts, per-driver summaries) — can follow later.
-- Editing trips from the statement view — read-only.
+## Notes
+- I can make the app significantly more robust, but no app can be made literally “no errors possible”; the focus will be removing known failure classes, adding safe fallbacks, and verifying the main workflows.
