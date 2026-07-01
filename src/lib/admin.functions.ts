@@ -225,3 +225,64 @@ export const whoAmI = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return { userId: context.userId, isAdmin: !!data };
   });
+
+// ---------- COORDINATOR PROVISIONING ----------
+
+export const createCoordinator = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        company_id: z.string().uuid(),
+        email: z.string().trim().email().max(255),
+        password: z.string().min(8).max(128),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const email = data.email.toLowerCase();
+
+    // Find or create the auth user with password, email pre-confirmed.
+    let userId: string | null = null;
+    const { data: created, error: cErr } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: data.password,
+      email_confirm: true,
+    });
+    if (cErr) {
+      const msg = cErr.message?.toLowerCase() ?? "";
+      if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+        // Look up existing user and update the password.
+        const { data: list, error: lErr } = await supabaseAdmin.auth.admin.listUsers({
+          page: 1,
+          perPage: 200,
+        });
+        if (lErr) throw new Error(lErr.message);
+        const existing = list.users.find((u) => u.email?.toLowerCase() === email);
+        if (!existing) throw new Error("User exists but could not be located");
+        const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+          password: data.password,
+          email_confirm: true,
+        });
+        if (uErr) throw new Error(uErr.message);
+        userId = existing.id;
+      } else {
+        throw new Error(cErr.message);
+      }
+    } else {
+      userId = created.user?.id ?? null;
+    }
+    if (!userId) throw new Error("Could not resolve coordinator user id");
+
+    // Assign as the company's coordinator (owner_user_id).
+    const { error: aErr } = await supabaseAdmin
+      .from("companies")
+      .update({ owner_user_id: userId })
+      .eq("id", data.company_id);
+    if (aErr) throw new Error(aErr.message);
+
+    return { ok: true, user_id: userId, email };
+  });
