@@ -498,7 +498,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             )}
             {delayed && (
               <div className="text-[11px] font-medium text-destructive mt-0.5 truncate">
-                ✈ {flightCode} {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
+                ✈ {flightCode} {flightMsg}
               </div>
             )}
             <div className="flex flex-wrap gap-1 mt-1">
