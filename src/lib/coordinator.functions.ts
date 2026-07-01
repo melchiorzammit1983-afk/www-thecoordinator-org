@@ -197,6 +197,7 @@ export const updateJob = createServerFn({ method: "POST" })
       points_charged: charged,
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
+    await syncJobLabels(context, c.id, data.id, data.label_ids);
     return { ok: true };
   });
 
