@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2 } 
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
+  checkFlightStatus,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,11 @@ type Job = {
   from_location: string; to_location: string;
   date: string; time: string; pickup_at: string | null;
   flightorship: string | null;
+  from_flight: string | null;
+  to_flight: string | null;
+  flight_status: string | null;
+  flight_status_note: string | null;
+  flight_status_updated_at: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   status: string;
   driver_id: string | null;
@@ -76,6 +82,20 @@ function CalendarPage() {
   });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  // Poll live flight statuses every 3 min for jobs with a flight in view.
+  const flightFn = useServerFn(checkFlightStatus);
+  useEffect(() => {
+    const hasFlights = (jobs ?? []).some((j) => j.from_flight || j.to_flight);
+    if (!hasFlights) return;
+    let cancelled = false;
+    const run = async () => {
+      try { await flightFn(); if (!cancelled) refetch(); } catch { /* ignore */ }
+    };
+    run();
+    const id = setInterval(run, 180_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [jobs, flightFn, refetch]);
 
   function onDragEnd(e: DragEndEvent) {
     const jobId = String(e.active.id);
@@ -208,9 +228,13 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
+  const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
+  const cardClass = delayed
+    ? "rounded-md border-2 border-destructive bg-destructive/10 p-2 shadow-sm hover:shadow transition-shadow"
+    : "rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow";
+  const flightCode = job.from_flight || job.to_flight || job.flightorship;
   return (
-    <div ref={setNodeRef} style={style}
-      className="rounded-md border bg-background p-2 shadow-sm hover:shadow transition-shadow">
+    <div ref={setNodeRef} style={style} className={cardClass}>
       <div className="flex items-start gap-2">
         <button className="text-muted-foreground touch-none" {...attributes} {...listeners}>
           <GripVertical className="h-4 w-4" />
@@ -220,6 +244,11 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
           <div className="text-sm font-medium truncate">{job.from_location} → {job.to_location}</div>
           {job.clientcompanyname && <div className="text-xs text-muted-foreground truncate">{job.clientcompanyname}</div>}
           {driverName && <div className="text-xs mt-1">👤 {driverName}</div>}
+          {delayed && (
+            <div className="text-[11px] font-medium text-destructive mt-1">
+              ✈ {flightCode} {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
+            </div>
+          )}
           <div className="flex gap-1 mt-1 flex-wrap">
             {paxCount > 0 && (
               <button
@@ -231,7 +260,7 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             )}
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
             {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
-            {job.flightorship && <Badge variant="secondary" className="text-[10px]">{job.flightorship}</Badge>}
+            {flightCode && !delayed && <Badge variant="secondary" className="text-[10px]">✈ {flightCode}</Badge>}
             {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
             {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
           </div>
