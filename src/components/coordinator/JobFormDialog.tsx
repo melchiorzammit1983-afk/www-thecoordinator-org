@@ -63,14 +63,15 @@ export function JobFormDialog({
   const balance = company?.points_balance ?? 0;
 
   const mut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const payload = {
         from_location: from, to_location: to, date, time,
         flightorship: flight, clientcompanyname: client, vehicle,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
       };
-      return job ? updateFn({ data: { id: job.id, ...payload } }) : createFn({ data: payload });
+      if (job) await updateFn({ data: { id: job.id, ...payload } });
+      else await createFn({ data: payload });
     },
     onSuccess: () => {
       toast.success(job ? "Trip updated" : "Trip created");
