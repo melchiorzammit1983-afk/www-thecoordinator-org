@@ -168,7 +168,9 @@ export const updateJob = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("jobs").update({
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: data.time, pickup_at,
-      flightorship: data.flightorship || null,
+      flightorship: data.flightorship || data.from_flight || data.to_flight || null,
+      from_flight: (data.from_flight || "").toUpperCase() || null,
+      to_flight: (data.to_flight || "").toUpperCase() || null,
       clientcompanyname: data.clientcompanyname || null,
       qr_strict_mode: data.qr_strict_mode, tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null, driver_id: data.driver_id || null,
