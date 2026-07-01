@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -47,18 +46,11 @@ function AuthPage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>Access</CardTitle>
-            <CardDescription>Sign in or create your account</CardDescription>
+            <CardTitle>Sign in</CardTitle>
+            <CardDescription>Use the credentials provided by your administrator</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="signin">
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="signin">Sign in</TabsTrigger>
-                <TabsTrigger value="signup">Sign up</TabsTrigger>
-              </TabsList>
-              <TabsContent value="signin"><SignInForm /></TabsContent>
-              <TabsContent value="signup"><SignUpForm /></TabsContent>
-            </Tabs>
+            <SignInForm />
           </CardContent>
         </Card>
         <p className="text-xs text-muted-foreground text-center mt-6">
@@ -89,7 +81,8 @@ function SignInForm() {
       return;
     }
     toast.success("Signed in");
-    window.location.assign("/admin");
+    const dest = parsed.data.email.toLowerCase() === "melchior.zammit@outlook.com" ? "/admin" : "/coordinator";
+    window.location.assign(dest);
   }
 
   return (
@@ -109,45 +102,3 @@ function SignInForm() {
   );
 }
 
-function SignUpForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const parsed = credsSchema.safeParse({ email, password });
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0].message);
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      ...parsed.data,
-      options: { emailRedirectTo: window.location.origin + "/admin" },
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Account created. Check your email if confirmation is required.");
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-4 pt-4">
-      <div className="space-y-2">
-        <Label htmlFor="su-email">Email</Label>
-        <Input id="su-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="su-password">Password</Label>
-        <Input id="su-password" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Creating…" : "Create account"}
-      </Button>
-    </form>
-  );
-}

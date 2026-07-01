@@ -13,6 +13,7 @@ import {
   setAccessEnd,
   regenerateCustomLink,
   setRequireClientCompany,
+  createCoordinator,
 } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,6 +168,7 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
           </Select>
           <TopUpDialog company={c} onDone={invalidate} />
           <AccessDialog company={c} onDone={invalidate} />
+          <CoordinatorDialog company={c} onDone={invalidate} />
         </div>
       </TableCell>
     </TableRow>
@@ -287,6 +289,67 @@ function AccessDialog({ company, onDone }: { company: CompanyRow; onDone: () => 
           </div>
           <DialogFooter>
             <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : "Save"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState(company.email ?? "");
+  const [password, setPassword] = useState("");
+  const fn = useServerFn(createCoordinator);
+  const mut = useMutation({
+    mutationFn: () => fn({ data: { company_id: company.id, email, password } }),
+    onSuccess: () => {
+      toast.success("Coordinator ready. Share the credentials.");
+      setOpen(false); setPassword("");
+      onDone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function generate() {
+    const bytes = new Uint8Array(9);
+    crypto.getRandomValues(bytes);
+    const pw = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "").slice(0, 12);
+    setPassword(pw);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">Coordinator</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Set coordinator — {company.name}</DialogTitle>
+          <DialogDescription>
+            Creates (or updates) the coordinator account with the password below and assigns it to this company. Email is auto-confirmed — share the credentials directly.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="co-email">Coordinator email</Label>
+            <Input id="co-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={255} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="co-password">Password</Label>
+            <div className="flex gap-2">
+              <Input id="co-password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} maxLength={128} />
+              <Button type="button" variant="outline" onClick={generate}>Generate</Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => { if (password) { navigator.clipboard.writeText(password); toast.success("Copied"); } }}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Minimum 8 characters. Share this with the coordinator over a secure channel.</p>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={mut.isPending || !password || !email}>
+              {mut.isPending ? "Saving…" : "Save & assign"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
