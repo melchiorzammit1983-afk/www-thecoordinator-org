@@ -162,6 +162,7 @@ function CalendarPage() {
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
+    onOpenDetails: setDetailsJob,
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
