@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk } from "@/lib/coordinator.functions";
-import { parseTrips } from "@/lib/parse-trips";
+import { parseTrips, type ParsedTrip } from "@/lib/parse-trips";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useFeatureCost, useMyCompany } from "@/hooks/use-coordinator";
-import { Coins, Users } from "lucide-react";
+import { Coins, Users, PencilLine } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -34,6 +34,14 @@ type Job = {
   clientcompanyname: string | null;
 };
 
+type Prefill = Partial<{
+  from_location: string; to_location: string;
+  date: string; time: string;
+  from_flight: string; to_flight: string;
+  clientcompanyname: string;
+  pax: string[];
+}>;
+
 export function JobFormDialog({
   open, onOpenChange, drivers, job, onSaved,
 }: {
@@ -45,7 +53,19 @@ export function JobFormDialog({
 }) {
   const isEdit = !!job;
   const [tab, setTab] = useState<"manual" | "bulk">("manual");
-  useEffect(() => { if (open) setTab("manual"); }, [open]);
+  const [prefill, setPrefill] = useState<Prefill | undefined>(undefined);
+  useEffect(() => { if (open) { setTab("manual"); setPrefill(undefined); } }, [open]);
+
+  const handleComplete = (t: ParsedTrip) => {
+    setPrefill({
+      from_location: t.from_location, to_location: t.to_location,
+      date: t.date, time: t.time,
+      from_flight: t.from_flight, to_flight: t.to_flight,
+      clientcompanyname: t.clientcompanyname,
+      pax: t.pax,
+    });
+    setTab("manual");
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -63,10 +83,10 @@ export function JobFormDialog({
               <TabsTrigger value="bulk">Paste bulk</TabsTrigger>
             </TabsList>
             <TabsContent value="manual" className="mt-3">
-              <ManualForm drivers={drivers} onSaved={onSaved} />
+              <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
             </TabsContent>
             <TabsContent value="bulk" className="mt-3">
-              <BulkForm onSaved={onSaved} />
+              <BulkForm onSaved={onSaved} onComplete={handleComplete} />
             </TabsContent>
           </Tabs>
         )}
@@ -76,20 +96,20 @@ export function JobFormDialog({
 }
 
 function ManualForm({
-  drivers, job, onSaved,
-}: { drivers: Driver[]; job?: Job; onSaved: () => void }) {
-  const [from, setFrom] = useState(job?.from_location ?? "");
-  const [to, setTo] = useState(job?.to_location ?? "");
-  const [fromFlight, setFromFlight] = useState(job?.from_flight ?? "");
-  const [toFlight, setToFlight] = useState(job?.to_flight ?? "");
-  const [date, setDate] = useState(job?.date ?? new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState(job?.time?.slice(0, 5) ?? "09:00");
-  const [client, setClient] = useState(job?.clientcompanyname ?? "");
+  drivers, job, prefill, onSaved,
+}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: () => void }) {
+  const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
+  const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
+  const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
+  const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
+  const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
+  const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
   const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
-  const [paxText, setPaxText] = useState("");
+  const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
 
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
@@ -102,7 +122,6 @@ function ManualForm({
 
   const mut = useMutation({
     mutationFn: async () => {
-      // Auto-fill Airport when only a flight number is given for a side.
       const effFrom = from || (fromFlight ? "Airport" : "");
       const effTo = to || (toFlight ? "Airport" : "");
       const payload = {
@@ -139,9 +158,14 @@ function ManualForm({
 
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
+      {prefill && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          Prefilled from paste — fill in any missing fields highlighted below.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>From</Label>
+          <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
           <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder={fromFlight ? "Airport (auto)" : ""} />
           <Input
             value={fromFlight}
@@ -151,7 +175,7 @@ function ManualForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>To</Label>
+          <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
           <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder={toFlight ? "Airport (auto)" : ""} />
           <Input
             value={toFlight}
@@ -200,10 +224,11 @@ function ManualForm({
   );
 }
 
-function BulkForm({ onSaved }: { onSaved: () => void }) {
+function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const parsed = useMemo(() => parseTrips(raw), [raw]);
   const valid = parsed.filter((t) => t.errors.length === 0);
+  const incomplete = parsed.filter((t) => t.errors.length > 0);
 
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
@@ -218,7 +243,8 @@ function BulkForm({ onSaved }: { onSaved: () => void }) {
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      onSaved();
+      if (incomplete.length === 0) onSaved();
+      else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -230,33 +256,43 @@ function BulkForm({ onSaved }: { onSaved: () => void }) {
         <Textarea
           rows={10} value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          placeholder={"📅Wed 01 Jul 2026⏰11:00\n👤Names\n*🔁 ELMER CLEMENTE AGUINALDO\n•🔁 NIXON KALATHILAPARAMBIL VINCENT\n🏢 rosetti\n📍 From: cerviola\n📍 To: Airport"}
+          placeholder={"📅Wed 01 Jul 2026⏰11:00\n👤Names\n*🔁 ELMER CLEMENTE AGUINALDO\n•🔁 NIXON KALATHILAPARAMBIL VINCENT\n🏢 rosetti\n📍 From: cerviola\n📍 To: Airport\n\n— or plain text —\n01/07/2026 11:00\nFrom: Cerviola\nTo: Airport\nEK109\nELMER CLEMENTE AGUINALDO"}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
-          Multiple trip blocks OK. Each block starts with 📅. Names under 👤 become passengers.
+          Emojis optional. Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual.
         </p>
       </div>
       {parsed.length > 0 && (
         <div className="space-y-2 max-h-64 overflow-auto rounded-md border p-2">
           {parsed.map((t, i) => (
             <div key={i} className={`rounded p-2 text-xs ${t.errors.length ? "bg-destructive/10 border border-destructive/30" : "bg-muted/40"}`}>
-              <div className="font-medium">
-                {t.from_location || "?"} → {t.to_location || "?"}
-                <span className="text-muted-foreground"> · {t.date || "?"} {t.time || "?"} · {t.pax.length} pax</span>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {t.from_location || "?"} → {t.to_location || "?"}
+                    <span className="text-muted-foreground"> · {t.date || "?"} {t.time || "?"} · {t.pax.length} pax</span>
+                  </div>
+                  {(t.from_flight || t.to_flight) && (
+                    <div className="text-muted-foreground">✈ {t.from_flight || t.to_flight}</div>
+                  )}
+                  {t.clientcompanyname && <div className="text-muted-foreground">🏢 {t.clientcompanyname}</div>}
+                  {t.pax.length > 0 && (
+                    <details className="mt-1"><summary className="cursor-pointer text-muted-foreground">Names</summary>
+                      <ul className="pl-4 mt-1 list-disc">{t.pax.map((n, j) => <li key={j}>{n}</li>)}</ul>
+                    </details>
+                  )}
+                  {t.errors.length > 0 && (
+                    <div className="text-destructive mt-1">Missing: {t.errors.map((e) => e.replace("Missing ", "")).join(", ")}</div>
+                  )}
+                </div>
+                {t.errors.length > 0 && (
+                  <Button type="button" size="sm" variant="outline" className="h-7 shrink-0"
+                    onClick={() => onComplete(t)}>
+                    <PencilLine className="h-3 w-3 mr-1" /> Complete
+                  </Button>
+                )}
               </div>
-              {(t.from_flight || t.to_flight) && (
-                <div className="text-muted-foreground">✈ {t.from_flight || t.to_flight}</div>
-              )}
-              {t.clientcompanyname && <div className="text-muted-foreground">🏢 {t.clientcompanyname}</div>}
-              {t.pax.length > 0 && (
-                <details className="mt-1"><summary className="cursor-pointer text-muted-foreground">Names</summary>
-                  <ul className="pl-4 mt-1 list-disc">{t.pax.map((n, j) => <li key={j}>{n}</li>)}</ul>
-                </details>
-              )}
-              {t.errors.length > 0 && (
-                <div className="text-destructive mt-1">Skipped: {t.errors.join(", ")}</div>
-              )}
             </div>
           ))}
         </div>

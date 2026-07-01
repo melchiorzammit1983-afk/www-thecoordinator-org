@@ -1,5 +1,6 @@
-// Parses WhatsApp-style multi-trip paste blocks into structured trips.
-// A block starts at a line containing 📅 with an optional ⏰ time on the same line.
+// Parses free-form multi-trip paste blocks into structured trips.
+// Tolerates messages with or without emojis. Blocks are split on 📅 markers,
+// or (when no emojis are present) on blank lines / any line containing a full date.
 
 export type ParsedTrip = {
   date: string; // yyyy-mm-dd
@@ -19,15 +20,24 @@ const MONTHS: Record<string, string> = {
   jul: "07", aug: "08", sep: "09", sept: "09", oct: "10", nov: "11", dec: "12",
 };
 
-// e.g. EK109, BA 245, LH1234, QR2A
 const FLIGHT_RE = /\b([A-Z]{2,3})\s?(\d{1,4}[A-Z]?)\b/;
+const DATE_RE_LONG = /(\d{1,2})\s*([A-Za-z]{3,9})\s*(\d{2,4})/;
+const DATE_RE_ISO = /\b(\d{4})-(\d{2})-(\d{2})\b/;
+const DATE_RE_SLASH = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})\b/;
+const TIME_RE = /\b(\d{1,2}):(\d{2})\b/;
 
 function stripLeadingBullets(s: string): string {
-  return s.replace(/^[\s*•\-–—·]+/, "").replace(/^[\u{1F000}-\u{1FFFF}\u2600-\u27BF]+/u, "").trim();
+  return s.replace(/^[\s*•\-–—·>]+/, "")
+    .replace(/^[\u{1F000}-\u{1FFFF}\u2600-\u27BF]+/u, "")
+    .trim();
+}
+
+function stripEmoji(s: string): string {
+  return s.replace(/[\u{1F000}-\u{1FFFF}\u2600-\u27BF]/gu, "");
 }
 
 function cleanName(s: string): string {
-  return s.replace(/[\u{1F000}-\u{1FFFF}\u2600-\u27BF]/gu, "").replace(/\s+/g, " ").trim();
+  return stripEmoji(s).replace(/\s+/g, " ").trim();
 }
 
 function extractFlight(s: string): string {
@@ -35,43 +45,85 @@ function extractFlight(s: string): string {
   return m ? `${m[1]}${m[2]}`.toUpperCase() : "";
 }
 
-function parseDateTime(line: string): { date?: string; time?: string } {
-  const dateMatch = line.match(/(\d{1,2})\s*([A-Za-z]{3,9})\s*(\d{4})/);
-  const timeMatch = line.match(/(\d{1,2}):(\d{2})/);
-  let date: string | undefined;
-  if (dateMatch) {
-    const d = dateMatch[1].padStart(2, "0");
-    const m = MONTHS[dateMatch[2].slice(0, 3).toLowerCase()];
-    if (m) date = `${dateMatch[3]}-${m}-${d}`;
+function parseDate(line: string): string | undefined {
+  const iso = line.match(DATE_RE_ISO);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const long = line.match(DATE_RE_LONG);
+  if (long) {
+    const d = long[1].padStart(2, "0");
+    const m = MONTHS[long[2].slice(0, 3).toLowerCase()];
+    let y = long[3];
+    if (y.length === 2) y = `20${y}`;
+    if (m) return `${y}-${m}-${d}`;
   }
-  let time: string | undefined;
-  if (timeMatch) {
-    const h = timeMatch[1].padStart(2, "0");
-    time = `${h}:${timeMatch[2]}`;
+  const sl = line.match(DATE_RE_SLASH);
+  if (sl) {
+    const d = sl[1].padStart(2, "0");
+    const m = sl[2].padStart(2, "0");
+    let y = sl[3];
+    if (y.length === 2) y = `20${y}`;
+    return `${y}-${m}-${d}`;
   }
-  return { date, time };
+  return undefined;
 }
 
-function afterColon(line: string): string {
-  const idx = line.indexOf(":");
-  return idx >= 0 ? line.slice(idx + 1).trim() : line.trim();
+function parseTime(line: string): string | undefined {
+  const t = line.match(TIME_RE);
+  if (!t) return undefined;
+  return `${t[1].padStart(2, "0")}:${t[2]}`;
 }
 
-export function parseTrips(raw: string): ParsedTrip[] {
+function hasDate(line: string): boolean {
+  return !!parseDate(line);
+}
+
+function looksLikeName(line: string): boolean {
+  const s = stripEmoji(stripLeadingBullets(line));
+  if (!s) return false;
+  if (/[:=]/.test(s)) return false;
+  if (/\d/.test(s)) return false;
+  const words = s.split(/\s+/);
+  if (words.length < 2 || words.length > 6) return false;
+  // Mostly alphabetic, mostly uppercase or title case
+  const letters = s.replace(/[^A-Za-z]/g, "");
+  if (letters.length < 4) return false;
+  const upper = letters.replace(/[^A-Z]/g, "").length;
+  return upper / letters.length > 0.5;
+}
+
+function splitBlocks(raw: string): string[][] {
   const lines = raw.split(/\r?\n/);
+  const hasCalendarEmoji = lines.some((l) => l.includes("📅"));
   const blocks: string[][] = [];
   let current: string[] = [];
+  const push = () => {
+    if (current.some((l) => l.trim())) blocks.push(current);
+    current = [];
+  };
   for (const line of lines) {
-    if (line.includes("📅")) {
-      if (current.length) blocks.push(current);
-      current = [line];
-    } else if (current.length) {
+    const isBoundary = hasCalendarEmoji
+      ? line.includes("📅")
+      : (current.length > 0 && (line.trim() === "" || hasDate(line)));
+    if (isBoundary) {
+      if (hasCalendarEmoji) {
+        push();
+        current = [line];
+      } else {
+        if (line.trim() === "") { push(); }
+        else { push(); current = [line]; }
+      }
+    } else {
       current.push(line);
     }
   }
-  if (current.length) blocks.push(current);
+  push();
+  return blocks;
+}
 
+export function parseTrips(raw: string): ParsedTrip[] {
+  const blocks = splitBlocks(raw);
   const trips: ParsedTrip[] = [];
+
   for (const block of blocks) {
     const trip: ParsedTrip = {
       date: "", time: "", from_location: "", to_location: "",
@@ -81,61 +133,70 @@ export function parseTrips(raw: string): ParsedTrip[] {
     };
     let inNames = false;
     let lastSide: "from" | "to" | null = null;
-    for (let i = 0; i < block.length; i++) {
-      const rawLine = block[i];
+
+    for (const rawLine of block) {
       const line = rawLine.trim();
       if (!line) continue;
-      if (line.includes("📅")) {
-        const { date, time } = parseDateTime(line);
-        if (date) trip.date = date;
-        if (time) trip.time = time;
-        inNames = false;
+
+      // Date / time on any line
+      const maybeDate = parseDate(line);
+      if (maybeDate && !trip.date) trip.date = maybeDate;
+      const maybeTime = parseTime(line);
+      if (maybeTime && !trip.time) trip.time = maybeTime;
+
+      if (line.includes("👤") || /^names?\s*[:\-]?\s*$/i.test(stripEmoji(line).trim())) {
+        inNames = true;
         continue;
       }
-      if (line.includes("⏰") && !trip.time) {
-        const { time } = parseDateTime(line);
-        if (time) trip.time = time;
-        continue;
-      }
-      if (line.includes("👤")) { inNames = true; continue; }
-      if (line.includes("🏢")) {
-        trip.clientcompanyname = cleanName(line.replace("🏢", ""));
+      if (line.includes("🏢") || /^(client|company)\s*[:\-]/i.test(stripEmoji(line).trim())) {
+        trip.clientcompanyname = cleanName(line.replace(/🏢/g, "").replace(/^(client|company)\s*[:\-]/i, ""));
         inNames = false; continue;
       }
-      if (line.includes("📍")) {
-        const rest = line.replace("📍", "").trim();
-        if (/^from/i.test(rest)) { trip.from_location = afterColon(rest); lastSide = "from"; }
-        else if (/^to/i.test(rest)) { trip.to_location = afterColon(rest); lastSide = "to"; }
-        inNames = false; continue;
+
+      const noEmoji = stripEmoji(line).trim();
+      const fromMatch = /^from\b\s*[:\-]?\s*(.*)$/i.exec(noEmoji);
+      const toMatch = /^to\b\s*[:\-]?\s*(.*)$/i.exec(noEmoji);
+      if (line.includes("📍") || fromMatch || toMatch) {
+        const rest = noEmoji.replace(/^📍?/, "").trim();
+        const fm = /^from\b\s*[:\-]?\s*(.*)$/i.exec(rest);
+        const tm = /^to\b\s*[:\-]?\s*(.*)$/i.exec(rest);
+        if (fm) { trip.from_location = fm[1].trim(); lastSide = "from"; inNames = false; continue; }
+        if (tm) { trip.to_location = tm[1].trim(); lastSide = "to"; inNames = false; continue; }
       }
-      if (line.includes("✈") || /flight/i.test(line)) {
+
+      if (line.includes("✈") || /^flight\b/i.test(noEmoji)) {
         const code = extractFlight(line) || cleanName(line.replace(/flight[:\s]*/i, ""));
-        // Attach to whichever side we most recently saw; default to from.
-        if (lastSide === "to") trip.to_flight = code;
-        else trip.from_flight = code;
+        if (lastSide === "to") trip.to_flight = code; else trip.from_flight = code;
         trip.flightorship = code;
         inNames = false; continue;
       }
-      if (line.includes("🛳") || /ship/i.test(line)) {
+      if (line.includes("🛳") || /^ship\b/i.test(noEmoji)) {
         const val = cleanName(line.replace(/ship[:\s]*/i, ""));
-        if (lastSide === "to") trip.to_flight = val;
-        else trip.from_flight = val;
+        if (lastSide === "to") trip.to_flight = val; else trip.from_flight = val;
         trip.flightorship = val;
         inNames = false; continue;
       }
+
       if (inNames) {
         const name = cleanName(stripLeadingBullets(line));
         if (name) trip.pax.push(name);
         continue;
       }
-      // Stray line: if it looks like a flight code and we have no from, treat as inbound flight
+
+      // Heuristic: standalone flight code line
       const stray = extractFlight(line);
-      if (stray && !trip.from_flight && !trip.to_flight) {
+      if (stray && !trip.from_flight && !trip.to_flight && !maybeDate && !maybeTime) {
         trip.from_flight = stray;
         trip.flightorship = stray;
+        continue;
+      }
+
+      // Heuristic: line that looks like a person's name (no emoji markers used)
+      if (looksLikeName(line)) {
+        trip.pax.push(cleanName(stripLeadingBullets(line)));
       }
     }
-    // Auto-fill: a flight number without an explicit From means it's an inbound pickup at the airport.
+
     if (trip.from_flight && !trip.from_location) trip.from_location = "Airport";
     if (trip.to_flight && !trip.to_location) trip.to_location = "Airport";
 
