@@ -528,6 +528,8 @@ export type Database = {
       }
       pax: {
         Row: {
+          boarded_at: string | null
+          boarded_method: string | null
           created_at: string
           group_id: string | null
           id: string
@@ -538,6 +540,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          boarded_at?: string | null
+          boarded_method?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -548,6 +552,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          boarded_at?: string | null
+          boarded_method?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -694,6 +700,7 @@ export type Database = {
         | "accepted"
         | "rejected"
         | "modification_pending"
+        | "cancelled"
       company_status: "pending" | "approved" | "suspended"
       driver_status: "available" | "busy" | "offline"
       feature_name:
@@ -707,7 +714,13 @@ export type Database = {
         | "clone_job"
         | "recurring_schedule"
       group_status: "pending" | "assigned" | "active" | "completed"
-      job_status: "pending" | "active" | "completed"
+      job_status:
+        | "pending"
+        | "active"
+        | "completed"
+        | "en_route"
+        | "arrived"
+        | "in_progress"
       magic_link_kind: "driver" | "client"
       pax_status:
         | "pending"
@@ -849,6 +862,7 @@ export const Constants = {
         "accepted",
         "rejected",
         "modification_pending",
+        "cancelled",
       ],
       company_status: ["pending", "approved", "suspended"],
       driver_status: ["available", "busy", "offline"],
@@ -864,7 +878,14 @@ export const Constants = {
         "recurring_schedule",
       ],
       group_status: ["pending", "assigned", "active", "completed"],
-      job_status: ["pending", "active", "completed"],
+      job_status: [
+        "pending",
+        "active",
+        "completed",
+        "en_route",
+        "arrived",
+        "in_progress",
+      ],
       magic_link_kind: ["driver", "client"],
       pax_status: [
         "pending",
