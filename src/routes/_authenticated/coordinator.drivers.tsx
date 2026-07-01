@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +82,10 @@ function NewDriverDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" /> New driver</Button></DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>New driver</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>New driver</DialogTitle>
+          <DialogDescription>Add a driver profile that can receive trip assignments.</DialogDescription>
+        </DialogHeader>
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
           <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={e=>setName(e.target.value)} required /></div>
           <div className="space-y-1.5"><Label>Phone</Label><Input value={phone} onChange={e=>setPhone(e.target.value)} /></div>

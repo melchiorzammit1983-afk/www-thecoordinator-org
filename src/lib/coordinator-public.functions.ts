@@ -1,21 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { Database } from "@/integrations/supabase/types";
 
-function publicClient() {
-  return createClient<Database>(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_PUBLISHABLE_KEY!,
-    { auth: { storage: undefined, persistSession: false, autoRefreshToken: false } },
-  );
+async function getAdminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
-  const supabase = publicClient();
-  const { data, error } = await supabase.rpc("lookup_magic_link", { _token: token });
+  const supabaseAdmin = await getAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("magic_links")
+    .select("id, company_id, kind, subject_id, subject_label, expires_at, revoked_at")
+    .eq("token", token)
+    .is("revoked_at", null)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  const row = Array.isArray(data) ? data[0] : data;
+  const row = data;
   if (!row) return null;
   if (row.kind !== expectedKind) return null;
   if (row.revoked_at) return null;
@@ -200,8 +201,10 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("driver_accept_job", { _token: data.token, _job_id: data.job_id });
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs").update({
+      driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
+    } as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -213,8 +216,9 @@ export const driverApproveDeletion = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("driver_approve_deletion", { _token: data.token, _job_id: data.job_id });
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!job.deletion_requested_at) throw new Error("no_deletion_requested");
+    const { error } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -225,8 +229,8 @@ export const getClientBookings = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "client");
     if (!link) return null;
-    const supabase = publicClient();
-    const q = supabase.from("client_bookings")
+    const supabaseAdmin = await getAdminClient();
+    const q = supabaseAdmin.from("client_bookings")
       .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number")
       .eq("company_id", link.company_id)
       .order("pickup_at", { ascending: true, nullsFirst: false });

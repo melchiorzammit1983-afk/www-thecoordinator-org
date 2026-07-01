@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Copy, Handshake, Trash2 } from "lucide-react";
@@ -86,7 +86,10 @@ function CollaboratePage() {
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button>New invite</Button></DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Create connection invite</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Create connection invite</DialogTitle>
+              <DialogDescription>Choose what another coordinator can see or do when they connect with your company.</DialogDescription>
+            </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label>Mode</Label>
@@ -203,7 +206,10 @@ function PermsEditor({ value, onSave }: { value: Record<string, boolean>; onSave
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (o) setPerms(value); }}>
       <DialogTrigger asChild><Button size="sm" variant="outline">Edit permissions</Button></DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>Edit permissions</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Edit permissions</DialogTitle>
+          <DialogDescription>Control what this connected company can access in shared trip flows.</DialogDescription>
+        </DialogHeader>
         <div className="grid grid-cols-2 gap-2">
           {PERMS.map((p) => (
             <label key={p.key} className="flex items-center gap-2 text-sm">

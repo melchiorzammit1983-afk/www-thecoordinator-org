@@ -387,7 +387,6 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </Button>
         </div>
       </div>
-          <DialogDescription>Update your availability and vehicle details.</DialogDescription>
     </article>
   );
 }
@@ -439,7 +438,6 @@ function ProfileDialog({ open, onOpenChange, token, driver }: {
         <DialogFooter>
           <Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending ? "Saving…" : "Save"}</Button>
         </DialogFooter>
-          <DialogDescription>Generate a PDF statement for your completed trips.</DialogDescription>
       </DialogContent>
     </Dialog>
   );

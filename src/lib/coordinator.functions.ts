@@ -33,6 +33,23 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
   }
 }
 
+function makePickupIso(date: string, time: string) {
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  const [y, mo, d] = date.split("-").map(Number);
+  const [hh, mm, ss] = normalizedTime.split(":").map(Number);
+  const pickup = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
+  const valid =
+    !Number.isNaN(pickup.getTime()) &&
+    pickup.getUTCFullYear() === y &&
+    pickup.getUTCMonth() === mo - 1 &&
+    pickup.getUTCDate() === d &&
+    pickup.getUTCHours() === hh &&
+    pickup.getUTCMinutes() === mm &&
+    pickup.getUTCSeconds() === (ss || 0);
+  if (!valid) throw new Error("Invalid pickup date or time");
+  return pickup.toISOString();
+}
+
 async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
   const supabaseAdmin = await getAdminClient();
   const isAdmin = await checkIsAdmin(ctx.userId);
@@ -71,8 +88,9 @@ export const getMyCompany = createServerFn({ method: "GET" })
 
 export const getFeatureCosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase.from("feature_costs").select("feature_name, points_cost");
+  .handler(async () => {
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("feature_costs").select("feature_name, points_cost");
     if (error) throw new Error(error.message);
     return (data ?? []) as { feature_name: string; points_cost: number }[];
   });
@@ -205,8 +223,9 @@ export const createJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => jobInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
-    const { data: row, error } = await context.supabase.from("jobs").insert({
+    const supabaseAdmin = await getAdminClient();
+    const pickup_at = makePickupIso(data.date, data.time);
+    const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: data.from_location,
       to_location: data.to_location,
@@ -227,7 +246,7 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", row.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", row.id, charged);
     if (Object.keys(charged).length) {
-      await context.supabase.from("jobs").update({ points_charged: charged }).eq("id", row.id);
+      await supabaseAdmin.from("jobs").update({ points_charged: charged }).eq("id", row.id);
     }
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     return row;
@@ -238,14 +257,15 @@ export const updateJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => jobInput.extend({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: existing, error: e1 } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs").select("id, points_charged").eq("id", data.id).eq("company_id", c.id).single();
     if (e1 || !existing) throw new Error("Job not found");
     const charged: Record<string, boolean> = { ...((existing.points_charged as Record<string, boolean> | null) ?? {}) };
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", data.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", data.id, charged);
-    const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
-    const { error } = await context.supabase.from("jobs").update({
+    const pickup_at = makePickupIso(data.date, data.time);
+    const { error } = await supabaseAdmin.from("jobs").update({
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: data.time, pickup_at,
       flightorship: data.flightorship || data.from_flight || data.to_flight || null,
@@ -268,7 +288,8 @@ export const assignDriver = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("jobs")
       .update({ driver_id: data.driver_id })
       .eq("id", data.job_id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
@@ -282,12 +303,13 @@ export const cloneJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: src, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
     await chargeIfNeeded(context, c.id, "clone_job", null, {});
-    const pickup_at = new Date(`${data.target_date}T${(src.time as string).length === 5 ? src.time + ":00" : src.time}Z`).toISOString();
-    const { data: row, error: iErr } = await context.supabase.from("jobs").insert({
+    const pickup_at = makePickupIso(data.target_date, src.time as string);
+    const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: src.from_location, to_location: src.to_location,
       date: data.target_date, time: src.time, pickup_at,
@@ -309,13 +331,14 @@ export const splitJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: src, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
     await chargeIfNeeded(context, c.id, "split_job", data.job_id, {});
     const rows = [];
     for (const s of data.splits) {
-      const { data: row, error: iErr } = await context.supabase.from("jobs").insert({
+      const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
         company_id: c.id,
         from_location: src.from_location, to_location: src.to_location,
         date: src.date, time: src.time, pickup_at: src.pickup_at,
@@ -334,17 +357,18 @@ export const deleteJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: job, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
       .select("id, driver_id, driver_accepted_at, deletion_requested_at")
       .eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !job) throw new Error("Job not found");
     if (!job.driver_id || !job.driver_accepted_at) {
-      const { error: dErr } = await context.supabase.from("jobs")
+      const { error: dErr } = await supabaseAdmin.from("jobs")
         .delete().eq("id", data.job_id).eq("company_id", c.id);
       if (dErr) throw new Error(dErr.message);
       return { deleted: true, pending: false };
     }
-    const { error: uErr } = await context.supabase.from("jobs")
+    const { error: uErr } = await supabaseAdmin.from("jobs")
       .update({
         deletion_requested_at: new Date().toISOString(),
         deletion_requested_by: context.userId,
@@ -359,7 +383,8 @@ export const cancelDeletionRequest = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("jobs")
       .update({ deletion_requested_at: null, deletion_requested_by: null })
       .eq("id", data.job_id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
@@ -468,7 +493,8 @@ export const createDriver = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: row, error } = await context.supabase.from("drivers").insert({
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error } = await supabaseAdmin.from("drivers").insert({
       company_id: c.id, name: data.name,
       phone: data.phone || null, email: data.email || null, vehicle: data.vehicle || null,
     }).select().single();
@@ -482,11 +508,12 @@ export const listPendingBookings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const [{ data: bookings }, { data: mods }] = await Promise.all([
-      context.supabase.from("client_bookings")
+      supabaseAdmin.from("client_bookings")
         .select("*").eq("company_id", c.id).in("status", ["pending", "modification_pending"])
         .order("created_at", { ascending: false }),
-      context.supabase.from("client_booking_modifications")
+      supabaseAdmin.from("client_booking_modifications")
         .select("*, client_bookings!inner(company_id, name, surname, from_location, to_location, pickup_at, date, time)")
         .eq("status", "pending").eq("client_bookings.company_id", c.id)
         .order("requested_at", { ascending: false }),
@@ -499,12 +526,13 @@ export const approveBooking = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: b, error } = await context.supabase.from("client_bookings")
+    const supabaseAdmin = await getAdminClient();
+    const { data: b, error } = await supabaseAdmin.from("client_bookings")
       .select("*").eq("id", data.id).eq("company_id", c.id).single();
     if (error || !b) throw new Error("Booking not found");
     await chargeIfNeeded(context, c.id, "client_booking", null, {});
-    const pickup_at = b.pickup_at ?? (b.date && b.time ? new Date(`${b.date}T${b.time}Z`).toISOString() : new Date().toISOString());
-    const { data: job, error: jErr } = await context.supabase.from("jobs").insert({
+    const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
+    const { data: job, error: jErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: b.from_location, to_location: b.to_location,
       date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
@@ -512,7 +540,7 @@ export const approveBooking = createServerFn({ method: "POST" })
       clientcompanyname: `${b.name} ${b.surname}`.trim(),
     }).select().single();
     if (jErr) throw new Error(jErr.message);
-    await context.supabase.from("client_bookings")
+    await supabaseAdmin.from("client_bookings")
       .update({ status: "accepted", job_id: job.id }).eq("id", data.id);
     return { ok: true, job };
   });
@@ -522,7 +550,8 @@ export const rejectBooking = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("client_bookings")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("client_bookings")
       .update({ status: "rejected" }).eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -535,7 +564,8 @@ export const resolveModification = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: mod, error } = await context.supabase.from("client_booking_modifications")
+    const supabaseAdmin = await getAdminClient();
+    const { data: mod, error } = await supabaseAdmin.from("client_booking_modifications")
       .select("*, client_bookings!inner(company_id, id)")
       .eq("id", data.id).single();
     if (error || !mod || mod.client_bookings.company_id !== c.id) throw new Error("Modification not found");
@@ -544,16 +574,16 @@ export const resolveModification = createServerFn({ method: "POST" })
       // Direct UPDATE would be blocked by 2h trigger; use a service call via RPC-like path:
       // Simplest: mark modification approved and let coordinator manually re-issue. But we can bypass by using status change + payload merge via server:
       // Use temporary approach: set booking status to approved and copy fields; the trigger allows status-only change, and other-field change while <2h will re-trigger. So do two updates: (1) approve status, (2) fields via a special server-fn window (still blocked). Alternative: mark booking status approved and store the accepted payload on the booking itself.
-      await context.supabase.from("client_bookings")
+      await supabaseAdmin.from("client_bookings")
         .update({ status: "accepted" }).eq("id", mod.client_bookings.id);
-      await context.supabase.from("client_booking_modifications")
+      await supabaseAdmin.from("client_booking_modifications")
         .update({ status: "accepted", resolved_at: new Date().toISOString(), resolved_by: context.userId,
           requested_changes: ch }).eq("id", data.id);
     } else {
-      await context.supabase.from("client_booking_modifications")
+      await supabaseAdmin.from("client_booking_modifications")
         .update({ status: "rejected", resolved_at: new Date().toISOString(), resolved_by: context.userId })
         .eq("id", data.id);
-      await context.supabase.from("client_bookings")
+      await supabaseAdmin.from("client_bookings")
         .update({ status: "accepted" }).eq("id", mod.client_bookings.id);
     }
     return { ok: true };
@@ -571,7 +601,8 @@ export const listMagicLinks = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
-    const { data, error } = await context.supabase.from("magic_links")
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("magic_links")
       .select("*").eq("company_id", c.id).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -589,11 +620,12 @@ export const generateMagicLink = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const feature = data.kind === "driver" ? "magic_link_driver" : "magic_link_client";
     await chargeIfNeeded(context, c.id, feature, null, {});
     const token = makeToken();
     const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
-    const { data: row, error } = await context.supabase.from("magic_links").insert({
+    const { data: row, error } = await supabaseAdmin.from("magic_links").insert({
       company_id: c.id, kind: data.kind, subject_id: data.subject_id,
       subject_label: data.subject_label, token, expires_at, created_by: context.userId,
     }).select().single();
@@ -606,7 +638,8 @@ export const revokeMagicLink = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("magic_links")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("magic_links")
       .update({ revoked_at: new Date().toISOString() })
       .eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
@@ -623,8 +656,9 @@ export const extendMagicLink = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
-    const { error } = await context.supabase.from("magic_links")
+    const { error } = await supabaseAdmin.from("magic_links")
       .update({ expires_at, revoked_at: null })
       .eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
@@ -636,13 +670,14 @@ export const getMagicLinkPreview = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: link, error: le } = await context.supabase.from("magic_links")
+    const supabaseAdmin = await getAdminClient();
+    const { data: link, error: le } = await supabaseAdmin.from("magic_links")
       .select("*").eq("id", data.id).eq("company_id", c.id).single();
     if (le || !link) throw new Error("Link not found");
     const today = new Date().toISOString().slice(0, 10);
     let jobs: any[] = [];
     if (link.kind === "driver") {
-      let q = context.supabase.from("jobs")
+      let q = supabaseAdmin.from("jobs")
         .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight")
         .eq("company_id", c.id).gte("date", today)
         .order("date", { ascending: true }).order("time", { ascending: true }).limit(6);
@@ -653,7 +688,7 @@ export const getMagicLinkPreview = createServerFn({ method: "GET" })
     const paxByJob: Record<string, number> = {};
     if (jobs.length) {
       const ids = jobs.map((j) => j.id);
-      const { data: px } = await context.supabase.from("pax").select("job_id").in("job_id", ids);
+      const { data: px } = await supabaseAdmin.from("pax").select("job_id").in("job_id", ids);
       for (const p of px ?? []) paxByJob[p.job_id] = (paxByJob[p.job_id] ?? 0) + 1;
     }
     return { link, jobs, paxByJob, company: { name: c.name } };
@@ -664,13 +699,14 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: job, error: je } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin.from("jobs")
       .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight,vehicle,driver_id,drivers(name)")
       .eq("id", data.job_id).eq("company_id", c.id).single();
     if (je || !job) throw new Error("Trip not found");
     if (!job.driver_id) throw new Error("Assign a driver first");
     const nowIso = new Date().toISOString();
-    const { data: existing } = await context.supabase.from("magic_links")
+    const { data: existing } = await supabaseAdmin.from("magic_links")
       .select("*").eq("company_id", c.id).eq("kind", "driver").eq("subject_id", job.driver_id)
       .is("revoked_at", null).gt("expires_at", nowIso)
       .order("expires_at", { ascending: false }).limit(1).maybeSingle();
@@ -681,14 +717,14 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
       const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
       const expires_at = new Date(Date.now() + 7 * 24 * 3600_000).toISOString();
       const label = (job.drivers?.name ? `${job.drivers.name} portal` : "Driver portal");
-      const { data: row, error } = await context.supabase.from("magic_links").insert({
+      const { data: row, error } = await supabaseAdmin.from("magic_links").insert({
         company_id: c.id, kind: "driver", subject_id: job.driver_id,
         subject_label: label, token, expires_at, created_by: context.userId,
       }).select().single();
       if (error) throw new Error(error.message);
       link = row;
     }
-    const { count: paxCount } = await context.supabase.from("pax")
+    const { count: paxCount } = await supabaseAdmin.from("pax")
       .select("id", { count: "exact", head: true }).eq("job_id", job.id);
     return { token: link.token, expires_at: link.expires_at, job: { ...job, pax_count: paxCount ?? 0 }, company: { name: c.name } };
   });
@@ -706,7 +742,8 @@ export const requestTopUp = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("topup_requests").insert({
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("topup_requests").insert({
       company_id: c.id, requested_by: context.userId,
       points_requested: data.points_requested, note: data.note ?? null,
     });
@@ -736,14 +773,12 @@ export const createJobsBulk = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => bulkTripInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const created: string[] = [];
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
-      const [y, mo, d] = t.date.split("-").map(Number);
-      const [hh, mm, ss] = time.split(":").map(Number);
-      const pickupDate = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
-      const pickup_at = Number.isNaN(pickupDate.getTime()) ? null : pickupDate.toISOString();
-      const { data: job, error } = await context.supabase.from("jobs").insert({
+      const pickup_at = makePickupIso(t.date, time);
+      const { data: job, error } = await supabaseAdmin.from("jobs").insert({
         company_id: c.id,
         from_location: t.from_location, to_location: t.to_location,
         date: t.date, time, pickup_at,
@@ -758,7 +793,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       created.push(job.id);
       if (t.pax.length) {
         const rows = t.pax.map((name) => ({ job_id: job.id, name }));
-        const { error: pErr } = await context.supabase.from("pax").insert(rows);
+        const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
@@ -773,11 +808,12 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const key = process.env.AVIATIONSTACK_API_KEY;
     // Look at flights for jobs in the next 48h (or recently past 6h so we can catch "delayed" that already happened).
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
-    const { data: jobs, error } = await context.supabase.from("jobs")
+    const { data: jobs, error } = await supabaseAdmin.from("jobs")
       .select("id, from_flight, to_flight, pickup_at")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
@@ -805,7 +841,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
           status === "landed" ? "landed" :
           delayMin >= 15 ? "delayed" : status || "unknown";
         const note = delayMin ? `Delayed ${delayMin} min` : status;
-        await context.supabase.from("jobs").update({
+        await supabaseAdmin.from("jobs").update({
           flight_status: mapped,
           flight_status_note: note,
           flight_status_updated_at: new Date().toISOString(),
@@ -821,10 +857,11 @@ export const listJobPax = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: job, error: jErr } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: jErr } = await supabaseAdmin.from("jobs")
       .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
     if (jErr || !job) throw new Error("Job not found");
-    const { data: rows, error } = await context.supabase.from("pax")
+    const { data: rows, error } = await supabaseAdmin.from("pax")
       .select("id, name, status").eq("job_id", data.job_id).order("name");
     if (error) throw new Error(error.message);
     return rows ?? [];
@@ -842,10 +879,11 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: src, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.source_job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
-    const { data: job, error: iErr } = await context.supabase.from("jobs").insert({
+    const { data: job, error: iErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: src.from_location, to_location: src.to_location,
       date: src.date, time: src.time, pickup_at: src.pickup_at,
@@ -854,7 +892,7 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       vehicle: data.vehicle || null, driver_id: data.driver_id ?? null,
     }).select("id").single();
     if (iErr) throw new Error(iErr.message);
-    const { error: uErr } = await context.supabase.from("pax")
+    const { error: uErr } = await supabaseAdmin.from("pax")
       .update({ job_id: job.id })
       .in("id", data.pax_ids).eq("job_id", data.source_job_id);
     if (uErr) throw new Error(uErr.message);
@@ -872,10 +910,11 @@ export const movePaxToJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: rows, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("jobs")
       .select("id").eq("company_id", c.id).in("id", [data.source_job_id, data.target_job_id]);
     if (error || !rows || rows.length !== 2) throw new Error("Job not found");
-    const { error: uErr } = await context.supabase.from("pax")
+    const { error: uErr } = await supabaseAdmin.from("pax")
       .update({ job_id: data.target_job_id })
       .in("id", data.pax_ids).eq("job_id", data.source_job_id);
     if (uErr) throw new Error(uErr.message);
@@ -922,7 +961,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { company } = await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
-    const { data: userRow } = await context.supabase.auth.getUser();
+    const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
@@ -956,7 +995,8 @@ export const listLabels = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
-    const { data, error } = await context.supabase.from("trip_labels")
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("trip_labels")
       .select("id, name, color, sort_order")
       .eq("company_id", c.id)
       .order("sort_order", { ascending: true })
@@ -975,7 +1015,8 @@ export const createLabel = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: row, error } = await context.supabase.from("trip_labels").insert({
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error } = await supabaseAdmin.from("trip_labels").insert({
       company_id: c.id, name: data.name, color: data.color,
     }).select("id, name, color, sort_order").single();
     if (error) throw new Error(error.message);
@@ -994,11 +1035,12 @@ export const updateLabel = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.color !== undefined) patch.color = data.color;
     if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
-    const { error } = await context.supabase.from("trip_labels")
+    const { error } = await supabaseAdmin.from("trip_labels")
       .update(patch as never).eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1009,7 +1051,8 @@ export const deleteLabel = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("trip_labels")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("trip_labels")
       .delete().eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1022,7 +1065,8 @@ export const setJobLabels = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: job, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
       .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !job) throw new Error("Job not found");
     await syncJobLabels(context, c.id, data.job_id, data.label_ids);
@@ -1058,8 +1102,9 @@ export const buildStatement = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const HARD_CAP = 5000;
 
-    // Base query — RLS already restricts to own + chain-visible jobs.
-    let q = context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    // Base query — service-role read with explicit company/chain scoping below.
+    let q = supabaseAdmin.from("jobs")
       .select(`
         id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids,
         from_location, to_location, date, time, pickup_at, status, payment_status,
@@ -1078,6 +1123,8 @@ export const buildStatement = createServerFn({ method: "POST" })
     if (data.company_scope === "own") {
       q = q.eq("company_id", c.id);
     } else if (data.company_scope === "chain") {
+      q = q.contains("dispatch_chain_company_ids", [c.id]);
+    } else if (!c.isAdmin) {
       q = q.contains("dispatch_chain_company_ids", [c.id]);
     }
     if (data.partner_company_ids?.length) {
@@ -1143,7 +1190,6 @@ export const buildStatement = createServerFn({ method: "POST" })
     }
     const nameById: Record<string, string> = {};
     if (companyIds.size) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: comps } = await supabaseAdmin.from("companies")
         .select("id,name").in("id", Array.from(companyIds));
       for (const cp of comps ?? []) nameById[cp.id] = cp.name;
@@ -1153,7 +1199,7 @@ export const buildStatement = createServerFn({ method: "POST" })
     const jobIds = jobs.map((j) => j.id);
     const pointsByJob: Record<string, number> = {};
     if (jobIds.length) {
-      const { data: led } = await context.supabase.from("points_ledger")
+      const { data: led } = await supabaseAdmin.from("points_ledger")
         .select("job_id,points_deducted").in("job_id", jobIds);
       for (const r of (led ?? []) as { job_id: string | null; points_deducted: number | null }[]) {
         if (!r.job_id) continue;

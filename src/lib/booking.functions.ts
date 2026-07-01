@@ -1,14 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { Database } from "@/integrations/supabase/types";
 
-function publicClient() {
-  return createClient<Database>(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_PUBLISHABLE_KEY!,
-    { auth: { storage: undefined, persistSession: false, autoRefreshToken: false } },
-  );
+async function getAdminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
 
 export const getCompanyByLink = createServerFn({ method: "GET" })
@@ -16,8 +11,8 @@ export const getCompanyByLink = createServerFn({ method: "GET" })
     z.object({ token: z.string().trim().min(8).max(128) }).parse(input),
   )
   .handler(async ({ data }) => {
-    const supabase = publicClient();
-    const { data: row, error } = await supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error } = await supabaseAdmin
       .from("companies")
       .select("id, name, require_client_company, status")
       .eq("custom_link", data.token)
@@ -43,8 +38,8 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data }) => {
-    const supabase = publicClient();
-    const { data: company, error: cErr } = await supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data: company, error: cErr } = await supabaseAdmin
       .from("companies")
       .select("id, status")
       .eq("custom_link", data.token)
@@ -53,7 +48,7 @@ export const submitClientBooking = createServerFn({ method: "POST" })
     if (!company || company.status !== "approved") {
       throw new Error("This booking link is not active.");
     }
-    const { error } = await supabase.from("client_bookings").insert({
+    const { error } = await supabaseAdmin.from("client_bookings").insert({
       company_id: company.id,
       name: data.name,
       surname: data.surname,
