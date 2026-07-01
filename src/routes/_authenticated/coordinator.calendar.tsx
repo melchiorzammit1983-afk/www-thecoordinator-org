@@ -83,6 +83,20 @@ function CalendarPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
+  // Poll live flight statuses every 3 min for jobs with a flight in view.
+  const flightFn = useServerFn(checkFlightStatus);
+  useEffect(() => {
+    const hasFlights = (jobs ?? []).some((j) => j.from_flight || j.to_flight);
+    if (!hasFlights) return;
+    let cancelled = false;
+    const run = async () => {
+      try { await flightFn(); if (!cancelled) refetch(); } catch { /* ignore */ }
+    };
+    run();
+    const id = setInterval(run, 180_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [jobs, flightFn, refetch]);
+
   function onDragEnd(e: DragEndEvent) {
     const jobId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
