@@ -17,6 +17,7 @@ import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
 import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
 
@@ -61,6 +62,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedCoordinatorCalendarRoute =
+  AuthenticatedCoordinatorCalendarRouteImport.update({
+    id: '/calendar',
+    path: '/calendar',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminLedgerRoute =
   AuthenticatedAdminLedgerRouteImport.update({
     id: '/ledger',
@@ -82,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
@@ -91,6 +99,7 @@ export interface FileRoutesByTo {
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
 }
@@ -104,6 +113,7 @@ export interface FileRoutesById {
   '/c/$token': typeof CTokenRoute
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/coordinator/calendar'
     | '/admin/'
     | '/coordinator/'
   fileRoutesByTo: FileRoutesByTo
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/coordinator/calendar'
     | '/admin'
     | '/coordinator'
   id:
@@ -138,6 +150,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
+    | '/_authenticated/coordinator/calendar'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
   fileRoutesById: FileRoutesById
@@ -207,6 +220,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/coordinator/calendar': {
+      id: '/_authenticated/coordinator/calendar'
+      path: '/calendar'
+      fullPath: '/coordinator/calendar'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCalendarRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/admin/ledger': {
       id: '/_authenticated/admin/ledger'
       path: '/ledger'
@@ -240,11 +260,14 @@ const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
   AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
 }
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorCalendarRoute:
+      AuthenticatedCoordinatorCalendarRoute,
     AuthenticatedCoordinatorIndexRoute: AuthenticatedCoordinatorIndexRoute,
   }
 
