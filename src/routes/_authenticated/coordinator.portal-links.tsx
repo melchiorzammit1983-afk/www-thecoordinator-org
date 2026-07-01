@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy, Trash2, Link2 } from "lucide-react";
+import { Copy, Trash2, Link2, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-links")({
   head: () => ({ meta: [{ title: "Portal Links — Coordinator" }] }),
