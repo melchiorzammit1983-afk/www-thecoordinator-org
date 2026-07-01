@@ -318,8 +318,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         {/* Passengers preview (always visible) */}
         {paxCount > 0 && (
           <div className="mt-3 rounded-lg bg-muted/40 border p-2.5">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
-              <Users className="h-3 w-3" /> Passengers ({paxCount})
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Passengers ({paxCount})</span>
+              <span className={onboardCount === paxCount ? "text-emerald-600 font-semibold" : ""}>
+                {onboardCount}/{paxCount} onboard
+              </span>
             </div>
             <ul className="space-y-0.5">
               {pax.map((p) => (
@@ -333,6 +336,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
                 </li>
               ))}
             </ul>
+            {onboardCount === paxCount && paxCount > 0 && (
+              <div className="mt-2 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-400 text-xs font-medium px-2.5 py-1.5 flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5" /> All passengers found — ready to go
+              </div>
+            )}
           </div>
         )}
       </div>
