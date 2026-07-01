@@ -23,6 +23,7 @@ import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorLabelsRouteImport } from './routes/_authenticated/coordinator.labels'
+import { Route as AuthenticatedCoordinatorIncomingRouteImport } from './routes/_authenticated/coordinator.incoming'
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
@@ -103,6 +104,12 @@ const AuthenticatedCoordinatorLabelsRoute =
     path: '/labels',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorIncomingRoute =
+  AuthenticatedCoordinatorIncomingRouteImport.update({
+    id: '/incoming',
+    path: '/incoming',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorDriversRoute =
   AuthenticatedCoordinatorDriversRouteImport.update({
     id: '/drivers',
@@ -146,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
@@ -164,6 +172,7 @@ export interface FileRoutesByTo {
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
@@ -186,6 +195,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/_authenticated/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/_authenticated/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
     | '/coordinator/drivers'
+    | '/coordinator/incoming'
     | '/coordinator/labels'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
     | '/coordinator/drivers'
+    | '/coordinator/incoming'
     | '/coordinator/labels'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
@@ -247,6 +259,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
     | '/_authenticated/coordinator/drivers'
+    | '/_authenticated/coordinator/incoming'
     | '/_authenticated/coordinator/labels'
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
@@ -366,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorLabelsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/incoming': {
+      id: '/_authenticated/coordinator/incoming'
+      path: '/incoming'
+      fullPath: '/coordinator/incoming'
+      preLoaderRoute: typeof AuthenticatedCoordinatorIncomingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/drivers': {
       id: '/_authenticated/coordinator/drivers'
       path: '/drivers'
@@ -423,6 +443,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
   AuthenticatedCoordinatorCollaborateRoute: typeof AuthenticatedCoordinatorCollaborateRoute
   AuthenticatedCoordinatorDriversRoute: typeof AuthenticatedCoordinatorDriversRoute
+  AuthenticatedCoordinatorIncomingRoute: typeof AuthenticatedCoordinatorIncomingRoute
   AuthenticatedCoordinatorLabelsRoute: typeof AuthenticatedCoordinatorLabelsRoute
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
@@ -436,6 +457,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorCollaborateRoute:
       AuthenticatedCoordinatorCollaborateRoute,
     AuthenticatedCoordinatorDriversRoute: AuthenticatedCoordinatorDriversRoute,
+    AuthenticatedCoordinatorIncomingRoute:
+      AuthenticatedCoordinatorIncomingRoute,
     AuthenticatedCoordinatorLabelsRoute: AuthenticatedCoordinatorLabelsRoute,
     AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
     AuthenticatedCoordinatorPortalLinksRoute:
