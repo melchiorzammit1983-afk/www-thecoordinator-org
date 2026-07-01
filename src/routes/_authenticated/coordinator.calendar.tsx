@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import { toast } from "sonner";
-import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle } from "lucide-react";
+import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send } from "lucide-react";
+import { listConnections, dispatchJobToPartner } from "@/lib/collab.functions";
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
