@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
@@ -37,6 +38,12 @@ const CTokenRoute = CTokenRouteImport.update({
   path: '/c/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedCoordinatorRoute =
+  AuthenticatedCoordinatorRouteImport.update({
+    id: '/coordinator',
+    path: '/coordinator',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/coordinator': typeof AuthenticatedCoordinatorRoute
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
@@ -72,6 +80,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/coordinator': typeof AuthenticatedCoordinatorRoute
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
@@ -83,6 +92,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRoute
   '/c/$token': typeof CTokenRoute
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/admin'
+    | '/coordinator'
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
@@ -102,6 +113,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/coordinator'
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
@@ -112,6 +124,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/admin'
+    | '/_authenticated/coordinator'
     | '/c/$token'
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
@@ -154,6 +167,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/c/$token'
       preLoaderRoute: typeof CTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/coordinator': {
+      id: '/_authenticated/coordinator'
+      path: '/coordinator'
+      fullPath: '/coordinator'
+      preLoaderRoute: typeof AuthenticatedCoordinatorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
@@ -203,10 +223,12 @@ const AuthenticatedAdminRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
+  AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
+  AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
