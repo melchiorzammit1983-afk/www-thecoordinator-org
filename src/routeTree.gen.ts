@@ -30,6 +30,7 @@ import { Route as AuthenticatedCoordinatorIncomingRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
+import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
 import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
 
@@ -148,6 +149,12 @@ const AuthenticatedCoordinatorCalendarRoute =
     path: '/calendar',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedAdminRequestsRoute =
+  AuthenticatedAdminRequestsRouteImport.update({
+    id: '/requests',
+    path: '/requests',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminLedgerRoute =
   AuthenticatedAdminLedgerRouteImport.update({
     id: '/ledger',
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
@@ -193,6 +201,7 @@ export interface FileRoutesByTo {
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
@@ -219,6 +228,7 @@ export interface FileRoutesById {
   '/c/$token': typeof CTokenRoute
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
   '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
     | '/coordinator/drivers'
@@ -267,6 +278,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
     | '/coordinator/drivers'
@@ -292,6 +304,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
+    | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
     | '/_authenticated/coordinator/drivers'
@@ -467,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorCalendarRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/admin/requests': {
+      id: '/_authenticated/admin/requests'
+      path: '/requests'
+      fullPath: '/admin/requests'
+      preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/ledger': {
       id: '/_authenticated/admin/ledger'
       path: '/ledger'
@@ -487,12 +507,14 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminFeatureCostsRoute: typeof AuthenticatedAdminFeatureCostsRoute
   AuthenticatedAdminLedgerRoute: typeof AuthenticatedAdminLedgerRoute
+  AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminFeatureCostsRoute: AuthenticatedAdminFeatureCostsRoute,
   AuthenticatedAdminLedgerRoute: AuthenticatedAdminLedgerRoute,
+  AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 

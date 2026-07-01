@@ -1,10 +1,10 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Building2, Coins, ScrollText, LogOut } from "lucide-react";
+import { Building2, Coins, ScrollText, LogOut, Inbox } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
-import { whoAmI } from "@/lib/admin.functions";
+import { whoAmI, countNewAccessRequests } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 const NAV = [
   { to: "/admin", label: "Companies", icon: Building2, exact: true },
+  { to: "/admin/requests", label: "Requests", icon: Inbox, exact: false },
   { to: "/admin/feature-costs", label: "Feature Costs", icon: Coins, exact: false },
   { to: "/admin/ledger", label: "Points Audit", icon: ScrollText, exact: false },
 ] as const;
@@ -22,10 +23,17 @@ function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const whoAmIFn = useServerFn(whoAmI);
+  const countFn = useServerFn(countNewAccessRequests);
   const { data, isLoading, error } = useQuery({
     queryKey: ["whoami"],
     queryFn: () => whoAmIFn(),
     retry: false,
+  });
+  const { data: newCount } = useQuery({
+    queryKey: ["access-requests-count"],
+    queryFn: () => countFn(),
+    enabled: !!data?.isAdmin,
+    refetchInterval: 30_000,
   });
 
   if (isLoading) {
@@ -86,7 +94,12 @@ function AdminLayout() {
                 )}
               >
                 <item.icon className="h-4 w-4" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.to === "/admin/requests" && (newCount?.count ?? 0) > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                    {newCount!.count}
+                  </span>
+                )}
               </Link>
             );
           })}

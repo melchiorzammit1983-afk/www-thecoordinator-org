@@ -309,3 +309,73 @@ export const createCoordinator = createServerFn({ method: "POST" })
 
     return { ok: true, user_id: userId, email };
   });
+
+// ---------- ACCESS REQUESTS ----------
+
+export const listAccessRequests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        status: z.enum(["all", "new", "contacted", "approved", "rejected"]).default("all"),
+        limit: z.number().int().min(1).max(500).default(200),
+      })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    let q = supabaseAdmin
+      .from("access_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(data.limit);
+    if (data.status !== "all") q = q.eq("status", data.status);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const setAccessRequestStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        status: z.enum(["new", "contacted", "approved", "rejected"]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
+      .from("access_requests")
+      .update({ status: data.status })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteAccessRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
+      .from("access_requests")
+      .delete()
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const countNewAccessRequests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { count, error } = await supabaseAdmin
+      .from("access_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "new");
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
