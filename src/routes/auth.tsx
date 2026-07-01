@@ -12,9 +12,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — Crew Change Admin" },
-      { name: "description", content: "Sign in to manage your crew-change operations." },
+      { title: "Sign in — Crew Change" },
+      { name: "description", content: "Sign in to your Crew Change coordinator or admin console." },
+      { property: "og:title", content: "Sign in — Crew Change" },
+      { property: "og:description", content: "Sign in to your Crew Change coordinator or admin console." },
+      { property: "og:url", content: "https://transfersmt.lovable.app/auth" },
+      { name: "robots", content: "noindex" },
     ],
+    links: [{ rel: "canonical", href: "https://transfersmt.lovable.app/auth" }],
   }),
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
