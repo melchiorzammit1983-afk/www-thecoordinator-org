@@ -468,11 +468,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     >
       <LabelStripe labels={labels} />
 
-      {/* Tap area — opens edit */}
+      {/* Tap area — opens edit (disabled for partner-owned trips) */}
       <button
         type="button"
-        onClick={() => ctx.onEdit(job)}
+        onClick={() => { if (!job.external) ctx.onEdit(job); }}
         className="w-full text-left"
+        disabled={!!job.external}
       >
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
