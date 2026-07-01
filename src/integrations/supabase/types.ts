@@ -657,7 +657,11 @@ export type Database = {
       }
     }
     Enums: {
-      booking_status: "pending" | "accepted" | "rejected"
+      booking_status:
+        | "pending"
+        | "accepted"
+        | "rejected"
+        | "modification_pending"
       company_status: "pending" | "approved" | "suspended"
       driver_status: "available" | "busy" | "offline"
       feature_name:
@@ -808,7 +812,12 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      booking_status: ["pending", "accepted", "rejected"],
+      booking_status: [
+        "pending",
+        "accepted",
+        "rejected",
+        "modification_pending",
+      ],
       company_status: ["pending", "approved", "suspended"],
       driver_status: ["available", "busy", "offline"],
       feature_name: [
