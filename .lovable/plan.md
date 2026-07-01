@@ -1,82 +1,89 @@
 
-# Multi-hop dispatch visibility
+## Coordinator Statement / Report Builder
 
-Today a job dispatched from A → B is visible to A because we set `origin_company_id = A` and `executor_company_id = B`. When B accepts, we overwrite `company_id = B` so it lands on B's board. If B then dispatches to C (or C to D), A loses sight of the trip — `origin_company_id` still says A, but `dispatched_at`, `dispatch_status`, `dispatch_note`, and any driver/status updates only reflect the last hop. This plan makes the full chain observable to every upstream coordinator, in real time, without letting anyone reassign someone else's drivers.
+A new page under the coordinator sidebar — **Statements** (`/coordinator/statements`) — where the coordinator builds a detailed trip statement, filters the data, picks which columns to include, previews it in-page, and exports it as CSV or XLSX (and prints to PDF via the browser).
 
-## 1. Data model — track the chain, not just the last hop
+### 1. Data scope
 
-New table `job_dispatch_hops` (append-only history of every handoff for a job):
+One row per trip (job) visible to the coordinator's company (own jobs + jobs where their company is anywhere in the dispatch chain, respecting existing RLS). Optional expansions:
 
-- `job_id` (fk jobs)
-- `hop_index` int (0 = original creator, 1 = first partner, …)
-- `from_company_id`, `to_company_id`
-- `status` enum: `pending` | `accepted` | `rejected` | `cancelled`
-- `note`, `dispatched_at`, `decided_at`
-- unique `(job_id, hop_index)`
+- **Per-passenger rows** (one row per pax on the trip) — toggle.
+- **Include dispatch chain hops** as an extra sub-table under each trip in the preview, and as an extra `Chain` column (A → B → C with status/timestamps) in the flat export.
 
-Keep the existing columns on `jobs` (`origin_company_id`, `executor_company_id`, `dispatch_status`, `dispatched_at`, `dispatch_decided_at`, `dispatch_note`) as the "current hop" convenience view — every insert into `job_dispatch_hops` also updates those fields on the job. A single source of truth (`hops`) plus a denormalised head (`jobs.*`) keeps existing UI working.
+### 2. Filters (all optional, combinable)
 
-Add `jobs.dispatch_chain_company_ids uuid[]` — ordered list of every company that has ever touched the trip (creator + each accepter). Maintained by the same helpers that write hops. This one column powers cross-company RLS reads without recursive joins.
+- Date range (pickup date, from / to)
+- Status (multi-select: pending, assigned, accepted, en_route, arrived, in_progress, completed, cancelled)
+- Payment status (paid / pending / unpaid)
+- Company scope: own only / include partner (chain) trips / specific partner company (multi-select from connections)
+- Driver (multi-select, incl. "me" and partner virtual drivers) + "Unassigned"
+- Label (multi-select from trip_labels)
+- Flight number (text, contains)
+- Flight status (on-time / delayed / cancelled / any)
+- From / To location (text, contains)
+- Passenger name (text, contains — matches pax.name/surname)
+- Room number (text)
+- Free-text search (name, flight, from, to, room, notes)
+- Has unread chat messages (yes/no)
+- Deletion-requested only (yes/no)
 
-Enable Realtime on `job_dispatch_hops` (`jobs`, `driver_status_updates`, `pax` are already published).
+Filter state lives in the URL via `validateSearch` so statements are shareable/reloadable.
 
-## 2. RLS — upstream companies can always read, never write drivers
+### 3. Column picker
 
-Replace the current cross-company read policy on `jobs`, `pax`, `driver_status_updates`, `trip_messages`, `job_dispatch_hops`:
+Checkbox list, grouped, with a "Select all / Reset to defaults" control. Ordering via drag handles.
 
-- SELECT allowed if `auth`'s company is `= ANY(jobs.dispatch_chain_company_ids)` OR it is the current `executor_company_id`.
-- UPDATE on `jobs` restricted to the current `executor_company_id` (owner of the current hop). Upstream reads only.
-- Driver assignment (`jobs.driver_id`) writable only by the current executor — enforced by the existing policies plus a trigger that rejects driver_id changes from anyone other than `executor_company_id`.
-- `driver_status_updates` insert stays restricted to the driver/executor; SELECT opens up to the whole chain.
-- Chat: `trip_messages` SELECT opens to the chain; POST stays per-hop permission (`view_chat` / `post_chat` in sync mode, or executor + origin in provider mode).
+- **Trip**: Date, Pickup time, Status, Payment status, Label(s), Notes, Created at
+- **Route**: From, To, Flight number, Flight status, Airline, Scheduled dep/arr, Actual dep/arr
+- **People**: Driver name, Driver phone, Driver vehicle, Passenger count, Passenger names, Room numbers
+- **Chain**: Origin company, Executor company, Full chain (A → B → C), Hop count, Dispatch status
+- **Ops**: Accepted at, En route at, Arrived at, Completed at, Deletion requested at
+- **Costs**: Points charged for this trip (from points_ledger)
 
-`has_connection_permission` stays for sync-mode granular perms; chain visibility is orthogonal (any past participant reads).
+Defaults: Date, Pickup time, From, To, Flight, Driver, Pax count, Status, Payment status.
 
-## 3. Server functions
+### 4. Preview + export
 
-Extend `src/lib/collab.functions.ts`:
+- Live preview table (sticky header, virtualized if >200 rows) with the selected columns and filters applied.
+- Header shows: company name, generated-at timestamp, active filters as chips, row count, totals row (trips, pax, points).
+- Actions: **Export CSV**, **Export XLSX**, **Print / Save PDF** (uses browser print with a print-only stylesheet), **Copy link** (URL with filters).
+- File name pattern: `statement_{companyslug}_{yyyy-mm-dd}_{yyyy-mm-dd}.csv`.
 
-- `dispatchJobToPartner` — now the same fn works for any hop:
-  - verify caller's company `= jobs.executor_company_id` (only the current owner can forward)
-  - reject if `partner_company_id` already appears in `dispatch_chain_company_ids` (no cycles)
-  - append a `job_dispatch_hops` row, update jobs head, push partner into `dispatch_chain_company_ids`, charge caller 1 point via `charge_feature('dispatch_partner')`
-- `respondToDispatch` — on accept, set `company_id = caller`, mark hop `accepted`, keep origin intact
-- New `listJobChain({ job_id })` — returns ordered hops + participating company names + current driver name/status; used by a "Chain" tab on the trip card and by the outbound dashboard
-- Extend `listOutboundDispatches` (A's view): return every job where A appears in the chain but is not the current executor, with fields `current_executor`, `current_hop_status`, `driver_name`, latest `driver_status_updates.status` and `updated_at`, and the full hop list
-- Extend `listJobs` to include chain-visible jobs in a read-only tint when A is upstream but not the current owner (opt-in flag `include_chain: true`, off by default so the calendar isn't cluttered — surfaced instead through the Outbound board)
+### 5. Sidebar entry
 
-## 4. Realtime hook
+Add **Statements** (icon: `FileText`) between "Labels" and "Collaborate" in `src/routes/_authenticated/coordinator.tsx` NAV.
 
-New `src/hooks/useChainJobRealtime.ts`:
+### Technical details
 
-- Subscribe to `jobs`, `job_dispatch_hops`, `driver_status_updates`, `pax` filtered by the set of job ids the current company has chain visibility on.
-- Mount from `coordinator.incoming.tsx` (outbound tab) and the trip detail dialog.
-- Invalidate the relevant React Query keys on every event.
+- New route: `src/routes/_authenticated/coordinator.statements.tsx` with `validateSearch` (zod) for all filter fields + selected columns array + row-mode (`trip` | `pax`).
+- New server fn `buildStatement` in `src/lib/coordinator.functions.ts`:
+  - `.middleware([requireSupabaseAuth])`, input = filter object + `rowMode` + `includeChain`.
+  - Resolves caller company via existing `resolveCompany`.
+  - Queries `jobs` with the same RLS the coordinator already has (own + chain via existing policies), joins `drivers`, `job_labels → trip_labels`, `pax`, `job_dispatch_hops`, `companies` (for origin/executor/chain names via `supabaseAdmin` for name lookup only, matching the pattern already used in `listConnections`), and `points_ledger` (sum per job).
+  - Applies filters server-side; returns plain DTO array (SSR-safe).
+  - Hard cap 5000 rows; response includes `truncated: boolean`.
+- Client: TanStack Query `queryKey: ["statement", filters]`; preview uses `useSuspenseQuery`.
+- CSV export: build string in-browser from DTO, `Blob` + `<a download>`.
+- XLSX export: add `xlsx` (SheetJS `xlsx` package, pure-JS, Worker-safe) via `bun add xlsx`; build workbook client-side.
+- PDF: no dependency — dedicated `@media print` block hides sidebar/header, prints preview only.
+- Column picker persists last selection in `localStorage` under `statement:columns:v1`.
+- No schema changes required. No new tables, no migrations.
 
-## 5. UI
+```text
+Sidebar → Statements
+┌─ Filters (collapsible) ────────────────┐  ┌─ Columns ─────────┐
+│ Date  Status  Payment  Company  Driver │  │ ☑ Date            │
+│ Label Flight  From     To       Pax    │  │ ☑ Time  ⋮         │
+│ Search…                                │  │ ☑ From  ⋮         │
+└────────────────────────────────────────┘  │ ☐ Chain           │
+[ Reset ] [ Copy link ]  Rows: 128         └───────────────────┘
+[ Export CSV ] [ Export XLSX ] [ Print / PDF ]
+─── Preview ───────────────────────────────────────────────────
+| Date | Time | From | To | Flight | Driver | Pax | Status |
+```
 
-- `coordinator.incoming.tsx` — Outbound section becomes a full "Trips I sent" board:
-  - columns: pickup, route, current executor, current hop status, driver, live status, chain depth
-  - expandable row: hop timeline (A → B → C → …), with badges per hop (`pending` / `accepted` / `rejected`), note, timestamp, and the currently assigned driver at each accepted hop
-  - live updates via the new realtime hook
-- Trip card on dispatch board — new small "chain" chip when `hop_count > 1`; click opens the same hop timeline dialog.
-- Chat (`TripChatDialog`) — participant list shows every company in the chain (read for all upstream; posting still gated by connection perms of the current hop).
-- Driver portal is unchanged: the driver only sees the current executor's manifest.
+### Out of scope (call out, not building)
 
-## 6. Points & safeguards
-
-- Points are charged only to the company doing the forward (existing behaviour). Origin never pays for downstream hops.
-- Cycle guard rejects forwarding back to any earlier company in the chain.
-- Rejection sends the trip back to the previous hop (not the origin) — chain shrinks by one, `dispatch_chain_company_ids` trimmed accordingly. Origin sees the reject event in the timeline.
-
-## 7. Out of scope
-
-- Per-hop payment splits or settlement between companies
-- Driver ratings across the chain
-- Allowing origin to override a downstream driver assignment
-
-## Technical notes
-
-- Migration writes `job_dispatch_hops` (+ GRANTs + RLS), adds `dispatch_chain_company_ids uuid[]` to `jobs`, backfills existing dispatched rows so the two current participants appear in the chain array, adds triggers/policies described above, and adds `job_dispatch_hops` to `supabase_realtime` publication.
-- All chain reads use `dispatch_chain_company_ids && ARRAY[auth_company]` in policies (indexable via GIN) — no recursion, no security definer needed beyond what already exists.
-- `charge_feature('dispatch_partner')` is reused; no new feature cost row required.
+- Scheduled/emailed statements.
+- Aggregations beyond totals row (charts, per-driver summaries) — can follow later.
+- Editing trips from the statement view — read-only.

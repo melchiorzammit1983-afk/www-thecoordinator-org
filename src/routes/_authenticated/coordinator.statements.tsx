@@ -1,0 +1,486 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useMemo, useState } from "react";
+import { Download, FileSpreadsheet, Printer, Filter, RefreshCw } from "lucide-react";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
+import {
+  buildStatement, listDrivers, listLabels,
+} from "@/lib/coordinator.functions";
+import { listConnections } from "@/lib/collab.functions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { useMyCompany } from "@/hooks/use-coordinator";
+
+export const Route = createFileRoute("/_authenticated/coordinator/statements")({
+  head: () => ({ meta: [{ title: "Statements — Coordinator" }] }),
+  component: StatementsPage,
+});
+
+type Row = {
+  id: string; date: string; time: string; pickup_at: string | null;
+  status: string; payment_status: string;
+  from_location: string; to_location: string;
+  flight: string; flight_status: string; flight_status_note: string;
+  client: string; vehicle: string;
+  driver_name: string; driver_phone: string; driver_vehicle: string;
+  pax_count: number; pax_names: string; pax_boarded: number;
+  labels: string; label_colors: string;
+  company_name: string; origin_company: string; executor_company: string;
+  chain: string; chain_hops: number; dispatch_status: string;
+  driver_accepted_at: string | null; deletion_requested_at: string | null;
+  created_at: string; points_charged: number;
+  hops: { index: number; from: string; to: string; status: string; decided_at: string | null; note: string }[];
+  pax_rows: { id: string; name: string; status: string; boarded_at: string | null }[];
+};
+
+type Statement = {
+  generated_at: string;
+  company: { id: string; name: string };
+  rows: Row[]; total_trips: number; total_pax: number; total_points: number; truncated: boolean;
+};
+
+const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: string }[] = [
+  { key: "date", label: "Date", group: "Trip" },
+  { key: "time", label: "Time", group: "Trip" },
+  { key: "status", label: "Status", group: "Trip" },
+  { key: "payment_status", label: "Payment", group: "Trip" },
+  { key: "labels", label: "Labels", group: "Trip" },
+  { key: "client", label: "Client company", group: "Trip" },
+  { key: "created_at", label: "Created", group: "Trip" },
+  { key: "from_location", label: "From", group: "Route" },
+  { key: "to_location", label: "To", group: "Route" },
+  { key: "flight", label: "Flight", group: "Route" },
+  { key: "flight_status", label: "Flight status", group: "Route" },
+  { key: "driver_name", label: "Driver", group: "People" },
+  { key: "driver_phone", label: "Driver phone", group: "People" },
+  { key: "driver_vehicle", label: "Driver vehicle", group: "People" },
+  { key: "vehicle", label: "Trip vehicle", group: "People" },
+  { key: "pax_count", label: "Pax count", group: "People" },
+  { key: "pax_names", label: "Passenger names", group: "People" },
+  { key: "pax_boarded", label: "Boarded", group: "People" },
+  { key: "company_name", label: "Owner company", group: "Chain" },
+  { key: "origin_company", label: "Origin", group: "Chain" },
+  { key: "executor_company", label: "Executor", group: "Chain" },
+  { key: "chain", label: "Chain (A → B → C)", group: "Chain" },
+  { key: "chain_hops", label: "Chain hops", group: "Chain" },
+  { key: "dispatch_status", label: "Dispatch status", group: "Chain" },
+  { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
+  { key: "deletion_requested_at", label: "Deletion requested", group: "Ops" },
+  { key: "points_charged", label: "Points charged", group: "Costs" },
+];
+const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_status"];
+const STORAGE_KEY = "statement:columns:v2";
+
+const STATUSES = ["pending", "assigned", "accepted", "en_route", "arrived", "in_progress", "completed", "cancelled"];
+const PAYMENT_STATUSES = ["pending", "paid"];
+const FLIGHT_STATUSES = ["scheduled", "active", "landed", "delayed", "cancelled", "diverted"];
+
+function StatementsPage() {
+  const { data: company } = useMyCompany();
+  const [filters, setFilters] = useState({
+    from: "" as string, to: "" as string,
+    status: [] as string[], payment_status: [] as string[],
+    driver_ids: [] as string[], include_unassigned: false,
+    label_ids: [] as string[],
+    company_scope: "own" as "own" | "chain" | "all",
+    partner_company_ids: [] as string[],
+    flight_contains: "", flight_status: [] as string[],
+    from_contains: "", to_contains: "", pax_contains: "", search: "",
+    deletion_only: false,
+  });
+  const [selectedCols, setSelectedCols] = useState<string[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_COLS;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return DEFAULT_COLS;
+  });
+  const [includeChain, setIncludeChain] = useState(false);
+  const [includePax, setIncludePax] = useState(false);
+
+  function saveCols(next: string[]) {
+    setSelectedCols(next);
+    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }
+
+  const buildFn = useServerFn(buildStatement);
+  const driversFn = useServerFn(listDrivers);
+  const labelsFn = useServerFn(listLabels);
+  const connectionsFn = useServerFn(listConnections);
+
+  const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() as Promise<any[]> });
+  const { data: labels } = useQuery({ queryKey: ["trip-labels"], queryFn: () => labelsFn() as Promise<any[]> });
+  const { data: connections } = useQuery({ queryKey: ["connections"], queryFn: () => connectionsFn() as Promise<any[]> });
+
+  const { data: statement, isFetching, refetch } = useQuery({
+    queryKey: ["statement", filters],
+    queryFn: () => buildFn({ data: filters }) as Promise<Statement>,
+  });
+
+  const cols = useMemo(
+    () => ALL_COLUMNS.filter((c) => selectedCols.includes(c.key as string)),
+    [selectedCols],
+  );
+
+  function renderCell(row: Row, key: string) {
+    const v = (row as any)[key];
+    if (v === null || v === undefined || v === "") return "—";
+    if (key.endsWith("_at") || key === "created_at") {
+      try { return new Date(v).toLocaleString(); } catch { return String(v); }
+    }
+    return String(v);
+  }
+
+  function exportRows(): Record<string, unknown>[] {
+    if (!statement) return [];
+    const out: Record<string, unknown>[] = [];
+    for (const r of statement.rows) {
+      if (includePax && r.pax_rows.length) {
+        for (const p of r.pax_rows) {
+          const base: Record<string, unknown> = {};
+          for (const c of cols) base[c.label] = (r as any)[c.key] ?? "";
+          base["Passenger"] = p.name;
+          base["Pax status"] = p.status;
+          base["Boarded at"] = p.boarded_at ? new Date(p.boarded_at).toLocaleString() : "";
+          if (includeChain) base["Chain detail"] = r.hops.map((h) => `${h.from}→${h.to} (${h.status})`).join(" | ");
+          out.push(base);
+        }
+      } else {
+        const base: Record<string, unknown> = {};
+        for (const c of cols) base[c.label] = (r as any)[c.key] ?? "";
+        if (includeChain) base["Chain detail"] = r.hops.map((h) => `${h.from}→${h.to} (${h.status})`).join(" | ");
+        out.push(base);
+      }
+    }
+    return out;
+  }
+
+  function fileBase() {
+    const slug = (company?.name ?? "company").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    return `statement_${slug}_${filters.from || "all"}_${filters.to || "all"}`;
+  }
+
+  function exportCSV() {
+    const rows = exportRows();
+    if (!rows.length) { toast.info("Nothing to export"); return; }
+    const headers = Object.keys(rows[0]);
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => esc(r[h])).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${fileBase()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportXLSX() {
+    const rows = exportRows();
+    if (!rows.length) { toast.info("Nothing to export"); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Statement");
+    XLSX.writeFile(wb, `${fileBase()}.xlsx`);
+  }
+
+  function toggleInArray<T>(arr: T[], v: T): T[] {
+    return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+  }
+
+  const activeFilterChips = useMemo(() => {
+    const chips: string[] = [];
+    if (filters.from || filters.to) chips.push(`${filters.from || "…"} → ${filters.to || "…"}`);
+    if (filters.status.length) chips.push(`Status: ${filters.status.join(", ")}`);
+    if (filters.payment_status.length) chips.push(`Payment: ${filters.payment_status.join(", ")}`);
+    if (filters.driver_ids.length) chips.push(`${filters.driver_ids.length} driver(s)`);
+    if (filters.include_unassigned) chips.push("Incl. unassigned");
+    if (filters.label_ids.length) chips.push(`${filters.label_ids.length} label(s)`);
+    if (filters.company_scope !== "own") chips.push(`Scope: ${filters.company_scope}`);
+    if (filters.partner_company_ids.length) chips.push(`${filters.partner_company_ids.length} partner(s)`);
+    if (filters.flight_contains) chips.push(`Flight: ${filters.flight_contains}`);
+    if (filters.flight_status.length) chips.push(`Flight status: ${filters.flight_status.join(", ")}`);
+    if (filters.from_contains) chips.push(`From: ${filters.from_contains}`);
+    if (filters.to_contains) chips.push(`To: ${filters.to_contains}`);
+    if (filters.pax_contains) chips.push(`Pax: ${filters.pax_contains}`);
+    if (filters.search) chips.push(`Search: ${filters.search}`);
+    if (filters.deletion_only) chips.push("Deletion requested only");
+    return chips;
+  }, [filters]);
+
+  const groups = useMemo(() => {
+    const map: Record<string, typeof ALL_COLUMNS> = {};
+    for (const c of ALL_COLUMNS) { (map[c.group] ||= []).push(c); }
+    return map;
+  }, []);
+
+  return (
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+      <style>{`@media print {
+        aside, .no-print { display: none !important; }
+        main { padding: 0 !important; }
+        .print-only { display: block !important; }
+        table { font-size: 11px; }
+      }`}</style>
+
+      <div className="flex items-start justify-between gap-3 flex-wrap no-print">
+        <div>
+          <h1 className="text-2xl font-semibold">Statements</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Detailed trip report — filter, pick columns, then export.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportCSV}><Download className="h-4 w-4 mr-1" /> CSV</Button>
+          <Button variant="outline" size="sm" onClick={exportXLSX}><FileSpreadsheet className="h-4 w-4 mr-1" /> XLSX</Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" /> Print / PDF</Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 no-print">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4" /> Filters</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="space-y-1"><Label className="text-xs">From date</Label>
+                <Input type="date" value={filters.from} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">To date</Label>
+                <Input type="date" value={filters.to} onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Flight contains</Label>
+                <Input value={filters.flight_contains} onChange={(e) => setFilters((f) => ({ ...f, flight_contains: e.target.value }))} placeholder="e.g. KM101" /></div>
+              <div className="space-y-1"><Label className="text-xs">Free search</Label>
+                <Input value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} placeholder="text…" /></div>
+              <div className="space-y-1"><Label className="text-xs">From contains</Label>
+                <Input value={filters.from_contains} onChange={(e) => setFilters((f) => ({ ...f, from_contains: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">To contains</Label>
+                <Input value={filters.to_contains} onChange={(e) => setFilters((f) => ({ ...f, to_contains: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Passenger name</Label>
+                <Input value={filters.pax_contains} onChange={(e) => setFilters((f) => ({ ...f, pax_contains: e.target.value }))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Company scope</Label>
+                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={filters.company_scope}
+                  onChange={(e) => setFilters((f) => ({ ...f, company_scope: e.target.value as any }))}>
+                  <option value="own">Own trips only</option>
+                  <option value="chain">Chain-visible</option>
+                  <option value="all">Own + chain</option>
+                </select>
+              </div>
+            </div>
+
+            <FilterMultiRow label="Status" options={STATUSES}
+              selected={filters.status}
+              onToggle={(v) => setFilters((f) => ({ ...f, status: toggleInArray(f.status, v) }))} />
+            <FilterMultiRow label="Payment" options={PAYMENT_STATUSES}
+              selected={filters.payment_status}
+              onToggle={(v) => setFilters((f) => ({ ...f, payment_status: toggleInArray(f.payment_status, v) }))} />
+            <FilterMultiRow label="Flight status" options={FLIGHT_STATUSES}
+              selected={filters.flight_status}
+              onToggle={(v) => setFilters((f) => ({ ...f, flight_status: toggleInArray(f.flight_status, v) }))} />
+
+            {(drivers ?? []).length > 0 && (
+              <div>
+                <Label className="text-xs mb-1 block">Drivers</Label>
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                  <ChipToggle active={filters.include_unassigned}
+                    onClick={() => setFilters((f) => ({ ...f, include_unassigned: !f.include_unassigned }))}>
+                    Unassigned
+                  </ChipToggle>
+                  {(drivers ?? []).map((d: any) => (
+                    <ChipToggle key={d.id} active={filters.driver_ids.includes(d.id)}
+                      onClick={() => setFilters((f) => ({ ...f, driver_ids: toggleInArray(f.driver_ids, d.id) }))}>
+                      {d.name}
+                    </ChipToggle>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(labels ?? []).length > 0 && (
+              <div>
+                <Label className="text-xs mb-1 block">Labels</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(labels ?? []).map((l: any) => (
+                    <ChipToggle key={l.id} active={filters.label_ids.includes(l.id)}
+                      onClick={() => setFilters((f) => ({ ...f, label_ids: toggleInArray(f.label_ids, l.id) }))}>
+                      <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ backgroundColor: l.color }} />
+                      {l.name}
+                    </ChipToggle>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(connections ?? []).length > 0 && (
+              <div>
+                <Label className="text-xs mb-1 block">Partner companies</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(connections ?? []).map((c: any) => (
+                    <ChipToggle key={c.partner_company_id ?? c.id}
+                      active={filters.partner_company_ids.includes(c.partner_company_id ?? c.id)}
+                      onClick={() => setFilters((f) => ({
+                        ...f,
+                        partner_company_ids: toggleInArray(f.partner_company_ids, c.partner_company_id ?? c.id),
+                      }))}>
+                      {c.partner_name ?? c.name ?? "Partner"}
+                    </ChipToggle>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-4 pt-1 flex-wrap">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={filters.deletion_only}
+                  onCheckedChange={(v) => setFilters((f) => ({ ...f, deletion_only: !!v }))} />
+                Deletion requested only
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={includeChain} onCheckedChange={(v) => setIncludeChain(!!v)} />
+                Include chain detail in export
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={includePax} onCheckedChange={(v) => setIncludePax(!!v)} />
+                One row per passenger
+              </label>
+              <Button variant="ghost" size="sm" onClick={() => setFilters({
+                from: "", to: "", status: [], payment_status: [], driver_ids: [], include_unassigned: false,
+                label_ids: [], company_scope: "own", partner_company_ids: [], flight_contains: "",
+                flight_status: [], from_contains: "", to_contains: "", pax_contains: "", search: "", deletion_only: false,
+              })}>Reset</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Columns</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => saveCols(ALL_COLUMNS.map((c) => c.key as string))}>All</Button>
+              <Button size="sm" variant="outline" onClick={() => saveCols(DEFAULT_COLS)}>Defaults</Button>
+              <Button size="sm" variant="ghost" onClick={() => saveCols([])}>None</Button>
+            </div>
+            <div className="max-h-[420px] overflow-auto space-y-3 pr-1">
+              {Object.entries(groups).map(([grp, list]) => (
+                <div key={grp}>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{grp}</div>
+                  <div className="space-y-1">
+                    {list.map((c) => (
+                      <label key={c.key as string} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={selectedCols.includes(c.key as string)}
+                          onCheckedChange={(v) => saveCols(v ? [...selectedCols, c.key as string] : selectedCols.filter((k) => k !== c.key))}
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center gap-2 justify-between">
+            <div>
+              <CardTitle className="text-base">{company?.name ?? "Statement"}</CardTitle>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Generated {statement ? new Date(statement.generated_at).toLocaleString() : "…"}
+                {statement?.truncated && <span className="ml-2 text-amber-600">(truncated — narrow filters)</span>}
+              </div>
+            </div>
+            <div className="flex gap-3 text-sm">
+              <span><b>{statement?.total_trips ?? 0}</b> trips</span>
+              <span><b>{statement?.total_pax ?? 0}</b> pax</span>
+              <span><b>{statement?.total_points ?? 0}</b> points</span>
+            </div>
+          </div>
+          {activeFilterChips.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {activeFilterChips.map((c, i) => <Badge key={i} variant="outline" className="text-[10px]">{c}</Badge>)}
+            </div>
+          )}
+        </CardHeader>
+        <Separator />
+        <CardContent className="p-0 overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-muted/50">
+              <tr>
+                {cols.map((c) => (
+                  <th key={c.key as string} className="text-left px-2 py-2 font-medium whitespace-nowrap border-b">
+                    {c.label}
+                  </th>
+                ))}
+                {includeChain && <th className="text-left px-2 py-2 font-medium border-b">Chain detail</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {(statement?.rows ?? []).length === 0 ? (
+                <tr><td colSpan={cols.length + (includeChain ? 1 : 0)} className="text-center py-10 text-muted-foreground">
+                  {isFetching ? "Loading…" : "No trips match these filters."}
+                </td></tr>
+              ) : statement!.rows.map((r) => (
+                <tr key={r.id} className="border-b hover:bg-muted/30 align-top">
+                  {cols.map((c) => (
+                    <td key={c.key as string} className="px-2 py-1.5 whitespace-nowrap max-w-[280px] truncate" title={String((r as any)[c.key] ?? "")}>
+                      {renderCell(r, c.key as string)}
+                    </td>
+                  ))}
+                  {includeChain && (
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      {r.hops.length === 0 ? "—" : r.hops.map((h) => `${h.from}→${h.to} (${h.status})`).join(" | ")}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function FilterMultiRow({ label, options, selected, onToggle }: {
+  label: string; options: string[]; selected: string[]; onToggle: (v: string) => void;
+}) {
+  return (
+    <div>
+      <Label className="text-xs mb-1 block">{label}</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <ChipToggle key={o} active={selected.includes(o)} onClick={() => onToggle(o)}>{o.replace(/_/g, " ")}</ChipToggle>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChipToggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+        active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
+      }`}>
+      {children}
+    </button>
+  );
+}

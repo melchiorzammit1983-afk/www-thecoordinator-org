@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ const NAV = [
   { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false },
   { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false },
   { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false },
+  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false },
   { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false },
   { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false },
 ] as const;
