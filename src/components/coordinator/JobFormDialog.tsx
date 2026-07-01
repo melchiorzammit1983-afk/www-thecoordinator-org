@@ -112,6 +112,7 @@ function ManualForm({
   const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
+  const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
 
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
@@ -133,6 +134,7 @@ function ManualForm({
         clientcompanyname: client, vehicle,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
+        label_ids: labelIds,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -142,7 +144,7 @@ function ManualForm({
           flightorship: fromFlight || toFlight || "",
           from_flight: fromFlight, to_flight: toFlight,
           clientcompanyname: client, pax,
-        }] } });
+        }], label_ids: labelIds } });
       } else {
         await createFn({ data: payload });
       }
