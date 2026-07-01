@@ -853,6 +853,7 @@ export type Database = {
         | "split_job"
         | "clone_job"
         | "recurring_schedule"
+        | "dispatch_partner"
       group_status: "pending" | "assigned" | "active" | "completed"
       job_status:
         | "pending"
@@ -1017,6 +1018,7 @@ export const Constants = {
         "split_job",
         "clone_job",
         "recurring_schedule",
+        "dispatch_partner",
       ],
       group_status: ["pending", "assigned", "active", "completed"],
       job_status: [
