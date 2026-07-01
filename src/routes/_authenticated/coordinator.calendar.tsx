@@ -37,6 +37,7 @@ type Job = {
   vehicle: string | null;
   clientcompanyname: string | null;
   drivers?: { name: string } | null;
+  pax?: { id: string; name: string }[];
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
