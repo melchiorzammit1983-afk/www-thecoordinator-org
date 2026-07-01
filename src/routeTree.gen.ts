@@ -22,6 +22,7 @@ import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
+import { Route as AuthenticatedCoordinatorMyDrivingRouteImport } from './routes/_authenticated/coordinator.my-driving'
 import { Route as AuthenticatedCoordinatorLabelsRouteImport } from './routes/_authenticated/coordinator.labels'
 import { Route as AuthenticatedCoordinatorIncomingRouteImport } from './routes/_authenticated/coordinator.incoming'
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
@@ -98,6 +99,12 @@ const AuthenticatedCoordinatorPendingRoute =
     path: '/pending',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorMyDrivingRoute =
+  AuthenticatedCoordinatorMyDrivingRouteImport.update({
+    id: '/my-driving',
+    path: '/my-driving',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorLabelsRoute =
   AuthenticatedCoordinatorLabelsRouteImport.update({
     id: '/labels',
@@ -155,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
+  '/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -174,6 +182,7 @@ export interface FileRoutesByTo {
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
+  '/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -197,6 +206,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/_authenticated/coordinator/incoming': typeof AuthenticatedCoordinatorIncomingRoute
   '/_authenticated/coordinator/labels': typeof AuthenticatedCoordinatorLabelsRoute
+  '/_authenticated/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/coordinator/drivers'
     | '/coordinator/incoming'
     | '/coordinator/labels'
+    | '/coordinator/my-driving'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/m/client/$token'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/coordinator/drivers'
     | '/coordinator/incoming'
     | '/coordinator/labels'
+    | '/coordinator/my-driving'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/m/client/$token'
@@ -261,6 +273,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/drivers'
     | '/_authenticated/coordinator/incoming'
     | '/_authenticated/coordinator/labels'
+    | '/_authenticated/coordinator/my-driving'
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
     | '/m/client/$token'
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorPendingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/my-driving': {
+      id: '/_authenticated/coordinator/my-driving'
+      path: '/my-driving'
+      fullPath: '/coordinator/my-driving'
+      preLoaderRoute: typeof AuthenticatedCoordinatorMyDrivingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/labels': {
       id: '/_authenticated/coordinator/labels'
       path: '/labels'
@@ -445,6 +465,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorDriversRoute: typeof AuthenticatedCoordinatorDriversRoute
   AuthenticatedCoordinatorIncomingRoute: typeof AuthenticatedCoordinatorIncomingRoute
   AuthenticatedCoordinatorLabelsRoute: typeof AuthenticatedCoordinatorLabelsRoute
+  AuthenticatedCoordinatorMyDrivingRoute: typeof AuthenticatedCoordinatorMyDrivingRoute
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
   AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
@@ -460,6 +481,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorIncomingRoute:
       AuthenticatedCoordinatorIncomingRoute,
     AuthenticatedCoordinatorLabelsRoute: AuthenticatedCoordinatorLabelsRoute,
+    AuthenticatedCoordinatorMyDrivingRoute:
+      AuthenticatedCoordinatorMyDrivingRoute,
     AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
     AuthenticatedCoordinatorPortalLinksRoute:
       AuthenticatedCoordinatorPortalLinksRoute,
