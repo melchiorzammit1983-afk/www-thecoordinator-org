@@ -157,7 +157,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await context.supabase
       .from("jobs").select("id, points_charged").eq("id", data.id).eq("company_id", c.id).single();
     if (e1 || !existing) throw new Error("Job not found");
-    const charged: Record<string, boolean> = { ...(existing.points_charged ?? {}) };
+    const charged: Record<string, boolean> = { ...((existing.points_charged as Record<string, boolean> | null) ?? {}) };
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", data.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", data.id, charged);
     const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
