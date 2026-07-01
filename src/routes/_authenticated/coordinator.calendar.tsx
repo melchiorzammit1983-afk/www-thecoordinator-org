@@ -302,6 +302,7 @@ function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job:
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
             {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
+            <DispatchToPartnerButton job={job} />
             <Button size="sm" variant="ghost" className="h-7 px-2 relative" onClick={() => onChat(job)} title="Chat">
               <MessagesSquare className="h-3 w-3" />
               {unread > 0 && (
