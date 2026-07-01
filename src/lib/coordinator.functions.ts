@@ -777,10 +777,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     const created: string[] = [];
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
-      const [y, mo, d] = t.date.split("-").map(Number);
-      const [hh, mm, ss] = time.split(":").map(Number);
-      const pickupDate = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
-      const pickup_at = Number.isNaN(pickupDate.getTime()) ? null : pickupDate.toISOString();
+      const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await supabaseAdmin.from("jobs").insert({
         company_id: c.id,
         from_location: t.from_location, to_location: t.to_location,
