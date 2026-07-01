@@ -386,6 +386,39 @@ export type Database = {
           },
         ]
       }
+      job_labels: {
+        Row: {
+          created_at: string
+          job_id: string
+          label_id: string
+        }
+        Insert: {
+          created_at?: string
+          job_id: string
+          label_id: string
+        }
+        Update: {
+          created_at?: string
+          job_id?: string
+          label_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_labels_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "trip_labels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           clientcompanyname: string | null
@@ -674,6 +707,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "topup_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trip_labels: {
+        Row: {
+          color: string
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_labels_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
