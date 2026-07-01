@@ -71,8 +71,9 @@ export const getMyCompany = createServerFn({ method: "GET" })
 
 export const getFeatureCosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase.from("feature_costs").select("feature_name, points_cost");
+  .handler(async () => {
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin.from("feature_costs").select("feature_name, points_cost");
     if (error) throw new Error(error.message);
     return (data ?? []) as { feature_name: string; points_cost: number }[];
   });
@@ -205,8 +206,9 @@ export const createJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => jobInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
     const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
-    const { data: row, error } = await context.supabase.from("jobs").insert({
+    const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: data.from_location,
       to_location: data.to_location,
@@ -227,7 +229,7 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", row.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", row.id, charged);
     if (Object.keys(charged).length) {
-      await context.supabase.from("jobs").update({ points_charged: charged }).eq("id", row.id);
+      await supabaseAdmin.from("jobs").update({ points_charged: charged }).eq("id", row.id);
     }
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     return row;
@@ -238,14 +240,15 @@ export const updateJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => jobInput.extend({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: existing, error: e1 } = await context.supabase
+    const supabaseAdmin = await getAdminClient();
+    const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs").select("id, points_charged").eq("id", data.id).eq("company_id", c.id).single();
     if (e1 || !existing) throw new Error("Job not found");
     const charged: Record<string, boolean> = { ...((existing.points_charged as Record<string, boolean> | null) ?? {}) };
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", data.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", data.id, charged);
     const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
-    const { error } = await context.supabase.from("jobs").update({
+    const { error } = await supabaseAdmin.from("jobs").update({
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: data.time, pickup_at,
       flightorship: data.flightorship || data.from_flight || data.to_flight || null,
@@ -268,7 +271,8 @@ export const assignDriver = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("jobs")
       .update({ driver_id: data.driver_id })
       .eq("id", data.job_id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
@@ -282,12 +286,13 @@ export const cloneJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: src, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
     await chargeIfNeeded(context, c.id, "clone_job", null, {});
     const pickup_at = new Date(`${data.target_date}T${(src.time as string).length === 5 ? src.time + ":00" : src.time}Z`).toISOString();
-    const { data: row, error: iErr } = await context.supabase.from("jobs").insert({
+    const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: src.from_location, to_location: src.to_location,
       date: data.target_date, time: src.time, pickup_at,
@@ -309,13 +314,14 @@ export const splitJob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: src, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
     await chargeIfNeeded(context, c.id, "split_job", data.job_id, {});
     const rows = [];
     for (const s of data.splits) {
-      const { data: row, error: iErr } = await context.supabase.from("jobs").insert({
+      const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
         company_id: c.id,
         from_location: src.from_location, to_location: src.to_location,
         date: src.date, time: src.time, pickup_at: src.pickup_at,
@@ -334,17 +340,18 @@ export const deleteJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { data: job, error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
       .select("id, driver_id, driver_accepted_at, deletion_requested_at")
       .eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !job) throw new Error("Job not found");
     if (!job.driver_id || !job.driver_accepted_at) {
-      const { error: dErr } = await context.supabase.from("jobs")
+      const { error: dErr } = await supabaseAdmin.from("jobs")
         .delete().eq("id", data.job_id).eq("company_id", c.id);
       if (dErr) throw new Error(dErr.message);
       return { deleted: true, pending: false };
     }
-    const { error: uErr } = await context.supabase.from("jobs")
+    const { error: uErr } = await supabaseAdmin.from("jobs")
       .update({
         deletion_requested_at: new Date().toISOString(),
         deletion_requested_by: context.userId,
@@ -359,7 +366,8 @@ export const cancelDeletionRequest = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    const { error } = await context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("jobs")
       .update({ deletion_requested_at: null, deletion_requested_by: null })
       .eq("id", data.job_id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
