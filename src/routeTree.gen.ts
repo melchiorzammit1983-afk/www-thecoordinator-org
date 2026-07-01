@@ -18,7 +18,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
-import { Route as MClientTokenRouteImport } from './routes/m.client.$token'
+import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
