@@ -7,6 +7,7 @@ async function assertAdmin(ctx: { supabase: any; userId: string }) {
   const { data, error } = await supabaseAdmin.rpc("is_admin", { _user_id: ctx.userId });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: admin only");
+  return supabaseAdmin;
 }
 
 // ---------- COMPANIES ----------
@@ -14,8 +15,8 @@ async function assertAdmin(ctx: { supabase: any; userId: string }) {
 export const listCompanies = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
-    const { data, error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { data, error } = await supabaseAdmin
       .from("companies")
       .select("*")
       .order("created_at", { ascending: false });
@@ -35,8 +36,8 @@ export const createCompany = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { data: row, error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { data: row, error } = await supabaseAdmin
       .from("companies")
       .insert({
         name: data.name,
@@ -60,8 +61,8 @@ export const setCompanyStatus = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
       .from("companies")
       .update({ status: data.status })
       .eq("id", data.id);
@@ -81,21 +82,21 @@ export const topUpPoints = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { data: company, error: cErr } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { data: company, error: cErr } = await supabaseAdmin
       .from("companies")
       .select("points_balance")
       .eq("id", data.company_id)
       .single();
     if (cErr || !company) throw new Error(cErr?.message ?? "Company not found");
     const newBalance = (company.points_balance ?? 0) + data.points;
-    const { error: uErr } = await context.supabase
+    const { error: uErr } = await supabaseAdmin
       .from("companies")
       .update({ points_balance: newBalance })
       .eq("id", data.company_id);
     if (uErr) throw new Error(uErr.message);
     // Ledger convention: positive = deducted, negative = top-up
-    const { error: lErr } = await context.supabase.from("points_ledger").insert({
+    const { error: lErr } = await supabaseAdmin.from("points_ledger").insert({
       company_id: data.company_id,
       points_deducted: -data.points,
       note: data.note ?? (data.points > 0 ? "Admin top-up" : "Admin adjustment"),
@@ -115,9 +116,9 @@ export const setAccessEnd = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const supabaseAdmin = await assertAdmin(context);
     const access_end = new Date(Date.now() + data.days * 86_400_000).toISOString();
-    const { error } = await context.supabase
+    const { error } = await supabaseAdmin
       .from("companies")
       .update({ access_end })
       .eq("id", data.id);
@@ -129,11 +130,11 @@ export const regenerateCustomLink = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const supabaseAdmin = await assertAdmin(context);
     const bytes = new Uint8Array(24);
     crypto.getRandomValues(bytes);
     const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    const { error } = await context.supabase
+    const { error } = await supabaseAdmin
       .from("companies")
       .update({ custom_link: token })
       .eq("id", data.id);
@@ -147,8 +148,8 @@ export const setRequireClientCompany = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), value: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
       .from("companies")
       .update({ require_client_company: data.value })
       .eq("id", data.id);
@@ -161,8 +162,8 @@ export const setRequireClientCompany = createServerFn({ method: "POST" })
 export const listFeatureCosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
-    const { data, error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { data, error } = await supabaseAdmin
       .from("feature_costs")
       .select("*")
       .order("feature_name");
@@ -181,8 +182,8 @@ export const setFeatureCost = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { error } = await context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
       .from("feature_costs")
       .update({ points_cost: data.points_cost })
       .eq("feature_name", data.feature_name);
@@ -203,8 +204,8 @@ export const listLedger = createServerFn({ method: "GET" })
       .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    let q = context.supabase
+    const supabaseAdmin = await assertAdmin(context);
+    let q = supabaseAdmin
       .from("points_ledger")
       .select("id, company_id, job_id, feature_used, points_deducted, note, created_at, companies(name)")
       .order("created_at", { ascending: false })
@@ -243,8 +244,7 @@ export const createCoordinator = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const supabaseAdmin = await assertAdmin(context);
 
     const email = data.email.toLowerCase();
 
