@@ -1090,9 +1090,11 @@ export const buildStatement = createServerFn({ method: "POST" })
     if (jobIds.length) {
       const { data: led } = await context.supabase.from("points_ledger")
         .select("job_id,points_deducted").in("job_id", jobIds);
-      for (const r of led ?? []) {
+      for (const r of (led ?? []) as { job_id: string | null; points_deducted: number | null }[]) {
+        if (!r.job_id) continue;
         pointsByJob[r.job_id] = (pointsByJob[r.job_id] ?? 0) + (r.points_deducted ?? 0);
       }
+
     }
 
     // Shape DTO
