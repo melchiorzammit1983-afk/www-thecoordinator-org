@@ -1,69 +1,53 @@
-## Goal
-Let a coordinator paste a multi-trip block (WhatsApp-style) into the New Trip dialog. The system parses it into one Job per trip block, creates one Pax row per name, and lists the passengers on the trip card so the dispatcher can split names across drivers.
+## Phase 3 — Client Portal (`src/routes/m/client/$token.tsx`)
 
-## Paste format supported
-```
-📅Wed 01 Jul 2026⏰11:00
-👤Names
-*🔁 ELMER CLEMENTE AGUINALDO
-•🔁 NIXON KALATHILAPARAMBIL VINCENT
-...
-🏢 rosetti
-📍 From: cerviola
-📍 To: Airport
-```
-- New trip starts at each `📅` line.
-- Date + time parsed from that line (`Wed 01 Jul 2026` + `11:00`).
-- Lines starting with `*`, `•`, `-`, `🔁` (any combination) under `👤Names` become pax names (emojis/bullets stripped, uppercase preserved).
-- `🏢` → `clientcompanyname`, `📍 From:` → `from_location`, `📍 To:` → `to_location`, optional `✈`/`🛳` → `flightorship`.
-- Blank lines and unknown lines ignored.
-- Multiple trip blocks in one paste = multiple jobs created in one submit.
+Magic-link auth already resolves via `getClientBookings` in `coordinator-public.functions.ts` (subject_label scoping). Extend that flow with edit/cancel and recurring booking creation.
 
-## UI changes — `JobFormDialog`
-1. Add tabs at the top: **Manual** (current form) / **Paste bulk**.
-2. **Paste bulk** tab:
-   - Large `Textarea` for the raw text.
-   - Live preview panel below listing detected trips: `From → To · date time · N pax` with expandable name list. Bad blocks show a red note but don't block the good ones.
-   - "Create N trips" button — disabled if 0 valid trips parsed.
-3. **Manual** tab: add a **Passengers** section — one-name-per-line textarea (optional) so a single trip can also carry a pax list. Existing feature toggles unchanged.
-4. On save, jobs are created unassigned (existing default). No premium point charge for adding pax.
+### Server functions (append to `src/lib/coordinator-public.functions.ts`)
+1. `updateClientBooking({ token, booking_id, changes })`
+   - Resolve magic link (kind=client). Scope changes to `link.company_id` and (if present) `link.subject_label` email.
+   - Load booking's `pickup_at`. If `pickup_at - now() > 2h` → UPDATE `client_bookings` directly.
+   - Else → INSERT into `client_booking_modifications` with `requested_changes` JSON and `status='pending'`; set booking `status='modification_pending'`. Return `{ mode: 'direct' | 'pending' }`.
+2. `cancelClientBooking({ token, booking_id })` — same 2h split; direct sets `status='cancelled'`, else inserts modification with `{ action: 'cancel' }`.
+3. `createRecurringBookings({ token, weekdays[0-6], time HH:MM, from, to, name, surname, room_number? })`
+   - For next 7 days, if `getDay()` ∈ weekdays, insert one `client_bookings` row per day with computed `pickup_at` (UTC = local date+time as ISO). Returns count.
 
-## Trip card changes — `TripCard` in `coordinator.calendar.tsx`
-- Fetch pax count for each job (extend `listJobs` to return `pax_count` and `pax:[{id,name}]` via nested select).
-- Show `👤 N pax` badge on the card.
-- Clicking the card (or a new **Passengers** icon button) opens a new **Passengers dialog**:
-  - Lists every pax on this job with a checkbox.
-  - "Move selected to…" dropdown of drivers (or "New split job"). 
-  - Confirm → calls a new server fn `movePaxToDriver({ pax_ids, target_driver_id })` or `splitPaxToNewJob({ job_id, pax_ids, driver_id })`.
-- The existing drag-drop of the whole card is unchanged.
+Use publishable client (RLS allows anon insert/update on client_bookings? Check — currently policies scope by company). Since magic-link flow is server-verified, use `supabaseAdmin` inside handler (`await import('@/integrations/supabase/client.server')`) after validating the token — safer than opening anon policies.
 
-## Server functions (`src/lib/coordinator.functions.ts`)
-1. `createJobsBulk({ trips: ParsedTrip[] })` — one transaction-ish loop:
-   - For each trip: insert job (company scoped, unassigned, status `pending`), then bulk-insert pax rows.
-   - Returns created job ids.
-2. `listJobs` — extend select to `*, drivers(name), pax(id,name)`.
-3. `splitPaxToNewJob({ source_job_id, pax_ids, driver_id? })`:
-   - Verify all pax belong to a job in caller's company.
-   - Create a new job copying from/to/date/time/pickup_at/flight/client/qr/tracking, `driver_id = driver_id ?? null`.
-   - `UPDATE pax SET job_id = <new> WHERE id = ANY(pax_ids)`.
-   - If source job ends up with 0 pax, leave it (coordinator can delete manually) — safer default.
-4. `movePaxToJob({ pax_ids, target_job_id })` — for moving pax between existing jobs on the same driver/day (optional stretch, cheap to add).
+### UI (`src/routes/m/client/$token.tsx`)
+- Add per-booking Edit/Cancel buttons opening a dialog with time/from/to fields.
+- On save, call `updateClientBooking`. Toast success text differs by returned mode.
+- "Setup recurring trip" button → dialog: weekday checkboxes, time input, from/to, name/surname/room. Submit → `createRecurringBookings`.
+- Refresh list via `queryClient.invalidateQueries`.
 
-Charging: no `charge_feature` calls in these new fns — parsing/splitting names is free. QR/tracking toggles still charge via existing `updateJob` path.
+## Phase 4 — Driver Interface (`src/routes/m.driver.$token.tsx`)
 
-## Parser
-- Pure TS helper `src/lib/parse-trips.ts` exporting `parseTrips(raw: string): ParsedTrip[]`.
-- Robust to leading/trailing whitespace, mixed bullets, missing sections (skip trip if no From+To+date+time).
-- Unit-testable, no deps.
+Rewrite existing manifest view with mobile-first execution UI.
 
-## Not in scope
-- Recurring/schedule interpretation of `🔁` (just an icon marker in the paste — stripped from name).
-- Editing pax after creation beyond moving them between jobs/drivers.
-- Points cost changes.
+### Server functions (append to `src/lib/coordinator-public.functions.ts`)
+1. `updateJobStatus({ token, job_id, status })` — validate driver token owns job, update `jobs.status` (enum: pending/en_route/arrived/in_progress/completed). Uses `supabaseAdmin` after token check.
+2. `markPaxOnboard({ token, job_id, pax_id, method: 'qr'|'manual' })` — set `pax.status='onboard'`, `boarded_at=now()`, `boarded_method=method`. Reject manual when `jobs.qr_strict_mode=true`.
+
+### Migration
+Add `status` column values already exist? Check `jobs.status` enum — extend with `en_route, arrived, in_progress` if missing. Add `pax.boarded_at timestamptz`, `pax.boarded_method text` if missing.
+
+### UI
+- Sort jobs today by `pickup_at`, large cards, big status buttons (En route → Arrived → In progress → Completed).
+- "Open" button → Trip Execution sheet:
+  - Passenger list with checkboxes / onboard badges.
+  - QR scanner via `@zxing/browser` (BrowserMultiFormatReader on user-facing camera). Payload = `pax_id`. On decode → `markPaxOnboard`.
+  - "Manually confirm" button per pax, hidden when `qr_strict_mode`.
+  - Deep-link "Open in Maps" → `https://www.google.com/maps/dir/?api=1&destination=<encoded to_location>`.
+- Keep existing accept-trip / approve-deletion buttons.
+
+### Packages
+- `bun add @zxing/browser @zxing/library`
 
 ## Files touched
-- `src/lib/parse-trips.ts` (new)
-- `src/lib/coordinator.functions.ts` — add `createJobsBulk`, `splitPaxToNewJob`; extend `listJobs` select
-- `src/components/coordinator/JobFormDialog.tsx` — tabs, bulk textarea + preview, passengers textarea
-- `src/components/coordinator/PaxSplitDialog.tsx` (new)
-- `src/routes/_authenticated/coordinator.calendar.tsx` — pax badge + open PaxSplitDialog on card click
+- migration: extend jobs status enum + pax columns
+- `src/lib/coordinator-public.functions.ts` (append 5 fns)
+- `src/routes/m/client/$token.tsx` (rewrite with actions + recurring dialog)
+- `src/routes/m.driver.$token.tsx` (rewrite with execution sheet + QR scanner)
+- new `src/components/driver/QrScanner.tsx`
+- new `src/components/client/RecurringDialog.tsx`, `src/components/client/EditBookingDialog.tsx`
+
+Charging: none of these new fns hit `charge_feature`; QR strict mode / tracking were charged at job creation.
