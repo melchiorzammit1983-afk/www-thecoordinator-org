@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
 import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
@@ -49,6 +50,12 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCoordinatorIndexRoute =
+  AuthenticatedCoordinatorIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -71,20 +78,21 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
-  '/coordinator': typeof AuthenticatedCoordinatorRoute
+  '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/coordinator': typeof AuthenticatedCoordinatorRoute
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -92,11 +100,12 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
-  '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRoute
+  '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -109,15 +118,16 @@ export interface FileRouteTypes {
     | '/admin/feature-costs'
     | '/admin/ledger'
     | '/admin/'
+    | '/coordinator/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
-    | '/coordinator'
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
     | '/admin'
+    | '/coordinator'
   id:
     | '__root__'
     | '/'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
     | '/_authenticated/admin/'
+    | '/_authenticated/coordinator/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -182,6 +193,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/coordinator/': {
+      id: '/_authenticated/coordinator/'
+      path: '/'
+      fullPath: '/coordinator/'
+      preLoaderRoute: typeof AuthenticatedCoordinatorIndexRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
       path: '/'
@@ -221,14 +239,28 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
 const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
+interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
+}
+
+const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
+  {
+    AuthenticatedCoordinatorIndexRoute: AuthenticatedCoordinatorIndexRoute,
+  }
+
+const AuthenticatedCoordinatorRouteWithChildren =
+  AuthenticatedCoordinatorRoute._addFileChildren(
+    AuthenticatedCoordinatorRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
-  AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRoute
+  AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
-  AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRoute,
+  AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
