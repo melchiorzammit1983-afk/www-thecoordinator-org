@@ -33,6 +33,7 @@ type Job = {
   vehicle: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
+  labels?: { id: string; name: string; color: string }[];
 };
 
 type Prefill = Partial<{
