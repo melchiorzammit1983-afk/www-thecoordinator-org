@@ -56,6 +56,7 @@ type Job = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   status: string;
   driver_id: string | null;
+  self_assigned_user_id: string | null;
   vehicle: string | null;
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
@@ -66,6 +67,8 @@ type Job = {
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
+type Partner = { id: string; name: string };
+type Targets = { drivers: Driver[]; partners: Partner[]; self: { id: string; name: string } };
 
 function CalendarPage() {
   const [view, setView] = useState<"day" | "week">("day");
