@@ -7,7 +7,7 @@ import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner,
@@ -601,6 +601,25 @@ function TripMenu({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const copyMut = useMutation({
+    mutationFn: () => shareFn({ data: { job_id: job.id } }) as Promise<any>,
+    onSuccess: async (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied");
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); toast.success("Link copied"); }
+        catch { toast.error("Copy failed — " + url); }
+        finally { document.body.removeChild(ta); }
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -639,6 +658,11 @@ function TripMenu({
         {job.driver_id && (
           <DropdownMenuItem onClick={() => shareMut.mutate()} disabled={shareMut.isPending}>
             <MessageCircle className="h-4 w-4 mr-2 text-emerald-600" /> Share on WhatsApp
+          </DropdownMenuItem>
+        )}
+        {job.driver_id && (
+          <DropdownMenuItem onClick={() => copyMut.mutate()} disabled={copyMut.isPending}>
+            <Link2 className="h-4 w-4 mr-2" /> Copy link
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
