@@ -611,23 +611,40 @@ function TripMenu({
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <Users className="h-4 w-4 mr-2" /> Assign driver
+            <Users className="h-4 w-4 mr-2" /> Assign to…
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-56">
-              <DropdownMenuItem onClick={() => ctx.onAssign(job, null)}>— Unassign —</DropdownMenuItem>
+            <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-64">
+              <DropdownMenuItem onClick={() => ctx.onAssign(job, "none")}>— Unassign —</DropdownMenuItem>
+              {ctx.self && (
+                <DropdownMenuItem onClick={() => ctx.onAssign(job, "self")}>
+                  🧑‍✈️ {ctx.self.name}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Drivers</DropdownMenuLabel>
               {ctx.drivers.length === 0 && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">No drivers</div>
               )}
               {ctx.drivers.map((d) => (
-                <DropdownMenuItem key={d.id} onClick={() => ctx.onAssign(job, d.id)}>
+                <DropdownMenuItem key={d.id} onClick={() => ctx.onAssign(job, "driver", d.id)}>
                   {d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Partners (dispatch)</DropdownMenuLabel>
+              {ctx.partners.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No partners — go to Collaborate</div>
+              )}
+              {ctx.partners.map((p) => (
+                <DropdownMenuItem key={p.id} onClick={() => ctx.onAssign(job, "partner", p.id)}>
+                  🤝 {p.name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
+
         {job.driver_id && (
           <DropdownMenuItem onClick={() => shareMut.mutate()} disabled={shareMut.isPending}>
             <MessageCircle className="h-4 w-4 mr-2 text-emerald-600" /> Share on WhatsApp
