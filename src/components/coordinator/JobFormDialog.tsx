@@ -231,6 +231,7 @@ function ManualForm({
 
 function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
+  const [labelIds, setLabelIds] = useState<string[]>([]);
   const parsed = useMemo(() => parseTrips(raw), [raw]);
   const valid = parsed.filter((t) => t.errors.length === 0);
   const incomplete = parsed.filter((t) => t.errors.length > 0);
@@ -244,7 +245,7 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
       flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
       from_flight: t.from_flight, to_flight: t.to_flight,
       pax: t.pax,
-    })) } }),
+    })), label_ids: labelIds } }),
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
