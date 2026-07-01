@@ -185,9 +185,12 @@ export const getDriverStatement = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
       .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status, points_charged")
-      .eq("company_id", link.company_id)
       .order("date", { ascending: true }).order("time", { ascending: true });
-    if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+    if (link.subject_id) {
+      q = q.eq("driver_id", link.subject_id);
+    } else {
+      q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
+    }
     if (data.from) q = q.gte("date", data.from);
     if (data.to) q = q.lte("date", data.to);
     if (data.payment && data.payment !== "all") q = q.eq("payment_status", data.payment);
