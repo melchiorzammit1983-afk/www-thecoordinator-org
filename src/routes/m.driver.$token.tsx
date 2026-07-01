@@ -9,6 +9,7 @@ import {
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
 import { Badge } from "@/components/ui/badge";
+import { LabelChip } from "@/components/coordinator/LabelChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
