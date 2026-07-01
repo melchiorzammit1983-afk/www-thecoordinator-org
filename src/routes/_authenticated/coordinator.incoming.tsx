@@ -67,6 +67,9 @@ function IncomingPage() {
                 <span className="text-xs text-muted-foreground ml-auto">{(j.pax ?? []).length} pax</span>
               </div>
               {j.dispatch_note && <div className="text-xs text-muted-foreground">Note: {j.dispatch_note}</div>}
+              <div className="pt-2">
+                <ChainTimeline jobId={j.id} />
+              </div>
               <div className="flex gap-2 pt-2">
                 <Button size="sm" onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}>Accept</Button>
                 <Button size="sm" variant="outline" onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}>Reject</Button>
