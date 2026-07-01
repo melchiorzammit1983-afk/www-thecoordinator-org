@@ -134,7 +134,7 @@ export const updateClientBooking = createServerFn({ method: "POST" })
     }
     const { error: mErr } = await supabaseAdmin.from("client_booking_modifications").insert({
       booking_id: data.booking_id,
-      requested_changes: changes,
+      requested_changes: changes as never,
       status: "pending",
     });
     if (mErr) throw new Error(mErr.message);
