@@ -198,10 +198,11 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; j
   );
 }
 
-function TripCard({ job, onEdit, driverName }: { job: Job; onEdit: (j: Job) => void; driverName?: string }) {
+function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
+  const paxCount = job.pax?.length ?? 0;
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
@@ -218,12 +219,21 @@ function TripCard({ job, onEdit, driverName }: { job: Job; onEdit: (j: Job) => v
           {job.clientcompanyname && <div className="text-xs text-muted-foreground truncate">{job.clientcompanyname}</div>}
           {driverName && <div className="text-xs mt-1">👤 {driverName}</div>}
           <div className="flex gap-1 mt-1 flex-wrap">
+            {paxCount > 0 && (
+              <button
+                type="button" onClick={() => onPax(job)}
+                className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 hover:bg-primary/20"
+              >
+                <Users className="h-3 w-3" /> {paxCount} pax
+              </button>
+            )}
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
             {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
             {job.flightorship && <Badge variant="secondary" className="text-[10px]">{job.flightorship}</Badge>}
           </div>
           <div className="flex gap-1 mt-2">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
           </div>
