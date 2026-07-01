@@ -212,6 +212,7 @@ function BulkForm({ onSaved }: { onSaved: () => void }) {
       from_location: t.from_location, to_location: t.to_location,
       date: t.date, time: t.time,
       flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
+      from_flight: t.from_flight, to_flight: t.to_flight,
       pax: t.pax,
     })) } }),
     onSuccess: (res: { created: string[] }) => {
