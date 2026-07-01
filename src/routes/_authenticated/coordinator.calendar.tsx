@@ -73,7 +73,9 @@ function CalendarPage() {
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const qc = useQueryClient();
+
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
@@ -154,7 +156,19 @@ function CalendarPage() {
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
+    highlightId: justAcceptedId,
   };
+
+  function handleAccepted(res: { id: string; date: string | null }) {
+    if (res.date) {
+      const [y, m, d] = res.date.split("-").map(Number);
+      if (y && m && d) setAnchor(new Date(y, m - 1, d));
+    }
+    setJustAcceptedId(res.id);
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+    setTimeout(() => setJustAcceptedId((cur) => (cur === res.id ? null : cur)), 4000);
+  }
+
 
   return (
     <div className="p-3 sm:p-4 md:p-6 space-y-4">
@@ -183,7 +197,8 @@ function CalendarPage() {
       </header>
 
       {/* Inbound (pending my decision) */}
-      <InboundBoard ctx={cardCtx} />
+      <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
+
 
       {/* Outbound (my trips currently at partners) */}
       <OutboundBoard />
@@ -225,25 +240,30 @@ type CardCtx = {
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
   unread: Record<string, number>;
+  highlightId?: string | null;
 };
+
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
 
-function InboundBoard({ ctx }: { ctx: CardCtx }) {
+function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { id: string; date: string | null }) => void }) {
   const listIn = useServerFn(listIncomingDispatches);
   const respond = useServerFn(respondToDispatch);
   const qc = useQueryClient();
   const [open, setOpen] = useState(true);
   const q = useQuery({ queryKey: ["collab", "incoming"], queryFn: () => listIn(), refetchInterval: 20_000 });
   const respondMut = useMutation({
-    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) => await respond({ data: v }),
-    onSuccess: () => {
+    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) =>
+      (await respond({ data: v })) as { ok: boolean; id: string; date: string | null; decision: string },
+    onSuccess: (res) => {
       toast.success("Done");
       qc.invalidateQueries({ queryKey: ["collab"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      if (res?.decision === "accepted" && onAccepted) onAccepted({ id: res.id, date: res.date });
     },
     onError: (e: any) => toast.error(e.message),
   });
+
   const items: any[] = q.data ?? [];
   if (items.length === 0) return null;
   return (
@@ -427,7 +447,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone}`}
+      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
