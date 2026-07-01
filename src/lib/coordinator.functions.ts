@@ -455,6 +455,24 @@ export const revokeMagicLink = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const extendMagicLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      ttl_hours: z.number().int().min(1).max(24 * 366),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
+    const { error } = await context.supabase.from("magic_links")
+      .update({ expires_at, revoked_at: null })
+      .eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, expires_at };
+  });
+
 // ---------- TOPUP REQUEST ----------
 
 export const requestTopUp = createServerFn({ method: "POST" })
