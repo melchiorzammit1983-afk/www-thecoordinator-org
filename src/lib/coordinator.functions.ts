@@ -426,7 +426,7 @@ export const generateMagicLink = createServerFn({ method: "POST" })
       kind: z.enum(["driver", "client"]),
       subject_id: z.string().uuid().nullable(),
       subject_label: z.string().trim().min(1).max(200),
-      ttl_hours: z.number().int().min(1).max(24 * 30),
+      ttl_hours: z.number().int().min(1).max(24 * 366),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
