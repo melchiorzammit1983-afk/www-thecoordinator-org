@@ -18,7 +18,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
-import { Route as MClientTokenRouteImport } from './routes/m.client.$token'
+import { Route as MClientsTokenRouteImport } from './routes/m.clients.$token'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
@@ -72,9 +72,9 @@ const MDriverTokenRoute = MDriverTokenRouteImport.update({
   path: '/m/driver/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MClientTokenRoute = MClientTokenRouteImport.update({
-  id: '/m/client/$token',
-  path: '/m/client/$token',
+const MClientsTokenRoute = MClientsTokenRouteImport.update({
+  id: '/m/clients/$token',
+  path: '/m/clients/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedCoordinatorPortalLinksRoute =
@@ -126,7 +126,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
-  '/m/client/$token': typeof MClientTokenRoute
+  '/m/clients/$token': typeof MClientsTokenRoute
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
@@ -141,7 +141,7 @@ export interface FileRoutesByTo {
   '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
-  '/m/client/$token': typeof MClientTokenRoute
+  '/m/clients/$token': typeof MClientsTokenRoute
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
@@ -160,7 +160,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
-  '/m/client/$token': typeof MClientTokenRoute
+  '/m/clients/$token': typeof MClientsTokenRoute
   '/m/driver/$token': typeof MDriverTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
@@ -179,7 +179,7 @@ export interface FileRouteTypes {
     | '/coordinator/drivers'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
-    | '/m/client/$token'
+    | '/m/clients/$token'
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
@@ -194,7 +194,7 @@ export interface FileRouteTypes {
     | '/coordinator/drivers'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
-    | '/m/client/$token'
+    | '/m/clients/$token'
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
@@ -212,7 +212,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/drivers'
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
-    | '/m/client/$token'
+    | '/m/clients/$token'
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
@@ -223,7 +223,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   CTokenRoute: typeof CTokenRoute
-  MClientTokenRoute: typeof MClientTokenRoute
+  MClientsTokenRoute: typeof MClientsTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRoute
 }
 
@@ -292,11 +292,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MDriverTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/m/client/$token': {
-      id: '/m/client/$token'
-      path: '/m/client/$token'
-      fullPath: '/m/client/$token'
-      preLoaderRoute: typeof MClientTokenRouteImport
+    '/m/clients/$token': {
+      id: '/m/clients/$token'
+      path: '/m/clients/$token'
+      fullPath: '/m/clients/$token'
+      preLoaderRoute: typeof MClientsTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/coordinator/portal-links': {
@@ -401,7 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   CTokenRoute: CTokenRoute,
-  MClientTokenRoute: MClientTokenRoute,
+  MClientsTokenRoute: MClientsTokenRoute,
   MDriverTokenRoute: MDriverTokenRoute,
 }
 export const routeTree = rootRouteImport
