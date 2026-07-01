@@ -13,16 +13,24 @@ function publicClient() {
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
   const supabase = publicClient();
-  const { data, error } = await supabase.from("magic_links")
-    .select("id, company_id, kind, subject_id, subject_label, expires_at, revoked_at")
-    .eq("token", token).maybeSingle();
+  const { data, error } = await supabase.rpc("lookup_magic_link", { _token: token });
   if (error) throw new Error(error.message);
-  if (!data) return null;
-  if (data.kind !== expectedKind) return null;
-  if (data.revoked_at) return null;
-  if (new Date(data.expires_at) < new Date()) return null;
-  return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  if (row.kind !== expectedKind) return null;
+  if (row.revoked_at) return null;
+  if (row.expires_at && new Date(row.expires_at) < new Date()) return null;
+  return row as {
+    id: string;
+    company_id: string;
+    kind: string;
+    subject_id: string | null;
+    subject_label: string | null;
+    expires_at: string;
+    revoked_at: string | null;
+  };
 }
+
 
 export const getDriverManifest = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ token: z.string().min(8).max(128) }).parse(i))
