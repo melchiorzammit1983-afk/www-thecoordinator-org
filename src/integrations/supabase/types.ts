@@ -1078,6 +1078,18 @@ export type Database = {
         Returns: boolean
       }
       job_in_my_chain: { Args: { _job_id: string }; Returns: boolean }
+      lookup_magic_link: {
+        Args: { _token: string }
+        Returns: {
+          company_id: string
+          expires_at: string
+          id: string
+          kind: string
+          revoked_at: string
+          subject_id: string
+          subject_label: string
+        }[]
+      }
       respond_dispatch: {
         Args: { _decision: string; _job_id: string; _note: string }
         Returns: undefined
