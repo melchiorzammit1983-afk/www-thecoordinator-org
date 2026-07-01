@@ -4,10 +4,34 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(ctx: { supabase: any; userId: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("is_admin", { _user_id: ctx.userId });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: admin only");
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(
+    ctx.userId,
+  );
+  if (userError) throw new Error(userError.message);
+  const email = userData.user?.email?.toLowerCase();
+  if (!email) throw new Error("Forbidden: admin only");
+
+  const { data: adminRows, error: adminError } = await supabaseAdmin
+    .from("admin_emails")
+    .select("email");
+  if (adminError) throw new Error(adminError.message);
+  const isAdmin = (adminRows ?? []).some((row) => row.email?.toLowerCase() === email);
+  if (!isAdmin) throw new Error("Forbidden: admin only");
   return supabaseAdmin;
+}
+
+async function getIsAdmin(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (userError) throw new Error(userError.message);
+  const email = userData.user?.email?.toLowerCase();
+  if (!email) return false;
+
+  const { data: adminRows, error: adminError } = await supabaseAdmin
+    .from("admin_emails")
+    .select("email");
+  if (adminError) throw new Error(adminError.message);
+  return (adminRows ?? []).some((row) => row.email?.toLowerCase() === email);
 }
 
 // ---------- COMPANIES ----------
@@ -221,12 +245,8 @@ export const listLedger = createServerFn({ method: "GET" })
 export const whoAmI = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin.rpc("is_admin", {
-      _user_id: context.userId,
-    });
-    if (error) throw new Error(error.message);
-    return { userId: context.userId, isAdmin: !!data };
+    const isAdmin = await getIsAdmin(context.userId);
+    return { userId: context.userId, isAdmin };
   });
 
 
