@@ -29,14 +29,16 @@ export const getDriverManifest = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const link = await resolveToken(data.token, "driver");
     if (!link) return null;
-    const supabase = publicClient();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
-    let q = supabase.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at")
+    const weekOut = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+    let q = supabaseAdmin.from("jobs")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status")
       .eq("company_id", link.company_id)
-      .gte("date", today).lte("date", tomorrow)
-      .order("pickup_at", { ascending: true });
+      .or(`and(date.gte.${today},date.lte.${weekOut}),deletion_requested_at.not.is.null`)
+      .order("pickup_at", { ascending: true, nullsFirst: false })
+      .order("date", { ascending: true })
+      .order("time", { ascending: true });
     if (link.subject_id) q = q.eq("driver_id", link.subject_id);
     const { data: jobs, error } = await q;
     if (error) throw new Error(error.message);
