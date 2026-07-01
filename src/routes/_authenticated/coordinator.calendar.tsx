@@ -49,6 +49,7 @@ type Job = {
   deletion_requested_at: string | null;
   drivers?: { name: string } | null;
   pax?: { id: string; name: string }[];
+  labels?: TLabel[];
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
