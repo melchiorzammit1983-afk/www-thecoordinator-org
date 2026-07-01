@@ -46,18 +46,11 @@ function AuthPage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>Access</CardTitle>
-            <CardDescription>Sign in or create your account</CardDescription>
+            <CardTitle>Sign in</CardTitle>
+            <CardDescription>Use the credentials provided by your administrator</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="signin">
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="signin">Sign in</TabsTrigger>
-                <TabsTrigger value="signup">Sign up</TabsTrigger>
-              </TabsList>
-              <TabsContent value="signin"><SignInForm /></TabsContent>
-              <TabsContent value="signup"><SignUpForm /></TabsContent>
-            </Tabs>
+            <SignInForm />
           </CardContent>
         </Card>
         <p className="text-xs text-muted-foreground text-center mt-6">
