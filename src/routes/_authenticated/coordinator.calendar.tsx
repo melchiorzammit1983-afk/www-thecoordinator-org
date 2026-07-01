@@ -58,6 +58,14 @@ function CalendarPage() {
   const [openNew, setOpenNew] = useState(false);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
+  const [chatJob, setChatJob] = useState<Job | null>(null);
+
+  const unreadFn = useServerFn(getUnreadCountsCoord);
+  const { data: unreadByJob } = useQuery({
+    queryKey: ["coord-unread"],
+    queryFn: () => unreadFn() as Promise<Record<string, number>>,
+    refetchInterval: 15_000,
+  });
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
