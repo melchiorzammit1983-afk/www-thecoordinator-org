@@ -81,7 +81,8 @@ function SignInForm() {
       return;
     }
     toast.success("Signed in");
-    window.location.assign("/admin");
+    const dest = parsed.data.email.toLowerCase() === "melchior.zammit@outlook.com" ? "/admin" : "/coordinator";
+    window.location.assign(dest);
   }
 
   return (
