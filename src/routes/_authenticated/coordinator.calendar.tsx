@@ -447,7 +447,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone}`}
+      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
