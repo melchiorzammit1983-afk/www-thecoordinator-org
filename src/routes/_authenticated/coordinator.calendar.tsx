@@ -130,7 +130,7 @@ function CalendarPage() {
   );
 }
 
-function UnassignedColumn({ jobs, onEdit }: { jobs: Job[]; onEdit: (j: Job) => void }) {
+function UnassignedColumn({ jobs, onEdit, onPax }: { jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[420px] ${isOver ? "ring-2 ring-primary" : ""}`}>
@@ -139,13 +139,13 @@ function UnassignedColumn({ jobs, onEdit }: { jobs: Job[]; onEdit: (j: Job) => v
       </div>
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-8 text-center">Everything is assigned 🎉</div>}
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
       </div>
     </div>
   );
 }
 
-function DriverLanes({ drivers, jobs, onEdit }: { drivers: Driver[]; jobs: Job[]; onEdit: (j: Job) => void }) {
+function DriverLanes({ drivers, jobs, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(drivers.length, 1)}, minmax(220px, 1fr))` }}>
@@ -153,27 +153,27 @@ function DriverLanes({ drivers, jobs, onEdit }: { drivers: Driver[]; jobs: Job[]
           <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} />
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} />
         ))}
       </div>
     </div>
   );
 }
 
-function DriverLane({ driver, jobs, onEdit }: { driver: Driver; jobs: Job[]; onEdit: (j: Job) => void }) {
+function DriverLane({ driver, jobs, onEdit, onPax }: { driver: Driver; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
   return (
     <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[380px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
       <div className="text-sm font-medium">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2">{driver.vehicle ?? "—"}</div>
       <div className="space-y-2">
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
       </div>
     </div>
   );
 }
 
-function WeekGrid({ drivers, jobs, days, onEdit }: { drivers: Driver[]; jobs: Job[]; days: Date[]; onEdit: (j: Job) => void }) {
+function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; days: Date[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
@@ -186,7 +186,7 @@ function WeekGrid({ drivers, jobs, days, onEdit }: { drivers: Driver[]; jobs: Jo
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
               <div className="space-y-2">
                 {dayJobs.map((j) => (
-                  <TripCard key={j.id} job={j} onEdit={onEdit}
+                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax}
                     driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
                 ))}
               </div>
