@@ -660,6 +660,11 @@ function TripMenu({
             <MessageCircle className="h-4 w-4 mr-2 text-emerald-600" /> Share on WhatsApp
           </DropdownMenuItem>
         )}
+        {job.driver_id && (
+          <DropdownMenuItem onClick={() => copyMut.mutate()} disabled={copyMut.isPending}>
+            <Link2 className="h-4 w-4 mr-2" /> Copy link
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenSplit}>
           <Split className="h-4 w-4 mr-2" /> Split into vehicles
