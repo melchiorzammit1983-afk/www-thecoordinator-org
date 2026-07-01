@@ -219,12 +219,14 @@ export const listLedger = createServerFn({ method: "GET" })
 export const whoAmI = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase.rpc("is_admin", {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.rpc("is_admin", {
       _user_id: context.userId,
     });
     if (error) throw new Error(error.message);
     return { userId: context.userId, isAdmin: !!data };
   });
+
 
 // ---------- COORDINATOR PROVISIONING ----------
 
