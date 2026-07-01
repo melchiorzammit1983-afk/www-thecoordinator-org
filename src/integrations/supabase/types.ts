@@ -491,6 +491,70 @@ export type Database = {
           },
         ]
       }
+      job_dispatch_hops: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          dispatched_at: string
+          from_company_id: string | null
+          hop_index: number
+          id: string
+          job_id: string
+          note: string | null
+          status: Database["public"]["Enums"]["dispatch_hop_status"]
+          to_company_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          dispatched_at?: string
+          from_company_id?: string | null
+          hop_index: number
+          id?: string
+          job_id: string
+          note?: string | null
+          status?: Database["public"]["Enums"]["dispatch_hop_status"]
+          to_company_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          dispatched_at?: string
+          from_company_id?: string | null
+          hop_index?: number
+          id?: string
+          job_id?: string
+          note?: string | null
+          status?: Database["public"]["Enums"]["dispatch_hop_status"]
+          to_company_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_dispatch_hops_from_company_id_fkey"
+            columns: ["from_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_dispatch_hops_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_dispatch_hops_to_company_id_fkey"
+            columns: ["to_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_labels: {
         Row: {
           created_at: string
@@ -532,6 +596,7 @@ export type Database = {
           date: string
           deletion_requested_at: string | null
           deletion_requested_by: string | null
+          dispatch_chain_company_ids: string[]
           dispatch_decided_at: string | null
           dispatch_note: string | null
           dispatch_status: Database["public"]["Enums"]["dispatch_status"] | null
@@ -567,6 +632,7 @@ export type Database = {
           date: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dispatch_chain_company_ids?: string[]
           dispatch_decided_at?: string | null
           dispatch_note?: string | null
           dispatch_status?:
@@ -604,6 +670,7 @@ export type Database = {
           date?: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dispatch_chain_company_ids?: string[]
           dispatch_decided_at?: string | null
           dispatch_note?: string | null
           dispatch_status?:
@@ -962,6 +1029,10 @@ export type Database = {
         Returns: number
       }
       company_of: { Args: { _user_id: string }; Returns: string }
+      dispatch_job_forward: {
+        Args: { _job_id: string; _note: string; _to_company: string }
+        Returns: undefined
+      }
       driver_accept_job: {
         Args: { _job_id: string; _token: string }
         Returns: undefined
@@ -987,6 +1058,11 @@ export type Database = {
         Args: { _job_id: string; _viewer_company: string }
         Returns: boolean
       }
+      job_in_my_chain: { Args: { _job_id: string }; Returns: boolean }
+      respond_dispatch: {
+        Args: { _decision: string; _job_id: string; _note: string }
+        Returns: undefined
+      }
     }
     Enums: {
       booking_status:
@@ -998,6 +1074,7 @@ export type Database = {
       company_status: "pending" | "approved" | "suspended"
       connection_mode: "sync" | "provider"
       connection_status: "pending" | "active" | "revoked" | "rejected"
+      dispatch_hop_status: "pending" | "accepted" | "rejected" | "cancelled"
       dispatch_status: "pending" | "accepted" | "rejected"
       driver_status: "available" | "busy" | "offline"
       feature_name:
@@ -1166,6 +1243,7 @@ export const Constants = {
       company_status: ["pending", "approved", "suspended"],
       connection_mode: ["sync", "provider"],
       connection_status: ["pending", "active", "revoked", "rejected"],
+      dispatch_hop_status: ["pending", "accepted", "rejected", "cancelled"],
       dispatch_status: ["pending", "accepted", "rejected"],
       driver_status: ["available", "busy", "offline"],
       feature_name: [
