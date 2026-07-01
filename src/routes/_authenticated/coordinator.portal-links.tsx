@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
-  listMagicLinks, generateMagicLink, revokeMagicLink, listDrivers,
+  listMagicLinks, generateMagicLink, revokeMagicLink, listDrivers, extendMagicLink,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
