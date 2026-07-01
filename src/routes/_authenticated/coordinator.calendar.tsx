@@ -441,8 +441,19 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
 
-  const delayed = job.flight_status === "delayed" || job.flight_status === "cancelled";
+  const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
+  const newTime = (() => {
+    const iso = job.flight_estimated_at || job.flight_scheduled_at;
+    if (!iso) return "";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+  })();
+  const flightMsg =
+    job.flight_status === "cancelled" ? "CANCELLED" :
+    job.flight_status === "time_mismatch" ? (job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH")) :
+    job.flight_status === "delayed" ? (job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED")) :
+    "";
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
 
