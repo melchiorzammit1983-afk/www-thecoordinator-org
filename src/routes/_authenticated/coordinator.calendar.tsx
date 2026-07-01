@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import { toast } from "sonner";
-import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle } from "lucide-react";
+import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send } from "lucide-react";
+import { listConnections, dispatchJobToPartner } from "@/lib/collab.functions";
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
@@ -302,6 +303,7 @@ function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job:
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
             {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
+            <DispatchToPartnerButton job={job} />
             <Button size="sm" variant="ghost" className="h-7 px-2 relative" onClick={() => onChat(job)} title="Chat">
               <MessagesSquare className="h-3 w-3" />
               {unread > 0 && (
@@ -449,5 +451,52 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
         <DialogFooter><Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending?"Splitting…":"Split"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DispatchToPartnerButton({ job }: { job: Job }) {
+  const [open, setOpen] = useState(false);
+  const [partnerId, setPartnerId] = useState<string>("");
+  const [note, setNote] = useState("");
+  const qc = useQueryClient();
+  const listConn = useServerFn(listConnections);
+  const dispatchFn = useServerFn(dispatchJobToPartner);
+  const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
+  const mut = useMutation({
+    mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
+    onSuccess: () => { toast.success("Dispatched"); setOpen(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  return (
+    <>
+      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpen(true)} title="Dispatch to partner">
+        <Send className="h-3 w-3" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Dispatch to partner</DialogTitle>
+            <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription></DialogHeader>
+          <div className="space-y-3">
+            {(conns.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>}
+            <div className="space-y-1">
+              {(conns.data ?? []).filter((c: any) => c.status === "active").map((c: any) => (
+                <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
+                  <input type="radio" name="partner" checked={partnerId === c.other.id} onChange={() => setPartnerId(c.other.id)} />
+                  <span className="font-medium">{c.other?.name}</span>
+                  <Badge variant="outline" className="ml-auto">{c.mode}</Badge>
+                </label>
+              ))}
+            </div>
+            <div>
+              <Label>Note (optional)</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>Dispatch</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

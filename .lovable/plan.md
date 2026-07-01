@@ -1,49 +1,84 @@
-# Trip labels (colored tags on cards)
 
-Let coordinators create reusable colored labels (e.g. "VIP Crew", "Urgent", "Airport run") and attach one or more to a trip. On the dispatch board each trip card gets a left-edge color stripe plus small named chips.
+# Coordinator Collaboration
 
-## Database
+Add a new "Collaborate" tab so a coordinator (A) can connect to another coordinator (B) either as a **Sync partner** (shared workspace with granular permissions A chooses) or as a **Provider** (A dispatches jobs to B; B runs them with B's drivers). Points are always paid by the sender (A).
 
-New table `trip_labels` (per company):
-- `id`, `company_id`, `name`, `color` (hex like `#E11D48`), `sort_order`, timestamps
-- Unique `(company_id, lower(name))`
-- RLS: coordinator (company owner) can CRUD their own company's labels; admin full access
-- GRANTs for `authenticated` + `service_role`
+## 1. Database (migrations)
 
-Join table `job_labels`:
-- `job_id` → `jobs(id)` on delete cascade
-- `label_id` → `trip_labels(id)` on delete cascade
-- PK `(job_id, label_id)`
-- RLS: same company scope via `jobs.company_id`
+New tables (all company-scoped, RLS, GRANTs):
 
-No changes to `jobs`.
+- **coordinator_connections**
+  - `owner_company_id` (A — inviter), `partner_company_id` (B — accepter)
+  - `mode` enum: `sync` | `provider`
+  - `status` enum: `pending` | `active` | `revoked` | `rejected`
+  - `permissions` jsonb — set by A at invite time. Keys (booleans):
+    `view_jobs`, `edit_jobs`, `create_jobs`, `view_drivers`, `assign_drivers`,
+    `view_chat`, `post_chat`, `view_pax`, `edit_pax`. **Never** includes top-up/points.
+  - `accepted_at`, `revoked_at`, timestamps
+  - Unique `(least(owner,partner), greatest(owner,partner))` to prevent dupes
 
-## Server functions (`src/lib/coordinator.functions.ts`)
+- **connection_invites**
+  - `code` (short random, unique), `owner_company_id`, `mode`, `permissions` jsonb,
+    `expires_at`, `used_at`, `used_by_company_id`
+  - Used for the share-code handshake
 
-- `listLabels()` → labels for current company
-- `createLabel({ name, color })`
-- `updateLabel({ id, name?, color? })`
-- `deleteLabel({ id })`
-- `setJobLabels({ job_id, label_ids: string[] })` — replace set for a job
-- Extend `listJobs` result to include `labels: { id, name, color }[]` (via a joined select on `job_labels(trip_labels(*))`)
-- Extend `createJob` / `updateJob` input with optional `label_ids` and persist through `setJobLabels`
-- `createJobsBulk` accepts an optional `label_ids` array applied to every created job
+- **jobs** additions (migration):
+  - `origin_company_id` uuid — who created the job (A)
+  - `executor_company_id` uuid — who runs it (B when dispatched; else same as origin)
+  - `dispatch_status` enum nullable: `pending` | `accepted` | `rejected`
+  - `dispatched_at`, `dispatch_decided_at`, `dispatch_note`
+  - Existing `company_id` becomes the executor scope for driver/pax/chat RLS
 
-## UI
+- **driver_status_updates**: already exists; ensure Realtime publication added so A can subscribe to B's driver status for shared jobs.
 
-**Label manager** — new route `src/routes/_authenticated/coordinator.labels.tsx` with a simple table: create/rename/recolor/delete. Color picker = preset swatches (10 tasteful hues) + custom hex input. Linked from the coordinator sidebar.
+RLS updates so a partner company can SELECT/UPDATE rows on the other's tables only when an **active connection** grants that specific permission (via a `has_connection_permission(auth_company, target_company, perm)` security-definer function). Provider mode grants B implicit access to the specific jobs A dispatched to B (and their pax/chat), never A's whole workspace.
 
-**Job form** (`src/components/coordinator/JobFormDialog.tsx`) — new "Labels" section (multi-select chips) present on both the single-trip tab and the bulk-paste tab. Includes an inline "+ New label" quick-create that opens a mini popover (name + color) and appends the new label to the selection.
+## 2. Server functions (`src/lib/collab.functions.ts`)
 
-**Trip card** (`src/routes/_authenticated/coordinator.calendar.tsx` → `TripCard`):
-- Left-edge vertical color stripe (4 px) using the first label's color; if multiple labels, render a stacked gradient of up to 3 colors
-- Small rounded chips under the route line: `● VIP Crew` etc. (dot uses label color, chip background = 10% tint)
-- Stripe/chips coexist with existing status border (green/orange/red). Border keeps meaning status; stripe = category.
+- `createConnectionInvite({ mode, permissions, ttlDays })` → returns `code` + share URL
+- `redeemConnectionInvite({ code })` → creates `coordinator_connections` row `active`
+- `listConnections()` / `revokeConnection({ id })` / `updateConnectionPermissions({ id, permissions })` (owner only)
+- `dispatchJobToPartner({ job_id, partner_company_id, note? })` → sets executor, `dispatch_status='pending'`, charges A via `charge_feature`
+- `respondToDispatch({ job_id, decision, note? })` (B) → accept/reject; on accept, job appears on B's dispatch board
+- `listIncomingDispatches()` (B) — pending queue
+- Extend `listJobs` (A) to include partner-executed jobs with a read-only `partner_executor` flag and to surface `driver_name` + latest status from B's driver
+- Realtime: subscribe A's board to `driver_status_updates` for jobs where `origin_company_id = A`
 
-**Driver portal card** (`src/routes/m.driver.$token.tsx`) — show the same chips (read-only) so drivers see "VIP Crew" too. Extend `getDriverManifest` in `src/lib/coordinator-public.functions.ts` to include labels.
+Points: `dispatchJobToPartner` deducts from A's balance using a new `feature_costs` entry `dispatch_partner`. B is never charged.
 
-## Out of scope
+## 3. UI
 
-- Filtering by label (can add later to the search/filters toolbar)
-- Per-user color themes or icon per label
-- Label analytics
+New sidebar entry **Collaborate** in `coordinator.tsx` navigation.
+
+- `src/routes/_authenticated/coordinator.collaborate.tsx`
+  - Header actions: **New invite** (dialog: pick Sync/Provider, permission checkboxes for Sync, TTL) → copyable share code + link
+  - **Redeem code** input to accept an invite
+  - Table of active connections: partner name, mode, permissions summary, "Edit permissions", "Revoke"
+  - Tabs: **My connections** / **Incoming invites**
+
+- Dispatch board (`coordinator.calendar.tsx`)
+  - New "Dispatch to partner" action on a trip card (visible when connections exist) → picks a partner, sends
+  - Partner-executed trips render with a distinct badge and read-only status stream (driver name + status pulled from B)
+
+- New page `coordinator.incoming.tsx` (B) — pending partner dispatches with Accept/Reject and optional note. Accepted jobs land on B's normal dispatch board where B splits pax to B's drivers as today.
+
+- Trip chat (`TripChatDialog`) — if connection permission `view_chat`/`post_chat` allows, A can read/post on partner-executed jobs.
+
+## 4. Realtime & visibility
+
+- Enable Realtime on `jobs`, `driver_status_updates`, `pax` for cross-company subscribers.
+- A's calendar subscribes to updates for jobs where `origin_company_id = A.company_id` and renders driver name + status just like an internal driver (read-only). A cannot reassign B's drivers.
+
+## 5. Out of scope (for this iteration)
+
+- Bi-directional Sync of top-ups, billing, or points balance (explicitly excluded per your rule)
+- Multi-hop dispatch (B forwarding to C)
+- Partner analytics dashboard
+- Per-driver ratings across companies
+
+## Technical notes
+
+- All new tables get `GRANT SELECT, INSERT, UPDATE, DELETE ... TO authenticated; GRANT ALL ... TO service_role;` in the same migration.
+- Cross-company visibility is enforced via a SECURITY DEFINER helper `has_connection_permission(_viewer_company, _target_company, _perm text)` to avoid RLS recursion.
+- Points deduction reuses existing `charge_feature` RPC.
+- Add a Realtime subscription hook `useJobRealtime(companyId)` in `src/hooks/`, mounted from the calendar and cleaned up on unmount.
