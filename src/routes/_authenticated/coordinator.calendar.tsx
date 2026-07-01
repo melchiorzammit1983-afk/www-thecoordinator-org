@@ -426,7 +426,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const paxCount = job.pax?.length ?? 0;
   const unread = ctx.unread[job.id] ?? 0;
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
-  const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
+  const selfAssigned = !!job.self_assigned_user_id;
+  const assignedAccepted = (!!job.driver_id && !!job.driver_accepted_at) || selfAssigned;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
 
   // Color priority: red > blue(unread) > green > amber > default
@@ -481,7 +482,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             {job.clientcompanyname && (
               <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
             )}
-            {shownDriver && (
+            {selfAssigned ? (
+              <div className="text-[11px] mt-0.5 truncate">
+                <Badge variant="secondary" className="text-[10px]">You</Badge>
+                <span className="ml-1 text-muted-foreground">status:</span> <span className="font-medium">{job.status}</span>
+              </div>
+            ) : shownDriver && (
               <div className="text-[11px] mt-0.5 truncate">
                 <span className="text-muted-foreground">Driver:</span> <span className="font-medium">{shownDriver}</span>
                 {assignedAccepted && <span className="ml-1 text-emerald-600">✓ accepted</span>}
@@ -508,6 +514,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
           </div>
         </div>
       </button>
+
+      {selfAssigned && <SelfStatusRow job={job} />}
+
 
       {/* Top-right controls: drag (desktop) + menu */}
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
