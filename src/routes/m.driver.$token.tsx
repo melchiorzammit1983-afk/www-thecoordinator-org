@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -16,24 +16,38 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { QrScanner } from "@/components/driver/QrScanner";
-import { CheckCircle2, Clock, Download, X, FileText } from "lucide-react";
+import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import {
+  CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
+  Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User,
+} from "lucide-react";
 
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
 });
 
+type Pax = { id: string; name: string; status: string; boarded_at: string | null };
 type Job = {
   id: string; from_location: string; to_location: string;
   date: string; time: string; pickup_at: string | null;
-  flightorship: string | null; vehicle: string | null;
+  flightorship: string | null;
+  from_flight: string | null; to_flight: string | null;
+  flight_status: string | null; flight_status_note: string | null;
+  vehicle: string | null;
   qr_strict_mode: boolean; tracking_enabled: boolean;
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
   status?: string;
   payment_status?: "pending" | "paid";
+  drivers?: { name: string } | null;
+  pax?: Pax[];
+  unread_messages?: number;
 };
 
 type Driver = {
@@ -45,7 +59,7 @@ type Driver = {
 
 const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "en_route", label: "En route" },
-  { value: "arrived", label: "Arrived at pickup" },
+  { value: "arrived", label: "Arrived" },
   { value: "in_progress", label: "In progress" },
   { value: "completed", label: "Completed" },
 ];
@@ -56,61 +70,100 @@ function DriverManifest() {
   const { data, isLoading } = useQuery({
     queryKey: ["driver-manifest", token],
     queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; jobs: Job[]; driver: Driver | null } | null>,
+    refetchInterval: 20_000,
   });
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
+  const [chatJob, setChatJob] = useState<Job | null>(null);
 
-  // Auto-open profile setup on first entry
   useEffect(() => {
     if (data?.driver && !data.driver.profile_updated_at) setProfileOpen(true);
   }, [data?.driver]);
 
-  if (isLoading) return <div className="min-h-screen grid place-items-center text-muted-foreground text-base">Loading…</div>;
+  const jobs = useMemo(() => {
+    if (!data) return [];
+    return [...data.jobs].sort((a, b) => {
+      const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : Infinity;
+      const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : Infinity;
+      return ta - tb;
+    });
+  }, [data]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen grid place-items-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="text-sm">Loading manifest…</div>
+        </div>
+      </div>
+    );
+  }
   if (!data) return <NotFound />;
 
-  const jobs = [...data.jobs].sort((a, b) => {
-    const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : Infinity;
-    const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : Infinity;
-    return ta - tb;
-  });
-
+  const driver = data.driver;
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background px-4 py-5">
-        <div className="max-w-3xl mx-auto flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Driver manifest</div>
-            <div className="text-2xl font-bold">{data.driver?.name ?? data.link.subject_label}</div>
-            {data.driver && (
-              <div className="text-xs text-muted-foreground mt-1">
-                {data.driver.seats_available != null ? `${data.driver.seats_available} seats` : "No seat count"}
-                {data.driver.availability_note ? ` · ${data.driver.availability_note}` : ""}
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
+      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] text-primary font-semibold uppercase tracking-widest">Driver Manifest</div>
+            <div className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</div>
+            {driver && (
+              <div className="text-[11px] text-muted-foreground truncate">
+                {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
+                {driver.availability_note ?? "No availability set"}
               </div>
             )}
           </div>
-          <div className="flex gap-2">
-            {data.driver && (
-              <Button size="sm" variant="outline" onClick={() => setProfileOpen(true)}>Edit profile</Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => setStatementOpen(true)}>
-              <FileText className="h-4 w-4 mr-1" /> Statement
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="outline"><MoreVertical className="h-4 w-4" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {driver && (
+                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                  <User className="h-4 w-4 mr-2" /> Edit profile
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setStatementOpen(true)}>
+                <FileText className="h-4 w-4 mr-2" /> Download statement
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto p-4 space-y-3">
-        {jobs.length === 0 && <div className="text-center py-16 text-muted-foreground">No trips yet.</div>}
-        {jobs.map((j) => <JobRow key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} />)}
+
+      <main className="max-w-3xl mx-auto p-3 space-y-3 pb-24">
+        {jobs.length === 0 && (
+          <div className="text-center py-20">
+            <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
+              <MapPin className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div className="font-medium">No trips yet</div>
+            <div className="text-sm text-muted-foreground mt-1">Your coordinator hasn't assigned trips.</div>
+          </div>
+        )}
+        {jobs.map((j) => (
+          <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+        ))}
       </main>
+
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
-      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} token={token} driver={data.driver} />
-      <StatementDialog open={statementOpen} onOpenChange={setStatementOpen} token={token} driverName={data.driver?.name ?? "driver"} />
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} token={token} driver={driver} />
+      <StatementDialog open={statementOpen} onOpenChange={setStatementOpen} token={token} driverName={driver?.name ?? "driver"} />
+      <TripChatDialog
+        open={!!chatJob} onOpenChange={(v) => !v && setChatJob(null)}
+        jobId={chatJob?.id ?? null}
+        title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
+        role="driver" token={token}
+      />
     </div>
   );
 }
 
-function JobRow({ job, token, onOpen }: { job: Job; token: string; onOpen: () => void }) {
+function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const approveDelFn = useServerFn(driverApproveDeletion);
@@ -149,65 +202,169 @@ function JobRow({ job, token, onOpen }: { job: Job; token: string; onOpen: () =>
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
   const nextStatus = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
   const paid = job.payment_status === "paid";
+  const accepted = !!job.driver_accepted_at;
+  const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
+  const pax = job.pax ?? [];
+  const paxCount = pax.length;
+  const onboardCount = pax.filter((p) => p.status === "onboard").length;
+
+  const borderClass = problem
+    ? "border-destructive/60 ring-1 ring-destructive/40"
+    : accepted
+    ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
+    : "border-border";
+
+  const dateLabel = job.pickup_at
+    ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", day: "2-digit", month: "short" })
+    : job.date;
+  const timeLabel = job.pickup_at
+    ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : job.time?.slice(0, 5);
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3">
-      <div className="flex justify-between gap-3 flex-wrap">
-        <div>
-          <div className="text-sm font-semibold text-primary">{job.pickup_at ? new Date(job.pickup_at).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }) : `${job.date} ${job.time?.slice(0,5)}`}</div>
-          <div className="text-lg font-bold leading-tight">{job.from_location}</div>
-          <div className="text-xs text-muted-foreground">↓</div>
-          <div className="text-lg font-bold leading-tight">{job.to_location}</div>
-          {job.clientcompanyname && <div className="text-xs text-muted-foreground mt-1">{job.clientcompanyname}</div>}
+    <article className={`rounded-2xl border-2 bg-card shadow-sm overflow-hidden transition ${borderClass}`}>
+      {/* Header strip */}
+      <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="rounded-lg bg-background/80 px-2 py-1 text-sm font-mono font-bold tracking-tight">{timeLabel}</div>
+          <div className="text-xs font-medium text-muted-foreground truncate">{dateLabel}</div>
         </div>
-        <div className="flex gap-1 flex-wrap items-start">
-          {paid
-            ? <Badge className="bg-emerald-600 hover:bg-emerald-600"><CheckCircle2 className="h-3 w-3 mr-1" /> Paid</Badge>
-            : <Badge variant="outline"><Clock className="h-3 w-3 mr-1" /> Pending</Badge>}
-          {job.qr_strict_mode && <Badge>QR required</Badge>}
-          {job.tracking_enabled && <Badge variant="outline">Tracking</Badge>}
-          {job.flightorship && <Badge variant="secondary">{job.flightorship}</Badge>}
-          {job.driver_accepted_at && <Badge className="bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
-          {job.deletion_requested_at && <Badge variant="destructive">Deletion requested</Badge>}
-          {job.status && job.status !== "pending" && <Badge variant="outline" className="capitalize">{job.status.replace("_", " ")}</Badge>}
+        <div className="flex items-center gap-1">
+          {job.deletion_requested_at && (
+            <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle className="h-3 w-3" /> Delete requested</Badge>
+          )}
+          {accepted && !job.deletion_requested_at && (
+            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] gap-1"><CheckCircle2 className="h-3 w-3" /> Accepted</Badge>
+          )}
+          {!accepted && !job.deletion_requested_at && (
+            <Badge variant="outline" className="text-[10px] gap-1"><Clock className="h-3 w-3" /> Awaiting you</Badge>
+          )}
         </div>
       </div>
-      <div className="flex gap-2 flex-wrap">
-        {!job.driver_accepted_at && !job.deletion_requested_at && (
-          <Button size="lg" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
+
+      {/* Route */}
+      <div className="px-4 pt-3">
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center pt-1.5">
+            <div className="h-2.5 w-2.5 rounded-full bg-primary" />
+            <div className="flex-1 w-0.5 bg-border my-1 min-h-6" />
+            <div className="h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-primary/20" />
+          </div>
+          <div className="flex-1 min-w-0 space-y-2">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pickup</div>
+              <div className="text-base font-bold leading-tight break-words">{job.from_location}</div>
+              {job.from_flight && (
+                <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
+                  <Plane className="h-3 w-3" /> {job.from_flight}
+                  {(job.flight_status === "delayed" || job.flight_status === "cancelled") && (
+                    <span className="text-destructive font-semibold ml-1">
+                      {job.flight_status === "cancelled" ? "CANCELLED" : (job.flight_status_note || "DELAYED")}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Drop-off</div>
+              <div className="text-base font-bold leading-tight break-words">{job.to_location}</div>
+              {job.to_flight && (
+                <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
+                  <Plane className="h-3 w-3" /> {job.to_flight}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Meta chips */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
+          {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
+          <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
+          {job.qr_strict_mode && <Badge className="text-[10px] gap-1"><QrCode className="h-3 w-3" /> QR required</Badge>}
+          {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
+          {paid
+            ? <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">Paid</Badge>
+            : <Badge variant="outline" className="text-[10px]">Pending payment</Badge>}
+          {job.status && job.status !== "pending" && (
+            <Badge variant="outline" className="text-[10px] capitalize">{job.status.replace("_", " ")}</Badge>
+          )}
+        </div>
+
+        {/* Passengers preview (always visible) */}
+        {paxCount > 0 && (
+          <div className="mt-3 rounded-lg bg-muted/40 border p-2.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Users className="h-3 w-3" /> Passengers ({paxCount})
+            </div>
+            <ul className="space-y-0.5">
+              {pax.map((p) => (
+                <li key={p.id} className="text-sm flex items-center justify-between gap-2">
+                  <span className="truncate">{p.name}</span>
+                  {p.status === "onboard" && (
+                    <span className="text-[10px] text-emerald-600 font-medium inline-flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Onboard
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="p-3 pt-3 grid grid-cols-2 gap-2">
+        {!accepted && !job.deletion_requested_at && (
+          <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
             {acceptMut.isPending ? "Accepting…" : "Accept trip"}
           </Button>
         )}
-        {job.driver_accepted_at && !job.deletion_requested_at && (
+        {accepted && !job.deletion_requested_at && (
           <>
-            <Button size="lg" onClick={onOpen}>Open trip</Button>
+            <Button className="col-span-2 h-11" onClick={onOpen}>
+              <QrCode className="h-4 w-4 mr-1.5" /> Open trip · Board passengers
+            </Button>
             {nextStatus && (
-              <Button size="lg" variant="secondary" disabled={statusMut.isPending}
+              <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
                 onClick={() => statusMut.mutate(nextStatus.value)}>
                 {nextStatus.label}
               </Button>
             )}
           </>
         )}
-        <Button size="lg" variant="outline" asChild>
-          <a href={mapsUrl} target="_blank" rel="noreferrer">Navigate</a>
+        <Button variant="outline" className="h-10" asChild>
+          <a href={mapsUrl} target="_blank" rel="noreferrer">
+            <Navigation className="h-4 w-4 mr-1.5" /> Navigate
+          </a>
         </Button>
-        <Button size="lg" variant={paid ? "outline" : "default"} disabled={payMut.isPending}
-          onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
-          {paid ? "Mark pending" : "Mark paid"}
-        </Button>
-        <Button size="lg" variant="ghost" disabled={hideMut.isPending}
-          onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
-          <X className="h-4 w-4 mr-1" /> Delete
+        <Button variant="outline" className="h-10 relative" onClick={onChat}>
+          <MessageCircle className="h-4 w-4 mr-1.5" /> Chat coordinator
+          {(job.unread_messages ?? 0) > 0 && (
+            <span className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground text-[10px] h-5 min-w-5 px-1 grid place-items-center font-semibold">
+              {job.unread_messages}
+            </span>
+          )}
         </Button>
         {job.deletion_requested_at && (
-          <Button size="lg" variant="destructive" disabled={approveDelMut.isPending}
+          <Button variant="destructive" className="col-span-2 h-10" disabled={approveDelMut.isPending}
             onClick={() => { if (confirm("Approve deletion?")) approveDelMut.mutate(); }}>
             {approveDelMut.isPending ? "Approving…" : "Approve deletion"}
           </Button>
         )}
+        <div className="col-span-2 flex items-center gap-2 pt-1">
+          <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
+            onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
+            {paid ? "Mark pending" : "Mark paid"}
+          </Button>
+          <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
+            onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
+            <X className="h-4 w-4 mr-1" /> Hide
+          </Button>
+        </div>
       </div>
-    </div>
+    </article>
   );
 }
 

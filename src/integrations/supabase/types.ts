@@ -681,6 +681,60 @@ export type Database = {
           },
         ]
       }
+      trip_messages: {
+        Row: {
+          body: string
+          company_id: string
+          created_at: string
+          id: string
+          job_id: string
+          read_by_coordinator_at: string | null
+          read_by_driver_at: string | null
+          sender_kind: string
+          sender_label: string | null
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          company_id: string
+          created_at?: string
+          id?: string
+          job_id: string
+          read_by_coordinator_at?: string | null
+          read_by_driver_at?: string | null
+          sender_kind: string
+          sender_label?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          read_by_coordinator_at?: string | null
+          read_by_driver_at?: string | null
+          sender_kind?: string
+          sender_label?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_messages_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

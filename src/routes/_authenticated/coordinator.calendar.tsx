@@ -20,7 +20,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
-import { Users } from "lucide-react";
+import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import { getUnreadCountsCoord } from "@/lib/coordinator.functions";
+import { Users, MessagesSquare } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
@@ -56,6 +58,14 @@ function CalendarPage() {
   const [openNew, setOpenNew] = useState(false);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
+  const [chatJob, setChatJob] = useState<Job | null>(null);
+
+  const unreadFn = useServerFn(getUnreadCountsCoord);
+  const { data: unreadByJob } = useQuery({
+    queryKey: ["coord-unread"],
+    queryFn: () => unreadFn() as Promise<Record<string, number>>,
+    refetchInterval: 15_000,
+  });
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
@@ -130,10 +140,10 @@ function CalendarPage() {
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} />
+          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
+            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />}
         </div>
       </DndContext>
 
@@ -148,11 +158,19 @@ function CalendarPage() {
         jobLabel={paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0,5)}` : ""}
         drivers={drivers ?? []}
       />
+      <TripChatDialog
+        open={!!chatJob} onOpenChange={(v) => !v && setChatJob(null)}
+        jobId={chatJob?.id ?? null}
+        title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
+        role="coordinator"
+      />
     </div>
   );
 }
 
-function UnassignedColumn({ jobs, onEdit, onPax }: { jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
+type RowProps = { onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: Record<string, number> };
+
+function UnassignedColumn({ jobs, onEdit, onPax, onChat, unread }: { jobs: Job[] } & RowProps) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[420px] ${isOver ? "ring-2 ring-primary" : ""}`}>
@@ -161,13 +179,13 @@ function UnassignedColumn({ jobs, onEdit, onPax }: { jobs: Job[]; onEdit: (j: Jo
       </div>
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-8 text-center">Everything is assigned 🎉</div>}
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
       </div>
     </div>
   );
 }
 
-function DriverLanes({ drivers, jobs, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
+function DriverLanes({ drivers, jobs, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[] } & RowProps) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(drivers.length, 1)}, minmax(220px, 1fr))` }}>
@@ -175,27 +193,27 @@ function DriverLanes({ drivers, jobs, onEdit, onPax }: { drivers: Driver[]; jobs
           <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} />
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread} />
         ))}
       </div>
     </div>
   );
 }
 
-function DriverLane({ driver, jobs, onEdit, onPax }: { driver: Driver; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
+function DriverLane({ driver, jobs, onEdit, onPax, onChat, unread }: { driver: Driver; jobs: Job[] } & RowProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
   return (
     <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[380px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
       <div className="text-sm font-medium">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2">{driver.vehicle ?? "—"}</div>
       <div className="space-y-2">
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
       </div>
     </div>
   );
 }
 
-function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; days: Date[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
+function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[]; days: Date[] } & RowProps) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
@@ -208,7 +226,7 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; j
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
               <div className="space-y-2">
                 {dayJobs.map((j) => (
-                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax}
+                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0}
                     driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
                 ))}
               </div>
@@ -220,7 +238,9 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; j
   );
 }
 
-function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; driverName?: string }) {
+
+
+function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: number; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
@@ -277,6 +297,12 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
             {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
+            <Button size="sm" variant="ghost" className="h-7 px-2 relative" onClick={() => onChat(job)} title="Chat">
+              <MessagesSquare className="h-3 w-3" />
+              {unread > 0 && (
+                <span className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground text-[9px] h-4 min-w-4 px-1 grid place-items-center font-semibold">{unread}</span>
+              )}
+            </Button>
             <DeleteButton job={job} />
           </div>
 
