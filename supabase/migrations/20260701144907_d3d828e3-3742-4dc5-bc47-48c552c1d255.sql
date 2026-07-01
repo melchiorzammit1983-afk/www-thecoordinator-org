@@ -1,0 +1,2 @@
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS self_assigned_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS jobs_self_assigned_user_id_idx ON public.jobs(self_assigned_user_id) WHERE self_assigned_user_id IS NOT NULL;
