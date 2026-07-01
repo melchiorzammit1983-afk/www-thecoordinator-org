@@ -13,8 +13,16 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
+import { Route as MClientTokenRouteImport } from './routes/m.client.$token'
+import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
+import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
+import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
+import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
 import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
 
@@ -37,16 +45,62 @@ const CTokenRoute = CTokenRouteImport.update({
   path: '/c/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedCoordinatorRoute =
+  AuthenticatedCoordinatorRouteImport.update({
+    id: '/coordinator',
+    path: '/coordinator',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCoordinatorIndexRoute =
+  AuthenticatedCoordinatorIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const MDriverTokenRoute = MDriverTokenRouteImport.update({
+  id: '/m/driver/$token',
+  path: '/m/driver/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MClientTokenRoute = MClientTokenRouteImport.update({
+  id: '/m/client/$token',
+  path: '/m/client/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedCoordinatorPortalLinksRoute =
+  AuthenticatedCoordinatorPortalLinksRouteImport.update({
+    id: '/portal-links',
+    path: '/portal-links',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPendingRoute =
+  AuthenticatedCoordinatorPendingRouteImport.update({
+    id: '/pending',
+    path: '/pending',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorDriversRoute =
+  AuthenticatedCoordinatorDriversRouteImport.update({
+    id: '/drivers',
+    path: '/drivers',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorCalendarRoute =
+  AuthenticatedCoordinatorCalendarRouteImport.update({
+    id: '/calendar',
+    path: '/calendar',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminLedgerRoute =
   AuthenticatedAdminLedgerRouteImport.update({
     id: '/ledger',
@@ -64,10 +118,18 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/m/client/$token': typeof MClientTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -75,7 +137,14 @@ export interface FileRoutesByTo {
   '/c/$token': typeof CTokenRoute
   '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/m/client/$token': typeof MClientTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -83,10 +152,18 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
   '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
+  '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
+  '/_authenticated/coordinator/drivers': typeof AuthenticatedCoordinatorDriversRoute
+  '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/m/client/$token': typeof MClientTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -94,10 +171,18 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/admin'
+    | '/coordinator'
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/coordinator/calendar'
+    | '/coordinator/drivers'
+    | '/coordinator/pending'
+    | '/coordinator/portal-links'
+    | '/m/client/$token'
+    | '/m/driver/$token'
     | '/admin/'
+    | '/coordinator/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -105,17 +190,32 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/admin/feature-costs'
     | '/admin/ledger'
+    | '/coordinator/calendar'
+    | '/coordinator/drivers'
+    | '/coordinator/pending'
+    | '/coordinator/portal-links'
+    | '/m/client/$token'
+    | '/m/driver/$token'
     | '/admin'
+    | '/coordinator'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/admin'
+    | '/_authenticated/coordinator'
     | '/c/$token'
     | '/_authenticated/admin/feature-costs'
     | '/_authenticated/admin/ledger'
+    | '/_authenticated/coordinator/calendar'
+    | '/_authenticated/coordinator/drivers'
+    | '/_authenticated/coordinator/pending'
+    | '/_authenticated/coordinator/portal-links'
+    | '/m/client/$token'
+    | '/m/driver/$token'
     | '/_authenticated/admin/'
+    | '/_authenticated/coordinator/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -123,6 +223,8 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   CTokenRoute: typeof CTokenRoute
+  MClientTokenRoute: typeof MClientTokenRoute
+  MDriverTokenRoute: typeof MDriverTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -155,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/coordinator': {
+      id: '/_authenticated/coordinator'
+      path: '/coordinator'
+      fullPath: '/coordinator'
+      preLoaderRoute: typeof AuthenticatedCoordinatorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -162,12 +271,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/coordinator/': {
+      id: '/_authenticated/coordinator/'
+      path: '/'
+      fullPath: '/coordinator/'
+      preLoaderRoute: typeof AuthenticatedCoordinatorIndexRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/m/driver/$token': {
+      id: '/m/driver/$token'
+      path: '/m/driver/$token'
+      fullPath: '/m/driver/$token'
+      preLoaderRoute: typeof MDriverTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/m/client/$token': {
+      id: '/m/client/$token'
+      path: '/m/client/$token'
+      fullPath: '/m/client/$token'
+      preLoaderRoute: typeof MClientTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/coordinator/portal-links': {
+      id: '/_authenticated/coordinator/portal-links'
+      path: '/portal-links'
+      fullPath: '/coordinator/portal-links'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalLinksRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/pending': {
+      id: '/_authenticated/coordinator/pending'
+      path: '/pending'
+      fullPath: '/coordinator/pending'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPendingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/drivers': {
+      id: '/_authenticated/coordinator/drivers'
+      path: '/drivers'
+      fullPath: '/coordinator/drivers'
+      preLoaderRoute: typeof AuthenticatedCoordinatorDriversRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/calendar': {
+      id: '/_authenticated/coordinator/calendar'
+      path: '/calendar'
+      fullPath: '/coordinator/calendar'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCalendarRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/admin/ledger': {
       id: '/_authenticated/admin/ledger'
@@ -201,12 +359,38 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
 const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
+interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
+  AuthenticatedCoordinatorDriversRoute: typeof AuthenticatedCoordinatorDriversRoute
+  AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
+  AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
+  AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
+}
+
+const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
+  {
+    AuthenticatedCoordinatorCalendarRoute:
+      AuthenticatedCoordinatorCalendarRoute,
+    AuthenticatedCoordinatorDriversRoute: AuthenticatedCoordinatorDriversRoute,
+    AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
+    AuthenticatedCoordinatorPortalLinksRoute:
+      AuthenticatedCoordinatorPortalLinksRoute,
+    AuthenticatedCoordinatorIndexRoute: AuthenticatedCoordinatorIndexRoute,
+  }
+
+const AuthenticatedCoordinatorRouteWithChildren =
+  AuthenticatedCoordinatorRoute._addFileChildren(
+    AuthenticatedCoordinatorRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
+  AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
+  AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -217,17 +401,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   CTokenRoute: CTokenRoute,
+  MClientTokenRoute: MClientTokenRoute,
+  MDriverTokenRoute: MDriverTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

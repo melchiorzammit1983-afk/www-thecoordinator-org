@@ -1,72 +1,105 @@
-## Crew-Change Transport — Database + Admin Dashboard (Phase 1)
+## Coordinator Dashboard & Dispatch System
 
-### 1. Enable Lovable Cloud
-Provision backend (Postgres + Auth). No dummy data anywhere.
+### 1. Coordinator identity model
+- Admin creates a company and assigns a coordinator by email in the existing admin UI. When that user signs up (or is already signed up), a trigger fills `companies.owner_user_id`.
+- Add table `public.company_coordinator_invites (company_id, email, invited_at)`. Trigger `on_auth_user_created` matches by email → sets `companies.owner_user_id` and removes the invite.
+- `_authenticated/coordinator` route resolves the coordinator's company by `owner_user_id = auth.uid()`. If none → friendly "no company assigned" screen. Admins accessing `/coordinator` see a company-picker.
 
-### 2. Database schema (single migration)
+### 2. Schema migrations
+- `jobs`: add `qr_strict_mode boolean default false`, `driver_id uuid → drivers`, `vehicle text`, `pickup_at timestamptz` (generated from date+time when null), `points_charged jsonb default '{}'` (which features already billed on this job — prevents double-charge on toggle-off/on).
+- `client_bookings`: add `pickup_at timestamptz not null`, `date date`, `job_id uuid null → jobs` (set when approved), rename status enum to include `pending, approved, rejected, modification_pending`.
+- New table `public.client_booking_modifications (id, booking_id, requested_changes jsonb, requested_at, status: pending/approved/rejected, resolved_at, resolved_by)`. Only auto-created when a client edits within 2h of `pickup_at` — enforced by a BEFORE UPDATE trigger on `client_bookings` that intercepts changes and inserts a modification row instead of mutating the booking.
+- New table `public.magic_links (id, company_id, kind: driver|client, subject_id uuid, token text unique, expires_at, created_by, revoked_at)`. Token = 32-byte random hex.
+- `drivers`: add `email text`, `vehicle text`.
+- `feature_costs`: seed additional feature keys: `tracking, qr, client_booking, bulkupload, magic_link_driver, magic_link_client, split_job, clone_job, recurring_schedule`.
 
-Enums:
-- `company_status`: pending, approved, suspended
-- `job_status`: pending, active, completed
-- `pax_status`: pending, verified, onboard, delayed, noshow, completed
-- `group_status`: pending, assigned, active, completed
-- `driver_status`: available, busy, offline
-- `booking_status`: pending, accepted, rejected
-- `feature_name`: tracking, bulkupload, client_booking, qr
+### 3. RLS (coordinator scope)
+For every company-scoped table (`jobs`, `pax`, `groups`, `drivers`, `driver_status_updates`, `client_bookings`, `client_booking_modifications`, `points_ledger`, `magic_links`), add policies:
+- `SELECT/INSERT/UPDATE/DELETE` where `company_id` (or ancestor's `company_id`) belongs to a company owned by `auth.uid()`.
+- Admin ALL policies remain via `is_admin(auth.uid())`.
+- Public unauthenticated portal reads for `magic_links` are done via server functions using the publishable client + narrow SELECT policy `TO anon` scoped by `token = ? AND revoked_at IS NULL AND expires_at > now()`.
 
-Tables (all UUID PKs via `gen_random_uuid()`, timestamps in UTC, distances/coords in metric units — lat/lng float, ETA stored as `time`):
-- `companies` — name, email (unique), phone, access_end timestamptz, points_balance int default 0, custom_link text unique, require_client_company bool default true, status company_status default 'pending', owner_user_id uuid (nullable, links to auth.users so a company owner can later sign in)
-- `feature_costs` — feature_name PK, points_cost int default 0. Seeded: tracking=0, bulkupload=0, client_booking=0, qr=0 (admin edits later; bulkupload explicitly free)
-- `points_ledger` — company_id FK, job_id FK nullable, feature_used feature_name, points_deducted int, created_at timestamptz default now()
-- `jobs` — company_id FK, clientcompanyname, from_location, to_location, date date, time time, flightorship, tracking_enabled bool, status job_status
-- `pax` — job_id FK, group_id FK nullable, name, status pax_status, qr_code text unique default `encode(gen_random_bytes(24),'hex')`
-- `groups` — job_id FK, name, driver_id FK nullable, driver_link text unique default secure token, meetandgreet_sign, coordinator_note text, status group_status
-- `drivers` — company_id FK, name, phone, status driver_status
-- `client_bookings` — company_id FK, name, surname, client_email, room_number nullable, from_location, to_location, time time, status booking_status default 'pending', created_at
-- `driver_status_updates` — driver_id FK, group_id FK, location_lat float, location_lng float, estimated_eta time, created_at timestamptz
+### 4. Points-charging RPC
+- SQL function `public.charge_feature(_company_id uuid, _feature feature_name, _job_id uuid, _note text) returns integer` — SECURITY DEFINER.
+  - Locks the company row, reads cost from `feature_costs`; if cost = 0, records a $0 ledger row and returns balance.
+  - Else deducts, writes `points_ledger` entry, returns new balance.
+  - Raises `insufficient_points` when balance < cost so server functions can throw a typed error → UI shows "Top-Up Required".
+- Every premium server action (`toggleTracking`, `toggleQrStrict`, `approveClientBooking`, `bulkUploadPax`, `splitJob`, `cloneJob`, `createRecurringSchedule`, `generateMagicLink`) calls this RPC first (except when `jobs.points_charged` already recorded that feature for that job).
 
-All tables: GRANT statements + RLS enabled with policies (see Security below).
+### 5. Coordinator server functions (`src/lib/coordinator.functions.ts`)
+All use `requireSupabaseAuth` + a `assertCoordinator(context)` helper returning `{ companyId, balance }`.
+- `getDashboardSummary` — balance, counts (pending bookings, unassigned jobs, today's trips).
+- `listJobs({ from, to })` — jobs joined with driver, pax count, groups.
+- `listDrivers`, `listUnassignedJobs`.
+- `createJob`, `updateJob(fields incl. qr_strict_mode, tracking_enabled)`, `assignDriver(job_id, driver_id)`, `splitJob(job_id, groups[])`, `cloneJob(job_id, target_date)`.
+- `listPendingBookings` (status in pending/modification_pending), `approveBooking(id)` (charges `client_booking`, creates job), `rejectBooking(id)`.
+- `approveModification(id)` / `rejectModification(id)`.
+- `topUpRequest` — stub that pings admin (writes to a `topup_requests` table); admin fulfils via existing admin ledger UI.
+- `generateMagicLink({ kind, subject_id, ttl_hours })` — charges appropriate feature, inserts `magic_links`, returns full URL.
+- `listMagicLinks`, `revokeMagicLink`.
 
-### 3. Auth & admin authorization
-- Email + password auth.
-- Admin = single hardcoded email stored in `ADMIN_EMAIL` secret + a SQL `is_admin(uid)` SECURITY DEFINER function that checks `auth.users.email = current_setting('app.admin_email')` via a `public.admin_emails` table seeded with that one email (so it's queryable from RLS without secrets).
-- `/auth` public route (sign in / sign up).
-- `/admin/*` lives under `_authenticated/` and additionally checks `is_admin` in `beforeLoad`; non-admins get redirected.
+### 6. Public magic-link routes
+- `src/routes/m.driver.$token.tsx` — read-only daily manifest (jobs assigned to that driver, pax lists).
+- `src/routes/m.client.$token.tsx` — client's own bookings (view + edit; edits within 2h trigger the modification workflow).
+- Both fetch via public server functions that validate token → return only the scoped payload.
 
-### 4. RLS policy summary
-- `companies`, `feature_costs`, `points_ledger`, all operational tables: admin full access via `is_admin(auth.uid())`.
-- `companies`: company owner can SELECT own row.
-- `client_bookings`: **anon INSERT allowed** (the public custom-link form) with a CHECK that the company exists and is `approved`; SELECT restricted to admin + company owner.
-- All other tables: no anon access.
+### 7. Coordinator UI (`src/routes/_authenticated/coordinator*`)
+Layout: sidebar with sections (Dashboard, Calendar, Pending, Drivers, Portal Links, Settings) + points balance header.
 
-### 5. Public custom company link
-- Route `/c/$token` (top-level, public, SSR on).
-- Loader calls a public `createServerFn` using the server publishable client to look up the company by `custom_link` (selecting only `id`, `name`, `require_client_company`, `status`); 404 if not approved.
-- Renders a validated client-booking form (zod: name, surname, email, optional room, from, to, time). Submits via another public server fn that inserts into `client_bookings` with `status='pending'`.
+**Points header component**
+- Sticky top bar: current balance, low-balance amber ≤ 50, red = 0. "Top Up" button opens modal that records a top-up request.
+- Global `usePoints()` hook returns `{ balance, canAfford(featureName) }`. Any premium button uses `<PremiumButton feature="..." />` that:
+  - Reads cost from cached `feature_costs`.
+  - If `cost === 0`: normal button.
+  - If `balance < cost`: greyed out with tooltip "Top-Up Required". Click → opens Top-Up modal.
 
-### 6. Admin Dashboard UI (`/admin`)
-Clean responsive layout (sidebar + content). Pages:
-1. **Companies** — table of all companies with: name, email, status badge, points balance, access expiry, custom link (copy button). Row actions:
-   - Approve / Suspend (status toggle)
-   - Top-up points (dialog → integer input; writes new balance + inserts ledger row with `feature_used` null... actually ledger is for deductions; top-ups go to a separate `points_deducted` negative entry so audit is complete)
-   - Set access expiry (date picker → access_end)
-   - Regenerate custom link
-   - Edit `require_client_company` toggle
-2. **Feature Costs** — editable table of the 4 features with inline integer inputs + Save. bulkupload row labeled "Free" when 0.
-3. **Points Audit** — paginated table of `points_ledger` joined with company name + job id, newest first, filter by company.
+**Calendar & dispatch board** (`coordinator.calendar.tsx`)
+- View toggle: Day / Week. Built with a lightweight custom grid (hours × days) — no external calendar dep.
+- Left column: "Unassigned trips" list. Right: driver lanes (Day view) or days (Week view).
+- Drag-and-drop via `@dnd-kit/core` (add dep). Dropping a card on a driver lane calls `assignDriver`.
+- Trip card actions: Split (opens modal to split pax into new groups → creates sibling jobs), Clone (date picker → duplicates job for chosen date), Edit, Assign.
 
-All admin mutations go through `createServerFn` with `requireSupabaseAuth` + server-side admin check (defense in depth beyond RLS).
+**Create/Edit trip modal**
+- Fields: from, to, date, time, flight/ship, client company. Toggles: `Require QR Code Verification` (`qr_strict_mode`), `Enable Live Tracking` (`tracking_enabled`). Both wrapped in `PremiumButton` semantics.
 
-### 7. Design
-- Modern operations-console aesthetic: neutral slate background, single accent (deep teal `#0E7C7B`), Inter font via `@fontsource/inter`.
-- shadcn components (Table, Dialog, Badge, Button, Input, Switch, Tabs, Sonner toasts).
-- Mobile-first: sidebar collapses to drawer < md.
+**Pending Approvals panel** (`coordinator.pending.tsx`)
+- Two tabs: `New bookings` and `Modification pending` (2-hour rule).
+- Each card: booking details, diff (for modifications), Approve/Reject buttons. Approve charges points and creates/updates job.
 
-### 8. Out of scope (later phases)
-Jobs/Pax/Groups/Drivers/QR/tracking UI, company-side dashboard, driver portal, bulk upload, points deduction triggers on feature use. Schema is in place so those modules drop in cleanly.
+**Portal Links section** (`coordinator.portal-links.tsx`)
+- Two tabs: Drivers, Clients. Row per subject with "Generate link" (choose TTL 1/8/24/72h), copy-to-clipboard, revoke, expiry countdown.
+
+### 8. Admin additions
+- On company creation, admin sets `coordinator_email` → inserts into `company_coordinator_invites`.
+- Admin ledger page unchanged; add "Top-Up Requests" tab reading `topup_requests`.
 
 ### Technical notes
-- Migration order per table: CREATE → GRANT (authenticated + service_role; anon only where stated) → ENABLE RLS → CREATE POLICY.
-- `custom_link` and `qr_code` / `driver_link` defaults use `encode(gen_random_bytes(24),'hex')` for unguessable tokens.
-- `ADMIN_EMAIL` collected via `add_secret` after Cloud is enabled; seeded into `admin_emails` table by a follow-up insert.
-- TanStack Start patterns: protected routes under `_authenticated/`, public `/c/$token` and `/auth` top-level, server fns in `src/lib/*.functions.ts`.
+- Add dependency: `@dnd-kit/core`, `@dnd-kit/sortable`, `date-fns` (already present? verify).
+- All server fns follow existing pattern (`createServerFn` + Zod validator + `requireSupabaseAuth`).
+- `src/start.ts` already has bearer middleware — no change.
+- Deferred/optional: recurring schedules (surface as button that charges `recurring_schedule` and creates N cloned jobs). Full RRULE UI can be a follow-up.
+
+### File map (new)
+```
+src/lib/coordinator.functions.ts
+src/lib/coordinator-public.functions.ts       # magic-link portals
+src/hooks/use-coordinator.ts                  # balance, feature costs, canAfford
+src/components/coordinator/PointsHeader.tsx
+src/components/coordinator/PremiumButton.tsx
+src/components/coordinator/TopUpModal.tsx
+src/components/coordinator/TripCard.tsx
+src/components/coordinator/CalendarBoard.tsx
+src/components/coordinator/JobFormDialog.tsx
+src/components/coordinator/SplitJobDialog.tsx
+src/components/coordinator/CloneJobDialog.tsx
+src/routes/_authenticated/coordinator.tsx     # layout + sidebar
+src/routes/_authenticated/coordinator.index.tsx        # dashboard summary
+src/routes/_authenticated/coordinator.calendar.tsx
+src/routes/_authenticated/coordinator.pending.tsx
+src/routes/_authenticated/coordinator.drivers.tsx
+src/routes/_authenticated/coordinator.portal-links.tsx
+src/routes/m.driver.$token.tsx
+src/routes/m.client.$token.tsx
+```
+
+Verification: `tsgo` typecheck, then a quick Playwright pass: sign in as coordinator, create job, drag to driver, toggle QR (points deducted), submit client booking on `/c/$token` within 2h → appears in Pending as Modification.

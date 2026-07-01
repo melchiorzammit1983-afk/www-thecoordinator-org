@@ -20,8 +20,12 @@ export const Route = createFileRoute("/auth")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
     const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/admin" });
+    if (!data.session) return;
+    const email = data.session.user.email?.toLowerCase();
+    if (email === "melchior.zammit@outlook.com") throw redirect({ to: "/admin" });
+    throw redirect({ to: "/coordinator" });
   },
+
   component: AuthPage,
 });
 
