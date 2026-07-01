@@ -35,6 +35,8 @@ import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
+import { TripProgress } from "@/components/coordinator/TripProgress";
+import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
@@ -61,12 +63,13 @@ type Job = {
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
-  drivers?: { name: string } | null;
-  pax?: { id: string; name: string }[];
+  drivers?: { name: string; vehicle?: string | null; phone?: string | null; seats_available?: number | null; availability_note?: string | null } | null;
+  pax?: { id: string; name: string; status?: string | null; boarded_at?: string | null }[];
   labels?: TLabel[];
   external?: boolean;
   executor_name?: string | null;
   external_driver_name?: string | null;
+  payment_status?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -78,6 +81,7 @@ function CalendarPage() {
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -158,6 +162,7 @@ function CalendarPage() {
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
+    onOpenDetails: setDetailsJob,
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
@@ -234,6 +239,18 @@ function CalendarPage() {
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="coordinator"
       />
+      <DetailsSheetHost
+        job={detailsJob}
+        onClose={() => setDetailsJob(null)}
+        onEdit={(j) => { setDetailsJob(null); setEditJob(j); }}
+        onChat={(j) => setChatJob(j)}
+        onPax={(j) => setPaxJob(j)}
+        driverName={
+          detailsJob
+            ? (drivers ?? []).find((d) => d.id === detailsJob.driver_id)?.name ?? detailsJob.drivers?.name ?? null
+            : null
+        }
+      />
     </div>
   );
 }
@@ -242,6 +259,7 @@ type CardCtx = {
   onEdit: (j: Job) => void;
   onPax: (j: Job) => void;
   onChat: (j: Job) => void;
+  onOpenDetails: (j: Job) => void;
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
   unread: Record<string, number>;
@@ -468,12 +486,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     >
       <LabelStripe labels={labels} />
 
-      {/* Tap area — opens edit (disabled for partner-owned trips) */}
+      {/* Tap area — opens details sheet */}
       <button
         type="button"
-        onClick={() => { if (!job.external) ctx.onEdit(job); }}
+        onClick={() => ctx.onOpenDetails(job)}
         className="w-full text-left"
-        disabled={!!job.external}
       >
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
@@ -505,12 +522,25 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {(job.status && job.status !== "pending" && job.status !== "active") && (
+              <div className="mt-1.5">
+                <TripProgress status={job.status} compact />
+              </div>
+            )}
             <div className="flex flex-wrap gap-1 mt-1">
-              {paxCount > 0 && (
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  <Users className="h-3 w-3" /> {paxCount}
-                </Badge>
-              )}
+              {paxCount > 0 && (() => {
+                const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
+                const allAboard = onboard === paxCount;
+                return (
+                  <Badge
+                    variant={allAboard ? "default" : "secondary"}
+                    className={`text-[10px] gap-1 ${allAboard ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+                  >
+                    <Users className="h-3 w-3" /> {onboard > 0 ? `${onboard}/${paxCount}` : paxCount}
+                    {allAboard && " ✓"}
+                  </Badge>
+                );
+              })()}
               {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
@@ -793,5 +823,69 @@ function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChan
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ------------------------------ Details sheet host ------------------------------ */
+
+function DetailsSheetHost({
+  job, onClose, onEdit, onChat, onPax, driverName,
+}: {
+  job: Job | null;
+  onClose: () => void;
+  onEdit: (j: Job) => void;
+  onChat: (j: Job) => void;
+  onPax: (j: Job) => void;
+  driverName?: string | null;
+}) {
+  const shareFn = useServerFn(shareJobToDriver);
+  const shareMut = useMutation({
+    mutationFn: (jobId: string) => shareFn({ data: { job_id: jobId } }) as Promise<any>,
+    onSuccess: (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      const when = res.job.pickup_at
+        ? new Date(res.job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
+      const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
+      const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
+      const lines = [
+        `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
+        `🕒 ${when}`,
+        `📍 ${from || "?"} → ${to || "?"}`,
+        `👥 ${res.job.pax_count ?? 0} pax`,
+      ];
+      if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
+      lines.push("", `Open your manifest: ${url}`);
+      const text = encodeURIComponent(lines.join("\n"));
+      window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const copyMut = useMutation({
+    mutationFn: (jobId: string) => shareFn({ data: { job_id: jobId } }) as Promise<any>,
+    onSuccess: async (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied");
+      } catch {
+        toast.error("Copy failed — " + url);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <TripDetailsSheet
+      job={job}
+      open={!!job}
+      onOpenChange={(v) => { if (!v) onClose(); }}
+      onEdit={() => job && onEdit(job)}
+      onChat={() => job && onChat(job)}
+      onPax={() => job && onPax(job)}
+      onShare={() => job && shareMut.mutate(job.id)}
+      onCopyLink={() => job && copyMut.mutate(job.id)}
+      driverName={driverName}
+    />
   );
 }
