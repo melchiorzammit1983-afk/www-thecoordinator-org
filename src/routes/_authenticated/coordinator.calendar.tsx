@@ -239,6 +239,18 @@ function CalendarPage() {
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="coordinator"
       />
+      <DetailsSheetHost
+        job={detailsJob}
+        onClose={() => setDetailsJob(null)}
+        onEdit={(j) => { setDetailsJob(null); setEditJob(j); }}
+        onChat={(j) => setChatJob(j)}
+        onPax={(j) => setPaxJob(j)}
+        driverName={
+          detailsJob
+            ? (drivers ?? []).find((d) => d.id === detailsJob.driver_id)?.name ?? detailsJob.drivers?.name ?? null
+            : null
+        }
+      />
     </div>
   );
 }
