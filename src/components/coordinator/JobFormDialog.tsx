@@ -80,9 +80,10 @@ function ManualForm({
 }: { drivers: Driver[]; job?: Job; onSaved: () => void }) {
   const [from, setFrom] = useState(job?.from_location ?? "");
   const [to, setTo] = useState(job?.to_location ?? "");
+  const [fromFlight, setFromFlight] = useState(job?.from_flight ?? "");
+  const [toFlight, setToFlight] = useState(job?.to_flight ?? "");
   const [date, setDate] = useState(job?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? "09:00");
-  const [flight, setFlight] = useState(job?.flightorship ?? "");
   const [client, setClient] = useState(job?.clientcompanyname ?? "");
   const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
@@ -101,19 +102,25 @@ function ManualForm({
 
   const mut = useMutation({
     mutationFn: async () => {
+      // Auto-fill Airport when only a flight number is given for a side.
+      const effFrom = from || (fromFlight ? "Airport" : "");
+      const effTo = to || (toFlight ? "Airport" : "");
       const payload = {
-        from_location: from, to_location: to, date, time,
-        flightorship: flight, clientcompanyname: client, vehicle,
+        from_location: effFrom, to_location: effTo, date, time,
+        flightorship: fromFlight || toFlight || "",
+        from_flight: fromFlight, to_flight: toFlight,
+        clientcompanyname: client, vehicle,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       if (pax.length) {
-        // Use bulk fn so pax get inserted in one shot.
         await bulkFn({ data: { trips: [{
-          from_location: from, to_location: to, date, time,
-          flightorship: flight, clientcompanyname: client, pax,
+          from_location: effFrom, to_location: effTo, date, time,
+          flightorship: fromFlight || toFlight || "",
+          from_flight: fromFlight, to_flight: toFlight,
+          clientcompanyname: client, pax,
         }] } });
       } else {
         await createFn({ data: payload });
@@ -133,14 +140,31 @@ function ManualForm({
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5"><Label>From</Label><Input value={from} onChange={(e) => setFrom(e.target.value)} required /></div>
-        <div className="space-y-1.5"><Label>To</Label><Input value={to} onChange={(e) => setTo(e.target.value)} required /></div>
+        <div className="space-y-1.5">
+          <Label>From</Label>
+          <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder={fromFlight ? "Airport (auto)" : ""} />
+          <Input
+            value={fromFlight}
+            onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
+            placeholder="Flight / Ship (e.g. EK109)"
+            className="text-xs"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>To</Label>
+          <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder={toFlight ? "Airport (auto)" : ""} />
+          <Input
+            value={toFlight}
+            onChange={(e) => setToFlight(e.target.value.toUpperCase())}
+            placeholder="Flight / Ship (e.g. EK109)"
+            className="text-xs"
+          />
+        </div>
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
         <div className="space-y-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></div>
-        <div className="space-y-1.5"><Label>Flight / Ship</Label><Input value={flight} onChange={(e) => setFlight(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Client company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Vehicle</Label><Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} /></div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 col-span-2">
           <Label>Driver</Label>
           <Select value={driverId} onValueChange={setDriverId}>
             <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
