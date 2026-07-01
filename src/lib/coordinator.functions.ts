@@ -314,12 +314,20 @@ async function syncVirtualDrivers(ctx: Ctx, companyId: string) {
   const { data: me } = await supabaseAdmin.from("companies")
     .select("id, name, owner_user_id").eq("id", companyId).maybeSingle();
   if (me?.owner_user_id) {
-    await supabaseAdmin.from("drivers").upsert({
-      company_id: companyId, kind: "coordinator",
-      linked_user_id: me.owner_user_id,
-      name: `${me.name} (me)`, status: "available",
-    }, { onConflict: "company_id", ignoreDuplicates: false }).select();
+    const { data: existsMe } = await supabaseAdmin.from("drivers")
+      .select("id, name").eq("company_id", companyId).eq("kind", "coordinator")
+      .eq("linked_user_id", me.owner_user_id).maybeSingle();
+    if (!existsMe) {
+      await supabaseAdmin.from("drivers").insert({
+        company_id: companyId, kind: "coordinator",
+        linked_user_id: me.owner_user_id,
+        name: `${me.name} (me)`, status: "available",
+      });
+    } else if (!existsMe.name?.includes("(me)")) {
+      await supabaseAdmin.from("drivers").update({ name: `${me.name} (me)` }).eq("id", existsMe.id);
+    }
   }
+
   // Partner drivers for active connections
   const { data: conns } = await supabaseAdmin.from("coordinator_connections")
     .select("owner_company_id, partner_company_id, status")
