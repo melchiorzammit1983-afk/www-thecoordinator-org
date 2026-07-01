@@ -246,21 +246,24 @@ type CardCtx = {
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
 
-function InboundBoard({ ctx }: { ctx: CardCtx }) {
+function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { id: string; date: string | null }) => void }) {
   const listIn = useServerFn(listIncomingDispatches);
   const respond = useServerFn(respondToDispatch);
   const qc = useQueryClient();
   const [open, setOpen] = useState(true);
   const q = useQuery({ queryKey: ["collab", "incoming"], queryFn: () => listIn(), refetchInterval: 20_000 });
   const respondMut = useMutation({
-    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) => await respond({ data: v }),
-    onSuccess: () => {
+    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) =>
+      (await respond({ data: v })) as { ok: boolean; id: string; date: string | null; decision: string },
+    onSuccess: (res) => {
       toast.success("Done");
       qc.invalidateQueries({ queryKey: ["collab"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      if (res?.decision === "accepted" && onAccepted) onAccepted({ id: res.id, date: res.date });
     },
     onError: (e: any) => toast.error(e.message),
   });
+
   const items: any[] = q.data ?? [];
   if (items.length === 0) return null;
   return (
