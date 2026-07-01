@@ -111,7 +111,7 @@ function DriverManifest() {
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] text-primary font-semibold uppercase tracking-widest">Driver Manifest</div>
-            <div className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</div>
+            <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
             {driver && (
               <div className="text-[11px] text-muted-foreground truncate">
                 {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
@@ -121,7 +121,7 @@ function DriverManifest() {
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="outline"><MoreVertical className="h-4 w-4" /></Button>
+              <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {driver && (
