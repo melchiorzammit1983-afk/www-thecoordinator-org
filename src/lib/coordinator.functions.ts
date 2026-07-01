@@ -858,7 +858,7 @@ export const updateLabel = createServerFn({ method: "POST" })
     if (data.color !== undefined) patch.color = data.color;
     if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
     const { error } = await context.supabase.from("trip_labels")
-      .update(patch).eq("id", data.id).eq("company_id", c.id);
+      .update(patch as never).eq("id", data.id).eq("company_id", c.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
