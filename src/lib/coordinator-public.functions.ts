@@ -41,12 +41,15 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
-      .eq("company_id", link.company_id)
       .is("driver_hidden_at", null)
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
-    if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+    if (link.subject_id) {
+      q = q.eq("driver_id", link.subject_id);
+    } else {
+      q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
+    }
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
     const jobs = (jobsRaw ?? []).map((j: any) => ({
@@ -182,9 +185,12 @@ export const getDriverStatement = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
       .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status, points_charged")
-      .eq("company_id", link.company_id)
       .order("date", { ascending: true }).order("time", { ascending: true });
-    if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+    if (link.subject_id) {
+      q = q.eq("driver_id", link.subject_id);
+    } else {
+      q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
+    }
     if (data.from) q = q.gte("date", data.from);
     if (data.to) q = q.lte("date", data.to);
     if (data.payment && data.payment !== "all") q = q.eq("payment_status", data.payment);
@@ -386,7 +392,12 @@ async function loadDriverJob(token: string, job_id: string) {
     .select("*").eq("id", job_id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!job) throw new Error("job_not_found");
-  if (job.company_id !== link.company_id) throw new Error("forbidden");
+  const chainIds: string[] = job.dispatch_chain_company_ids ?? [];
+  const inChain = job.company_id === link.company_id
+    || job.executor_company_id === link.company_id
+    || job.origin_company_id === link.company_id
+    || chainIds.includes(link.company_id);
+  if (!inChain) throw new Error("forbidden");
   if (link.subject_id && job.driver_id !== link.subject_id) throw new Error("not_your_job");
   return { link, job, supabaseAdmin };
 }
