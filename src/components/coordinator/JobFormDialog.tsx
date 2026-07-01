@@ -245,6 +245,9 @@ function BulkForm({ onSaved }: { onSaved: () => void }) {
                 {t.from_location || "?"} → {t.to_location || "?"}
                 <span className="text-muted-foreground"> · {t.date || "?"} {t.time || "?"} · {t.pax.length} pax</span>
               </div>
+              {(t.from_flight || t.to_flight) && (
+                <div className="text-muted-foreground">✈ {t.from_flight || t.to_flight}</div>
+              )}
               {t.clientcompanyname && <div className="text-muted-foreground">🏢 {t.clientcompanyname}</div>}
               {t.pax.length > 0 && (
                 <details className="mt-1"><summary className="cursor-pointer text-muted-foreground">Names</summary>
