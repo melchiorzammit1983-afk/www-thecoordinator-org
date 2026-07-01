@@ -389,7 +389,12 @@ async function loadDriverJob(token: string, job_id: string) {
     .select("*").eq("id", job_id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!job) throw new Error("job_not_found");
-  if (job.company_id !== link.company_id) throw new Error("forbidden");
+  const chainIds: string[] = job.dispatch_chain_company_ids ?? [];
+  const inChain = job.company_id === link.company_id
+    || job.executor_company_id === link.company_id
+    || job.origin_company_id === link.company_id
+    || chainIds.includes(link.company_id);
+  if (!inChain) throw new Error("forbidden");
   if (link.subject_id && job.driver_id !== link.subject_id) throw new Error("not_your_job");
   return { link, job, supabaseAdmin };
 }
