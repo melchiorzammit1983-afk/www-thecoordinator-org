@@ -4,24 +4,38 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
 
+async function checkIsAdmin(userId: string): Promise<boolean> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const email = u.user?.email?.toLowerCase();
+    if (!email) return false;
+    const { data } = await supabaseAdmin.from("admin_emails").select("email");
+    return (data ?? []).some((r: any) => r.email?.toLowerCase() === email);
+  } catch {
+    return false;
+  }
+}
+
 async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
-  // Admins may pass a companyId; coordinators are locked to their owned company.
-  const { data: isAdmin } = await ctx.supabase.rpc("is_admin", { _user_id: ctx.userId });
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const isAdmin = await checkIsAdmin(ctx.userId);
   if (isAdmin && companyIdOverride) {
-    const { data, error } = await ctx.supabase
+    const { data, error } = await supabaseAdmin
       .from("companies").select("id, points_balance, name, status")
       .eq("id", companyIdOverride).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error("Company not found");
     return { ...data, isAdmin: true };
   }
-  const { data, error } = await ctx.supabase
+  const { data, error } = await supabaseAdmin
     .from("companies").select("id, points_balance, name, status")
     .eq("owner_user_id", ctx.userId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("No company assigned to this account");
-  return { ...data, isAdmin: !!isAdmin };
+  return { ...data, isAdmin };
 }
+
 
 // ---------- BASICS ----------
 
