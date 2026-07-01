@@ -140,10 +140,10 @@ function CalendarPage() {
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} />
+          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />
+            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} onChat={setChatJob} unread={unreadByJob} />}
         </div>
       </DndContext>
 
@@ -158,6 +158,82 @@ function CalendarPage() {
         jobLabel={paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0,5)}` : ""}
         drivers={drivers ?? []}
       />
+      <TripChatDialog
+        open={!!chatJob} onOpenChange={(v) => !v && setChatJob(null)}
+        jobId={chatJob?.id ?? null}
+        title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
+        role="coordinator"
+      />
+    </div>
+  );
+}
+
+type RowProps = { onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: Record<string, number> };
+
+function UnassignedColumn({ jobs, onEdit, onPax, onChat, unread }: { jobs: Job[] } & RowProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
+  return (
+    <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[420px] ${isOver ? "ring-2 ring-primary" : ""}`}>
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        Unassigned ({jobs.length})
+      </div>
+      <div className="space-y-2">
+        {jobs.length === 0 && <div className="text-xs text-muted-foreground py-8 text-center">Everything is assigned 🎉</div>}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
+      </div>
+    </div>
+  );
+}
+
+function DriverLanes({ drivers, jobs, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[] } & RowProps) {
+  return (
+    <div className="rounded-lg border bg-card p-3 overflow-x-auto">
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(drivers.length, 1)}, minmax(220px, 1fr))` }}>
+        {drivers.length === 0 && (
+          <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
+        )}
+        {drivers.map((d) => (
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DriverLane({ driver, jobs, onEdit, onPax, onChat, unread }: { driver: Driver; jobs: Job[] } & RowProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
+  return (
+    <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[380px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
+      <div className="text-sm font-medium">{driver.name}</div>
+      <div className="text-xs text-muted-foreground mb-2">{driver.vehicle ?? "—"}</div>
+      <div className="space-y-2">
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0} />)}
+      </div>
+    </div>
+  );
+}
+
+function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { drivers: Driver[]; jobs: Job[]; days: Date[] } & RowProps) {
+  return (
+    <div className="rounded-lg border bg-card p-3 overflow-x-auto">
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
+        {days.map((d) => {
+          const key = format(d, "yyyy-MM-dd");
+          const dayJobs = jobs.filter((j) => j.date === key);
+          return (
+            <div key={key} className="rounded-md border p-2 min-h-[380px]">
+              <div className="text-sm font-medium">{format(d, "EEE")}</div>
+              <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
+              <div className="space-y-2">
+                {dayJobs.map((j) => (
+                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} onChat={onChat} unread={unread?.[j.id] ?? 0}
+                    driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
