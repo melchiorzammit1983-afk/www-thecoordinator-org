@@ -108,7 +108,23 @@ const jobInput = z.object({
   tracking_enabled: z.boolean().default(false),
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
+  label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
+
+async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
+  if (!labelIds) return;
+  // Verify labels belong to the same company
+  let allowed: string[] = [];
+  if (labelIds.length) {
+    const { data: rows } = await ctx.supabase.from("trip_labels")
+      .select("id").eq("company_id", companyId).in("id", labelIds);
+    allowed = (rows ?? []).map((r: { id: string }) => r.id);
+  }
+  await ctx.supabase.from("job_labels").delete().eq("job_id", jobId);
+  if (allowed.length) {
+    await ctx.supabase.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
+  }
+}
 
 async function chargeIfNeeded(
   ctx: Ctx, companyId: string, feature: string, jobId: string | null, charged: Record<string, boolean>,
