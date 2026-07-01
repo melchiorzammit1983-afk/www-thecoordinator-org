@@ -28,13 +28,16 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
 export const getMyCompany = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    try {
-      const c = await resolveCompany(context);
-      return c;
-    } catch {
-      return null;
-    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("companies")
+      .select("id, points_balance, name, status, access_end, require_client_company, custom_link")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (error) return null;
+    return data ?? null;
   });
+
 
 export const getFeatureCosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
