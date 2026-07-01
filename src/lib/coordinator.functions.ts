@@ -996,8 +996,8 @@ async function assertJobInCompany(ctx: Ctx, jobId: string) {
   const c = await resolveCompany(ctx);
   const supabaseAdmin = await getAdminClient();
   const { data, error } = await supabaseAdmin.from("jobs")
-    .select("id, company_id, executor_company_id").eq("id", jobId)
-    .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`).maybeSingle();
+    .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids").eq("id", jobId)
+    .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Job not found");
   return { company: c };
