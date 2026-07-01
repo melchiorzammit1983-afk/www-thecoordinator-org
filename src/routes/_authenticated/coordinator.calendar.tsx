@@ -156,7 +156,19 @@ function CalendarPage() {
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
+    highlightId: justAcceptedId,
   };
+
+  function handleAccepted(res: { id: string; date: string | null }) {
+    if (res.date) {
+      const [y, m, d] = res.date.split("-").map(Number);
+      if (y && m && d) setAnchor(new Date(y, m - 1, d));
+    }
+    setJustAcceptedId(res.id);
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+    setTimeout(() => setJustAcceptedId((cur) => (cur === res.id ? null : cur)), 4000);
+  }
+
 
   return (
     <div className="p-3 sm:p-4 md:p-6 space-y-4">
