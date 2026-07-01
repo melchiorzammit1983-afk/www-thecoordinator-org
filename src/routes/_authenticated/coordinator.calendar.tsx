@@ -276,8 +276,10 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
+            {job.driver_id && <ShareToDriverButton job={job} paxCount={paxCount} driverName={driverName} />}
             <DeleteButton job={job} />
           </div>
+
         </div>
       </div>
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
