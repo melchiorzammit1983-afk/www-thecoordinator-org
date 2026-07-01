@@ -86,6 +86,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "Crew Change — Operations Console for Transport Companies" },
       { property: "og:description", content: "Dispatch crew-change transport: approve companies, manage points, generate booking and driver links, and audit every trip." },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Crew Change — Operations Console for Transport Companies" },
+      { name: "twitter:description", content: "Dispatch crew-change transport: approve companies, manage points, generate booking and driver links, and audit every trip." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6f44543c-7ee0-4dc7-bf63-c142062a4045/id-preview-76d32991--39452616-a23d-4f77-ba69-7d9cca7056b0.lovable.app-1782935961163.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6f44543c-7ee0-4dc7-bf63-c142062a4045/id-preview-76d32991--39452616-a23d-4f77-ba69-7d9cca7056b0.lovable.app-1782935961163.png" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
     scripts: [
