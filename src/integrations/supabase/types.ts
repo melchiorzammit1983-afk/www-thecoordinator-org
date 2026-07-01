@@ -387,7 +387,11 @@ export type Database = {
           deletion_requested_by: string | null
           driver_accepted_at: string | null
           driver_id: string | null
+          flight_status: string | null
+          flight_status_note: string | null
+          flight_status_updated_at: string | null
           flightorship: string | null
+          from_flight: string | null
           from_location: string
           id: string
           pickup_at: string | null
@@ -395,6 +399,7 @@ export type Database = {
           qr_strict_mode: boolean
           status: Database["public"]["Enums"]["job_status"]
           time: string
+          to_flight: string | null
           to_location: string
           tracking_enabled: boolean
           updated_at: string
@@ -409,7 +414,11 @@ export type Database = {
           deletion_requested_by?: string | null
           driver_accepted_at?: string | null
           driver_id?: string | null
+          flight_status?: string | null
+          flight_status_note?: string | null
+          flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_flight?: string | null
           from_location: string
           id?: string
           pickup_at?: string | null
@@ -417,6 +426,7 @@ export type Database = {
           qr_strict_mode?: boolean
           status?: Database["public"]["Enums"]["job_status"]
           time: string
+          to_flight?: string | null
           to_location: string
           tracking_enabled?: boolean
           updated_at?: string
@@ -431,7 +441,11 @@ export type Database = {
           deletion_requested_by?: string | null
           driver_accepted_at?: string | null
           driver_id?: string | null
+          flight_status?: string | null
+          flight_status_note?: string | null
+          flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_flight?: string | null
           from_location?: string
           id?: string
           pickup_at?: string | null
@@ -439,6 +453,7 @@ export type Database = {
           qr_strict_mode?: boolean
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
+          to_flight?: string | null
           to_location?: string
           tracking_enabled?: boolean
           updated_at?: string
