@@ -825,3 +825,67 @@ function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChan
     </Dialog>
   );
 }
+
+/* ------------------------------ Details sheet host ------------------------------ */
+
+function DetailsSheetHost({
+  job, onClose, onEdit, onChat, onPax, driverName,
+}: {
+  job: Job | null;
+  onClose: () => void;
+  onEdit: (j: Job) => void;
+  onChat: (j: Job) => void;
+  onPax: (j: Job) => void;
+  driverName?: string | null;
+}) {
+  const shareFn = useServerFn(shareJobToDriver);
+  const shareMut = useMutation({
+    mutationFn: (jobId: string) => shareFn({ data: { job_id: jobId } }) as Promise<any>,
+    onSuccess: (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      const when = res.job.pickup_at
+        ? new Date(res.job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
+      const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
+      const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
+      const lines = [
+        `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
+        `🕒 ${when}`,
+        `📍 ${from || "?"} → ${to || "?"}`,
+        `👥 ${res.job.pax_count ?? 0} pax`,
+      ];
+      if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
+      lines.push("", `Open your manifest: ${url}`);
+      const text = encodeURIComponent(lines.join("\n"));
+      window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const copyMut = useMutation({
+    mutationFn: (jobId: string) => shareFn({ data: { job_id: jobId } }) as Promise<any>,
+    onSuccess: async (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied");
+      } catch {
+        toast.error("Copy failed — " + url);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <TripDetailsSheet
+      job={job}
+      open={!!job}
+      onOpenChange={(v) => { if (!v) onClose(); }}
+      onEdit={() => job && onEdit(job)}
+      onChat={() => job && onChat(job)}
+      onPax={() => job && onPax(job)}
+      onShare={() => job && shareMut.mutate(job.id)}
+      onCopyLink={() => job && copyMut.mutate(job.id)}
+      driverName={driverName}
+    />
+  );
+}
