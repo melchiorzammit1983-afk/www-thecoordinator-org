@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
   listMagicLinks, generateMagicLink, revokeMagicLink, listDrivers, extendMagicLink,
+  getMagicLinkPreview,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy, Trash2, Link2, Clock } from "lucide-react";
+import { Copy, Trash2, Link2, Clock, MessageCircle } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-links")({
   head: () => ({ meta: [{ title: "Portal Links — Coordinator" }] }),
