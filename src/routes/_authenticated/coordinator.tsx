@@ -1,10 +1,14 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect } from "react";
 import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PointsHeader } from "@/components/coordinator/PointsHeader";
 import { useMyCompany } from "@/hooks/use-coordinator";
+import { whoAmI } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
   component: CoordinatorLayout,
@@ -26,9 +30,24 @@ function CoordinatorLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: company, isLoading, error } = useMyCompany();
+  const whoAmIFn = useServerFn(whoAmI);
+  const { data: identity, isLoading: identityLoading } = useQuery({
+    queryKey: ["whoami"],
+    queryFn: () => whoAmIFn(),
+    retry: false,
+  });
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && !company && identity?.isAdmin) {
+      navigate({ to: "/admin", replace: true });
+    }
+  }, [company, identity?.isAdmin, isLoading, navigate]);
+
+  if (isLoading || (!company && identityLoading)) {
     return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
+  }
+  if (!company && identity?.isAdmin) {
+    return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Opening admin…</div>;
   }
   if (error || !company) {
     return (
