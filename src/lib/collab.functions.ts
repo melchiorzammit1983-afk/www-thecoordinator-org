@@ -190,7 +190,7 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
 
     // RPC validates ownership, appends hop, updates chain (supports multi-hop)
     const { error } = await context.supabase.rpc("dispatch_job_forward", {
-      _job_id: data.job_id, _to_company: data.partner_company_id, _note: data.note ?? null,
+      _job_id: data.job_id, _to_company: data.partner_company_id, _note: data.note ?? "",
     });
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -221,7 +221,7 @@ export const respondToDispatch = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.rpc("respond_dispatch", {
-      _job_id: data.job_id, _decision: data.decision, _note: data.note ?? null,
+      _job_id: data.job_id, _decision: data.decision, _note: data.note ?? "",
     });
     if (error) throw new Error(error.message);
     return { ok: true };
