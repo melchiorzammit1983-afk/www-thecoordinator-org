@@ -82,7 +82,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     let q = context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, drivers(name)")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, drivers(name), pax(id,name)")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
@@ -429,5 +429,114 @@ export const requestTopUp = createServerFn({ method: "POST" })
       points_requested: data.points_requested, note: data.note ?? null,
     });
     if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- BULK CREATE + PAX SPLIT ----------
+
+const bulkTripInput = z.object({
+  trips: z.array(z.object({
+    from_location: z.string().trim().min(1).max(255),
+    to_location: z.string().trim().min(1).max(255),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+    flightorship: z.string().trim().max(120).optional().default(""),
+    clientcompanyname: z.string().trim().max(200).optional().default(""),
+    pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+  })).min(1).max(50),
+});
+
+export const createJobsBulk = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => bulkTripInput.parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const created: string[] = [];
+    for (const t of data.trips) {
+      const time = t.time.length === 5 ? `${t.time}:00` : t.time;
+      const pickup_at = new Date(`${t.date}T${time}Z`).toISOString();
+      const { data: job, error } = await context.supabase.from("jobs").insert({
+        company_id: c.id,
+        from_location: t.from_location, to_location: t.to_location,
+        date: t.date, time, pickup_at,
+        flightorship: t.flightorship || null,
+        clientcompanyname: t.clientcompanyname || null,
+        qr_strict_mode: false, tracking_enabled: false,
+        vehicle: null, driver_id: null,
+      }).select("id").single();
+      if (error) throw new Error(error.message);
+      created.push(job.id);
+      if (t.pax.length) {
+        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
+        const { error: pErr } = await context.supabase.from("pax").insert(rows);
+        if (pErr) throw new Error(pErr.message);
+      }
+    }
+    return { created };
+  });
+
+export const listJobPax = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: job, error: jErr } = await context.supabase.from("jobs")
+      .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
+    if (jErr || !job) throw new Error("Job not found");
+    const { data: rows, error } = await context.supabase.from("pax")
+      .select("id, name, status").eq("job_id", data.job_id).order("name");
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const splitPaxToNewJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      source_job_id: z.string().uuid(),
+      pax_ids: z.array(z.string().uuid()).min(1).max(200),
+      driver_id: z.string().uuid().nullable().optional(),
+      vehicle: z.string().trim().max(120).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: src, error } = await context.supabase.from("jobs")
+      .select("*").eq("id", data.source_job_id).eq("company_id", c.id).single();
+    if (error || !src) throw new Error("Job not found");
+    const { data: job, error: iErr } = await context.supabase.from("jobs").insert({
+      company_id: c.id,
+      from_location: src.from_location, to_location: src.to_location,
+      date: src.date, time: src.time, pickup_at: src.pickup_at,
+      flightorship: src.flightorship, clientcompanyname: src.clientcompanyname,
+      qr_strict_mode: false, tracking_enabled: false,
+      vehicle: data.vehicle || null, driver_id: data.driver_id ?? null,
+    }).select("id").single();
+    if (iErr) throw new Error(iErr.message);
+    const { error: uErr } = await context.supabase.from("pax")
+      .update({ job_id: job.id })
+      .in("id", data.pax_ids).eq("job_id", data.source_job_id);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, new_job_id: job.id };
+  });
+
+export const movePaxToJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      source_job_id: z.string().uuid(),
+      target_job_id: z.string().uuid(),
+      pax_ids: z.array(z.string().uuid()).min(1).max(200),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: rows, error } = await context.supabase.from("jobs")
+      .select("id").eq("company_id", c.id).in("id", [data.source_job_id, data.target_job_id]);
+    if (error || !rows || rows.length !== 2) throw new Error("Job not found");
+    const { error: uErr } = await context.supabase.from("pax")
+      .update({ job_id: data.target_job_id })
+      .in("id", data.pax_ids).eq("job_id", data.source_job_id);
+    if (uErr) throw new Error(uErr.message);
     return { ok: true };
   });

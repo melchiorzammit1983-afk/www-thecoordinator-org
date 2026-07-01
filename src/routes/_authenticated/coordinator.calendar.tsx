@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
+import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
+import { Users } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
@@ -35,6 +37,7 @@ type Job = {
   vehicle: string | null;
   clientcompanyname: string | null;
   drivers?: { name: string } | null;
+  pax?: { id: string; name: string }[];
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -44,6 +47,7 @@ function CalendarPage() {
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [openNew, setOpenNew] = useState(false);
   const [editJob, setEditJob] = useState<Job | null>(null);
+  const [paxJob, setPaxJob] = useState<Job | null>(null);
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
@@ -104,10 +108,10 @@ function CalendarPage() {
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} />
+          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} />
+            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} />}
         </div>
       </DndContext>
 
@@ -116,11 +120,17 @@ function CalendarPage() {
         open={!!editJob} onOpenChange={(v) => !v && setEditJob(null)}
         drivers={drivers ?? []} job={editJob ?? undefined} onSaved={() => { setEditJob(null); refetch(); }}
       />
+      <PaxSplitDialog
+        open={!!paxJob} onOpenChange={(v) => !v && setPaxJob(null)}
+        jobId={paxJob?.id ?? null}
+        jobLabel={paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0,5)}` : ""}
+        drivers={drivers ?? []}
+      />
     </div>
   );
 }
 
-function UnassignedColumn({ jobs, onEdit }: { jobs: Job[]; onEdit: (j: Job) => void }) {
+function UnassignedColumn({ jobs, onEdit, onPax }: { jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[420px] ${isOver ? "ring-2 ring-primary" : ""}`}>
@@ -129,13 +139,13 @@ function UnassignedColumn({ jobs, onEdit }: { jobs: Job[]; onEdit: (j: Job) => v
       </div>
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-8 text-center">Everything is assigned 🎉</div>}
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
       </div>
     </div>
   );
 }
 
-function DriverLanes({ drivers, jobs, onEdit }: { drivers: Driver[]; jobs: Job[]; onEdit: (j: Job) => void }) {
+function DriverLanes({ drivers, jobs, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(drivers.length, 1)}, minmax(220px, 1fr))` }}>
@@ -143,27 +153,27 @@ function DriverLanes({ drivers, jobs, onEdit }: { drivers: Driver[]; jobs: Job[]
           <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} />
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} onEdit={onEdit} onPax={onPax} />
         ))}
       </div>
     </div>
   );
 }
 
-function DriverLane({ driver, jobs, onEdit }: { driver: Driver; jobs: Job[]; onEdit: (j: Job) => void }) {
+function DriverLane({ driver, jobs, onEdit, onPax }: { driver: Driver; jobs: Job[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
   return (
     <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[380px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
       <div className="text-sm font-medium">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2">{driver.vehicle ?? "—"}</div>
       <div className="space-y-2">
-        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} />)}
+        {jobs.map((j) => <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax} />)}
       </div>
     </div>
   );
 }
 
-function WeekGrid({ drivers, jobs, days, onEdit }: { drivers: Driver[]; jobs: Job[]; days: Date[]; onEdit: (j: Job) => void }) {
+function WeekGrid({ drivers, jobs, days, onEdit, onPax }: { drivers: Driver[]; jobs: Job[]; days: Date[]; onEdit: (j: Job) => void; onPax: (j: Job) => void }) {
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
@@ -176,7 +186,7 @@ function WeekGrid({ drivers, jobs, days, onEdit }: { drivers: Driver[]; jobs: Jo
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
               <div className="space-y-2">
                 {dayJobs.map((j) => (
-                  <TripCard key={j.id} job={j} onEdit={onEdit}
+                  <TripCard key={j.id} job={j} onEdit={onEdit} onPax={onPax}
                     driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
                 ))}
               </div>
@@ -188,10 +198,11 @@ function WeekGrid({ drivers, jobs, days, onEdit }: { drivers: Driver[]; jobs: Jo
   );
 }
 
-function TripCard({ job, onEdit, driverName }: { job: Job; onEdit: (j: Job) => void; driverName?: string }) {
+function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
+  const paxCount = job.pax?.length ?? 0;
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
     : {};
@@ -208,12 +219,21 @@ function TripCard({ job, onEdit, driverName }: { job: Job; onEdit: (j: Job) => v
           {job.clientcompanyname && <div className="text-xs text-muted-foreground truncate">{job.clientcompanyname}</div>}
           {driverName && <div className="text-xs mt-1">👤 {driverName}</div>}
           <div className="flex gap-1 mt-1 flex-wrap">
+            {paxCount > 0 && (
+              <button
+                type="button" onClick={() => onPax(job)}
+                className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 hover:bg-primary/20"
+              >
+                <Users className="h-3 w-3" /> {paxCount} pax
+              </button>
+            )}
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
             {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
             {job.flightorship && <Badge variant="secondary" className="text-[10px]">{job.flightorship}</Badge>}
           </div>
           <div className="flex gap-1 mt-2">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
           </div>
