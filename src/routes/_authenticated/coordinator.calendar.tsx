@@ -20,7 +20,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
-import { Users } from "lucide-react";
+import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import { getUnreadCountsCoord } from "@/lib/coordinator.functions";
+import { Users, MessagesSquare } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
