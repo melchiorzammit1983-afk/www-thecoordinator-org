@@ -317,7 +317,7 @@ async function syncVirtualDrivers(ctx: Ctx, companyId: string) {
     await supabaseAdmin.from("drivers").upsert({
       company_id: companyId, kind: "coordinator",
       linked_user_id: me.owner_user_id,
-      name: `${me.name} (me)`, status: "active",
+      name: `${me.name} (me)`, status: "available",
     }, { onConflict: "company_id", ignoreDuplicates: false }).select();
   }
   // Partner drivers for active connections
@@ -338,7 +338,7 @@ async function syncVirtualDrivers(ctx: Ctx, companyId: string) {
         await supabaseAdmin.from("drivers").insert({
           company_id: companyId, kind: "partner",
           linked_company_id: p.id,
-          name: `${p.name} (partner)`, status: "active",
+          name: `${p.name} (partner)`, status: "available",
         });
       }
     }
