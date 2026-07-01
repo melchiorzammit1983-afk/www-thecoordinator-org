@@ -52,6 +52,8 @@ type Job = {
   flight_status: string | null;
   flight_status_note: string | null;
   flight_status_updated_at: string | null;
+  flight_scheduled_at: string | null;
+  flight_estimated_at: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   status: string;
   driver_id: string | null;
