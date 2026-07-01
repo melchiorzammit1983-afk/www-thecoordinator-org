@@ -240,7 +240,7 @@ function WeekGrid({ drivers, jobs, days, onEdit, onPax, onChat, unread }: { driv
 
 
 
-function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; driverName?: string }) {
+function TripCard({ job, onEdit, onPax, onChat, unread = 0, driverName }: { job: Job; onEdit: (j: Job) => void; onPax: (j: Job) => void; onChat: (j: Job) => void; unread?: number; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
