@@ -473,6 +473,36 @@ export const extendMagicLink = createServerFn({ method: "POST" })
     return { ok: true, expires_at };
   });
 
+export const getMagicLinkPreview = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: link, error: le } = await context.supabase.from("magic_links")
+      .select("*").eq("id", data.id).eq("company_id", c.id).single();
+    if (le || !link) throw new Error("Link not found");
+    const today = new Date().toISOString().slice(0, 10);
+    let jobs: any[] = [];
+    if (link.kind === "driver") {
+      let q = context.supabase.from("jobs")
+        .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight")
+        .eq("company_id", c.id).gte("date", today)
+        .order("date", { ascending: true }).order("time", { ascending: true }).limit(6);
+      if (link.subject_id) q = q.eq("driver_id", link.subject_id);
+      const { data: js } = await q;
+      jobs = js ?? [];
+    }
+    const paxByJob: Record<string, number> = {};
+    if (jobs.length) {
+      const ids = jobs.map((j) => j.id);
+      const { data: px } = await context.supabase.from("pax").select("job_id").in("job_id", ids);
+      for (const p of px ?? []) paxByJob[p.job_id] = (paxByJob[p.job_id] ?? 0) + 1;
+    }
+    return { link, jobs, paxByJob, company: { name: c.name } };
+  });
+
+
+
 // ---------- TOPUP REQUEST ----------
 
 export const requestTopUp = createServerFn({ method: "POST" })
