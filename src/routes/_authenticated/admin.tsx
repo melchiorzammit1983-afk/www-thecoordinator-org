@@ -23,10 +23,17 @@ function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const whoAmIFn = useServerFn(whoAmI);
+  const countFn = useServerFn(countNewAccessRequests);
   const { data, isLoading, error } = useQuery({
     queryKey: ["whoami"],
     queryFn: () => whoAmIFn(),
     retry: false,
+  });
+  const { data: newCount } = useQuery({
+    queryKey: ["access-requests-count"],
+    queryFn: () => countFn(),
+    enabled: !!data?.isAdmin,
+    refetchInterval: 30_000,
   });
 
   if (isLoading) {
@@ -87,7 +94,12 @@ function AdminLayout() {
                 )}
               >
                 <item.icon className="h-4 w-4" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.to === "/admin/requests" && (newCount?.count ?? 0) > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                    {newCount!.count}
+                  </span>
+                )}
               </Link>
             );
           })}
