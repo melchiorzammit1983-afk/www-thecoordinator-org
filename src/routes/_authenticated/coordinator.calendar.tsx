@@ -23,6 +23,7 @@ import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { getUnreadCountsCoord } from "@/lib/coordinator.functions";
 import { Users, MessagesSquare } from "lucide-react";
+import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Coordinator" }] }),
