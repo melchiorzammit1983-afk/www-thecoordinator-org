@@ -198,12 +198,19 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
                       : `in ${formatDistanceToNowStrict(new Date(r.expires_at))}`}
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
+                    {!isDead && (
+                      <Button size="icon" variant="ghost" title="Share on WhatsApp"
+                        onClick={() => shareOnWhatsApp(r.id, url, r.subject_label)}>
+                        <MessageCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Button size="icon" variant="ghost" title="Extend expiry"
                       onClick={() => promptExtend(r.id)}>
                       <Clock className="h-3.5 w-3.5" />
                     </Button>
                     {!isDead && <Button size="icon" variant="ghost" onClick={() => revokeMut.mutate(r.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                   </TableCell>
+
                 </TableRow>
               );
             })}
