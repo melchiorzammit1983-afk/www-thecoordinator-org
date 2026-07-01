@@ -3,6 +3,17 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
+type FeatureName =
+  | "tracking"
+  | "bulkupload"
+  | "client_booking"
+  | "qr"
+  | "magic_link_driver"
+  | "magic_link_client"
+  | "split_job"
+  | "clone_job"
+  | "recurring_schedule"
+  | "dispatch_partner";
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -152,7 +163,7 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
 }
 
 async function chargeIfNeeded(
-  ctx: Ctx, companyId: string, feature: string, jobId: string | null, charged: Record<string, boolean>,
+  ctx: Ctx, companyId: string, feature: FeatureName, jobId: string | null, charged: Record<string, boolean>,
 ) {
   if (charged[feature]) return;
   const supabaseAdmin = await getAdminClient();
