@@ -216,6 +216,111 @@ export type Database = {
           },
         ]
       }
+      connection_invites: {
+        Row: {
+          code: string
+          created_at: string
+          expires_at: string
+          id: string
+          mode: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id: string
+          permissions: Json
+          used_at: string | null
+          used_by_company_id: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          mode: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id: string
+          permissions?: Json
+          used_at?: string | null
+          used_by_company_id?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          mode?: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id?: string
+          permissions?: Json
+          used_at?: string | null
+          used_by_company_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_invites_owner_company_id_fkey"
+            columns: ["owner_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_invites_used_by_company_id_fkey"
+            columns: ["used_by_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coordinator_connections: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          id: string
+          mode: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id: string
+          partner_company_id: string
+          permissions: Json
+          revoked_at: string | null
+          status: Database["public"]["Enums"]["connection_status"]
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          mode: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id: string
+          partner_company_id: string
+          permissions?: Json
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["connection_status"]
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          mode?: Database["public"]["Enums"]["connection_mode"]
+          owner_company_id?: string
+          partner_company_id?: string
+          permissions?: Json
+          revoked_at?: string | null
+          status?: Database["public"]["Enums"]["connection_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coordinator_connections_owner_company_id_fkey"
+            columns: ["owner_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coordinator_connections_partner_company_id_fkey"
+            columns: ["partner_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_status_updates: {
         Row: {
           created_at: string
@@ -427,9 +532,14 @@ export type Database = {
           date: string
           deletion_requested_at: string | null
           deletion_requested_by: string | null
+          dispatch_decided_at: string | null
+          dispatch_note: string | null
+          dispatch_status: Database["public"]["Enums"]["dispatch_status"] | null
+          dispatched_at: string | null
           driver_accepted_at: string | null
           driver_hidden_at: string | null
           driver_id: string | null
+          executor_company_id: string | null
           flight_status: string | null
           flight_status_note: string | null
           flight_status_updated_at: string | null
@@ -437,6 +547,7 @@ export type Database = {
           from_flight: string | null
           from_location: string
           id: string
+          origin_company_id: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
           points_charged: Json
@@ -456,9 +567,16 @@ export type Database = {
           date: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dispatch_decided_at?: string | null
+          dispatch_note?: string | null
+          dispatch_status?:
+            | Database["public"]["Enums"]["dispatch_status"]
+            | null
+          dispatched_at?: string | null
           driver_accepted_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          executor_company_id?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
@@ -466,6 +584,7 @@ export type Database = {
           from_flight?: string | null
           from_location: string
           id?: string
+          origin_company_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
@@ -485,9 +604,16 @@ export type Database = {
           date?: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dispatch_decided_at?: string | null
+          dispatch_note?: string | null
+          dispatch_status?:
+            | Database["public"]["Enums"]["dispatch_status"]
+            | null
+          dispatched_at?: string | null
           driver_accepted_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          executor_company_id?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
@@ -495,6 +621,7 @@ export type Database = {
           from_flight?: string | null
           from_location?: string
           id?: string
+          origin_company_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
@@ -520,6 +647,20 @@ export type Database = {
             columns: ["driver_id"]
             isOneToOne: false
             referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_executor_company_id_fkey"
+            columns: ["executor_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_origin_company_id_fkey"
+            columns: ["origin_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -820,6 +961,7 @@ export type Database = {
         }
         Returns: number
       }
+      company_of: { Args: { _user_id: string }; Returns: string }
       driver_accept_job: {
         Args: { _job_id: string; _token: string }
         Returns: undefined
@@ -828,9 +970,21 @@ export type Database = {
         Args: { _job_id: string; _token: string }
         Returns: undefined
       }
+      has_connection_permission: {
+        Args: {
+          _perm: string
+          _target_company: string
+          _viewer_company: string
+        }
+        Returns: boolean
+      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_company_owner: {
         Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_executor_of: {
+        Args: { _job_id: string; _viewer_company: string }
         Returns: boolean
       }
     }
@@ -842,6 +996,9 @@ export type Database = {
         | "modification_pending"
         | "cancelled"
       company_status: "pending" | "approved" | "suspended"
+      connection_mode: "sync" | "provider"
+      connection_status: "pending" | "active" | "revoked" | "rejected"
+      dispatch_status: "pending" | "accepted" | "rejected"
       driver_status: "available" | "busy" | "offline"
       feature_name:
         | "tracking"
@@ -1007,6 +1164,9 @@ export const Constants = {
         "cancelled",
       ],
       company_status: ["pending", "approved", "suspended"],
+      connection_mode: ["sync", "provider"],
+      connection_status: ["pending", "active", "revoked", "rejected"],
+      dispatch_status: ["pending", "accepted", "rejected"],
       driver_status: ["available", "busy", "offline"],
       feature_name: [
         "tracking",
