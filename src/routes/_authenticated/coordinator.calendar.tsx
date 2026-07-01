@@ -197,7 +197,8 @@ function CalendarPage() {
       </header>
 
       {/* Inbound (pending my decision) */}
-      <InboundBoard ctx={cardCtx} />
+      <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
+
 
       {/* Outbound (my trips currently at partners) */}
       <OutboundBoard />
