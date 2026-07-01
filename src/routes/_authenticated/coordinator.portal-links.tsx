@@ -158,7 +158,11 @@ function LinksPanel({ kind }: { kind: "driver" | "client" }) {
                       : new Date(r.expires_at) < new Date() ? <span className="text-destructive">Expired</span>
                       : `in ${formatDistanceToNowStrict(new Date(r.expires_at))}`}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="icon" variant="ghost" title="Extend expiry"
+                      onClick={() => promptExtend(r.id)}>
+                      <Clock className="h-3.5 w-3.5" />
+                    </Button>
                     {!isDead && <Button size="icon" variant="ghost" onClick={() => revokeMut.mutate(r.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                   </TableCell>
                 </TableRow>
