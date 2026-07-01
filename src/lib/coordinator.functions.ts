@@ -292,7 +292,7 @@ export const listDrivers = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const { data, error } = await context.supabase.from("drivers")
-      .select("id, name, phone, email, vehicle, status")
+      .select("id, name, phone, email, vehicle, status, seats_available, availability_note, profile_updated_at")
       .eq("company_id", c.id).order("name");
     if (error) throw new Error(error.message);
     return data ?? [];
