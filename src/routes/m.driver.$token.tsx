@@ -30,6 +30,15 @@ import {
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
+  errorComponent: ({ error }) => (
+    <div className="min-h-screen grid place-items-center px-4">
+      <div className="text-center">
+        <h1 className="text-xl font-semibold">Manifest error</h1>
+        <p className="text-sm text-muted-foreground mt-2">{error.message}</p>
+      </div>
+    </div>
+  ),
+  notFoundComponent: () => <NotFound />,
 });
 
 type Pax = { id: string; name: string; status: string; boarded_at: string | null };
@@ -378,6 +387,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </Button>
         </div>
       </div>
+          <DialogDescription>Update your availability and vehicle details.</DialogDescription>
     </article>
   );
 }
@@ -429,6 +439,7 @@ function ProfileDialog({ open, onOpenChange, token, driver }: {
         <DialogFooter>
           <Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending ? "Saving…" : "Save"}</Button>
         </DialogFooter>
+          <DialogDescription>Generate a PDF statement for your completed trips.</DialogDescription>
       </DialogContent>
     </Dialog>
   );

@@ -12,6 +12,15 @@ import { RecurringDialog } from "@/components/client/RecurringDialog";
 export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
   component: ClientPortal,
+  errorComponent: ({ error }) => (
+    <div className="min-h-screen grid place-items-center px-4">
+      <div className="text-center">
+        <h1 className="text-xl font-semibold">Portal error</h1>
+        <p className="text-sm text-muted-foreground mt-2">{error.message}</p>
+      </div>
+    </div>
+  ),
+  notFoundComponent: () => <NotFound />,
 });
 
 type Booking = {
