@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_requests: {
+        Row: {
+          company_name: string | null
+          country: string | null
+          created_at: string
+          email: string
+          fleet_size: string | null
+          full_name: string
+          id: string
+          message: string | null
+          phone: string | null
+          referral_code: string | null
+          role: string | null
+          status: string
+        }
+        Insert: {
+          company_name?: string | null
+          country?: string | null
+          created_at?: string
+          email: string
+          fleet_size?: string | null
+          full_name: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          referral_code?: string | null
+          role?: string | null
+          status?: string
+        }
+        Update: {
+          company_name?: string | null
+          country?: string | null
+          created_at?: string
+          email?: string
+          fleet_size?: string | null
+          full_name?: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          referral_code?: string | null
+          role?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       admin_emails: {
         Row: {
           created_at: string
