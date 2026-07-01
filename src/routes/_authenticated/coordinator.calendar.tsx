@@ -5,10 +5,10 @@ import { useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import { toast } from "sonner";
-import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon } from "lucide-react";
+import { Plus, Copy, Split, Pencil, GripVertical, Calendar as CalIcon, Trash2 } from "lucide-react";
 
 import {
-  listJobs, listDrivers, assignDriver, cloneJob, splitJob,
+  listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
