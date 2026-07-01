@@ -501,9 +501,42 @@ export const getMagicLinkPreview = createServerFn({ method: "GET" })
     return { link, jobs, paxByJob, company: { name: c.name } };
   });
 
-
+export const shareJobToDriver = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: job, error: je } = await context.supabase.from("jobs")
+      .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight,vehicle,driver_id,drivers(name)")
+      .eq("id", data.job_id).eq("company_id", c.id).single();
+    if (je || !job) throw new Error("Trip not found");
+    if (!job.driver_id) throw new Error("Assign a driver first");
+    const nowIso = new Date().toISOString();
+    const { data: existing } = await context.supabase.from("magic_links")
+      .select("*").eq("company_id", c.id).eq("kind", "driver").eq("subject_id", job.driver_id)
+      .is("revoked_at", null).gt("expires_at", nowIso)
+      .order("expires_at", { ascending: false }).limit(1).maybeSingle();
+    let link = existing;
+    if (!link) {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const expires_at = new Date(Date.now() + 7 * 24 * 3600_000).toISOString();
+      const label = (job.drivers?.name ? `${job.drivers.name} portal` : "Driver portal");
+      const { data: row, error } = await context.supabase.from("magic_links").insert({
+        company_id: c.id, kind: "driver", subject_id: job.driver_id,
+        subject_label: label, token, expires_at, created_by: context.userId,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      link = row;
+    }
+    const { count: paxCount } = await context.supabase.from("pax")
+      .select("id", { count: "exact", head: true }).eq("job_id", job.id);
+    return { token: link.token, expires_at: link.expires_at, job: { ...job, pax_count: paxCount ?? 0 }, company: { name: c.name } };
+  });
 
 // ---------- TOPUP REQUEST ----------
+
 
 export const requestTopUp = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
