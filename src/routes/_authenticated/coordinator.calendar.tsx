@@ -94,19 +94,34 @@ function CalendarPage() {
   }, [view, anchor]);
 
   const jobsFn = useServerFn(listJobs);
-  const driversFn = useServerFn(listDrivers);
+  const targetsFn = useServerFn(listAssignableTargets);
   const { data: jobs, refetch } = useQuery({
     queryKey: ["jobs", range.from, range.to],
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
   });
-  const { data: drivers } = useQuery({
-    queryKey: ["drivers"], queryFn: () => driversFn() as Promise<Driver[]>,
+  const { data: targets } = useQuery({
+    queryKey: ["assignable-targets"], queryFn: () => targetsFn() as Promise<Targets>,
   });
+  const drivers = targets?.drivers ?? [];
+  const partners = targets?.partners ?? [];
+  const self = targets?.self;
 
   const assignFn = useServerFn(assignDriver);
+  const assignSelfFn = useServerFn(assignSelf);
+  const unassignSelfFn = useServerFn(unassignSelf);
+  const dispatchPartnerFn = useServerFn(dispatchJobToPartner);
+
   const assignMut = useMutation({
-    mutationFn: (v: { job_id: string; driver_id: string | null }) => assignFn({ data: v }),
-    onSuccess: () => { toast.success("Assigned"); refetch(); },
+    mutationFn: async (v: { job: Job; kind: "driver" | "partner" | "self" | "none"; targetId?: string | null }) => {
+      if (v.job.self_assigned_user_id && v.kind !== "self") {
+        await unassignSelfFn({ data: { job_id: v.job.id } });
+      }
+      if (v.kind === "none") return await assignFn({ data: { job_id: v.job.id, driver_id: null } });
+      if (v.kind === "driver") return await assignFn({ data: { job_id: v.job.id, driver_id: v.targetId ?? null } });
+      if (v.kind === "self") return await assignSelfFn({ data: { job_id: v.job.id } });
+      if (v.kind === "partner") return await dispatchPartnerFn({ data: { job_id: v.job.id, partner_company_id: v.targetId! } });
+    },
+    onSuccess: () => { toast.success("Assigned"); refetch(); qc.invalidateQueries({ queryKey: ["collab"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -148,15 +163,18 @@ function CalendarPage() {
     const jobId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
-    if (dropId === "unassigned") assignMut.mutate({ job_id: jobId, driver_id: null });
-    else if (dropId.startsWith("driver:")) assignMut.mutate({ job_id: jobId, driver_id: dropId.slice(7) });
+    const job = (jobs ?? []).find((j) => j.id === jobId);
+    if (!job) return;
+    if (dropId === "unassigned") assignMut.mutate({ job, kind: "none" });
+    else if (dropId.startsWith("driver:")) assignMut.mutate({ job, kind: "driver", targetId: dropId.slice(7) });
+    else if (dropId === "self") assignMut.mutate({ job, kind: "self" });
   }
 
-  const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
+  const unassigned = (jobs ?? []).filter((j) => !j.driver_id && !j.self_assigned_user_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
-    onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
-    drivers: drivers ?? [],
+    onAssign: (job, kind, targetId) => assignMut.mutate({ job, kind, targetId }),
+    drivers, partners, self: self ?? null,
     unread: unreadByJob ?? {},
   };
 
