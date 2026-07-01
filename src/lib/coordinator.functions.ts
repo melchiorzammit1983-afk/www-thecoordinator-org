@@ -484,6 +484,8 @@ const bulkTripInput = z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
     flightorship: z.string().trim().max(120).optional().default(""),
+    from_flight: z.string().trim().max(40).optional().default(""),
+    to_flight: z.string().trim().max(40).optional().default(""),
     clientcompanyname: z.string().trim().max(200).optional().default(""),
     pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   })).min(1).max(50),
@@ -502,7 +504,9 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         company_id: c.id,
         from_location: t.from_location, to_location: t.to_location,
         date: t.date, time, pickup_at,
-        flightorship: t.flightorship || null,
+        flightorship: t.flightorship || t.from_flight || t.to_flight || null,
+        from_flight: (t.from_flight || "").toUpperCase() || null,
+        to_flight: (t.to_flight || "").toUpperCase() || null,
         clientcompanyname: t.clientcompanyname || null,
         qr_strict_mode: false, tracking_enabled: false,
         vehicle: null, driver_id: null,
@@ -516,6 +520,56 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       }
     }
     return { created };
+  });
+
+// ---------- FLIGHT STATUS ----------
+// Best-effort live flight status. Uses AviationStack if AVIATIONSTACK_API_KEY is set;
+// otherwise it's a no-op that leaves status untouched. Cards go red when status === 'delayed'.
+export const checkFlightStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const key = process.env.AVIATIONSTACK_API_KEY;
+    // Look at flights for jobs in the next 48h (or recently past 6h so we can catch "delayed" that already happened).
+    const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
+    const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
+    const { data: jobs, error } = await context.supabase.from("jobs")
+      .select("id, from_flight, to_flight, pickup_at")
+      .eq("company_id", c.id)
+      .or("from_flight.not.is.null,to_flight.not.is.null")
+      .gte("pickup_at", fromIso).lte("pickup_at", toIso);
+    if (error) throw new Error(error.message);
+    if (!key) return { checked: 0, updated: 0, configured: false };
+
+    let updated = 0;
+    for (const j of jobs ?? []) {
+      const code = (j.from_flight || j.to_flight || "").toUpperCase();
+      if (!code) continue;
+      try {
+        const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}&flight_iata=${encodeURIComponent(code)}&limit=1`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const body: any = await res.json();
+        const f = body?.data?.[0];
+        if (!f) continue;
+        const status = String(f.flight_status ?? "").toLowerCase(); // scheduled|active|landed|cancelled|incident|diverted
+        const dep = f.departure ?? {};
+        const arr = f.arrival ?? {};
+        const delayMin = Number(dep.delay ?? arr.delay ?? 0) || 0;
+        const mapped =
+          status === "cancelled" ? "cancelled" :
+          status === "landed" ? "landed" :
+          delayMin >= 15 ? "delayed" : status || "unknown";
+        const note = delayMin ? `Delayed ${delayMin} min` : status;
+        await context.supabase.from("jobs").update({
+          flight_status: mapped,
+          flight_status_note: note,
+          flight_status_updated_at: new Date().toISOString(),
+        }).eq("id", j.id).eq("company_id", c.id);
+        updated++;
+      } catch { /* ignore per-flight errors */ }
+    }
+    return { checked: jobs?.length ?? 0, updated, configured: true };
   });
 
 export const listJobPax = createServerFn({ method: "GET" })
