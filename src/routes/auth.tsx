@@ -56,6 +56,15 @@ function AuthPage() {
         <p className="text-xs text-muted-foreground text-center mt-6">
           <Link to="/" className="hover:underline">Back home</Link>
         </p>
+        <div className="mt-10 pt-6 border-t border-border/60 text-center">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Administrator</p>
+          <Link
+            to="/admin-auth"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            🔒 Admin sign in
+          </Link>
+        </div>
       </div>
     </div>
   );
