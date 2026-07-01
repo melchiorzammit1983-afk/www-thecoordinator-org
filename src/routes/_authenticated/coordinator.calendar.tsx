@@ -232,18 +232,65 @@ function TripCard({ job, onEdit, onPax, driverName }: { job: Job; onEdit: (j: Jo
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
             {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
             {job.flightorship && <Badge variant="secondary" className="text-[10px]">{job.flightorship}</Badge>}
+            {job.driver_accepted_at && <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>}
+            {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Deletion pending</Badge>}
           </div>
           <div className="flex gap-1 mt-2">
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onEdit(job)}><Pencil className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPax(job)} title="Passengers"><Users className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenSplit(true)}><Split className="h-3 w-3" /></Button>
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpenClone(true)}><Copy className="h-3 w-3" /></Button>
+            <DeleteButton job={job} />
           </div>
         </div>
       </div>
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
       <SplitDialog open={openSplit} onOpenChange={setOpenSplit} job={job} />
     </div>
+  );
+}
+
+function DeleteButton({ job }: { job: Job }) {
+  const qc = useQueryClient();
+  const delFn = useServerFn(deleteJob);
+  const cancelFn = useServerFn(cancelDeletionRequest);
+  const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
+  const pending = !!job.deletion_requested_at;
+
+  const delMut = useMutation({
+    mutationFn: () => delFn({ data: { job_id: job.id } }),
+    onSuccess: (res: { deleted: boolean; pending: boolean }) => {
+      toast.success(res.pending ? "Deletion requested — waiting for driver approval" : "Deleted");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const cancelMut = useMutation({
+    mutationFn: () => cancelFn({ data: { job_id: job.id } }),
+    onSuccess: () => { toast.success("Deletion request cancelled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function onClick() {
+    if (pending) {
+      if (confirm("Cancel the pending deletion request?")) cancelMut.mutate();
+      return;
+    }
+    const msg = requiresApproval
+      ? "This driver has already accepted this trip. Deletion will be sent to them for approval. Continue?"
+      : "Delete this trip?";
+    if (confirm(msg)) delMut.mutate();
+  }
+
+  return (
+    <Button
+      size="sm" variant="ghost"
+      className={`h-7 px-2 ${pending ? "text-amber-600" : "text-destructive"}`}
+      onClick={onClick}
+      title={pending ? "Cancel deletion request" : requiresApproval ? "Request deletion (driver must approve)" : "Delete trip"}
+    >
+      <Trash2 className="h-3 w-3" />
+    </Button>
   );
 }
 
