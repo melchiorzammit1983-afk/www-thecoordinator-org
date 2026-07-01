@@ -98,6 +98,8 @@ const jobInput = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   flightorship: z.string().trim().max(120).optional().or(z.literal("")),
+  from_flight: z.string().trim().max(40).optional().or(z.literal("")),
+  to_flight: z.string().trim().max(40).optional().or(z.literal("")),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
