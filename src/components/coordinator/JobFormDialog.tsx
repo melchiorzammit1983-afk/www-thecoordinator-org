@@ -26,6 +26,8 @@ type Job = {
   from_location: string; to_location: string;
   date: string; time: string;
   flightorship: string | null;
+  from_flight: string | null;
+  to_flight: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   vehicle: string | null;
   driver_id: string | null;
