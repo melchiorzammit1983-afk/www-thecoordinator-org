@@ -1088,8 +1088,9 @@ export const buildStatement = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const HARD_CAP = 5000;
 
-    // Base query — RLS already restricts to own + chain-visible jobs.
-    let q = context.supabase.from("jobs")
+    const supabaseAdmin = await getAdminClient();
+    // Base query — service-role read with explicit company/chain scoping below.
+    let q = supabaseAdmin.from("jobs")
       .select(`
         id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids,
         from_location, to_location, date, time, pickup_at, status, payment_status,
@@ -1108,6 +1109,8 @@ export const buildStatement = createServerFn({ method: "POST" })
     if (data.company_scope === "own") {
       q = q.eq("company_id", c.id);
     } else if (data.company_scope === "chain") {
+      q = q.contains("dispatch_chain_company_ids", [c.id]);
+    } else if (!c.isAdmin) {
       q = q.contains("dispatch_chain_company_ids", [c.id]);
     }
     if (data.partner_company_ids?.length) {
@@ -1173,7 +1176,6 @@ export const buildStatement = createServerFn({ method: "POST" })
     }
     const nameById: Record<string, string> = {};
     if (companyIds.size) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: comps } = await supabaseAdmin.from("companies")
         .select("id,name").in("id", Array.from(companyIds));
       for (const cp of comps ?? []) nameById[cp.id] = cp.name;
@@ -1183,7 +1185,7 @@ export const buildStatement = createServerFn({ method: "POST" })
     const jobIds = jobs.map((j) => j.id);
     const pointsByJob: Record<string, number> = {};
     if (jobIds.length) {
-      const { data: led } = await context.supabase.from("points_ledger")
+      const { data: led } = await supabaseAdmin.from("points_ledger")
         .select("job_id,points_deducted").in("job_id", jobIds);
       for (const r of (led ?? []) as { job_id: string | null; points_deducted: number | null }[]) {
         if (!r.job_id) continue;
