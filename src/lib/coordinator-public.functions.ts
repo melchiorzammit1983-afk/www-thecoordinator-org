@@ -33,7 +33,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const today = new Date().toISOString().slice(0, 10);
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
     let q = supabase.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at")
       .eq("company_id", link.company_id)
       .gte("date", today).lte("date", tomorrow)
       .order("pickup_at", { ascending: true });
@@ -41,6 +41,28 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const { data: jobs, error } = await q;
     if (error) throw new Error(error.message);
     return { link, jobs: jobs ?? [] };
+  });
+
+export const driverAcceptJob = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const supabase = publicClient();
+    const { error } = await supabase.rpc("driver_accept_job", { _token: data.token, _job_id: data.job_id });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const driverApproveDeletion = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const supabase = publicClient();
+    const { error } = await supabase.rpc("driver_approve_deletion", { _token: data.token, _job_id: data.job_id });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const getClientBookings = createServerFn({ method: "GET" })

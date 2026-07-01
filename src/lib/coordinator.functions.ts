@@ -82,7 +82,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     let q = context.supabase
       .from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, drivers(name), pax(id,name)")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, drivers(name), pax(id,name)")
       .eq("company_id", c.id)
       .order("pickup_at", { ascending: true });
     if (data.from) q = q.gte("date", data.from);
@@ -240,6 +240,43 @@ export const splitJob = createServerFn({ method: "POST" })
       rows.push(row);
     }
     return rows;
+  });
+
+export const deleteJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { data: job, error } = await context.supabase.from("jobs")
+      .select("id, driver_id, driver_accepted_at, deletion_requested_at")
+      .eq("id", data.job_id).eq("company_id", c.id).single();
+    if (error || !job) throw new Error("Job not found");
+    if (!job.driver_id || !job.driver_accepted_at) {
+      const { error: dErr } = await context.supabase.from("jobs")
+        .delete().eq("id", data.job_id).eq("company_id", c.id);
+      if (dErr) throw new Error(dErr.message);
+      return { deleted: true, pending: false };
+    }
+    const { error: uErr } = await context.supabase.from("jobs")
+      .update({
+        deletion_requested_at: new Date().toISOString(),
+        deletion_requested_by: context.userId,
+      })
+      .eq("id", data.job_id).eq("company_id", c.id);
+    if (uErr) throw new Error(uErr.message);
+    return { deleted: false, pending: true };
+  });
+
+export const cancelDeletionRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const { error } = await context.supabase.from("jobs")
+      .update({ deletion_requested_at: null, deletion_requested_by: null })
+      .eq("id", data.job_id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // ---------- DRIVERS ----------

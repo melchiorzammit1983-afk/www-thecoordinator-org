@@ -383,6 +383,9 @@ export type Database = {
           company_id: string
           created_at: string
           date: string
+          deletion_requested_at: string | null
+          deletion_requested_by: string | null
+          driver_accepted_at: string | null
           driver_id: string | null
           flightorship: string | null
           from_location: string
@@ -402,6 +405,9 @@ export type Database = {
           company_id: string
           created_at?: string
           date: string
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
+          driver_accepted_at?: string | null
           driver_id?: string | null
           flightorship?: string | null
           from_location: string
@@ -421,6 +427,9 @@ export type Database = {
           company_id?: string
           created_at?: string
           date?: string
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
+          driver_accepted_at?: string | null
           driver_id?: string | null
           flightorship?: string | null
           from_location?: string
@@ -649,6 +658,14 @@ export type Database = {
           _note: string
         }
         Returns: number
+      }
+      driver_accept_job: {
+        Args: { _job_id: string; _token: string }
+        Returns: undefined
+      }
+      driver_approve_deletion: {
+        Args: { _job_id: string; _token: string }
+        Returns: undefined
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_company_owner: {
