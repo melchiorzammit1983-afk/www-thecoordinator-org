@@ -33,6 +33,23 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
   }
 }
 
+function makePickupIso(date: string, time: string) {
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  const [y, mo, d] = date.split("-").map(Number);
+  const [hh, mm, ss] = normalizedTime.split(":").map(Number);
+  const pickup = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
+  const valid =
+    !Number.isNaN(pickup.getTime()) &&
+    pickup.getUTCFullYear() === y &&
+    pickup.getUTCMonth() === mo - 1 &&
+    pickup.getUTCDate() === d &&
+    pickup.getUTCHours() === hh &&
+    pickup.getUTCMinutes() === mm &&
+    pickup.getUTCSeconds() === (ss || 0);
+  if (!valid) throw new Error("Invalid pickup date or time");
+  return pickup.toISOString();
+}
+
 async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
   const supabaseAdmin = await getAdminClient();
   const isAdmin = await checkIsAdmin(ctx.userId);
@@ -207,7 +224,7 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
+    const pickup_at = makePickupIso(data.date, data.time);
     const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: data.from_location,
@@ -247,7 +264,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const charged: Record<string, boolean> = { ...((existing.points_charged as Record<string, boolean> | null) ?? {}) };
     if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", data.id, charged);
     if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", data.id, charged);
-    const pickup_at = new Date(`${data.date}T${data.time.length === 5 ? data.time + ":00" : data.time}Z`).toISOString();
+    const pickup_at = makePickupIso(data.date, data.time);
     const { error } = await supabaseAdmin.from("jobs").update({
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: data.time, pickup_at,
@@ -291,7 +308,7 @@ export const cloneJob = createServerFn({ method: "POST" })
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
     await chargeIfNeeded(context, c.id, "clone_job", null, {});
-    const pickup_at = new Date(`${data.target_date}T${(src.time as string).length === 5 ? src.time + ":00" : src.time}Z`).toISOString();
+    const pickup_at = makePickupIso(data.target_date, src.time as string);
     const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: src.from_location, to_location: src.to_location,
@@ -514,7 +531,7 @@ export const approveBooking = createServerFn({ method: "POST" })
       .select("*").eq("id", data.id).eq("company_id", c.id).single();
     if (error || !b) throw new Error("Booking not found");
     await chargeIfNeeded(context, c.id, "client_booking", null, {});
-    const pickup_at = b.pickup_at ?? (b.date && b.time ? new Date(`${b.date}T${b.time}Z`).toISOString() : new Date().toISOString());
+    const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
     const { data: job, error: jErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
       from_location: b.from_location, to_location: b.to_location,
