@@ -18,6 +18,7 @@ const NAV = [
   { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false },
   { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false },
   { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false },
+  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false },
 ] as const;
 
 function CoordinatorLayout() {
