@@ -126,16 +126,29 @@ export const listConnections = createServerFn({ method: "GET" })
     const c = await myCompany(context);
     const { data, error } = await context.supabase
       .from("coordinator_connections")
-      .select("id, owner_company_id, partner_company_id, mode, status, permissions, accepted_at, revoked_at, created_at, owner:owner_company_id(id,name), partner:partner_company_id(id,name)")
+      .select("id, owner_company_id, partner_company_id, mode, status, permissions, accepted_at, revoked_at, created_at")
       .or(`owner_company_id.eq.${c.id},partner_company_id.eq.${c.id}`)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data ?? []).map((row: any) => ({
-      ...row,
-      i_am_owner: row.owner_company_id === c.id,
-      other: row.owner_company_id === c.id ? row.partner : row.owner,
-    }));
+    const rows = data ?? [];
+    // Company names are behind RLS (owner-only), so resolve via admin for the "other" side.
+    const otherIds = Array.from(new Set(rows.map((r: any) =>
+      r.owner_company_id === c.id ? r.partner_company_id : r.owner_company_id,
+    )));
+    let nameById: Record<string, string> = {};
+    if (otherIds.length) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: cos } = await supabaseAdmin
+        .from("companies").select("id, name").in("id", otherIds);
+      nameById = Object.fromEntries((cos ?? []).map((x: any) => [x.id, x.name]));
+    }
+    return rows.map((row: any) => {
+      const i_am_owner = row.owner_company_id === c.id;
+      const otherId = i_am_owner ? row.partner_company_id : row.owner_company_id;
+      return { ...row, i_am_owner, other: { id: otherId, name: nameById[otherId] ?? "Unknown" } };
+    });
   });
+
 
 export const updateConnectionPermissions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
