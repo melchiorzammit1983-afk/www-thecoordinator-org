@@ -47,7 +47,7 @@ function IncomingPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -67,6 +67,9 @@ function IncomingPage() {
                 <span className="text-xs text-muted-foreground ml-auto">{(j.pax ?? []).length} pax</span>
               </div>
               {j.dispatch_note && <div className="text-xs text-muted-foreground">Note: {j.dispatch_note}</div>}
+              <div className="pt-2">
+                <ChainTimeline jobId={j.id} />
+              </div>
               <div className="flex gap-2 pt-2">
                 <Button size="sm" onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}>Accept</Button>
                 <Button size="sm" variant="outline" onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}>Reject</Button>
@@ -84,12 +87,12 @@ function IncomingPage() {
           {(outbound.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nothing dispatched yet.</p>}
           {(outbound.data ?? []).map((j: any) => {
             const depth = (j.dispatch_chain_company_ids ?? []).length;
-            const open = expanded[j.id];
+            const open = !collapsed[j.id];
             return (
               <div key={j.id} className="border rounded-md p-3 space-y-2">
                 <button
                   type="button"
-                  onClick={() => setExpanded((s) => ({ ...s, [j.id]: !s[j.id] }))}
+                  onClick={() => setCollapsed((s: Record<string, boolean>) => ({ ...s, [j.id]: !s[j.id] ? true : false }))}
                   className="flex items-center gap-2 flex-wrap w-full text-left"
                 >
                   {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
