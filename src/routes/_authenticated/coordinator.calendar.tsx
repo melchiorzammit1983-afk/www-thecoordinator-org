@@ -240,14 +240,18 @@ function CalendarPage() {
   );
 }
 
+type AssignKind = "driver" | "partner" | "self" | "none";
 type CardCtx = {
   onEdit: (j: Job) => void;
   onPax: (j: Job) => void;
   onChat: (j: Job) => void;
-  onAssign: (j: Job, driverId: string | null) => void;
+  onAssign: (j: Job, kind: AssignKind, targetId?: string | null) => void;
   drivers: Driver[];
+  partners: Partner[];
+  self: { id: string; name: string } | null;
   unread: Record<string, number>;
 };
+
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
 
