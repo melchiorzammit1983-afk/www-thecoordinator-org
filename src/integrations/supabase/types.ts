@@ -373,6 +373,9 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
+          kind: string
+          linked_company_id: string | null
+          linked_user_id: string | null
           name: string
           phone: string | null
           profile_updated_at: string | null
@@ -387,6 +390,9 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          kind?: string
+          linked_company_id?: string | null
+          linked_user_id?: string | null
           name: string
           phone?: string | null
           profile_updated_at?: string | null
@@ -401,6 +407,9 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          kind?: string
+          linked_company_id?: string | null
+          linked_user_id?: string | null
           name?: string
           phone?: string | null
           profile_updated_at?: string | null
@@ -413,6 +422,13 @@ export type Database = {
           {
             foreignKeyName: "drivers_company_id_fkey"
             columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drivers_linked_company_id_fkey"
+            columns: ["linked_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
