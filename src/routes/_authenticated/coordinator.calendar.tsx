@@ -108,10 +108,10 @@ function CalendarPage() {
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} />
+          <UnassignedColumn jobs={unassigned} onEdit={setEditJob} onPax={setPaxJob} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} onEdit={setEditJob} onPax={setPaxJob} />
+            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} onEdit={setEditJob} onPax={setPaxJob} />}
         </div>
       </DndContext>
 
@@ -119,6 +119,12 @@ function CalendarPage() {
       <JobFormDialog
         open={!!editJob} onOpenChange={(v) => !v && setEditJob(null)}
         drivers={drivers ?? []} job={editJob ?? undefined} onSaved={() => { setEditJob(null); refetch(); }}
+      />
+      <PaxSplitDialog
+        open={!!paxJob} onOpenChange={(v) => !v && setPaxJob(null)}
+        jobId={paxJob?.id ?? null}
+        jobLabel={paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0,5)}` : ""}
+        drivers={drivers ?? []}
       />
     </div>
   );
