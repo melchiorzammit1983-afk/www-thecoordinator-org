@@ -770,6 +770,7 @@ const bulkTripInput = z.object({
     from_flight: z.string().trim().max(40).optional().default(""),
     to_flight: z.string().trim().max(40).optional().default(""),
     clientcompanyname: z.string().trim().max(200).optional().default(""),
+    contact_phone: z.string().trim().max(40).optional().default(""),
     pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   })).min(1).max(50),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
