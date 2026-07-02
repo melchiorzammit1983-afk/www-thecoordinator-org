@@ -67,7 +67,7 @@ function CompaniesPage() {
         <div>
           <h1 className="text-2xl font-semibold">Companies</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Approve access, manage points, and share booking links.
+            Approve access and share booking links.
           </p>
         </div>
         <CreateCompanyDialog onCreated={() => qc.invalidateQueries({ queryKey: ["companies"] })} />
