@@ -18,6 +18,7 @@ import {
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations,
+  getCardSignalsCoord, markJobViewedCoord,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
 } from "@/lib/coordinator.functions";
 
@@ -131,6 +132,16 @@ function CalendarPage() {
     queryFn: () => presenceFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, string>>,
     refetchInterval: 20_000,
   });
+  const signalsFn = useServerFn(getCardSignalsCoord);
+  const { data: cardSignals } = useQuery({
+    queryKey: ["coord-card-signals", presenceJobIds.join(",")],
+    enabled: presenceJobIds.length > 0,
+    queryFn: () => signalsFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, {
+      unread_client: number; unread_driver: number;
+      client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+    }>>,
+    refetchInterval: 15_000,
+  });
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
@@ -210,10 +221,18 @@ function CalendarPage() {
     }
   }
 
+  const markViewedFn = useServerFn(markJobViewedCoord);
+  const handleMarkViewed = (id: string) => {
+    markViewedFn({ data: { job_id: id } }).catch(() => { /* ignore */ });
+    qc.setQueryData<any>(["coord-card-signals", presenceJobIds.join(",")], (prev: any) => {
+      if (!prev || !prev[id]) return prev;
+      return { ...prev, [id]: { ...prev[id], driver_status_new: false } };
+    });
+  };
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
-    onOpenDetails: setDetailsJob,
+    onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
@@ -223,6 +242,7 @@ function CalendarPage() {
     onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
     clientPortalEnabled,
     clientPresence: clientPresence ?? {},
+    signals: cardSignals ?? {},
   };
 
 
@@ -360,6 +380,10 @@ type CardCtx = {
   onEditGroup: (groupId: string, jobs: Job[]) => void;
   clientPortalEnabled: boolean;
   clientPresence?: Record<string, string>;
+  signals?: Record<string, {
+    unread_client: number; unread_driver: number;
+    client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+  }>;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
@@ -855,8 +879,53 @@ function GroupedStackCard({
       </div>
     </div>
   );
-
 }
+
+/* ---------- Collapsed strip for completed / cancelled trips ---------- */
+function CompletedStrip({
+  job, ctx, driverName, isSelected,
+}: { job: Job; ctx: CardCtx; driverName?: string; isSelected: boolean }) {
+  const cancelled = job.status === "cancelled";
+  const paxCount = job.pax?.length ?? 0;
+  return (
+    <div
+      className={`relative flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] transition-colors ${
+        cancelled
+          ? "border-muted bg-muted/30 text-muted-foreground line-through"
+          : "border-emerald-500/30 bg-emerald-500/5 text-muted-foreground"
+      } ${isSelected ? "ring-2 ring-primary" : ""}`}
+    >
+      <div onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => ctx.onToggleSelect(job.id)}
+          aria-label="Select trip"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => ctx.onOpenDetails(job)}
+        className="flex-1 flex items-center gap-2 min-w-0 text-left"
+        title={cancelled ? "Cancelled" : "Completed"}
+      >
+        <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
+        <span className="truncate">
+          {job.from_location} → {job.to_location}
+        </span>
+        {driverName && <span className="ml-auto truncate">· {driverName}</span>}
+        {paxCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 shrink-0">
+            <Users className="h-3 w-3" /> {paxCount}
+          </span>
+        )}
+        <Badge variant="outline" className="text-[9px] py-0 px-1 shrink-0">
+          {cancelled ? "Cancelled" : "Done"}
+        </Badge>
+      </button>
+    </div>
+  );
+}
+
 
 
 /* ------------------------------ Trip card ------------------------------ */
@@ -875,10 +944,17 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
 
+  const sig = ctx.signals?.[job.id];
+  const isFinished = job.status === "completed" || job.status === "cancelled";
+  const hasUnread = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0) > 0;
+  const clientChange = !!sig?.client_change;
+  const sosOpen = !!sig?.sos_open;
+  const driverStatusNew = !!sig?.driver_status_new;
+
   // Color priority: red > blue(unread) > green > amber > default
   const tone = problem
     ? "border-destructive bg-destructive/10"
-    : unread > 0
+    : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
     : assignedAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
@@ -910,6 +986,13 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const isSelected = ctx.selected.has(job.id);
 
+  // Collapsed strip for finished / cancelled trips
+  if (isFinished) {
+    return (
+      <CompletedStrip job={job} ctx={ctx} driverName={shownDriver ?? undefined} isSelected={isSelected} />
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -917,6 +1000,14 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
+
+      {/* Signal overlays */}
+      {hasUnread && <span className="signal-stripe-msg" aria-label="Unread messages" />}
+      {sosOpen ? (
+        <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
+      ) : clientChange ? (
+        <span className="signal-corner-change" title="Client requested a change" aria-label="Client change" />
+      ) : null}
 
       {/* Multi-select checkbox */}
       <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
@@ -951,6 +1042,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 if (ageMs > 2 * 60_000) return null;
                 return <span title="Client online" className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-label="Client online" />;
               })()}
+              {driverStatusNew && (
+                <span className="signal-dot-driver" title="Driver status updated" aria-label="Driver status updated" />
+              )}
               <span className="ml-auto flex items-center gap-1">
                 {unreadCounts.driver > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium" title="Unread driver messages">
