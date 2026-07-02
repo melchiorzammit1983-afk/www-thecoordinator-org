@@ -2110,15 +2110,16 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
         client_change: boolean;
         sos_open: boolean;
         driver_status_new: boolean;
+        rejected: boolean;
       }>;
     }
     // 1) fetch jobs (with viewed_at, updated_at, status, client_link_token)
     const { data: jobs } = await supabaseAdmin.from("jobs")
-      .select("id, status, updated_at, coordinator_last_viewed_at, client_link_token")
+      .select("id, status, updated_at, coordinator_last_viewed_at, client_link_token, driver_id")
       .in("id", data.job_ids);
-    // 2) unread messages
+    // 2) unread messages + rejection detection
     const { data: msgs } = await supabaseAdmin.from("trip_messages")
-      .select("job_id, sender_kind")
+      .select("job_id, sender_kind, body, created_at")
       .eq("company_id", c.id)
       .in("job_id", data.job_ids)
       .is("read_by_coordinator_at", null)
@@ -2144,14 +2145,28 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
     const out: Record<string, {
       unread_client: number; unread_driver: number;
       client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+      rejected: boolean;
     }> = {};
     for (const id of data.job_ids) {
-      out[id] = { unread_client: 0, unread_driver: 0, client_change: false, sos_open: false, driver_status_new: false };
+      out[id] = { unread_client: 0, unread_driver: 0, client_change: false, sos_open: false, driver_status_new: false, rejected: false };
     }
+    // driver-less jobs eligible for "rejected" flag
+    const driverlessJobIds = new Set(
+      ((jobs ?? []) as any[]).filter((j) => !j.driver_id).map((j) => j.id as string),
+    );
     for (const m of (msgs ?? []) as any[]) {
       const row = out[m.job_id]; if (!row) continue;
       if (m.sender_kind === "client") row.unread_client += 1;
       else row.unread_driver += 1;
+      // Detect unread driver-rejection message on a currently-unassigned job.
+      if (
+        m.sender_kind === "driver" &&
+        typeof m.body === "string" &&
+        m.body.startsWith("⚠️ Driver rejected") &&
+        driverlessJobIds.has(m.job_id)
+      ) {
+        row.rejected = true;
+      }
     }
     for (const s of (sos ?? []) as any[]) {
       const row = out[s.job_id]; if (row) row.sos_open = true;
@@ -2167,6 +2182,7 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
     }
     return out;
   });
+
 
 export const markJobViewedCoord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
