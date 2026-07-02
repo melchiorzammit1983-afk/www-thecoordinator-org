@@ -62,6 +62,8 @@ type Job = {
   unread_messages?: number;
   labels?: { id: string; name: string; color: string }[];
   driver_hidden_at?: string | null;
+  grouped_count?: number | null;
+  grouped_at?: string | null;
 };
 
 type Driver = {
