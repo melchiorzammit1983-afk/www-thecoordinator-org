@@ -269,6 +269,17 @@ function CalendarPage() {
             : null
         }
       />
+
+      {selected.size > 0 && (
+        <>
+          <div aria-hidden className="h-16" />
+          <BulkActionBar
+            jobs={(jobs ?? []).filter((j) => selected.has(j.id))}
+            drivers={drivers ?? []}
+            onClear={clearSelect}
+          />
+        </>
+      )}
     </div>
   );
 }
