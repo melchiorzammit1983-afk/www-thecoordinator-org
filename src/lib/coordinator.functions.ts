@@ -1120,15 +1120,27 @@ async function assertJobInCompany(ctx: Ctx, jobId: string) {
   return { company: c };
 }
 
+async function siblingGroupJobIds(supabaseAdmin: Awaited<ReturnType<typeof getAdminClient>>, jobId: string): Promise<string[]> {
+  const { data: row } = await supabaseAdmin.from("jobs")
+    .select("group_id" as any).eq("id", jobId).maybeSingle();
+  const gid = (row as any)?.group_id as string | null;
+  if (!gid) return [jobId];
+  const { data: sibs } = await supabaseAdmin.from("jobs")
+    .select("id").eq("group_id" as any, gid);
+  const ids = (sibs ?? []).map((s: any) => s.id as string);
+  return ids.length ? ids : [jobId];
+}
+
 export const listTripMessagesCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
+    const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
       .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at")
-      .eq("job_id", data.job_id).order("created_at", { ascending: true });
+      .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
       r.sender_kind === "driver" && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
@@ -1139,6 +1151,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     }
     return rows ?? [];
   });
+
 
 export const postTripMessageCoord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
