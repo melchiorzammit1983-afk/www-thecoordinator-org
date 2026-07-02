@@ -8,13 +8,15 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob } from "@/lib/coordinator.functions";
+import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert,
 } from "lucide-react";
+
 
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
@@ -109,6 +111,50 @@ export function TripDetailsSheet({
     refetchInterval: open ? 20_000 : false,
   });
 
+  const sosListFn = useServerFn(listSosForJob);
+  const ackSosFn = useServerFn(acknowledgeSosCoord);
+  const ackAllSosFn = useServerFn(acknowledgeAllSosForJob);
+  const { data: sosRows } = useQuery({
+    queryKey: ["job-sos", job.id],
+    queryFn: () => sosListFn({ data: { job_id: job.id, include_ack: false } }) as Promise<Array<{
+      id: string; job_id: string; pax_name: string | null;
+      latitude: number | null; longitude: number | null; note: string | null; created_at: string;
+    }>>,
+
+    enabled: open,
+    refetchInterval: open ? 15_000 : false,
+  });
+  const openSos = sosRows ?? [];
+  const sosByPax = new Map<string, typeof openSos>();
+  for (const s of openSos) {
+    const key = (s.pax_name ?? "").trim().toLowerCase();
+    if (!key) continue;
+    const arr = sosByPax.get(key) ?? [];
+    arr.push(s);
+    sosByPax.set(key, arr);
+  }
+  const ackOne = useMutation({
+    mutationFn: (sos_id: string) => ackSosFn({ data: { sos_id } }) as Promise<{ ok: true }>,
+    onSuccess: () => {
+      toast.success("SOS dismissed");
+      qc.invalidateQueries({ queryKey: ["job-sos", job.id] });
+      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+      qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const ackAll = useMutation({
+    mutationFn: () => ackAllSosFn({ data: { job_id: job.id } }) as Promise<{ ok: true; cleared: number }>,
+    onSuccess: (r) => {
+      toast.success(`Dismissed ${r.cleared} SOS alert${r.cleared === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["job-sos", job.id] });
+      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+      qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
 
   useEffect(() => {
     if (!open || !job?.id) return;
@@ -202,6 +248,61 @@ export function TripDetailsSheet({
             </div>
           )}
 
+          {/* SOS Alerts */}
+          {openSos.length > 0 && (
+            <section className="rounded-md border-2 border-red-500 bg-red-50 dark:bg-red-950/30 p-3 space-y-2 animate-pulse">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                  <ShieldAlert className="h-4 w-4" />
+                  {openSos.length} active SOS
+                </div>
+                <Button
+                  size="sm" variant="destructive" className="h-7 text-xs"
+                  onClick={() => ackAll.mutate()}
+                  disabled={ackAll.isPending}
+                >
+                  Dismiss all
+                </Button>
+              </div>
+              <ul className="space-y-1.5">
+                {openSos.map((s) => (
+                  <li key={s.id} className="rounded-md bg-white/70 dark:bg-black/30 border border-red-300 p-2 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-red-800 dark:text-red-200 truncate">
+                          🆘 {s.pax_name || "Passenger"}
+                        </div>
+                        {s.note && <div className="text-muted-foreground truncate">{s.note}</div>}
+                        <div className="text-[10px] text-muted-foreground">
+                          {formatRelTime(s.created_at)}
+                          {s.latitude != null && s.longitude != null && (
+                            <> · <a
+                              className="underline text-primary"
+                              href={`https://www.google.com/maps?q=${s.latitude},${s.longitude}`}
+                              target="_blank" rel="noreferrer"
+                            >Open on map</a></>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm" variant="outline" className="h-6 px-2 text-[10px] shrink-0"
+                        onClick={() => ackOne.mutate(s.id)}
+                        disabled={ackOne.isPending}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="text-[10px] text-muted-foreground">
+                Dismissing clears the alert on your side. The passenger can press SOS again — a new alert will appear immediately.
+              </div>
+            </section>
+          )}
+
+
+
           {/* Driver */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Driver</div>
@@ -255,22 +356,29 @@ export function TripDetailsSheet({
                   const msg = act?.last_message;
                   const isClientMsg = msg?.sender_kind === "client";
                   const isRead = !!msg?.read_by_coordinator_at;
+                  const paxSos = sosByPax.get((p.name ?? "").trim().toLowerCase()) ?? [];
                   return (
                     <li key={p.id} className="p-0">
                       <button
                         type="button"
                         onClick={() => setPaxChat({ paxId: p.id, name: p.name, identityId: act?.identity_id ?? null })}
-                        className="w-full text-left px-3 py-2 text-sm space-y-1 hover:bg-muted/60 focus:bg-muted/60 focus:outline-none transition-colors"
+                        className={`w-full text-left px-3 py-2 text-sm space-y-1 hover:bg-muted/60 focus:bg-muted/60 focus:outline-none transition-colors ${paxSos.length ? "bg-red-50 dark:bg-red-950/30" : ""}`}
                         aria-label={`Open chat with ${p.name}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate flex items-center gap-1.5">
                             {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
                             <span className="truncate">{p.name}</span>
+                            {paxSos.length > 0 && (
+                              <Badge className="h-4 px-1.5 text-[9px] bg-red-600 hover:bg-red-600 animate-pulse gap-1">
+                                <ShieldAlert className="h-2.5 w-2.5" /> SOS
+                              </Badge>
+                            )}
                             {act && act.unread_count > 0 && (
                               <Badge className="h-4 px-1.5 text-[9px] bg-primary hover:bg-primary">{act.unread_count} new</Badge>
                             )}
                           </span>
+
                           <span className="flex items-center gap-2 shrink-0">
                             <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
                               {p.status ?? "pending"}
@@ -379,8 +487,25 @@ export function TripDetailsSheet({
 
           {/* Live location */}
           {job.driver_id && !job.external && (
-            <TripLiveLocation driverId={job.driver_id} />
+            <TripLiveLocation
+              driverId={job.driver_id}
+              sosPoints={openSos
+                .filter((s) => s.latitude != null && s.longitude != null)
+                .map((s) => ({
+                  id: s.id,
+                  job_id: s.job_id,
+                  pax_name: s.pax_name,
+                  latitude: s.latitude as number,
+                  longitude: s.longitude as number,
+                  note: s.note,
+                  created_at: s.created_at,
+                  job_from: job.from_location,
+                  job_to: job.to_location,
+                }))}
+              onAcknowledgeSos={(id) => ackOne.mutate(id)}
+            />
           )}
+
 
           {/* Chain */}
           <section className="space-y-2">
@@ -425,7 +550,15 @@ export function TripDetailsSheet({
   );
 }
 
-function TripLiveLocation({ driverId }: { driverId: string }) {
+function TripLiveLocation({
+  driverId,
+  sosPoints = [],
+  onAcknowledgeSos,
+}: {
+  driverId: string;
+  sosPoints?: import("./DriverLiveMap").SosPoint[];
+  onAcknowledgeSos?: (id: string) => void;
+}) {
   const fn = useServerFn(listActiveDriverLocations);
   const qc = useQueryClient();
   const { data } = useQuery({
@@ -468,12 +601,13 @@ function TripLiveLocation({ driverId }: { driverId: string }) {
           </Badge>
         )}
       </div>
-      {state === "none" ? (
+      {state === "none" && sosPoints.length === 0 ? (
         <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
           Driver hasn't shared location yet. They can enable it from their manifest.
         </div>
       ) : (
-        <DriverLiveMap points={points} focusDriverId={driverId} height={220} />
+        <DriverLiveMap points={points} sosPoints={sosPoints} focusDriverId={driverId} height={220} onAcknowledgeSos={onAcknowledgeSos} />
+
       )}
     </section>
   );

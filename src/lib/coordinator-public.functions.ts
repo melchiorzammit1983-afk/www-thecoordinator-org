@@ -40,9 +40,9 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     if (!link) return null;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // If this magic link points at a virtual driver (coordinator/partner
-    // provisioning), we can't filter jobs by driver_id — those jobs are
-    // dispatched at the company level. Fall back to company scope.
+    // Driver manifest is always scoped to jobs assigned to this driver row
+    // (including virtual coordinator/partner drivers — they see only trips
+    // that were explicitly assigned to them, not every company job).
     type DriverRow = {
       id: string; name: string; kind: string | null;
       seats_available: number | null; availability_note: string | null;
@@ -55,19 +55,18 @@ export const getDriverManifest = createServerFn({ method: "GET" })
         .eq("id", link.subject_id).maybeSingle();
       driverRow = (drv as DriverRow | null) ?? null;
     }
-    const isVirtualDriver = driverRow?.kind === "coordinator" || driverRow?.kind === "partner";
-    const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
 
     let q = supabaseAdmin.from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
-    if (filterByDriverId) {
-      q = q.eq("driver_id", link.subject_id!);
+    if (link.subject_id) {
+      q = q.eq("driver_id", link.subject_id);
     } else {
       q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
     }
+
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
     const jobs = (jobsRaw ?? []).map((j: any) => ({
@@ -438,13 +437,11 @@ async function loadDriverJob(token: string, job_id: string) {
     || chainIds.includes(link.company_id);
   if (!inChain) throw new Error("forbidden");
   if (link.subject_id) {
-    // Virtual drivers (coordinator / partner) are scoped to the company,
-    // not a specific driver_id.
-    const { data: drv } = await supabaseAdmin.from("drivers")
-      .select("kind").eq("id", link.subject_id).maybeSingle();
-    const isVirtual = drv?.kind === "coordinator" || drv?.kind === "partner";
-    if (!isVirtual && job.driver_id !== link.subject_id) throw new Error("not_your_job");
+    // All drivers — including virtual coordinator/partner drivers — can only
+    // act on jobs explicitly assigned to their driver row.
+    if (job.driver_id !== link.subject_id) throw new Error("not_your_job");
   }
+
   return { link, job, supabaseAdmin };
 }
 

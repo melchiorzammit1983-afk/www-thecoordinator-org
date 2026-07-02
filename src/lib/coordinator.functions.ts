@@ -2179,3 +2179,86 @@ export const markJobViewedCoord = createServerFn({ method: "POST" })
       .eq("id", data.job_id);
     return { ok: true };
   });
+
+// ============================================================
+// SOS: per-job detail + acknowledge-all + company-wide map points
+// ============================================================
+
+export const listSosForJob = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      include_ack: z.boolean().optional().default(false),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    let q = supabaseAdmin
+      .from("client_sos_events")
+      .select("id, job_id, pax_name, latitude, longitude, note, created_at, acknowledged_at, acknowledged_by")
+      .eq("job_id", data.job_id)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (!data.include_ack) q = q.is("acknowledged_at", null);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const acknowledgeAllSosForJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { error, count } = await supabaseAdmin
+      .from("client_sos_events")
+      .update(
+        { acknowledged_at: new Date().toISOString(), acknowledged_by: context.userId } as never,
+        { count: "exact" },
+      )
+      .eq("job_id", data.job_id)
+      .is("acknowledged_at", null);
+    if (error) throw new Error(error.message);
+    return { ok: true, cleared: count ?? 0 };
+  });
+
+/** Map points for currently-open SOS events across the company/chain. */
+export const listActiveSosPoints = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
+      .from("client_sos_events")
+      .select("id, job_id, pax_name, latitude, longitude, note, created_at")
+      .is("acknowledged_at", null)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    if (!data?.length) return [];
+    const jobIds = Array.from(new Set(data.map((r: any) => r.job_id)));
+    const { data: jobs } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, from_location, to_location")
+      .in("id", jobIds);
+    const allowed = new Map<string, any>();
+    for (const j of jobs ?? []) {
+      if (
+        (j as any).company_id === c.id ||
+        (j as any).executor_company_id === c.id ||
+        (j as any).origin_company_id === c.id ||
+        ((j as any).dispatch_chain_company_ids ?? []).includes(c.id)
+      ) allowed.set((j as any).id, j);
+    }
+    return (data as any[])
+      .filter((r) => allowed.has(r.job_id))
+      .map((r) => ({
+        ...r,
+        job_from: allowed.get(r.job_id)?.from_location ?? null,
+        job_to: allowed.get(r.job_id)?.to_location ?? null,
+      }));
+  });

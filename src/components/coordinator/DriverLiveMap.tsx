@@ -69,26 +69,50 @@ function ageLabel(ts: string) {
   return `${h}h ago`;
 }
 
+export type SosPoint = {
+  id: string;
+  job_id: string;
+  pax_name: string | null;
+  latitude: number;
+  longitude: number;
+  note: string | null;
+  created_at: string;
+  job_from?: string | null;
+  job_to?: string | null;
+};
+
 export function DriverLiveMap({
   points,
+  sosPoints = [],
   focusDriverId,
   height = 280,
+  onAcknowledgeSos,
 }: {
   points: LivePoint[];
+  sosPoints?: SosPoint[];
   focusDriverId?: string | null;
   height?: number;
+  onAcknowledgeSos?: (sosId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
+  const sosMarkersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [, force] = useState(0);
+
+  // Expose the ack callback to inline InfoWindow buttons.
+  useEffect(() => {
+    (window as any).__coordAckSos = (id: string) => onAcknowledgeSos?.(id);
+    return () => { try { delete (window as any).__coordAckSos; } catch { /* ignore */ } };
+  }, [onAcknowledgeSos]);
 
   // Tick every 15s to refresh freshness colors/labels.
   useEffect(() => {
     const id = setInterval(() => force((x) => x + 1), 15_000);
     return () => clearInterval(id);
   }, []);
+
 
   // Initialise the map once.
   useEffect(() => {
@@ -110,8 +134,62 @@ export function DriverLiveMap({
       cancelled = true;
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
       markersRef.current.clear();
+      sosMarkersRef.current.forEach(({ marker }) => marker.setMap(null));
+      sosMarkersRef.current.clear();
     };
   }, []);
+
+  // Sync SOS markers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || typeof window === "undefined" || !(window as any).google?.maps) return;
+    const gmaps = (window as any).google.maps as GMaps;
+    const seen = new Set<string>();
+    for (const s of sosPoints) {
+      seen.add(s.id);
+      const existing = sosMarkersRef.current.get(s.id);
+      const position = { lat: s.latitude, lng: s.longitude };
+      const icon = {
+        path: gmaps.SymbolPath.CIRCLE,
+        scale: 13,
+        fillColor: "#dc2626",
+        fillOpacity: 0.95,
+        strokeColor: "#ffffff",
+        strokeWeight: 3,
+      };
+      const who = s.pax_name ? escapeHtml(s.pax_name) : "Passenger";
+      const trip = (s.job_from || s.job_to)
+        ? `<div style="color:#555;margin-bottom:4px">${escapeHtml(s.job_from ?? "")} → ${escapeHtml(s.job_to ?? "")}</div>`
+        : "";
+      const note = s.note ? `<div style="color:#333;margin-bottom:6px">${escapeHtml(s.note)}</div>` : "";
+      const contentHtml = `
+        <div style="font: 12px system-ui; min-width: 180px">
+          <div style="font-weight:700;color:#dc2626;margin-bottom:2px">🆘 SOS · ${who}</div>
+          ${trip}${note}
+          <div style="color:#666;font-size:11px;margin-bottom:6px">${ageLabel(s.created_at)}</div>
+          <button type="button" onclick="window.__coordAckSos && window.__coordAckSos('${s.id}')"
+            style="background:#dc2626;color:#fff;border:0;border-radius:6px;padding:4px 8px;font-weight:600;cursor:pointer">
+            Dismiss alert
+          </button>
+        </div>`;
+      if (existing) {
+        existing.marker.setPosition(position);
+        existing.info.setContent(contentHtml);
+      } else {
+        const marker = new gmaps.Marker({
+          map, position, icon, title: `SOS · ${s.pax_name ?? "Passenger"}`, zIndex: 9999,
+          animation: gmaps.Animation?.BOUNCE,
+        });
+        const info = new gmaps.InfoWindow({ content: contentHtml });
+        marker.addListener("click", () => info.open({ anchor: marker, map }));
+        sosMarkersRef.current.set(s.id, { marker, info });
+      }
+    }
+    for (const [id, m] of sosMarkersRef.current.entries()) {
+      if (!seen.has(id)) { m.marker.setMap(null); sosMarkersRef.current.delete(id); }
+    }
+  }, [sosPoints]);
+
 
   // Sync markers with points.
   useEffect(() => {
@@ -163,7 +241,11 @@ export function DriverLiveMap({
     }
 
     // Auto-fit or focus
-    if (points.length === 0) return;
+    const allCoords = [
+      ...points.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+      ...sosPoints.map((s) => ({ lat: s.latitude, lng: s.longitude })),
+    ];
+    if (allCoords.length === 0) return;
     if (focusDriverId) {
       const target = points.find((p) => p.driver_id === focusDriverId);
       if (target) {
@@ -172,15 +254,16 @@ export function DriverLiveMap({
         return;
       }
     }
-    if (points.length === 1) {
-      map.panTo({ lat: points[0].latitude, lng: points[0].longitude });
+    if (allCoords.length === 1) {
+      map.panTo(allCoords[0]);
       if ((map.getZoom() ?? 2) < 12) map.setZoom(13);
     } else {
       const bounds = new gmaps.LatLngBounds();
-      for (const p of points) bounds.extend({ lat: p.latitude, lng: p.longitude });
+      for (const c of allCoords) bounds.extend(c);
       map.fitBounds(bounds, 48);
     }
-  }, [points, focusDriverId]);
+  }, [points, sosPoints, focusDriverId]);
+
 
   if (!BROWSER_KEY) {
     return (
