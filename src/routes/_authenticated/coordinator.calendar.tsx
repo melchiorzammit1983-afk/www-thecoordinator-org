@@ -1613,11 +1613,18 @@ function DetailsSheetHost({
 function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
   const [open, setOpen] = useState(initialOpen);
   const fn = useServerFn(listActiveDriverLocations);
+  const sosFn = useServerFn(listActiveSosPoints);
+  const ackFn = useServerFn(acknowledgeSosCoord);
   const qc = useQueryClient();
   const { data } = useQuery({
     queryKey: ["live-locations"],
     queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
     refetchInterval: 30_000,
+  });
+  const { data: sosData } = useQuery({
+    queryKey: ["active-sos-points"],
+    queryFn: () => sosFn(undefined as unknown as void) as Promise<any[]>,
+    refetchInterval: 15_000,
   });
   useEffect(() => {
     const ch = supabase
@@ -1625,15 +1632,30 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "driver_locations" }, () => {
         qc.invalidateQueries({ queryKey: ["live-locations"] });
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_sos_events" }, () => {
+        qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+        qc.invalidateQueries({ queryKey: ["card-signals"] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [qc]);
 
+  const ackMut = useMutation({
+    mutationFn: (sos_id: string) => ackFn({ data: { sos_id } }) as Promise<{ ok: true }>,
+    onSuccess: () => {
+      toast.success("SOS dismissed");
+      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+      qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const points = data ?? [];
+  const sosPoints = sosData ?? [];
   const liveCount = points.filter((p) => Date.now() - new Date(p.captured_at).getTime() < 30_000).length;
 
   return (
-    <section className="rounded-lg border bg-card">
+    <section className={`rounded-lg border bg-card ${sosPoints.length ? "ring-2 ring-red-500/60" : ""}`}>
       <button
         type="button" onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
@@ -1647,23 +1669,35 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
         <Badge variant="secondary" className="ml-1">
           {liveCount} live · {points.length} tracked
         </Badge>
+        {sosPoints.length > 0 && (
+          <Badge variant="destructive" className="ml-1 animate-pulse">
+            🆘 {sosPoints.length} SOS
+          </Badge>
+        )}
         <div className="ml-auto hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" />live</span>
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />paused</span>
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-gray-500" />offline</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-600" />SOS</span>
         </div>
       </button>
       {open && (
         <div className="p-3 pt-0">
-          {points.length === 0 ? (
+          {points.length === 0 && sosPoints.length === 0 ? (
             <div className="text-xs text-muted-foreground border rounded-md p-6 text-center bg-muted/30">
-              No drivers sharing location right now. Drivers can enable it from their manifest.
+              No drivers sharing location and no active SOS. Drivers can enable tracking from their manifest.
             </div>
           ) : (
-            <DriverLiveMap points={points} height={320} />
+            <DriverLiveMap
+              points={points}
+              sosPoints={sosPoints}
+              height={320}
+              onAcknowledgeSos={(id) => ackMut.mutate(id)}
+            />
           )}
         </div>
       )}
     </section>
   );
 }
+
