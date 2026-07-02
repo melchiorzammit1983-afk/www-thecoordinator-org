@@ -139,11 +139,20 @@ export function BulkActionBar({
 
             <Button
               size="sm" variant="outline"
+              disabled={!mergeable || busy || groupMut.isPending}
+              title="Link cards together as one bundle (reversible). Trip details are kept."
+              onClick={() => groupMut.mutate()}
+            >
+              <Link2 className="h-4 w-4 mr-1" /> Group
+            </Button>
+
+            <Button
+              size="sm" variant="outline"
               disabled={!mergeable || busy}
-              title={uniform ? "Merge passengers into the earliest trip" : "Trips differ in date/from/to — you can still group them"}
+              title={uniform ? "Merge passengers into the earliest trip (permanent)" : "Trips differ in date/from/to — merge folds them into the earliest one"}
               onClick={() => setOpenMerge(true)}
             >
-              <Combine className="h-4 w-4 mr-1" /> Group
+              <Combine className="h-4 w-4 mr-1" /> Merge
             </Button>
 
             <Button
