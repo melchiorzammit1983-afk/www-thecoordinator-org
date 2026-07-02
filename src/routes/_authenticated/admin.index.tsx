@@ -323,8 +323,19 @@ function DeleteCoordinatorDialog({ company, onDone }: { company: CompanyRow; onD
   const fn = useServerFn(deleteCoordinator);
   const mut = useMutation({
     mutationFn: () => fn({ data: { company_id: company.id, also_delete_company: alsoDeleteCompany } }),
-    onSuccess: (res: { company_deleted: boolean }) => {
-      toast.success(res.company_deleted ? "Company and coordinator deleted" : "Coordinator account deleted");
+    onSuccess: (res: { ok?: boolean; company_deleted: boolean; auth_user_missing?: boolean; warning?: string | null }) => {
+      if (res.ok === false) {
+        toast.error(res.warning ?? "Could not delete coordinator");
+        return;
+      }
+      if (res.warning) toast.warning(res.warning);
+      toast.success(
+        res.company_deleted
+          ? "Company and coordinator deleted"
+          : res.auth_user_missing
+            ? "Coordinator assignment cleared"
+            : "Coordinator account deleted",
+      );
       setOpen(false);
       setAlsoDeleteCompany(false);
       onDone();
