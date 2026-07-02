@@ -234,12 +234,22 @@ function BulkMergeDialog({
   const groupFn = useServerFn(setJobGrouped);
 
   // earliest by date+time is the keeper
-  const sorted = [...jobs].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const sorted = [...jobs].sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")));
   const keeper = sorted[0];
   const others = sorted.slice(1);
 
+  const norm = (s: string) => (s ?? "").trim().toLowerCase();
+  const uniform =
+    !!keeper &&
+    jobs.every((j) =>
+      j.date === keeper.date &&
+      norm(j.from_location) === norm(keeper.from_location) &&
+      norm(j.to_location) === norm(keeper.to_location)
+    );
+
   const mut = useMutation({
     mutationFn: async () => {
+      if (!keeper) return { deleted: 0, pending: 0 };
       let deleted = 0, pending = 0;
       for (const j of others) {
         const paxIds = (j.pax ?? []).map((p) => p.id);
@@ -249,19 +259,22 @@ function BulkMergeDialog({
         const r = (await deleteFn({ data: { job_id: j.id } })) as { deleted?: boolean; pending?: boolean };
         if (r?.pending) pending++; else deleted++;
       }
-      // Mark the keeper as grouped. Count = trips merged in this action (others.length + 1 keeper source).
       try { await groupFn({ data: { job_id: keeper.id, count: others.length + 1 } }); } catch { /* non-fatal */ }
       return { deleted, pending };
     },
     onSuccess: (r) => {
-      toast.success(`Merged into ${keeper.time?.slice(0,5)} · ${keeper.from_location} → ${keeper.to_location}` +
-        (r.pending ? ` (${r.pending} awaiting driver)` : ""));
+      if (keeper) {
+        toast.success(`Merged into ${keeper.time?.slice(0,5)} · ${keeper.from_location} → ${keeper.to_location}` +
+          (r.pending ? ` (${r.pending} awaiting driver)` : ""));
+      }
       qc.invalidateQueries({ queryKey: ["jobs"] });
       onOpenChange(false);
       onDone();
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  if (!keeper) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -273,9 +286,14 @@ function BulkMergeDialog({
             Trips already accepted by a driver will require driver approval before removal.
           </DialogDescription>
         </DialogHeader>
-        <div className="text-sm space-y-1">
+        <div className="text-sm space-y-2">
           <div><span className="text-muted-foreground">Keeping:</span> <b>{keeper.time?.slice(0,5)}</b> · {keeper.from_location} → {keeper.to_location}</div>
           <div className="text-muted-foreground">Removing: {others.length} trip(s)</div>
+          {!uniform && (
+            <div className="rounded border border-destructive/40 bg-destructive/10 text-destructive px-2 py-1.5 text-xs">
+              Selected trips differ in date, From or To. Passengers will still be merged into the earliest trip using its details.
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
