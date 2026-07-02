@@ -923,11 +923,30 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
               <span>·</span>
               <span>{job.date}</span>
-              {unread > 0 && (
-                <span className="ml-auto inline-flex items-center gap-1 text-blue-600 font-medium">
-                  <MessagesSquare className="h-3 w-3" /> {unread} new
+              {job.client_confirmed_at && (
+                <span title="Client confirmed" className="inline-flex items-center text-emerald-600" aria-label="Client confirmed">
+                  ✓
                 </span>
               )}
+              {(() => {
+                const seen = ctx.clientPresence?.[job.id];
+                if (!seen) return null;
+                const ageMs = Date.now() - new Date(seen).getTime();
+                if (ageMs > 2 * 60_000) return null;
+                return <span title="Client online" className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-label="Client online" />;
+              })()}
+              <span className="ml-auto flex items-center gap-1">
+                {unreadCounts.driver > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium" title="Unread driver messages">
+                    <MessagesSquare className="h-3 w-3" /> {unreadCounts.driver}
+                  </span>
+                )}
+                {unreadCounts.client > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-sky-600 font-medium" title="Unread client messages">
+                    <MessageCircle className="h-3 w-3" /> {unreadCounts.client}
+                  </span>
+                )}
+              </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
               {job.from_location} <span className="text-muted-foreground">→</span> {job.to_location}
