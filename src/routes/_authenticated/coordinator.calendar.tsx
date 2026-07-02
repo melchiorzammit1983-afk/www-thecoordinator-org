@@ -103,6 +103,7 @@ function CalendarPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const qc = useQueryClient();
+  const clientPortalEnabled = useFeature("client_trip_portal");
 
 
   const toggleExpandedGroup = (gid: string) => setExpandedGroups((s) => {
