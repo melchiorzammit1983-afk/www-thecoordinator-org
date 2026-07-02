@@ -207,6 +207,9 @@ function CalendarPage() {
         </div>
       </header>
 
+      {/* Live driver map */}
+      <LiveMapPanel />
+
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
 
