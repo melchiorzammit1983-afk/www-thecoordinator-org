@@ -124,9 +124,11 @@ function CalendarPage() {
     refetchInterval: 15_000,
   });
   const presenceFn = useServerFn(getClientPresenceCoord);
+  const [presenceJobIds, setPresenceJobIds] = useState<string[]>([]);
   const { data: clientPresence } = useQuery({
-    queryKey: ["coord-client-presence"],
-    queryFn: () => presenceFn() as Promise<Record<string, string>>,
+    queryKey: ["coord-client-presence", presenceJobIds.join(",")],
+    enabled: presenceJobIds.length > 0,
+    queryFn: () => presenceFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, string>>,
     refetchInterval: 20_000,
   });
 
@@ -187,6 +189,11 @@ function CalendarPage() {
     const id = setInterval(run, 180_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [jobs, flightFn, refetch]);
+
+  useEffect(() => {
+    const ids = (jobs ?? []).map((j) => j.id);
+    setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
+  }, [jobs]);
 
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);

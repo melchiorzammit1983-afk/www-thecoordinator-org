@@ -748,14 +748,12 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const label = (id as any)?.pax_name ?? "Passenger";
     const identityId = (id as any)?.id ?? null;
-    if (data.thread_kind === "private" && !identityId) {
-      throw new Error("choose_your_name_first");
-    }
+    const effectiveKind = data.thread_kind === "private" && !identityId ? "group" : data.thread_kind;
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
-      thread_kind: data.thread_kind,
-      client_identity_id: data.thread_kind === "private" ? identityId : null,
+      thread_kind: effectiveKind,
+      client_identity_id: effectiveKind === "private" ? identityId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
