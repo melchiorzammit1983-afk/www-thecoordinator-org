@@ -122,7 +122,28 @@ function ClientTripPortal() {
   const driver = data.driver;
   const isGroup = (data.siblings?.length ?? 0) > 1;
   const hasIdentity = !!data.identity;
-  const needsIdentity = !hasIdentity && (data.pax?.length ?? 0) > 1;
+  const uniquePax = useMemo(() => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const p of (data.pax ?? [])) {
+      const k = (p?.name ?? "").trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+    return out;
+  }, [data.pax]);
+  const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (needsIdentity && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setPickerOpen(true);
+    }
+    if (hasIdentity) setPickerOpen(false);
+  }, [needsIdentity, hasIdentity]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -148,14 +169,35 @@ function ClientTripPortal() {
           {job.pickup_at ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : `${job.date}${job.time ? " · " + job.time.slice(0, 5) : ""}`}
         </div>
-        {data.identity?.pax_name && (
-          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
-            Signed in as <b className="ml-1">{data.identity.pax_name}</b>
+        {data.identity?.pax_name ? (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
+            <span>Signed in as <b>{data.identity.pax_name}</b></span>
+            {uniquePax.length > 1 && (
+              <button onClick={() => setPickerOpen(true)} className="underline underline-offset-2 opacity-90 hover:opacity-100">
+                Change
+              </button>
+            )}
           </div>
-        )}
+        ) : uniquePax.length > 1 ? (
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-400 text-amber-950 px-2.5 py-1 text-xs font-medium shadow-sm"
+          >
+            <Users className="h-3.5 w-3.5" /> Tap to choose your name
+          </button>
+        ) : null}
       </header>
 
-      {needsIdentity && <IdentityPicker token={token} deviceId={deviceId} pax={data.pax} onDone={() => qc.invalidateQueries({ queryKey: ["client-portal"] })} />}
+      <IdentityPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        token={token}
+        deviceId={deviceId}
+        pax={uniquePax}
+        allowSkip={!needsIdentity || hasIdentity}
+        onDone={() => { setPickerOpen(false); qc.invalidateQueries({ queryKey: ["client-portal"] }); }}
+      />
+
 
       {/* Tabs */}
       <nav className="sticky top-0 z-10 bg-white border-b flex">
