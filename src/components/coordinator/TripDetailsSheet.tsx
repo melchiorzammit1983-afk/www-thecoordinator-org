@@ -117,9 +117,10 @@ export function TripDetailsSheet({
   const { data: sosRows } = useQuery({
     queryKey: ["job-sos", job.id],
     queryFn: () => sosListFn({ data: { job_id: job.id, include_ack: false } }) as Promise<Array<{
-      id: string; job_id: string; pax_name: string | null; identity_id: string | null;
+      id: string; job_id: string; pax_name: string | null;
       latitude: number | null; longitude: number | null; note: string | null; created_at: string;
     }>>,
+
     enabled: open,
     refetchInterval: open ? 15_000 : false,
   });
