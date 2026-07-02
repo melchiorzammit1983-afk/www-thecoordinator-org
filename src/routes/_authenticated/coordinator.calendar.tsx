@@ -124,6 +124,13 @@ function CalendarPage() {
     refetchInterval: 15_000,
   });
   const presenceFn = useServerFn(getClientPresenceCoord);
+  const [presenceJobIds, setPresenceJobIds] = useState<string[]>([]);
+  const { data: clientPresence } = useQuery({
+    queryKey: ["coord-client-presence", presenceJobIds.join(",")],
+    enabled: presenceJobIds.length > 0,
+    queryFn: () => presenceFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, string>>,
+    refetchInterval: 20_000,
+  });
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
