@@ -11,6 +11,7 @@ import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck,
 } from "lucide-react";
