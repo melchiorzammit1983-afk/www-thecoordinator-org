@@ -260,13 +260,13 @@ function AccessDialog({ company, onDone }: { company: CompanyRow; onDone: () => 
 
 function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState(company.email ?? "");
+  const [phone, setPhone] = useState(company.phone ?? "+");
   const [password, setPassword] = useState("");
   const fn = useServerFn(createCoordinator);
   const mut = useMutation({
-    mutationFn: () => fn({ data: { company_id: company.id, email, password } }),
+    mutationFn: () => fn({ data: { company_id: company.id, phone: phone.trim(), password } }),
     onSuccess: () => {
-      toast.success("Coordinator ready. Share the credentials.");
+      toast.success("Coordinator ready. Share the phone & password.");
       setOpen(false); setPassword("");
       onDone();
     },
@@ -289,16 +289,27 @@ function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: (
         <DialogHeader>
           <DialogTitle>Set coordinator — {company.name}</DialogTitle>
           <DialogDescription>
-            Creates (or updates) the coordinator account with the password below and assigns it to this company. Email is auto-confirmed — share the credentials directly.
+            Creates (or updates) the coordinator's phone-based login and assigns it to this company.
+            They will be forced to change the password on first sign-in.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="co-email">Coordinator email</Label>
-            <Input id="co-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={255} />
+            <Label htmlFor="co-phone">Phone number (international)</Label>
+            <Input
+              id="co-phone"
+              type="tel"
+              inputMode="tel"
+              placeholder="+35699123456"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
+              maxLength={20}
+            />
+            <p className="text-xs text-muted-foreground">Must start with + and country code (E.164).</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="co-password">Password</Label>
+            <Label htmlFor="co-password">Initial password</Label>
             <div className="flex gap-2">
               <Input id="co-password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} maxLength={128} />
               <Button type="button" variant="outline" onClick={generate}>Generate</Button>
@@ -306,10 +317,10 @@ function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: (
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">Minimum 8 characters. Share this with the coordinator over a secure channel.</p>
+            <p className="text-xs text-muted-foreground">Minimum 8 characters. Coordinator will change it on first sign-in.</p>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={mut.isPending || !password || !email}>
+            <Button type="submit" disabled={mut.isPending || !password || !phone}>
               {mut.isPending ? "Saving…" : "Save & assign"}
             </Button>
           </DialogFooter>
@@ -318,6 +329,7 @@ function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: (
     </Dialog>
   );
 }
+
 
 function DeleteCoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
   const [open, setOpen] = useState(false);
