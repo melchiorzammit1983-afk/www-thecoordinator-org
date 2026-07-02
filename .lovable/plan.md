@@ -1,59 +1,38 @@
-## 1) SOS attribution — per passenger + on the Live Map
+## Driver Dashboard — 5 upgrades
 
-**Backend (`src/lib/coordinator.functions.ts`)**
-- `listSosForJob({ job_id })` → open SOS events for a job: `id, pax_id, pax_name, latitude, longitude, created_at, acknowledged_at`.
-- `listActiveSosPoints({ since_minutes })` → open SOS across the coordinator's visible jobs for the main calendar Live Map.
+### 1. Coordinator alert when a driver rejects
+- Extend `getCardSignalsCoord` to detect the "⚠️ Driver rejected" trip_message and surface a new `rejected` signal.
+- On `coordinator.calendar.tsx`, subscribe to new trip_messages; when a driver-rejection message arrives play a short amber tone and fire a persistent `toast.warning` with an "Open" action that scrolls to the trip.
+- Add an amber corner pulse on `TripCard` (distinct from red SOS / yellow client-change / blue unread).
 
-**TripDetailsSheet — passenger list**
-- Query `listSosForJob` (20s refetch + realtime on `client_sos_events`).
-- Match to pax by `pax_id`; fall back to case-insensitive `pax_name`. Unmatched → a "Group SOS" row pinned at top.
-- Red pulsing **SOS** badge next to that passenger's name with time-ago and a **Dismiss** action (see §3).
+### 2. Replace `confirm()` prompts with a Dialog
+- Convert the "Approve deletion?" and "Remove this trip from your list?" `window.confirm` calls in `m.driver.$token.tsx` to shadcn `Dialog`s matching the reject-dialog style. Keeps mobile UX consistent (some in-app browsers suppress native confirms).
 
-**DriverLiveMap (`src/components/coordinator/DriverLiveMap.tsx`)**
-- New `sosPoints?: SosPoint[]` prop. Renders red pulsing circle markers above driver markers. InfoWindow: `SOS · {pax_name}`, time-ago, **Dismiss** button.
-- SOS points included in auto-fit bounds so the map shows both the driver and the person who pressed SOS.
+### 3. Manual "Share my location now" toggle
+- Update `DriverLiveShare` so the driver can force-start GPS even without an active trip status. Persist the manual override in localStorage so it survives reloads until the driver turns it off or a trip completes.
+- Show a clear status pill: "Sharing live" (green pulse) vs "Not sharing" with a big toggle button.
 
-**Wire-up**
-- `TripLiveLocation` in `TripDetailsSheet.tsx` passes job-scoped SOS points.
-- Main calendar Live Map in `coordinator.calendar.tsx` passes company-wide SOS points.
+### 4. One-tap "Running late" quick action
+- Add server fn `driverReportLate({ token, job_id, minutes, note? })` that:
+  - Posts to `trip_messages` as `driver` ("🕒 Running ~{n} min late — {note}") so it reaches the coordinator chat.
+  - Also writes a row to `driver_status_updates` (existing table) so it appears on the coordinator's card status stripe and in the client portal live view.
+- UI: a "🕒 Running late" button on each accepted trip that opens a small sheet with 5 / 10 / 15 / 30 / 45 / custom-min chips + optional note.
 
-## 2) Fix: `/coordinator/my-driving` shows every unassigned trip
+### 5. Mark passenger as "no-show"
+- Add `no_show` value handling in `markPaxOnboard` (or a new `markPaxNoShow({ token, job_id, pax_id })` server fn) that updates `pax.status = 'no_show'` and logs a trip_message so the coordinator sees who didn't turn up.
+- In `TripExecutionDialog` (driver boarding sheet): add a secondary "No-show" button next to each pending passenger. Show a red "No-show" badge for that state and exclude no-shows from the "all onboard — ready to go" green banner (i.e. onboard + no_show counts as "cleared").
+- On the coordinator side, `TripDetailsSheet` already lists pax — surface the no_show badge there and expose it in the CSV statement columns.
 
-Root cause in `src/lib/coordinator-public.functions.ts` (~lines 58–70): for virtual `coordinator`/`partner` drivers the code intentionally falls back to a company-wide OR filter, so all unassigned company jobs show up in the manifest.
+### Technical notes
+- No new tables needed; reusing `trip_messages`, `driver_status_updates`, and the existing `pax.status` field (add `'no_show'` as an accepted value in the client & validators — DB column is text, no enum migration required; will verify during build).
+- Realtime: subscribe to `trip_messages` (already used elsewhere) to drive #1's toast/sound.
+- All changes are additive; no existing flows change behaviour.
 
-**Fix**
-- Always filter by `driver_id = link.subject_id` when the link has a `subject_id`, including virtual drivers. Drop the `isVirtualDriver` fallback branch (company-scope branch remains only for links without a `subject_id`).
-- Result: My Driving shows only trips explicitly assigned to the coordinator's own virtual driver row.
-
-Apply the same fix to the sibling queries at ~lines 228 and ~440 (`driver_id` filters gated by the same `isVirtualDriver` flag) so status updates and job-action guards stay consistent.
-
-## 3) How the coordinator dismisses SOS (and re-press works)
-
-**Model**
-- SOS uses one row per press in `client_sos_events`. "Open" = `acknowledged_at IS NULL`. Dismissing sets `acknowledged_at = now()`, `acknowledged_by = auth.uid()`. That row is closed; a new press by the client creates a **new** row that is open again — so the client can always press again and the coordinator sees the fresh alert.
-
-**Backend**
-- Reuse existing `acknowledgeSosCoord({ sos_id })`.
-- Add `acknowledgeAllSosForJob({ job_id })` — batch-dismiss all open SOS rows for a job (used by the header "Dismiss all" button). Authorized via `assertJobInCompany`.
-
-**UI — coordinator side**
-- **Passenger row Dismiss** (in `TripDetailsSheet`): calls `acknowledgeSosCoord`, then invalidates `["sos-job", job_id]`, `["card-signals"]`, and `["sos-active"]`.
-- **Map InfoWindow Dismiss**: same call.
-- **Sheet header Dismiss all** (visible only when >1 open SOS on the trip): calls `acknowledgeAllSosForJob`.
-- **Toast + siren**: the existing SOS toast in `coordinator.calendar.tsx` gets a **Dismiss** action button; auto-scroll to the card remains. Stop the alert beep loop when every SOS on that job is acknowledged.
-- **Card corner**: existing `signal-corner-sos` clears automatically once `getCardSignalsCoord` no longer sees `sos_open` (already the case — no change needed).
-
-**Client side — re-press guarantee**
-- `t.$token.tsx` SOS button already inserts a new row per press. Confirm the button is **not** disabled by prior acknowledgement, and shows: "Emergency signal sent — press again if you still need help." No throttle beyond the existing per-device debounce for accidental double-taps (a few seconds).
-- Nothing on the client watches `acknowledged_at` to gray out the button.
-
-## Files touched
-- `src/lib/coordinator.functions.ts` — `listSosForJob`, `listActiveSosPoints`, `acknowledgeAllSosForJob`.
-- `src/lib/coordinator-public.functions.ts` — remove virtual-driver company fallback in the 3 driver-scoped queries.
-- `src/components/coordinator/DriverLiveMap.tsx` — SOS markers + Dismiss in InfoWindow.
-- `src/components/coordinator/TripDetailsSheet.tsx` — per-pax SOS badge + Dismiss + Dismiss all header + wire sosPoints into map.
-- `src/routes/_authenticated/coordinator.calendar.tsx` — company-wide sosPoints on main map + Dismiss action on the SOS toast.
-- `src/routes/t.$token.tsx` — confirm SOS button always enabled with correct wording.
-- `src/styles.css` — small red-pulse keyframe for the SOS map marker if needed.
-
-No schema, RLS, or migration changes required.
+### Files touched
+- `src/lib/coordinator-public.functions.ts` — `driverReportLate`, `markPaxNoShow` (+ signal for rejection already covered by existing message text).
+- `src/lib/coordinator.functions.ts` — extend `getCardSignalsCoord` with `rejected` flag.
+- `src/routes/m.driver.$token.tsx` — dialogs, late sheet, no-show button, share-location toggle wiring.
+- `src/components/driver/DriverLiveShare.tsx` — manual override.
+- `src/components/coordinator/TripCard.tsx` — amber "rejected" pulse.
+- `src/components/coordinator/TripDetailsSheet.tsx` — no-show badge.
+- `src/routes/coordinator.calendar.tsx` — rejection toast + sound.
