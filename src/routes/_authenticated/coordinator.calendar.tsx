@@ -84,6 +84,7 @@ function CalendarPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const qc = useQueryClient();
 
 
