@@ -1,31 +1,35 @@
-## Auto-Refresh Button on Dispatch Board
+# AI Trip Extraction (Lovable AI) + Admin Feature Gate
 
-Add a toggle button in the Dispatch Calendar header that, when enabled, runs a full "sweep" every 60 seconds and shows a live indicator.
+## Backend
 
-### What the sweep does (per tick)
-For every visible trip in the current calendar view:
-1. **Normalize data** — run `normalizeJobData` on each job (moves phone numbers out of pax names into the phone field, moves flight codes out of from/to into the flight field, deletes blank/emoji-only pax rows).
-2. **Refresh flight tracking** — call `refreshMaltaFlightForJob` for any job with a `flight_number`, updating scheduled/estimated times and the `time_mismatch` flag (red rim).
-3. **Refresh driver tracking** — invalidate the `driver_locations` query so the live map markers re-pull latest GPS pings.
-4. **Refresh passenger confirmations / statuses** — invalidate the jobs, pax, dispatch-hops, and driver-status queries so accepted/pending/on-the-way states repaint (green/orange/red).
+**New server function** `extractTripsFromText` in `src/lib/coordinator.functions.ts`:
+- Auth: `requireSupabaseAuth`
+- Input: `{ text: string }`
+- **Feature gate**: calls `has_feature(company_id, 'ai_extraction')` — throws `feature_disabled` if the admin has blocked it for the coordinator's company
+- Calls Lovable AI Gateway via AI SDK using `google/gemini-3-flash-preview` (uses `LOVABLE_API_KEY`, already set)
+- Uses `generateText` + `Output.object` with a flat Zod schema:
+  - `trips[]`: `{ from_location, to_location, pickup_date, pickup_time, flight_code?, contact_phone?, notes?, passengers: string[] }`
+- Multilingual system prompt (Italian, English, etc.); normalizes flight codes uppercase; today's date passed in for relative terms ("domani", "tomorrow")
+- Catches `NoObjectGeneratedError`; surfaces 429/402 gateway errors clearly
 
-### UI
-- New `AutoRefreshToggle` component in the calendar toolbar (next to search/filters).
-- States: **Off** (default, outline), **On** (solid teal with pulsing dot + "Auto-refresh · every 1 min · next in 42s" countdown).
-- Manual "Refresh now" icon runs one sweep immediately without toggling the timer.
-- Persists per-user in `localStorage` (`dispatch:autoRefresh`) so it stays on across reloads.
-- Toast on first enable: "Auto-refresh on — cleaning data and refreshing flights every minute."
-- Small footer line under the toggle shows last sweep result: "Cleaned 3 trips · refreshed 5 flights · 12:04:31".
+## Admin control
 
-### Throttling & safety
-- Sweep runs sequentially with a small concurrency limit (e.g. 4 in parallel) to avoid hammering Firecrawl/AviationStack.
-- Skips jobs older than 24h past pickup and cancelled jobs.
-- Auto-pauses when the tab is hidden (`document.visibilityState`) and resumes on focus.
-- Errors per-job are swallowed and counted, not thrown — one bad job doesn't stop the sweep.
+- Register `ai_extraction` as a known feature key in `FeatureEntitlementsDialog.tsx` (existing admin dialog that writes to `company_feature_entitlements`)
+- Default: enabled (matches `has_feature` behavior — returns `true` when no entitlement row exists)
+- Admin can disable per-company; disabled companies get a clear error toast on the button
 
-### Files touched
-- `src/components/coordinator/AutoRefreshToggle.tsx` (new) — button, timer, countdown, localStorage.
-- `src/lib/coordinator.functions.ts` — small `sweepJobs({ jobIds })` server fn wrapping normalize + flight refresh per job, returning `{ cleaned, flightsRefreshed, errors }`.
-- `src/routes/coordinator/calendar.tsx` — mount toggle in toolbar; on each tick collect visible job IDs, call `sweepJobs`, then invalidate `["jobs"]`, `["job-pax"]`, `["driver-locations"]`, `["dispatch-hops"]`, `["driver-status"]` query keys.
+## Frontend
 
-No schema changes. No changes to how trips are created or displayed — only a scheduled repetition of existing cleanup + refresh actions.
+**`JobFormDialog.tsx` — Bulk paste tab:**
+- Add "✨ Understand with AI" button next to existing "Parse" button
+- Client-side check via new lightweight `getMyFeatures` server fn (or reuse existing entitlements query) to hide/disable the button when the feature is blocked
+- On click: call `extractTripsFromText`, merge results into the existing review list
+- Loading spinner; success/error toast
+
+## Files touched
+- `src/lib/coordinator.functions.ts` — `extractTripsFromText` + `getMyFeatures`
+- `src/components/coordinator/JobFormDialog.tsx` — AI button + gating
+- `src/components/admin/FeatureEntitlementsDialog.tsx` — add `ai_extraction` to feature list
+
+## Cost note
+Uses Lovable AI credits (Gemini Flash ~fractions of a cent per call). Admin can disable per-company to control spend.
