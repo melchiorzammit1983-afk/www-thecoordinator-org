@@ -762,6 +762,8 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
   const qc = useQueryClient();
   const listFn = useServerFn(listJobPaxDriver);
   const markFn = useServerFn(markPaxOnboard);
+  const noShowFn = useServerFn(markPaxNoShow);
+  const undoFn = useServerFn(markPaxPending);
 
   const { data: pax, refetch } = useQuery({
     queryKey: ["driver-pax", job?.id],
@@ -769,11 +771,22 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
     enabled: !!job,
   });
 
+  const invalidateManifest = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const markMut = useMutation({
     mutationFn: (v: { pax_id: string; method: "qr" | "manual" }) =>
       markFn({ data: { token, job_id: job!.id, pax_id: v.pax_id, method: v.method } }),
-    onSuccess: () => { toast.success("Passenger onboard"); refetch(); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
+    onSuccess: () => { toast.success("Passenger onboard"); refetch(); invalidateManifest(); },
     onError: (e: Error) => toast.error(e.message === "qr_required" ? "QR scan required for this trip" : e.message),
+  });
+  const noShowMut = useMutation({
+    mutationFn: (pax_id: string) => noShowFn({ data: { token, job_id: job!.id, pax_id } }),
+    onSuccess: () => { toast.success("Marked as no-show"); refetch(); invalidateManifest(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const undoMut = useMutation({
+    mutationFn: (pax_id: string) => undoFn({ data: { token, job_id: job!.id, pax_id } }),
+    onSuccess: () => { toast.success("Reset to pending"); refetch(); invalidateManifest(); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   function handleScan(text: string) {
@@ -789,31 +802,53 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
         <DialogHeader>
           <DialogTitle>{job?.from_location} → {job?.to_location}</DialogTitle>
           <DialogDescription>
-            Tap "Confirm" next to each passenger as they board.
+            Tap "Confirm" for boarding passengers, or "No-show" if someone doesn't turn up.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 max-h-72 overflow-auto">
           {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
-          {(pax ?? []).map((p) => (
-            <div key={p.id} className="flex items-center justify-between border rounded-md p-2.5">
-              <div>
-                <div className="font-medium">{p.name}</div>
-                <div className="text-xs text-muted-foreground capitalize">{p.status}</div>
+          {(pax ?? []).map((p) => {
+            const isOnboard = p.status === "onboard";
+            const isNoShow = p.status === "noshow";
+            return (
+              <div key={p.id} className={`flex items-center justify-between border rounded-md p-2.5 gap-2 ${isNoShow ? "border-destructive/50 bg-destructive/5" : ""}`}>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className={`text-xs capitalize ${isNoShow ? "text-destructive font-medium" : "text-muted-foreground"}`}>{isNoShow ? "No-show" : p.status}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isOnboard && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
+                  {isNoShow && <Badge variant="destructive" className="gap-1"><UserX className="h-3 w-3" /> No-show</Badge>}
+                  {!isOnboard && !isNoShow && (
+                    <>
+                      <Button size="sm" variant="secondary" disabled={markMut.isPending}
+                        onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
+                        Confirm
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                        disabled={noShowMut.isPending}
+                        onClick={() => noShowMut.mutate(p.id)}>
+                        <UserX className="h-4 w-4 mr-1" /> No-show
+                      </Button>
+                    </>
+                  )}
+                  {(isOnboard || isNoShow) && (
+                    <Button size="sm" variant="ghost" className="text-muted-foreground"
+                      disabled={undoMut.isPending}
+                      onClick={() => undoMut.mutate(p.id)}>
+                      Undo
+                    </Button>
+                  )}
+                </div>
               </div>
-              {p.status !== "onboard" && (
-                <Button size="sm" variant="secondary" disabled={markMut.isPending}
-                  onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
-                  Confirm
-                </Button>
-              )}
-              {p.status === "onboard" && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
+
 
 function NotFound() {
   return (
