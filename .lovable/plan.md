@@ -1,46 +1,62 @@
 ## Goal
-Make Group and Merge two distinct actions:
-- **Group** = link cards into a reversible bundle. Each trip keeps its own from/to/flight/company. Assigning a driver or sharing applies to the whole bundle. Auto-dissolves on completion; coordinator can Ungroup manually.
-- **Merge** = existing behavior (fold passengers into the earliest trip, permanent).
+Make grouping a friendly, single-dialog action and render grouped trips as a stacked card that shows just the essentials.
 
-## Database
-New migration on `jobs`:
-- `group_id uuid NULL` — shared id for all trips in a bundle.
-- Keep existing `grouped_count`, `grouped_at` (written on every job in the group).
-- Index on `group_id`.
+## Group dialog (opens when you click Group with 2+ selected)
+Fields, all optional except the confirm button:
+- **Group name** — short label (e.g. "AM airport run"), stored on every job in the group.
+- **Note for driver** — free-text, shared across the group.
+- **Shared driver** — dropdown of drivers; if picked, assigns to every trip in the group in one shot.
+- Order is auto: by date + time (earliest = first, latest = last). No manual reordering.
 
-No destructive change to already-merged jobs.
+Submit → creates the group (`group_id` + `group_name` + `group_note`), fans out the driver if chosen, closes the dialog.
 
-## Backend
-- `groupJobs(jobIds[])` — assigns a shared `group_id`, stamps `grouped_count`/`grouped_at` on each. Verifies same company + coordinator permission.
-- `ungroupJobs(groupId)` — clears `group_id`, `grouped_count`, `grouped_at` on all members.
-- Extend `assignDriver` / `shareJobToDriver` / magic-link creation: when target job has `group_id`, apply to every job in the group (same driver, one shared link token covering all members).
-- Extend `updateJobStatus`: when the last non-completed job in a group flips to completed/cancelled, auto-clear `group_id` on all members.
-- Keep existing merge path (`setJobGrouped`) untouched.
+## Stacked card on the dispatch board
+When 2+ jobs share a `group_id` they render as one collapsed stack in place of the individual cards:
 
-## UI
-### BulkActionBar
-Two distinct buttons on 2+ selection:
-- **Group** (link icon) — calls `groupJobs`. Always enabled for 2+.
-- **Merge** (combine icon) — existing flow, keep uniform-warning dialog.
+```text
+┌──────────────────────────────────┐
+│ ⛬ AM airport run · 3 trips       │  ← group name + count
+│ Driver: John Doe · 12 pax total  │  ← shared driver + total pax
+├──────────────────────────────────┤
+│ 07:15 · Hotel A → Airport · 4 pax│  ← one line per trip, ordered by time
+│ 07:40 · Hotel B → Airport · 5 pax│
+│ 08:10 · Hotel C → Airport · 3 pax│
+└──────────────────────────────────┘
+```
 
-### TripCard
-- When `group_id` is set: show a "⛬ Grouped · N" chip and a colored left accent linking bundle members.
-- Add **Ungroup** action in the card menu (visible only if `group_id` set).
-- Selecting one grouped card shows a "Select whole group" affordance in the bulk bar.
+- Selection checkbox on the stack selects the whole group.
+- Click the stack → expands inline into the full individual `TripCard`s (current behavior), with an "Ungroup" and "Collapse" button.
+- Status color = worst status among members (red > orange > green).
 
-### Driver manifest (`/m.driver.$token`)
-- Render grouped trips under one collapsible header with count; each trip row still shows its own from/to/flight/pax.
+## Data
+Migration on `jobs`:
+- `group_name text NULL`
+- `group_note text NULL`
+- (already have `group_id`, `grouped_count`, `grouped_at`)
 
-## Out of scope
-- No change to merge semantics.
-- No new points/pricing logic.
-- No schema changes to `magic_links` beyond writing one token that covers all group members when sharing.
+`groupJobs` extended to accept `{ job_ids, name?, note?, driver_id? }` and write all three fields; if `driver_id` given, apply to every member.
 
 ## Files touched
-- New migration (jobs.group_id + index)
-- `src/lib/coordinator-public.functions.ts`, `src/lib/coordinator.functions.ts`
-- `src/components/coordinator/BulkActionBar.tsx`
-- `src/components/coordinator/TripCard.tsx`
-- `src/routes/coordinator.calendar.tsx` (query invalidations)
-- `src/routes/m.driver.$token.tsx`
+- New migration (jobs.group_name, jobs.group_note)
+- `src/lib/coordinator.functions.ts` — extend `groupJobs` params + selection columns
+- `src/components/coordinator/BulkActionBar.tsx` — replace direct-click Group with a `GroupDialog`
+- New `src/components/coordinator/GroupDialog.tsx`
+- New `src/components/coordinator/GroupedStackCard.tsx`
+- `src/routes/_authenticated/coordinator.calendar.tsx` — bucket jobs by `group_id`, render `GroupedStackCard` or `TripCard`; propagate expand state
+- `src/routes/m.driver.$token.tsx` — driver manifest shows group name + note above the stacked trips
+
+## Out of scope
+- Manual drag-to-reorder inside a group (auto by time).
+- Changing Merge behavior.
+- Any pricing/points logic.
+
+---
+
+## What else I can do next (pick any, or none)
+1. **Group chat** — one shared trip chat for the whole bundle instead of per-trip.
+2. **Group share link** — one WhatsApp message covering all trips in the stack with a summary and single magic link.
+3. **Auto-suggest groups** — highlight trips within X minutes to/from the same location as "suggested to group".
+4. **Recolor by group** — assign each active group a subtle left-border color so the eye can track bundles across the board.
+5. **Bulk unassign / bulk reschedule** — extend the bulk bar with time-shift and unassign-all.
+
+Tell me which of these (if any) to fold into the same build, or approve the plan as-is.
