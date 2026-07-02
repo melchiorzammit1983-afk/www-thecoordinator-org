@@ -185,6 +185,9 @@
   box-shadow: 0 0 0 2px var(--color-background), 0 0 10px 3px rgba(249,115,22,0.75);
   animation: signal-corner-pulse 1s ease-in-out infinite;
   pointer-events: none;
+}
+
+
 
 .signal-dot-driver {
   display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
