@@ -1,30 +1,37 @@
 ## Goal
-When the coordinator types a flight code in any format into any text box on the trip form ("From", "To", or either flight box), the system detects it, normalizes it (e.g., `km 643`, `Flight KM-0643`, `flt km643` → `KM643`), moves it into the correct **From flight** or **To flight** field, and auto-sets the location to `Airport` when the location box is empty.
 
-## Scope (frontend only)
-Edit only `src/components/coordinator/JobFormDialog.tsx`. No backend / DB changes — the bulk-paste parser already normalizes flight codes on the server side; we're extending the same behavior to the manual form.
+Auto-clean passenger data on both new and existing trips: extract phone numbers from pax names into the trip phone field, and normalize flight codes even after the trip is created.
 
-## Behavior
-1. **Detection rule** (matches existing bulk parser):
-   - 2 letters + 1–4 digits, with optional space/dash between (IATA/ICAO carrier + flight number).
-   - Optionally preceded by noise like `flight`, `flt`, `#`, `✈`.
-   - Case-insensitive; strip spaces/dashes; uppercase the letters.
-2. **Trigger**: on `blur` of the four inputs (From, To, From-flight, To-flight). Blur (not per keystroke) so partial typing like `K` doesn't jump fields.
-3. **Routing**:
-   - Typed into **From** box → move the code to **From flight**; if From location is now empty, set it to `Airport`.
-   - Typed into **To** box → move to **To flight**; if To location is empty, set it to `Airport`.
-   - Typed into a **flight** box → just normalize in-place (`km 0643` → `KM0643`); if the matching location box is empty, set it to `Airport`.
-4. **No overwrite**: if the target flight box already has a value, leave it alone (only clean the source field) and show a small inline hint ("Already has flight — kept existing").
-5. **Only one code**: if the From box contains `Airport KM643 T1`, we extract `KM643` and leave the rest as the location text minus the code.
+## Changes
 
-## Technical notes
-- Add a local helper `extractFlightCode(text: string): { code: string | null; rest: string }` inside `JobFormDialog.tsx` using a single regex:
-  `\b(?:flight|flt|#|✈)?\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})\b`
-- Wire `onBlur` handlers on the four `<Input>` elements (lines 171, 172, 181, 182). Update the corresponding `useState` setters (`setFrom`, `setFromFlight`, `setTo`, `setToFlight`).
-- Keep the existing `.toUpperCase()` behavior on the flight boxes.
-- Small `useState` for a transient hint message shown under the flight box for 3s when we auto-move a code.
+### 1. Shared helpers (`src/lib/parse-trips.ts`)
+- Add `extractPhoneFromName(name)` → returns `{ cleanName, phone }`. Regex captures international/local numbers (7+ digits, optional `+`, spaces, dashes, parentheses) embedded anywhere in the pax name string; strips them out and trims residual separators.
+- Re-export `extractFlightCode` (already exists in `JobFormDialog`) or move it here so it can be reused server-side and in bulk paste.
+
+### 2. Bulk paste + creation path
+- In `parseWhatsAppBlock` (bulk paste): when building pax list, run `extractPhoneFromName` on each name. If a phone is found and the trip has no phone yet, set it on the job; keep the cleaned name in pax.
+- In `JobFormDialog` PaxEditor: on add/blur of a pax name, run the same extractor. If phone found, remove digits from the name and, when the trip's phone field is empty, populate it (toast hint like the flight one).
+
+### 3. Fix already-created trips
+- New server function `normalizeJobData(jobId)` in `src/lib/coordinator.functions.ts` (chain-access check via existing `assertJobInCompany`):
+  - Load job + pax.
+  - For each pax: run `extractPhoneFromName`; update `pax.name` if changed; collect first found phone.
+  - If job `phone_number` empty and phones found → set it.
+  - Normalize `from_flight` / `to_flight` via `extractFlightCode` (uppercase, no spaces); if a code is embedded in `from_location`/`to_location`, move it to the flight field and default location to "Airport" when it becomes empty.
+  - Return updated job/pax.
+- Trigger points:
+  - `TripDetailsSheet`: run once automatically on open (idempotent) and expose a manual "Clean data" button.
+  - `JobFormDialog` when editing existing trip: run on open so the form shows corrected values.
+  - Optional: call inside `updateJob` after save so edits are always normalized.
+
+### 4. UI feedback
+- Small toast: "Moved phone to contact field" / "Normalized flight KM643" when auto-fix changes something. Silent when nothing changes.
 
 ## Out of scope
-- No changes to the bulk-paste tab (already normalizes).
-- No changes to server functions, schema, or validation.
-- No live flight-status lookup here — that stays in the existing flight tracking flow.
+- No schema changes (uses existing `jobs.phone_number`, `jobs.from_flight`, `jobs.to_flight`, `pax.name`).
+- No bulk migration over all historical rows; normalization runs lazily when a trip is opened/edited.
+
+## Technical notes
+- Phone regex: `/(\+?\d[\d\s\-().]{6,}\d)/` then strip non-digits, keep leading `+` if present; require ≥7 digits to avoid matching room numbers.
+- Guard against false positives: if the "name" becomes empty after stripping, keep the original pax entry unchanged.
+- All server writes go through `supabaseAdmin` with the existing chain-access assertion, matching current patterns.
