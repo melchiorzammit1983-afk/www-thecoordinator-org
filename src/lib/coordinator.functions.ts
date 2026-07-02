@@ -1343,3 +1343,94 @@ export const buildStatement = createServerFn({ method: "POST" })
       truncated,
     };
   });
+
+// ---------- Live driver locations ----------
+
+export const listActiveDriverLocations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    // Jobs currently active and reachable to me (owner/executor/origin/chain member)
+    const { data: jobs, error: jErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id, from_location, to_location, pickup_at, status, driver_id, drivers(name, phone, vehicle), company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .in("status", ["en_route", "arrived", "in_progress", "active"])
+      .not("driver_id", "is", null)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
+    if (jErr) throw new Error(jErr.message);
+    const list = jobs ?? [];
+    if (list.length === 0) return [];
+    const jobIds = list.map((j: any) => j.id);
+    // Grab last 20 minutes of pings for these jobs, keep the newest per job
+    const since = new Date(Date.now() - 20 * 60_000).toISOString();
+    const { data: locs, error: lErr } = await supabaseAdmin
+      .from("driver_locations")
+      .select("job_id, driver_id, latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
+      .in("job_id", jobIds)
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: false });
+    if (lErr) throw new Error(lErr.message);
+    const latest = new Map<string, any>();
+    for (const l of locs ?? []) {
+      if (!latest.has(l.job_id)) latest.set(l.job_id, l);
+    }
+    return list
+      .map((j: any) => {
+        const loc = latest.get(j.id);
+        if (!loc) return null;
+        return {
+          job_id: j.id,
+          driver_id: j.driver_id,
+          driver_name: j.drivers?.name ?? "Driver",
+          driver_phone: j.drivers?.phone ?? null,
+          driver_vehicle: j.drivers?.vehicle ?? null,
+          from_location: j.from_location,
+          to_location: j.to_location,
+          pickup_at: j.pickup_at,
+          status: j.status,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracy_m: loc.accuracy_m,
+          heading: loc.heading,
+          speed_mps: loc.speed_mps,
+          captured_at: loc.captured_at,
+        };
+      })
+      .filter(Boolean);
+  });
+
+export const listJobLocationTrail = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      minutes: z.number().int().min(1).max(720).default(60),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: jErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .eq("id", data.job_id).maybeSingle();
+    if (jErr) throw new Error(jErr.message);
+    if (!job) throw new Error("Job not found");
+    const chain: string[] = job.dispatch_chain_company_ids ?? [];
+    const allowed = job.company_id === c.id
+      || job.executor_company_id === c.id
+      || job.origin_company_id === c.id
+      || chain.includes(c.id);
+    if (!allowed) throw new Error("Forbidden");
+    const since = new Date(Date.now() - data.minutes * 60_000).toISOString();
+    const { data: rows, error } = await supabaseAdmin
+      .from("driver_locations")
+      .select("latitude, longitude, captured_at, heading, speed_mps")
+      .eq("job_id", data.job_id)
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
