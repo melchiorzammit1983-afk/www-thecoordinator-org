@@ -55,6 +55,33 @@ export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   component: CalendarPage,
 });
 
+/* --- module-scope helpers used by CalendarPage effects --- */
+let _audioCtx: AudioContext | null = null;
+function playAlertBeep(freq = 880, durationSec = 0.3) {
+  if (typeof window === "undefined") return;
+  const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+  if (!Ctor) return;
+  if (!_audioCtx) _audioCtx = new Ctor();
+  const ctx = _audioCtx;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine"; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationSec);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + durationSec + 0.02);
+}
+function scrollToJob(jobId: string) {
+  if (typeof document === "undefined") return;
+  const el = document.querySelector<HTMLElement>(`[data-job-id="${jobId}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ring-2", "ring-primary");
+  setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
+}
+
 type Job = {
   id: string;
   from_location: string; to_location: string;
