@@ -2197,7 +2197,7 @@ export const listSosForJob = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     let q = supabaseAdmin
       .from("client_sos_events")
-      .select("id, job_id, pax_name, identity_id, latitude, longitude, note, created_at, acknowledged_at, acknowledged_by")
+      .select("id, job_id, pax_name, latitude, longitude, note, created_at, acknowledged_at, acknowledged_by")
       .eq("job_id", data.job_id)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -2233,7 +2233,7 @@ export const listActiveSosPoints = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("client_sos_events")
-      .select("id, job_id, pax_name, identity_id, latitude, longitude, note, created_at")
+      .select("id, job_id, pax_name, latitude, longitude, note, created_at")
       .is("acknowledged_at", null)
       .not("latitude", "is", null)
       .not("longitude", "is", null)
