@@ -274,6 +274,89 @@ export type Database = {
           },
         ]
       }
+      client_push_subs: {
+        Row: {
+          auth: string
+          created_at: string
+          device_id: string
+          endpoint: string
+          id: string
+          p256dh: string
+          token: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          device_id: string
+          endpoint: string
+          id?: string
+          p256dh: string
+          token: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          device_id?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          token?: string
+        }
+        Relationships: []
+      }
+      client_sos_events: {
+        Row: {
+          accuracy_m: number | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          device_id: string | null
+          id: string
+          job_id: string
+          latitude: number | null
+          longitude: number | null
+          note: string | null
+          pax_name: string | null
+          token: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          device_id?: string | null
+          id?: string
+          job_id: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          pax_name?: string | null
+          token: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          device_id?: string | null
+          id?: string
+          job_id?: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          pax_name?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_sos_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           access_end: string | null
@@ -864,11 +947,14 @@ export type Database = {
           driver_hidden_at: string | null
           driver_id: string | null
           executor_company_id: string | null
+          flight_baggage_belt: string | null
           flight_estimated_at: string | null
+          flight_gate: string | null
           flight_scheduled_at: string | null
           flight_status: string | null
           flight_status_note: string | null
           flight_status_updated_at: string | null
+          flight_terminal: string | null
           flightorship: string | null
           from_flight: string | null
           from_location: string
@@ -915,11 +1001,14 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           executor_company_id?: string | null
+          flight_baggage_belt?: string | null
           flight_estimated_at?: string | null
+          flight_gate?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
+          flight_terminal?: string | null
           flightorship?: string | null
           from_flight?: string | null
           from_location: string
@@ -966,11 +1055,14 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           executor_company_id?: string | null
+          flight_baggage_belt?: string | null
           flight_estimated_at?: string | null
+          flight_gate?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
+          flight_terminal?: string | null
           flightorship?: string | null
           from_flight?: string | null
           from_location?: string
@@ -1262,38 +1354,47 @@ export type Database = {
       trip_messages: {
         Row: {
           body: string
+          client_identity_id: string | null
           company_id: string
           created_at: string
           id: string
+          is_sos: boolean
           job_id: string
           read_by_coordinator_at: string | null
           read_by_driver_at: string | null
           sender_kind: string
           sender_label: string | null
+          thread_kind: string
           updated_at: string
         }
         Insert: {
           body: string
+          client_identity_id?: string | null
           company_id: string
           created_at?: string
           id?: string
+          is_sos?: boolean
           job_id: string
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
           sender_kind: string
           sender_label?: string | null
+          thread_kind?: string
           updated_at?: string
         }
         Update: {
           body?: string
+          client_identity_id?: string | null
           company_id?: string
           created_at?: string
           id?: string
+          is_sos?: boolean
           job_id?: string
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
           sender_kind?: string
           sender_label?: string | null
+          thread_kind?: string
           updated_at?: string
         }
         Relationships: [
