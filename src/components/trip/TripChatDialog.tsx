@@ -26,9 +26,12 @@ type Props = {
   title?: string;
   role: "driver" | "coordinator";
   token?: string; // required for driver
+  identityId?: string | null;
+  threadKind?: "all" | "private" | "group";
+  paxName?: string | null;
 };
 
-export function TripChatDialog({ open, onOpenChange, jobId, title, role, token }: Props) {
+export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, identityId, threadKind, paxName }: Props) {
   const qc = useQueryClient();
   const listDrv = useServerFn(listTripMessages);
   const postDrv = useServerFn(postTripMessage);
@@ -37,14 +40,17 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token }
   const [text, setText] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const queryKey = ["trip-messages", role, jobId, token ?? ""];
+  const effectiveThread: "all" | "private" | "group" =
+    role === "coordinator" ? (threadKind ?? (identityId ? "private" : "all")) : "all";
+
+  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", effectiveThread];
   const { data: messages } = useQuery({
     queryKey,
     enabled: !!open && !!jobId,
     refetchInterval: open ? 10_000 : false,
     queryFn: () => role === "driver"
       ? listDrv({ data: { token: token!, job_id: jobId! } }) as Promise<Msg[]>
-      : listCoord({ data: { job_id: jobId! } }) as Promise<Msg[]>,
+      : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
   });
 
   useEffect(() => {
@@ -55,12 +61,17 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token }
   const postMut = useMutation({
     mutationFn: (body: string) => role === "driver"
       ? postDrv({ data: { token: token!, job_id: jobId!, body } })
-      : postCoord({ data: { job_id: jobId!, body } }),
+      : postCoord({ data: {
+          job_id: jobId!, body,
+          identity_id: effectiveThread === "private" ? (identityId ?? null) : null,
+          thread_kind: effectiveThread === "private" ? "private" : "group",
+        } }),
     onSuccess: () => {
       setText("");
       qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ["driver-manifest"] });
       qc.invalidateQueries({ queryKey: ["coord-unread"] });
+      qc.invalidateQueries({ queryKey: ["pax-activity"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -70,6 +81,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token }
     if (!body) return;
     postMut.mutate(body);
   }
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
