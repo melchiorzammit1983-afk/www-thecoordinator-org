@@ -553,6 +553,80 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const markPaxNoShow = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      pax_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: paxRow } = await supabaseAdmin.from("pax")
+      .select("name, status").eq("id", data.pax_id).eq("job_id", data.job_id).maybeSingle();
+    if (!paxRow) throw new Error("pax_not_found");
+    const { error } = await supabaseAdmin.from("pax")
+      .update({ status: "noshow" as never })
+      .eq("id", data.pax_id).eq("job_id", data.job_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🚫 No-show: ${(paxRow as any).name}`,
+    } as never);
+    return { ok: true };
+  });
+
+export const markPaxPending = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      pax_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    await loadDriverJob(data.token, data.job_id);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("pax")
+      .update({ status: "pending" as never, boarded_at: null, boarded_method: null })
+      .eq("id", data.pax_id).eq("job_id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const driverReportLate = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      minutes: z.number().int().min(1).max(600),
+      note: z.string().trim().max(300).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const suffix = data.note?.trim() ? ` — ${data.note.trim()}` : "";
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🕒 Running ~${data.minutes} min late${suffix}`,
+    } as never);
+    return { ok: true };
+  });
+
+
 // ---------- Live driver location (public, magic-link protected) ----------
 
 const pointSchema = z.object({
