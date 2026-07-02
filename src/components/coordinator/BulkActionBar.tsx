@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels,
+  assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
 } from "@/lib/coordinator.functions";
 
 export type BulkJob = {
