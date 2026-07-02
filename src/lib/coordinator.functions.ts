@@ -247,6 +247,7 @@ export const createJob = createServerFn({ method: "POST" })
       qr_strict_mode: data.qr_strict_mode,
       tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null,
+      contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
     }).select().single();
     if (error) throw new Error(error.message);
