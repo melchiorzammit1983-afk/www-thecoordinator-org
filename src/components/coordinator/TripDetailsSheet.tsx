@@ -487,8 +487,25 @@ export function TripDetailsSheet({
 
           {/* Live location */}
           {job.driver_id && !job.external && (
-            <TripLiveLocation driverId={job.driver_id} />
+            <TripLiveLocation
+              driverId={job.driver_id}
+              sosPoints={openSos
+                .filter((s) => s.latitude != null && s.longitude != null)
+                .map((s) => ({
+                  id: s.id,
+                  job_id: s.job_id,
+                  pax_name: s.pax_name,
+                  latitude: s.latitude as number,
+                  longitude: s.longitude as number,
+                  note: s.note,
+                  created_at: s.created_at,
+                  job_from: job.from_location,
+                  job_to: job.to_location,
+                }))}
+              onAcknowledgeSos={(id) => ackOne.mutate(id)}
+            />
           )}
+
 
           {/* Chain */}
           <section className="space-y-2">
