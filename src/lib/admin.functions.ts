@@ -310,6 +310,49 @@ export const createCoordinator = createServerFn({ method: "POST" })
     return { ok: true, user_id: userId, email };
   });
 
+// ---------- DELETE COORDINATOR ACCOUNT ----------
+
+export const deleteCoordinator = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        company_id: z.string().uuid(),
+        also_delete_company: z.boolean().default(false),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { data: company, error: cErr } = await supabaseAdmin
+      .from("companies")
+      .select("id, owner_user_id")
+      .eq("id", data.company_id)
+      .single();
+    if (cErr || !company) throw new Error(cErr?.message ?? "Company not found");
+
+    if (company.owner_user_id) {
+      const { error: uErr } = await supabaseAdmin.auth.admin.deleteUser(company.owner_user_id);
+      if (uErr && !/not.?found/i.test(uErr.message)) throw new Error(uErr.message);
+    }
+
+    if (data.also_delete_company) {
+      const { error: dErr } = await supabaseAdmin
+        .from("companies")
+        .delete()
+        .eq("id", data.company_id);
+      if (dErr) throw new Error(dErr.message);
+      return { ok: true, company_deleted: true };
+    }
+
+    const { error: clearErr } = await supabaseAdmin
+      .from("companies")
+      .update({ owner_user_id: null })
+      .eq("id", data.company_id);
+    if (clearErr) throw new Error(clearErr.message);
+    return { ok: true, company_deleted: false };
+  });
+
 // ---------- ACCESS REQUESTS ----------
 
 export const listAccessRequests = createServerFn({ method: "GET" })
