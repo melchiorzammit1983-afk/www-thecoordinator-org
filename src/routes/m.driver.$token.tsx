@@ -238,6 +238,22 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const unhideFn = useServerFn(unhideJobForDriver);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [confirmDelOpen, setConfirmDelOpen] = useState(false);
+  const [confirmHideOpen, setConfirmHideOpen] = useState(false);
+  const [lateOpen, setLateOpen] = useState(false);
+  const [lateMinutes, setLateMinutes] = useState<number>(10);
+  const [lateNote, setLateNote] = useState("");
+  const lateFn = useServerFn(driverReportLate);
+  const lateMut = useMutation({
+    mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
+    onSuccess: () => {
+      toast.success(`Reported ~${lateMinutes} min late`);
+      setLateOpen(false); setLateNote(""); setLateMinutes(10);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
