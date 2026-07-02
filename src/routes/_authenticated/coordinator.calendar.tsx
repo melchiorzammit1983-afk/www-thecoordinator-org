@@ -37,6 +37,7 @@ import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coord
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
+import { DriverMap } from "@/components/coordinator/DriverMap";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
@@ -83,6 +84,7 @@ function CalendarPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const qc = useQueryClient();
 
 
@@ -206,8 +208,30 @@ function CalendarPage() {
         </div>
       </header>
 
+      {/* Live map panel (collapsible) */}
+      <section className="rounded-lg border bg-card">
+        <button
+          type="button"
+          onClick={() => setMapOpen((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
+        >
+          {mapOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <span>Live driver map</span>
+          <span className="ml-auto text-xs text-muted-foreground">Real time</span>
+        </button>
+        {mapOpen && (
+          <div className="p-2 pt-0">
+            <DriverMap height={320} onSelectJob={(id) => {
+              const j = (jobs ?? []).find((x) => x.id === id);
+              if (j) setDetailsJob(j);
+            }} />
+          </div>
+        )}
+      </section>
+
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
+
 
 
       {/* Outbound (my trips currently at partners) */}
