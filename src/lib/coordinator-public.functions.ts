@@ -699,14 +699,36 @@ export const chooseClientIdentity = createServerFn({ method: "POST" })
 
 export const listClientTripMessages = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
-    z.object({ token: z.string().min(8).max(128) }).parse(i),
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80).optional(),
+      thread_kind: z.enum(["group", "private"]).default("group"),
+    }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const ids = await siblingIds(supabaseAdmin, job);
-    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at")
-      .in("job_id", ids).order("created_at", { ascending: true });
+
+    // resolve identity for private thread scoping
+    let identityId: string | null = null;
+    if (data.device_id) {
+      const { data: id } = await supabaseAdmin.from("client_link_identities")
+        .select("id").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      identityId = (id as any)?.id ?? null;
+    }
+
+    let q = supabaseAdmin.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at, thread_kind, client_identity_id, is_sos")
+      .in("job_id", ids)
+      .order("created_at", { ascending: true });
+
+    if (data.thread_kind === "private") {
+      if (!identityId) return [];
+      q = q.eq("thread_kind", "private").eq("client_identity_id", identityId);
+    } else {
+      q = q.eq("thread_kind", "group");
+    }
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
@@ -717,16 +739,23 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80),
       body: z.string().trim().min(1).max(4000),
+      thread_kind: z.enum(["group", "private"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
-    const label = id?.pax_name ?? "Passenger";
+      .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const label = (id as any)?.pax_name ?? "Passenger";
+    const identityId = (id as any)?.id ?? null;
+    if (data.thread_kind === "private" && !identityId) {
+      throw new Error("choose_your_name_first");
+    }
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
+      thread_kind: data.thread_kind,
+      client_identity_id: data.thread_kind === "private" ? identityId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
