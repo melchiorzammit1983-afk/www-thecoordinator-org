@@ -1133,6 +1133,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const clientChange = !!sig?.client_change;
   const sosOpen = !!sig?.sos_open;
   const driverStatusNew = !!sig?.driver_status_new;
+  const rejected = !!(sig as any)?.rejected;
+
 
   // Color priority: red > blue(unread) > green > amber > default
   const tone = problem
