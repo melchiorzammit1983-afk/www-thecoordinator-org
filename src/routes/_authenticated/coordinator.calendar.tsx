@@ -744,7 +744,7 @@ function CloneDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, target_date: target } }),
     onSuccess: () => { toast.success("Cloned"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
-    onError: (e: Error) => e.message === "insufficient_points" ? toast.error("Top-Up Required to clone") : toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
