@@ -365,8 +365,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
           {(job.group_id || (job.grouped_count ?? 0) >= 2) && (
             <Badge className="text-[10px] gap-1 bg-primary/15 text-primary hover:bg-primary/15 border border-primary/30">
-              ⛬ Grouped{job.grouped_count ? ` · ${job.grouped_count} trips` : ""}
+              ⛬ {job.group_name || "Grouped"}{job.grouped_count ? ` · ${job.grouped_count}` : ""}
             </Badge>
+          )}
+          {job.group_note && (
+            <Badge variant="outline" className="text-[10px] italic max-w-full truncate">📝 {job.group_note}</Badge>
           )}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
           <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
