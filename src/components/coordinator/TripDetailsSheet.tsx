@@ -238,20 +238,56 @@ export function TripDetailsSheet({
             {pax.length === 0 ? (
               <div className="text-xs text-muted-foreground">No passengers added yet.</div>
             ) : (
-              <ul className="rounded-md border divide-y max-h-60 overflow-y-auto">
-                {pax.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                    <span className="truncate">{p.name}</span>
-                    <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
-                      {p.status ?? "pending"}
-                    </span>
-                  </li>
-                ))}
+              <ul className="rounded-md border divide-y max-h-72 overflow-y-auto">
+                {pax.map((p) => {
+                  const act = paxActivity?.[p.id];
+                  const online = act?.last_seen_at && (Date.now() - new Date(act.last_seen_at).getTime()) < 90_000;
+                  const msg = act?.last_message;
+                  const isClientMsg = msg?.sender_kind === "client";
+                  const isRead = !!msg?.read_by_coordinator_at;
+                  return (
+                    <li key={p.id} className="px-3 py-2 text-sm space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate flex items-center gap-1.5">
+                          {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
+                          <span className="truncate">{p.name}</span>
+                          {act && act.unread_count > 0 && (
+                            <Badge className="h-4 px-1.5 text-[9px] bg-primary hover:bg-primary">{act.unread_count} new</Badge>
+                          )}
+                        </span>
+                        <span className={`text-[10px] capitalize shrink-0 ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
+                          {p.status ?? "pending"}
+                        </span>
+                      </div>
+                      {msg && (
+                        <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3">
+                          <span className="shrink-0 mt-0.5">
+                            {isClientMsg
+                              ? (isRead
+                                  ? <CheckCheck className="h-3 w-3 text-emerald-600" aria-label="Read" />
+                                  : <Check className="h-3 w-3 text-amber-500" aria-label="New" />)
+                              : <CheckCheck className="h-3 w-3 text-sky-500" aria-label="Delivered" />}
+                          </span>
+                          <span className="truncate flex-1">
+                            <span className={isClientMsg ? "text-foreground" : ""}>
+                              {isClientMsg ? "" : "You: "}{msg.body}
+                            </span>
+                          </span>
+                          <span className="shrink-0">{formatRelTime(msg.created_at)}</span>
+                        </div>
+                      )}
+                      {!msg && act?.identity_id && (
+                        <div className="text-[10px] text-muted-foreground pl-3">Linked · no messages yet</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <Button variant="outline" size="sm" className="w-full" onClick={onPax}>
               <Users className="h-4 w-4 mr-2" /> Manage / split passengers
             </Button>
+
           </section>
 
           {/* Flight */}
