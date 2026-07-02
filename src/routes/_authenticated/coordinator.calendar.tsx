@@ -763,6 +763,11 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenDispatch}>
           <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
         </DropdownMenuItem>
+        {job.group_id && (
+          <DropdownMenuItem onClick={() => ungroupMut.mutate()} disabled={ungroupMut.isPending}>
+            <Unlink className="h-4 w-4 mr-2" /> Ungroup
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         {pending ? (
           <DropdownMenuItem
