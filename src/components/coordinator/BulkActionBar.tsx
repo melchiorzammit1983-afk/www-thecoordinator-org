@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Users, Tag, Trash2, Combine, X, Loader2 } from "lucide-react";
+import { Users, Tag, Trash2, Combine, Link2, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -14,6 +14,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
+  groupJobs,
 } from "@/lib/coordinator.functions";
 
 export type BulkJob = {
