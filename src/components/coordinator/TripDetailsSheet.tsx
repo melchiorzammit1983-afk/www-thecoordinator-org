@@ -248,6 +248,61 @@ export function TripDetailsSheet({
             </div>
           )}
 
+          {/* SOS Alerts */}
+          {openSos.length > 0 && (
+            <section className="rounded-md border-2 border-red-500 bg-red-50 dark:bg-red-950/30 p-3 space-y-2 animate-pulse">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                  <ShieldAlert className="h-4 w-4" />
+                  {openSos.length} active SOS
+                </div>
+                <Button
+                  size="sm" variant="destructive" className="h-7 text-xs"
+                  onClick={() => ackAll.mutate()}
+                  disabled={ackAll.isPending}
+                >
+                  Dismiss all
+                </Button>
+              </div>
+              <ul className="space-y-1.5">
+                {openSos.map((s) => (
+                  <li key={s.id} className="rounded-md bg-white/70 dark:bg-black/30 border border-red-300 p-2 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-red-800 dark:text-red-200 truncate">
+                          🆘 {s.pax_name || "Passenger"}
+                        </div>
+                        {s.note && <div className="text-muted-foreground truncate">{s.note}</div>}
+                        <div className="text-[10px] text-muted-foreground">
+                          {formatRelTime(s.created_at)}
+                          {s.latitude != null && s.longitude != null && (
+                            <> · <a
+                              className="underline text-primary"
+                              href={`https://www.google.com/maps?q=${s.latitude},${s.longitude}`}
+                              target="_blank" rel="noreferrer"
+                            >Open on map</a></>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm" variant="outline" className="h-6 px-2 text-[10px] shrink-0"
+                        onClick={() => ackOne.mutate(s.id)}
+                        disabled={ackOne.isPending}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="text-[10px] text-muted-foreground">
+                Dismissing clears the alert on your side. The passenger can press SOS again — a new alert will appear immediately.
+              </div>
+            </section>
+          )}
+
+
+
           {/* Driver */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Driver</div>
