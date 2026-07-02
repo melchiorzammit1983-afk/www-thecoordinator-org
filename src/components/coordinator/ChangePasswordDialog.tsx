@@ -28,7 +28,7 @@ export function ChangePasswordDialog({ onDone }: { onDone: () => void }) {
 
   return (
     <Dialog open={true} onOpenChange={() => { /* blocking */ }}>
-      <DialogContent onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()} showClose={false}>
+      <DialogContent onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Set a new password</DialogTitle>
           <DialogDescription>
