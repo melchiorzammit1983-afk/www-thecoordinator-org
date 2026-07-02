@@ -997,6 +997,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 if (ageMs > 2 * 60_000) return null;
                 return <span title="Client online" className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-label="Client online" />;
               })()}
+              {driverStatusNew && (
+                <span className="signal-dot-driver" title="Driver status updated" aria-label="Driver status updated" />
+              )}
               <span className="ml-auto flex items-center gap-1">
                 {unreadCounts.driver > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium" title="Unread driver messages">
