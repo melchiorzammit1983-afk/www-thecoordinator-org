@@ -190,6 +190,7 @@ export type Database = {
       companies: {
         Row: {
           access_end: string | null
+          coordinator_phone: string | null
           created_at: string
           custom_link: string
           email: string
@@ -204,6 +205,7 @@ export type Database = {
         }
         Insert: {
           access_end?: string | null
+          coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email: string
@@ -218,6 +220,7 @@ export type Database = {
         }
         Update: {
           access_end?: string | null
+          coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email?: string
