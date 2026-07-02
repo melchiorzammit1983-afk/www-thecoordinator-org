@@ -18,6 +18,26 @@ export type ParsedTrip = {
 
 const PHONE_RE = /(\+?\d[\d\s().\-]{5,}\d)/;
 
+// Strip decorative glyphs: emojis, arrows (⬅️ ➡️ ← → ↔), ascii arrows,
+// bullets, and repeated punctuation from name-ish strings.
+function stripDecor(s: string): string {
+  return s
+    .replace(/[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F]/gu, "")
+    .replace(/[←→↔⇐⇒⇔]/g, "")
+    .replace(/(<-+|-+>|=+>|<=+)/g, "")
+    .replace(/[\s*•\-–—·>|:,/\\]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// A pax name is meaningful only if, after stripping decor and any embedded
+// phone, it still contains at least 2 unicode letters.
+export function isMeaningfulName(s: string): boolean {
+  const bare = stripDecor((s ?? "").toString());
+  const letters = bare.match(/\p{L}/gu);
+  return !!letters && letters.length >= 2;
+}
+
 export function normalizePhone(raw: string): string {
   const digits = (raw ?? "").replace(/[^\d+]/g, "");
   if (!digits) return "";
@@ -30,20 +50,14 @@ export function normalizePhone(raw: string): string {
 export function extractPhoneFromName(name: string): { cleanName: string; phone: string } {
   const s = (name ?? "").toString();
   const m = s.match(PHONE_RE);
-  if (!m) return { cleanName: s.trim(), phone: "" };
-  const phone = normalizePhone(m[1]);
-  if (!phone) return { cleanName: s.trim(), phone: "" };
-  const cleaned = (s.slice(0, m.index!) + " " + s.slice(m.index! + m[1].length))
-    .replace(/[\-–—:·|,/\\]+\s*$/g, "")
-    .replace(/^\s*[\-–—:·|,/\\]+/g, "")
-    .replace(/\(\s*\)/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (cleaned.replace(/[^A-Za-z]/g, "").length < 2) {
-    return { cleanName: s.trim(), phone };
-  }
+  const phone = m ? normalizePhone(m[1]) : "";
+  const withoutPhone = m && phone
+    ? (s.slice(0, m.index!) + " " + s.slice(m.index! + m[1].length))
+    : s;
+  const cleaned = stripDecor(withoutPhone);
   return { cleanName: cleaned, phone };
 }
+
 
 const FLIGHT_CODE_RE = /(?:^|\s|#|✈|\bflight\b|\bflt\b)\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})(?=$|\s|[,.;])/i;
 export function extractFlightCode(text: string): { code: string | null; rest: string } {
@@ -226,8 +240,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
         const rawName = cleanName(stripLeadingBullets(line));
         if (rawName) {
           const { cleanName: cn, phone } = extractPhoneFromName(rawName);
-          if (cn) trip.pax.push(cn);
           if (phone && !trip.contact_phone) trip.contact_phone = phone;
+          if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
         }
         continue;
       }
@@ -244,8 +258,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
       if (looksLikeName(line)) {
         const rawName = cleanName(stripLeadingBullets(line));
         const { cleanName: cn, phone } = extractPhoneFromName(rawName);
-        if (cn) trip.pax.push(cn);
         if (phone && !trip.contact_phone) trip.contact_phone = phone;
+        if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
       }
     }
 
