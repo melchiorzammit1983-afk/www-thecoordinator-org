@@ -79,8 +79,8 @@ export function DriverLiveMap({
   height?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<Map<string, { marker: google.maps.Marker; info: google.maps.InfoWindow }>>(new Map());
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [, force] = useState(0);
 
