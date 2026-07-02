@@ -1203,9 +1203,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       {driverStatusNew && <span className="signal-stripe-driver" aria-label="Driver status updated" />}
       {sosOpen ? (
         <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
+      ) : rejected ? (
+        <span className="signal-corner-rejected" title="Driver rejected — back in Unassigned" aria-label="Driver rejected" />
       ) : clientChange ? (
         <span className="signal-corner-change" title="Client requested a change" aria-label="Client change" />
       ) : null}
+
 
       {/* Multi-select checkbox */}
       <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
