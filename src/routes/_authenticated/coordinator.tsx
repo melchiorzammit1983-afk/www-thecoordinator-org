@@ -86,7 +86,7 @@ function CoordinatorLayout() {
           </div>
         </div>
         <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.feature || features?.[item.feature] !== false).map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             return (
               <Link
