@@ -190,6 +190,11 @@ function CalendarPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [jobs, flightFn, refetch]);
 
+  useEffect(() => {
+    const ids = (jobs ?? []).map((j) => j.id);
+    setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
+  }, [jobs]);
+
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
