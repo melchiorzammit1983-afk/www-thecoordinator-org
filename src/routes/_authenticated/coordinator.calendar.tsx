@@ -61,6 +61,7 @@ type Job = {
   status: string;
   driver_id: string | null;
   vehicle: string | null;
+  contact_phone: string | null;
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
