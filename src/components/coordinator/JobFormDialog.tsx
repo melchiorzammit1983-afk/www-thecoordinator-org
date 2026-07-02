@@ -54,6 +54,7 @@ export function JobFormDialog({
   onSaved: () => void;
 }) {
   const isEdit = !!job;
+  const bulkEnabled = useFeature("bulk_paste");
   const [tab, setTab] = useState<"manual" | "bulk">("manual");
   const [prefill, setPrefill] = useState<Prefill | undefined>(undefined);
   useEffect(() => { if (open) { setTab("manual"); setPrefill(undefined); } }, [open]);
