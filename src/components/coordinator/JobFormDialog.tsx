@@ -214,10 +214,6 @@ function ManualForm({
       {job && <PaxEditor jobId={job.id} />}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
-        label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
-        checked={qr} onChange={setQr}
-      />
-      <ToggleRow
         label="Enable Live Tracking" hint="GPS updates from driver device"
         checked={track} onChange={setTrack}
       />
