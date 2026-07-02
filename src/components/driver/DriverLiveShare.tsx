@@ -345,14 +345,15 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
             ? native
               ? (hasActiveTrip
                   ? "Tracking continues when the screen is off or the app is minimized."
-                  : "Ready. Location sends while you have an active trip.")
+                  : "Live now — your location is sent to the coordinator even without an active trip.")
               : (hasActiveTrip
                   ? "Keep this tab open. Minimizing the browser pauses updates. Install the app for background tracking."
-                  : "Location will send once you're en route. Turns off between trips.")
+                  : "Live now — keep this tab open so coordinators can see you on the map.")
             : native
-              ? "The app can keep sharing your location in the background while you drive."
-              : "Coordinators can see your car on their map while enabled."}
+              ? "Turn on to share your live location. You can share anytime — even before you're en route."
+              : "Turn on and coordinators see your car on their map. Works even without an active trip."}
         </div>
+
         {error && <div className="text-[11px] text-destructive mt-0.5 truncate">{error}</div>}
       </div>
       <Button
