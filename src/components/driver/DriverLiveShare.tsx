@@ -157,7 +157,20 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
       let cancelled = false;
       (async () => {
         try {
-          const { BackgroundGeolocation } = await import("@capacitor-community/background-geolocation");
+          const { registerPlugin } = await import("@capacitor/core");
+          const defs = await import("@capacitor-community/background-geolocation");
+          type WatcherOptions = import("@capacitor-community/background-geolocation").WatcherOptions;
+          type LocationT = import("@capacitor-community/background-geolocation").Location;
+          type CallbackError = import("@capacitor-community/background-geolocation").CallbackError;
+          type BGPlugin = {
+            addWatcher(
+              options: WatcherOptions,
+              callback: (location?: LocationT, error?: CallbackError) => void,
+            ): Promise<string>;
+            removeWatcher(options: { id: string }): Promise<void>;
+          };
+          void defs;
+          const BackgroundGeolocation = registerPlugin<BGPlugin>("BackgroundGeolocation");
           const id = await BackgroundGeolocation.addWatcher(
             {
               backgroundMessage: "Sharing live location with dispatcher",
@@ -182,7 +195,7 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
                 latitude: location.latitude,
                 longitude: location.longitude,
                 accuracy_m: location.accuracy ?? null,
-                heading: (location as any).bearing ?? null,
+                heading: location.bearing ?? null,
                 speed_mps: location.speed ?? null,
                 captured_at: new Date(location.time ?? Date.now()).toISOString(),
               });
