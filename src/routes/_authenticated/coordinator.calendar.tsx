@@ -178,6 +178,7 @@ function CalendarPage() {
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
+    selected, onToggleSelect: toggleSelect,
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
