@@ -791,9 +791,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     ? "border-amber-500/70 bg-amber-500/5"
     : "border-border bg-background";
 
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
-    : {};
+  const gStripe = groupStripeStyle(job.group_id);
+  const style: React.CSSProperties = {
+    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
+    ...(gStripe ?? {}),
+  };
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
