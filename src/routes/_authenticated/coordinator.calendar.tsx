@@ -17,7 +17,7 @@ import {
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
+  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
 } from "@/lib/coordinator.functions";
 
