@@ -32,6 +32,7 @@ export type DetailsJob = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
   flight_status: string | null; flight_status_note: string | null;
+  flight_status_updated_at?: string | null;
   flight_scheduled_at: string | null; flight_estimated_at: string | null;
   drivers?: DriverEmbed | null;
   pax?: Pax[];
