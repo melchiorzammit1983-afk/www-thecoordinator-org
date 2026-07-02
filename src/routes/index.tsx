@@ -262,8 +262,8 @@ function HowItWorks() {
     },
     {
       icon: Wallet,
-      title: "4. Get paid & referred",
-      body: "Mark paid or pending, export statements, and earn points every time you refer a partner or take a hop.",
+      title: "4. Get paid & grow",
+      body: "Mark paid or pending, export statements, and grow your network with every partner you invite.",
     },
   ];
   return (
