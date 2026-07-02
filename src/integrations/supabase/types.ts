@@ -366,6 +366,70 @@ export type Database = {
           },
         ]
       }
+      driver_locations: {
+        Row: {
+          accuracy_m: number | null
+          captured_at: string
+          company_id: string | null
+          created_at: string
+          driver_id: string
+          heading: number | null
+          id: string
+          job_id: string | null
+          latitude: number
+          longitude: number
+          speed_mps: number | null
+        }
+        Insert: {
+          accuracy_m?: number | null
+          captured_at?: string
+          company_id?: string | null
+          created_at?: string
+          driver_id: string
+          heading?: number | null
+          id?: string
+          job_id?: string | null
+          latitude: number
+          longitude: number
+          speed_mps?: number | null
+        }
+        Update: {
+          accuracy_m?: number | null
+          captured_at?: string
+          company_id?: string | null
+          created_at?: string
+          driver_id?: string
+          heading?: number | null
+          id?: string
+          job_id?: string | null
+          latitude?: number
+          longitude?: number
+          speed_mps?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_locations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_locations_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_locations_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_status_updates: {
         Row: {
           created_at: string
