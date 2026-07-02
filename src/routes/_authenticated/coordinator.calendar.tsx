@@ -880,6 +880,52 @@ function GroupedStackCard({
     </div>
   );
 
+/* ---------- Collapsed strip for completed / cancelled trips ---------- */
+function CompletedStrip({
+  job, ctx, driverName, isSelected,
+}: { job: Job; ctx: CardCtx; driverName?: string; isSelected: boolean }) {
+  const cancelled = job.status === "cancelled";
+  const paxCount = job.pax?.length ?? 0;
+  return (
+    <div
+      className={`relative flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] transition-colors ${
+        cancelled
+          ? "border-muted bg-muted/30 text-muted-foreground line-through"
+          : "border-emerald-500/30 bg-emerald-500/5 text-muted-foreground"
+      } ${isSelected ? "ring-2 ring-primary" : ""}`}
+    >
+      <div onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => ctx.onToggleSelect(job.id)}
+          aria-label="Select trip"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => ctx.onOpenDetails(job)}
+        className="flex-1 flex items-center gap-2 min-w-0 text-left"
+        title={cancelled ? "Cancelled" : "Completed"}
+      >
+        <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
+        <span className="truncate">
+          {job.from_location} → {job.to_location}
+        </span>
+        {driverName && <span className="ml-auto truncate">· {driverName}</span>}
+        {paxCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 shrink-0">
+            <Users className="h-3 w-3" /> {paxCount}
+          </span>
+        )}
+        <Badge variant="outline" className="text-[9px] py-0 px-1 shrink-0">
+          {cancelled ? "Cancelled" : "Done"}
+        </Badge>
+      </button>
+    </div>
+  );
+}
+
+
 }
 
 
