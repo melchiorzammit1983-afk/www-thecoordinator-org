@@ -5,9 +5,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
-  updateJobStatus, listJobPaxDriver, markPaxOnboard,
+  updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
+  driverReportLate,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
+
 
 import { Badge } from "@/components/ui/badge";
 import { LabelChip } from "@/components/coordinator/LabelChip";
@@ -21,14 +23,16 @@ import {
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { QrScanner } from "@/components/driver/QrScanner";
+
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
+  Timer, UserX,
 } from "lucide-react";
+
 
 
 export const Route = createFileRoute("/m/driver/$token")({
@@ -234,6 +238,22 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const unhideFn = useServerFn(unhideJobForDriver);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [confirmDelOpen, setConfirmDelOpen] = useState(false);
+  const [confirmHideOpen, setConfirmHideOpen] = useState(false);
+  const [lateOpen, setLateOpen] = useState(false);
+  const [lateMinutes, setLateMinutes] = useState<number>(10);
+  const [lateNote, setLateNote] = useState("");
+  const lateFn = useServerFn(driverReportLate);
+  const lateMut = useMutation({
+    mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
+    onSuccess: () => {
+      toast.success(`Reported ~${lateMinutes} min late`);
+      setLateOpen(false); setLateNote(""); setLateMinutes(10);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
@@ -454,6 +474,12 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
                 {nextStatus.label}
               </Button>
             )}
+            {job.status !== "completed" && (
+              <Button variant="outline" className="h-10"
+                onClick={() => setLateOpen(true)}>
+                <Timer className="h-4 w-4 mr-1.5" /> Running late
+              </Button>
+            )}
             {job.status !== "in_progress" && job.status !== "completed" && (
               <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
                 onClick={() => setRejectOpen(true)}>
@@ -462,6 +488,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             )}
           </>
         )}
+
 
         <Button variant="outline" className="h-10" asChild>
           <a href={mapsUrl} target="_blank" rel="noreferrer">
@@ -478,10 +505,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </Button>
         {job.deletion_requested_at && (
           <Button variant="destructive" className="col-span-2 h-10" disabled={approveDelMut.isPending}
-            onClick={() => { if (confirm("Approve deletion?")) approveDelMut.mutate(); }}>
+            onClick={() => setConfirmDelOpen(true)}>
             {approveDelMut.isPending ? "Approving…" : "Approve deletion"}
           </Button>
         )}
+
         <div className="col-span-2 flex items-center gap-2 pt-1">
           <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
             onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
@@ -494,10 +522,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             </Button>
           ) : (
             <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-              onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
+              onClick={() => setConfirmHideOpen(true)}>
               <X className="h-4 w-4 mr-1" /> Hide
             </Button>
           )}
+
         </div>
       </div>
 
@@ -530,6 +559,79 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={lateOpen} onOpenChange={setLateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Report running late</DialogTitle>
+            <DialogDescription>
+              Sends a note to the coordinator (and to the client chat) so everyone can plan around the delay.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">How many minutes late?</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {[5, 10, 15, 20, 30, 45].map((m) => (
+                  <button key={m} type="button"
+                    className={`text-xs rounded-full border px-3 py-1.5 ${lateMinutes === m ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
+                    onClick={() => setLateMinutes(m)}>
+                    +{m} min
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Optional note</Label>
+              <Textarea rows={2} value={lateNote} onChange={(e) => setLateNote(e.target.value)}
+                placeholder="Traffic on the highway, still fuelling up…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLateOpen(false)}>Cancel</Button>
+            <Button disabled={lateMut.isPending} onClick={() => lateMut.mutate()}>
+              {lateMut.isPending ? "Sending…" : `Send "+${lateMinutes} min late"`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve deletion?</DialogTitle>
+            <DialogDescription>
+              The coordinator has requested this trip be removed from your list. Approving cannot be undone from here.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDelOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={approveDelMut.isPending}
+              onClick={() => { approveDelMut.mutate(); setConfirmDelOpen(false); }}>
+              Approve deletion
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmHideOpen} onOpenChange={setConfirmHideOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hide this trip from your list?</DialogTitle>
+            <DialogDescription>
+              You can restore it from the archived section any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmHideOpen(false)}>Cancel</Button>
+            <Button variant="secondary" disabled={hideMut.isPending}
+              onClick={() => { hideMut.mutate(); setConfirmHideOpen(false); }}>
+              <X className="h-4 w-4 mr-1" /> Hide
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </article>
   );
 }
@@ -656,10 +758,12 @@ function csvCell(v: unknown): string {
 }
 
 function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; token: string; onOpenChange: (v: boolean) => void }) {
-  const [scanning, setScanning] = useState(false);
+  // (QR scanning removed — manual confirm / no-show is used everywhere now.)
   const qc = useQueryClient();
   const listFn = useServerFn(listJobPaxDriver);
   const markFn = useServerFn(markPaxOnboard);
+  const noShowFn = useServerFn(markPaxNoShow);
+  const undoFn = useServerFn(markPaxPending);
 
   const { data: pax, refetch } = useQuery({
     queryKey: ["driver-pax", job?.id],
@@ -667,19 +771,26 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
     enabled: !!job,
   });
 
+  const invalidateManifest = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const markMut = useMutation({
     mutationFn: (v: { pax_id: string; method: "qr" | "manual" }) =>
       markFn({ data: { token, job_id: job!.id, pax_id: v.pax_id, method: v.method } }),
-    onSuccess: () => { toast.success("Passenger onboard"); refetch(); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
+    onSuccess: () => { toast.success("Passenger onboard"); refetch(); invalidateManifest(); },
     onError: (e: Error) => toast.error(e.message === "qr_required" ? "QR scan required for this trip" : e.message),
   });
+  const noShowMut = useMutation({
+    mutationFn: (pax_id: string) => noShowFn({ data: { token, job_id: job!.id, pax_id } }),
+    onSuccess: () => { toast.success("Marked as no-show"); refetch(); invalidateManifest(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const undoMut = useMutation({
+    mutationFn: (pax_id: string) => undoFn({ data: { token, job_id: job!.id, pax_id } }),
+    onSuccess: () => { toast.success("Reset to pending"); refetch(); invalidateManifest(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
-  function handleScan(text: string) {
-    const match = (pax ?? []).find((p) => p.id === text || p.name === text);
-    if (!match) { toast.error("Passenger not on this trip"); return; }
-    if (match.status === "onboard") return;
-    markMut.mutate({ pax_id: match.id, method: "qr" });
-  }
+  // handleScan retained for future re-enable; currently unused.
+
 
   return (
     <Dialog open={!!job} onOpenChange={onOpenChange}>
@@ -687,31 +798,53 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
         <DialogHeader>
           <DialogTitle>{job?.from_location} → {job?.to_location}</DialogTitle>
           <DialogDescription>
-            Tap "Confirm" next to each passenger as they board.
+            Tap "Confirm" for boarding passengers, or "No-show" if someone doesn't turn up.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 max-h-72 overflow-auto">
           {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
-          {(pax ?? []).map((p) => (
-            <div key={p.id} className="flex items-center justify-between border rounded-md p-2.5">
-              <div>
-                <div className="font-medium">{p.name}</div>
-                <div className="text-xs text-muted-foreground capitalize">{p.status}</div>
+          {(pax ?? []).map((p) => {
+            const isOnboard = p.status === "onboard";
+            const isNoShow = p.status === "noshow";
+            return (
+              <div key={p.id} className={`flex items-center justify-between border rounded-md p-2.5 gap-2 ${isNoShow ? "border-destructive/50 bg-destructive/5" : ""}`}>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className={`text-xs capitalize ${isNoShow ? "text-destructive font-medium" : "text-muted-foreground"}`}>{isNoShow ? "No-show" : p.status}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isOnboard && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
+                  {isNoShow && <Badge variant="destructive" className="gap-1"><UserX className="h-3 w-3" /> No-show</Badge>}
+                  {!isOnboard && !isNoShow && (
+                    <>
+                      <Button size="sm" variant="secondary" disabled={markMut.isPending}
+                        onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
+                        Confirm
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                        disabled={noShowMut.isPending}
+                        onClick={() => noShowMut.mutate(p.id)}>
+                        <UserX className="h-4 w-4 mr-1" /> No-show
+                      </Button>
+                    </>
+                  )}
+                  {(isOnboard || isNoShow) && (
+                    <Button size="sm" variant="ghost" className="text-muted-foreground"
+                      disabled={undoMut.isPending}
+                      onClick={() => undoMut.mutate(p.id)}>
+                      Undo
+                    </Button>
+                  )}
+                </div>
               </div>
-              {p.status !== "onboard" && (
-                <Button size="sm" variant="secondary" disabled={markMut.isPending}
-                  onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
-                  Confirm
-                </Button>
-              )}
-              {p.status === "onboard" && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
+
 
 function NotFound() {
   return (

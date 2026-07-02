@@ -553,6 +553,80 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const markPaxNoShow = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      pax_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: paxRow } = await supabaseAdmin.from("pax")
+      .select("name, status").eq("id", data.pax_id).eq("job_id", data.job_id).maybeSingle();
+    if (!paxRow) throw new Error("pax_not_found");
+    const { error } = await supabaseAdmin.from("pax")
+      .update({ status: "noshow" as never })
+      .eq("id", data.pax_id).eq("job_id", data.job_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🚫 No-show: ${(paxRow as any).name}`,
+    } as never);
+    return { ok: true };
+  });
+
+export const markPaxPending = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      pax_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    await loadDriverJob(data.token, data.job_id);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("pax")
+      .update({ status: "pending" as never, boarded_at: null, boarded_method: null })
+      .eq("id", data.pax_id).eq("job_id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const driverReportLate = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      minutes: z.number().int().min(1).max(600),
+      note: z.string().trim().max(300).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const suffix = data.note?.trim() ? ` — ${data.note.trim()}` : "";
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🕒 Running ~${data.minutes} min late${suffix}`,
+    } as never);
+    return { ok: true };
+  });
+
+
 // ---------- Live driver location (public, magic-link protected) ----------
 
 const pointSchema = z.object({
@@ -576,15 +650,27 @@ export const pushDriverLocation = createServerFn({ method: "POST" })
     if (!link || !link.subject_id) throw new Error("driver_link_required");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Pick the driver's currently-active job, preferring most recent pickup.
+    // Prefer a currently-active trip; if none, fall back to the driver's next
+    // assigned (non-terminal) job so manual "Share my location now" still
+    // sends useful data (e.g. the driver's on the way but hasn't updated status yet).
     const { data: activeJobs } = await supabaseAdmin.from("jobs")
-      .select("id, company_id, pickup_at")
+      .select("id, company_id, pickup_at, status")
       .eq("driver_id", link.subject_id)
       .in("status", ["en_route", "arrived", "in_progress"])
       .order("pickup_at", { ascending: false })
       .limit(1);
-    const active = activeJobs?.[0];
+    let active = activeJobs?.[0] as { id: string; company_id: string } | undefined;
+    if (!active) {
+      const { data: fallback } = await supabaseAdmin.from("jobs")
+        .select("id, company_id, pickup_at, status")
+        .eq("driver_id", link.subject_id)
+        .not("status", "in", "(completed,cancelled)")
+        .order("pickup_at", { ascending: true })
+        .limit(1);
+      active = fallback?.[0] as { id: string; company_id: string } | undefined;
+    }
     if (!active) return { ok: true, inserted: 0, reason: "no_active_trip" as const };
+
 
     const rows = data.points.map((p) => ({
       driver_id: link.subject_id!,

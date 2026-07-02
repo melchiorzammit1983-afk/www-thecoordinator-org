@@ -380,11 +380,16 @@ export function TripDetailsSheet({
                           </span>
 
                           <span className="flex items-center gap-2 shrink-0">
-                            <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
-                              {p.status ?? "pending"}
-                            </span>
+                            {p.status === "noshow" ? (
+                              <Badge variant="destructive" className="h-4 px-1.5 text-[9px] uppercase tracking-wide">No-show</Badge>
+                            ) : (
+                              <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
+                                {p.status ?? "pending"}
+                              </span>
+                            )}
                             <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
                           </span>
+
                         </div>
                         {msg && (
                           <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3">
