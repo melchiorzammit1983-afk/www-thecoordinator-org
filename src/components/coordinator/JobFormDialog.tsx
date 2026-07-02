@@ -31,6 +31,7 @@ type Job = {
   to_flight: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   vehicle: string | null;
+  contact_phone: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
   labels?: { id: string; name: string; color: string }[];
