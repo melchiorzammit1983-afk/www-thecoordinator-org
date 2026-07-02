@@ -1692,3 +1692,64 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       throw new Error(msg);
     }
   });
+
+// ---------- Group / Ungroup (reversible link, keeps trip details) ----------
+
+export const groupJobs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_ids: z.array(z.string().uuid()).min(2).max(50) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, group_id" as any)
+      .in("id", data.job_ids).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length !== data.job_ids.length) throw new Error("Some trips not found");
+
+    // Reuse an existing group_id from the selection if present; else mint new.
+    const existing = (rows as any[]).map((r) => r.group_id).find((g) => !!g) as string | undefined;
+    const gid = existing ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const total = rows.length;
+
+    const { error: uErr } = await supabaseAdmin.from("jobs")
+      .update({
+        group_id: gid,
+        grouped_count: total,
+        grouped_at: new Date().toISOString(),
+      } as never)
+      .in("id", data.job_ids);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, group_id: gid, count: total };
+  });
+
+export const ungroupJobs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid().optional(),
+      group_id: z.string().uuid().optional(),
+    }).refine((v) => v.job_id || v.group_id, "job_id or group_id required").parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+
+    let gid = data.group_id ?? null;
+    if (!gid && data.job_id) {
+      const { data: row } = await supabaseAdmin.from("jobs")
+        .select("group_id, company_id" as any)
+        .eq("id", data.job_id).maybeSingle();
+      if (!row || (row as any).company_id !== c.id) throw new Error("Job not found");
+      gid = (row as any).group_id ?? null;
+    }
+    if (!gid) return { ok: true, cleared: 0 };
+
+    const { error, count } = await supabaseAdmin.from("jobs")
+      .update({ group_id: null, grouped_count: null, grouped_at: null } as never, { count: "exact" })
+      .eq("group_id" as any, gid).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, cleared: count ?? 0 };
+  });
