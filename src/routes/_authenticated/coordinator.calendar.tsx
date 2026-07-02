@@ -117,7 +117,11 @@ type Job = {
   group_name?: string | null;
   group_note?: string | null;
   client_confirmed_at?: string | null;
+  source?: string | null;
+  coord_approved_at?: string | null;
+  parent_job_id?: string | null;
 };
+
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
