@@ -111,6 +111,49 @@ export function TripDetailsSheet({
     refetchInterval: open ? 20_000 : false,
   });
 
+  const sosListFn = useServerFn(listSosForJob);
+  const ackSosFn = useServerFn(acknowledgeSosCoord);
+  const ackAllSosFn = useServerFn(acknowledgeAllSosForJob);
+  const { data: sosRows } = useQuery({
+    queryKey: ["job-sos", job.id],
+    queryFn: () => sosListFn({ data: { job_id: job.id, include_ack: false } }) as Promise<Array<{
+      id: string; job_id: string; pax_name: string | null; identity_id: string | null;
+      latitude: number | null; longitude: number | null; note: string | null; created_at: string;
+    }>>,
+    enabled: open,
+    refetchInterval: open ? 15_000 : false,
+  });
+  const openSos = sosRows ?? [];
+  const sosByPax = new Map<string, typeof openSos>();
+  for (const s of openSos) {
+    const key = (s.pax_name ?? "").trim().toLowerCase();
+    if (!key) continue;
+    const arr = sosByPax.get(key) ?? [];
+    arr.push(s);
+    sosByPax.set(key, arr);
+  }
+  const ackOne = useMutation({
+    mutationFn: (sos_id: string) => ackSosFn({ data: { sos_id } }) as Promise<{ ok: true }>,
+    onSuccess: () => {
+      toast.success("SOS dismissed");
+      qc.invalidateQueries({ queryKey: ["job-sos", job.id] });
+      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+      qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const ackAll = useMutation({
+    mutationFn: () => ackAllSosFn({ data: { job_id: job.id } }) as Promise<{ ok: true; cleared: number }>,
+    onSuccess: (r) => {
+      toast.success(`Dismissed ${r.cleared} SOS alert${r.cleared === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["job-sos", job.id] });
+      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
+      qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
 
   useEffect(() => {
     if (!open || !job?.id) return;
