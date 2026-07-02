@@ -80,6 +80,26 @@ export function TripDetailsSheet({
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
   const paid = job.payment_status === "paid";
 
+  const qc = useQueryClient();
+  const refreshFlightFn = useServerFn(getMaltaFlightStatus);
+  const [refreshingFlight, setRefreshingFlight] = useState(false);
+  const handleRefreshFlight = async () => {
+    if (!job) return;
+    setRefreshingFlight(true);
+    try {
+      const r: any = await refreshFlightFn({ data: { job_id: job.id } });
+      if (r?.ok) toast.success(`Flight: ${r.status}${r.note ? ` — ${r.note}` : ""}`);
+      else if (r?.reason === "not_found") toast.info("Flight not on Malta Airport board");
+      else if (r?.reason === "scrape_failed") toast.error("Could not fetch Malta Airport board");
+      else if (r?.reason === "no_flight") toast.info("No flight code on this trip");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Refresh failed");
+    } finally {
+      setRefreshingFlight(false);
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-0">
