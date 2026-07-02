@@ -961,6 +961,9 @@ async function refreshMaltaFlightForJob(
     flight_status_updated_at: new Date().toISOString(),
     flight_scheduled_at: scheduledIso,
     flight_estimated_at: estimatedIso,
+    flight_terminal: row.terminal ?? null,
+    flight_gate: row.gate ?? null,
+    flight_baggage_belt: (row as any).baggage_belt ?? (row as any).belt ?? null,
   }).eq("id", job.id);
   return { ok: true as const, status: mapped, note };
 }
