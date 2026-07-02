@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   getDriverManifest, driverAcceptJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard,
-  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, getDriverStatement,
+  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
 import { Badge } from "@/components/ui/badge";
 import { LabelChip } from "@/components/coordinator/LabelChip";
