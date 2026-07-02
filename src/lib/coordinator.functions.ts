@@ -138,7 +138,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -320,11 +320,16 @@ export const assignDriver = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const { error } = await supabaseAdmin.from("jobs")
-      .update({ driver_id: data.driver_id })
-      .eq("id", data.job_id).eq("company_id", c.id);
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, group_id" as any)
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (!job) throw new Error("Job not found");
+    const gid = (job as any).group_id as string | null;
+    let q = supabaseAdmin.from("jobs").update({ driver_id: data.driver_id }).eq("company_id", c.id);
+    q = gid ? q.eq("group_id" as any, gid) : q.eq("id", data.job_id);
+    const { error } = await q;
     if (error) throw new Error(error.message);
-    return { ok: true };
+    return { ok: true, group_id: gid };
   });
 
 export const cloneJob = createServerFn({ method: "POST" })
@@ -1686,4 +1691,65 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       if (msg.includes("402")) throw new Error("AI credits exhausted — add credits in Settings → Plans & credits");
       throw new Error(msg);
     }
+  });
+
+// ---------- Group / Ungroup (reversible link, keeps trip details) ----------
+
+export const groupJobs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_ids: z.array(z.string().uuid()).min(2).max(50) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, group_id" as any)
+      .in("id", data.job_ids).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length !== data.job_ids.length) throw new Error("Some trips not found");
+
+    // Reuse an existing group_id from the selection if present; else mint new.
+    const existing = (rows as any[]).map((r) => r.group_id).find((g) => !!g) as string | undefined;
+    const gid = existing ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const total = rows.length;
+
+    const { error: uErr } = await supabaseAdmin.from("jobs")
+      .update({
+        group_id: gid,
+        grouped_count: total,
+        grouped_at: new Date().toISOString(),
+      } as never)
+      .in("id", data.job_ids);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, group_id: gid, count: total };
+  });
+
+export const ungroupJobs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid().optional(),
+      group_id: z.string().uuid().optional(),
+    }).refine((v) => v.job_id || v.group_id, "job_id or group_id required").parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+
+    let gid = data.group_id ?? null;
+    if (!gid && data.job_id) {
+      const { data: row } = await supabaseAdmin.from("jobs")
+        .select("group_id, company_id" as any)
+        .eq("id", data.job_id).maybeSingle();
+      if (!row || (row as any).company_id !== c.id) throw new Error("Job not found");
+      gid = (row as any).group_id ?? null;
+    }
+    if (!gid) return { ok: true, cleared: 0 };
+
+    const { error, count } = await supabaseAdmin.from("jobs")
+      .update({ group_id: null, grouped_count: null, grouped_at: null } as never, { count: "exact" })
+      .eq("group_id" as any, gid).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, cleared: count ?? 0 };
   });

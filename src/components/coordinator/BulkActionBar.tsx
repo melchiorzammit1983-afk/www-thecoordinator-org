@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Users, Tag, Trash2, Combine, X, Loader2 } from "lucide-react";
+import { Users, Tag, Trash2, Combine, Link2, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -14,6 +14,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
+  groupJobs,
 } from "@/lib/coordinator.functions";
 
 export type BulkJob = {
@@ -43,6 +44,17 @@ export function BulkActionBar({
 
   const assignFn = useServerFn(assignDriver);
   const deleteFn = useServerFn(deleteJob);
+  const groupFn = useServerFn(groupJobs);
+
+  const groupMut = useMutation({
+    mutationFn: () => groupFn({ data: { job_ids: jobs.map((j) => j.id) } }) as Promise<{ count: number }>,
+    onSuccess: (r) => {
+      toast.success(`Linked ${r.count} trips as one group`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      onClear();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
@@ -127,11 +139,20 @@ export function BulkActionBar({
 
             <Button
               size="sm" variant="outline"
+              disabled={!mergeable || busy || groupMut.isPending}
+              title="Link cards together as one bundle (reversible). Trip details are kept."
+              onClick={() => groupMut.mutate()}
+            >
+              <Link2 className="h-4 w-4 mr-1" /> Group
+            </Button>
+
+            <Button
+              size="sm" variant="outline"
               disabled={!mergeable || busy}
-              title={uniform ? "Merge passengers into the earliest trip" : "Trips differ in date/from/to — you can still group them"}
+              title={uniform ? "Merge passengers into the earliest trip (permanent)" : "Trips differ in date/from/to — merge folds them into the earliest one"}
               onClick={() => setOpenMerge(true)}
             >
-              <Combine className="h-4 w-4 mr-1" /> Group
+              <Combine className="h-4 w-4 mr-1" /> Merge
             </Button>
 
             <Button
@@ -280,7 +301,7 @@ function BulkMergeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Group {jobs.length} trips</DialogTitle>
+          <DialogTitle>Merge {jobs.length} trips</DialogTitle>
           <DialogDescription>
             Passengers from the other trips will be moved into the earliest one, then the empty trips will be removed.
             Trips already accepted by a driver will require driver approval before removal.

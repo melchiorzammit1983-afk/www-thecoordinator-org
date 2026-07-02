@@ -1,41 +1,46 @@
-## Grouped-trip flag
+## Goal
+Make Group and Merge two distinct actions:
+- **Group** = link cards into a reversible bundle. Each trip keeps its own from/to/flight/company. Assigning a driver or sharing applies to the whole bundle. Auto-dissolves on completion; coordinator can Ungroup manually.
+- **Merge** = existing behavior (fold passengers into the earliest trip, permanent).
 
-Track a group on the merged trip so the card and the driver's manifest both show "Grouped", and clear the flag automatically once the trip is completed.
+## Database
+New migration on `jobs`:
+- `group_id uuid NULL` — shared id for all trips in a bundle.
+- Keep existing `grouped_count`, `grouped_at` (written on every job in the group).
+- Index on `group_id`.
 
-### DB
-Add two columns on `public.jobs`:
-- `grouped_count` int null — number of trips merged into this one (>=2 when grouped, null otherwise).
-- `grouped_at` timestamptz null — when the merge happened.
+No destructive change to already-merged jobs.
 
-No new tables, no policy changes.
+## Backend
+- `groupJobs(jobIds[])` — assigns a shared `group_id`, stamps `grouped_count`/`grouped_at` on each. Verifies same company + coordinator permission.
+- `ungroupJobs(groupId)` — clears `group_id`, `grouped_count`, `grouped_at` on all members.
+- Extend `assignDriver` / `shareJobToDriver` / magic-link creation: when target job has `group_id`, apply to every job in the group (same driver, one shared link token covering all members).
+- Extend `updateJobStatus`: when the last non-completed job in a group flips to completed/cancelled, auto-clear `group_id` on all members.
+- Keep existing merge path (`setJobGrouped`) untouched.
 
-### Merge behaviour (Bulk "Group")
-`BulkActionBar` merge already moves pax into the earliest trip and deletes the others. Update it to also set `grouped_count = <total merged>` and `grouped_at = now()` on the keeper via a new server fn `setJobGrouped({ job_id, count })` (scoped to the coordinator's company).
+## UI
+### BulkActionBar
+Two distinct buttons on 2+ selection:
+- **Group** (link icon) — calls `groupJobs`. Always enabled for 2+.
+- **Merge** (combine icon) — existing flow, keep uniform-warning dialog.
 
-If a coordinator groups again later, `count` accumulates (existing count + newly merged).
+### TripCard
+- When `group_id` is set: show a "⛬ Grouped · N" chip and a colored left accent linking bundle members.
+- Add **Ungroup** action in the card menu (visible only if `group_id` set).
+- Selecting one grouped card shows a "Select whole group" affordance in the bulk bar.
 
-### Auto-ungroup on completion
-When `jobs.status` moves to `completed` (or `finished` — whichever your enum uses; I'll match the current value used by "Trip finished"), clear `grouped_count` and `grouped_at`. Done inside the existing status-transition server fn so it happens no matter who triggers completion (coordinator or driver).
+### Driver manifest (`/m.driver.$token`)
+- Render grouped trips under one collapsible header with count; each trip row still shows its own from/to/flight/pax.
 
-### UI
+## Out of scope
+- No change to merge semantics.
+- No new points/pricing logic.
+- No schema changes to `magic_links` beyond writing one token that covers all group members when sharing.
 
-Coordinator `TripCard`:
-- New small badge next to the pax badge: `⛬ Grouped · N trips` (uses primary color).
-- Small "Grouped" line under the route when present.
-
-Driver manifest (`src/routes/m.driver.$token.tsx` / mobile timeline):
-- Same badge at the top of the trip block: `Grouped · N trips`.
-- Passenger list stays as-is (they're already merged into one manifest).
-
-Trip details sheet: show the grouped count in the header meta line.
-
-### Files
-- `supabase/migrations/*` — add columns.
-- `src/lib/coordinator.functions.ts` — new `setJobGrouped` server fn; extend the status-update fn to null the columns on completion; include `grouped_count`, `grouped_at` in job selects.
-- `src/components/coordinator/BulkActionBar.tsx` — call `setJobGrouped` after successful merge.
-- `src/routes/_authenticated/coordinator.calendar.tsx` — `Job` type + badge in `TripCard`.
-- `src/components/coordinator/TripDetailsSheet.tsx` — show grouped meta.
-- Driver manifest route/components — show grouped badge.
-
-### Note
-Ungroup = the flag/badge disappears after completion. Passengers stay merged (the original source trips were removed at merge time); if you actually want the trip to split back into the originals after completion, say so and I'll switch to a "keep source trips as archived and restore on finish" model instead.
+## Files touched
+- New migration (jobs.group_id + index)
+- `src/lib/coordinator-public.functions.ts`, `src/lib/coordinator.functions.ts`
+- `src/components/coordinator/BulkActionBar.tsx`
+- `src/components/coordinator/TripCard.tsx`
+- `src/routes/coordinator.calendar.tsx` (query invalidations)
+- `src/routes/m.driver.$token.tsx`

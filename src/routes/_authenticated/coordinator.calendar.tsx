@@ -7,7 +7,7 @@ import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner,
@@ -17,6 +17,7 @@ import {
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
+  ungroupJobs,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +78,7 @@ type Job = {
   payment_status?: string | null;
   grouped_count?: number | null;
   grouped_at?: string | null;
+  group_id?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -585,9 +587,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   </Badge>
                 );
               })()}
-              {(job.grouped_count ?? 0) >= 2 && (
+              {(job.group_id || (job.grouped_count ?? 0) >= 2) && (
                 <Badge className="text-[10px] gap-1 bg-primary/15 text-primary hover:bg-primary/15 border border-primary/30">
-                  ⛬ Grouped · {job.grouped_count} trips
+                  <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
               {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
@@ -653,6 +655,13 @@ function TripMenu({
   const cancelMut = useMutation({
     mutationFn: () => cancelFn({ data: { job_id: job.id } }),
     onSuccess: () => { toast.success("Deletion cancelled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const ungroupFn = useServerFn(ungroupJobs);
+  const ungroupMut = useMutation({
+    mutationFn: () => ungroupFn({ data: { job_id: job.id } }) as Promise<{ cleared: number }>,
+    onSuccess: (r) => { toast.success(`Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["jobs"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -754,6 +763,11 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenDispatch}>
           <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
         </DropdownMenuItem>
+        {job.group_id && (
+          <DropdownMenuItem onClick={() => ungroupMut.mutate()} disabled={ungroupMut.isPending}>
+            <Unlink className="h-4 w-4 mr-2" /> Ungroup
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         {pending ? (
           <DropdownMenuItem
