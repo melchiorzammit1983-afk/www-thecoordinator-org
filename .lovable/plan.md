@@ -1,37 +1,41 @@
 ## Goal
+When a passenger row is just a phone number, emoji, or empty text, remove it from the passenger list instead of keeping a blank pax. Move the phone into the trip's phone-number field (already partly working) and make sure the cleanup runs on both new entries and existing trips.
 
-Auto-clean passenger data on both new and existing trips: extract phone numbers from pax names into the trip phone field, and normalize flight codes even after the trip is created.
+## Problem observed
+In the selected trip, pax rows are showing as:
+- `⬅️`
+- `⬅️ +39 320 4192957`
+- `⬅️ FLORIO Michele`
+
+Expected after cleanup: **1 passenger** (`FLORIO Michele`) and `+39 320 4192957` in the Phone number field.
+
+Today `normalizeJobData` extracts the phone but only trims the name — it keeps rows whose "name" is empty or just an emoji/arrow, so blank pax remain visible.
 
 ## Changes
 
-### 1. Shared helpers (`src/lib/parse-trips.ts`)
-- Add `extractPhoneFromName(name)` → returns `{ cleanName, phone }`. Regex captures international/local numbers (7+ digits, optional `+`, spaces, dashes, parentheses) embedded anywhere in the pax name string; strips them out and trims residual separators.
-- Re-export `extractFlightCode` (already exists in `JobFormDialog`) or move it here so it can be reused server-side and in bulk paste.
+### 1. `src/lib/parse-trips.ts`
+- Add a shared `isMeaningfulName(s)` helper: after stripping phones, emojis, arrows, punctuation and whitespace, a name is meaningful only if it still contains at least one letter (unicode letter class).
+- Update `extractPhoneFromName` to also strip leading/trailing arrow glyphs (`⬅️ ➡️ → ← -> <-`) and repeated punctuation from `cleanName`.
 
-### 2. Bulk paste + creation path
-- In `parseWhatsAppBlock` (bulk paste): when building pax list, run `extractPhoneFromName` on each name. If a phone is found and the trip has no phone yet, set it on the job; keep the cleaned name in pax.
-- In `JobFormDialog` PaxEditor: on add/blur of a pax name, run the same extractor. If phone found, remove digits from the name and, when the trip's phone field is empty, populate it (toast hint like the flight one).
+### 2. `src/lib/coordinator.functions.ts` — `normalizeJobData`
+- For each pax row:
+  - Extract the phone (as today) → if found and job has no `contact_phone`, set it.
+  - If cleaned name is **not meaningful** (empty / only symbols / only a phone), `DELETE` that pax row.
+  - Otherwise, if the cleaned name differs from stored, `UPDATE` the row.
+- Keep flight-code normalization untouched.
+- Return `{ removed, updated, phoneMoved }` for a clearer toast.
 
-### 3. Fix already-created trips
-- New server function `normalizeJobData(jobId)` in `src/lib/coordinator.functions.ts` (chain-access check via existing `assertJobInCompany`):
-  - Load job + pax.
-  - For each pax: run `extractPhoneFromName`; update `pax.name` if changed; collect first found phone.
-  - If job `phone_number` empty and phones found → set it.
-  - Normalize `from_flight` / `to_flight` via `extractFlightCode` (uppercase, no spaces); if a code is embedded in `from_location`/`to_location`, move it to the flight field and default location to "Airport" when it becomes empty.
-  - Return updated job/pax.
-- Trigger points:
-  - `TripDetailsSheet`: run once automatically on open (idempotent) and expose a manual "Clean data" button.
-  - `JobFormDialog` when editing existing trip: run on open so the form shows corrected values.
-  - Optional: call inside `updateJob` after save so edits are always normalized.
+### 3. `src/components/coordinator/JobFormDialog.tsx` — `PaxEditor`
+- On add, if the input reduces to a non-meaningful name after phone extraction, do **not** create the pax row — only save the phone (and toast "Saved phone number"). Prevents creating new blank rows.
 
-### 4. UI feedback
-- Small toast: "Moved phone to contact field" / "Normalized flight KM643" when auto-fix changes something. Silent when nothing changes.
+### 4. `src/components/coordinator/TripDetailsSheet.tsx`
+- The existing auto-run of `normalizeJobData` on open will now also invalidate `["job-pax", jobId]` so the pax list refreshes after cleanup.
+- Toast text updated to reflect removals: e.g. "Cleaned 2 blank passenger rows · Moved phone number".
 
-## Out of scope
-- No schema changes (uses existing `jobs.phone_number`, `jobs.from_flight`, `jobs.to_flight`, `pax.name`).
-- No bulk migration over all historical rows; normalization runs lazily when a trip is opened/edited.
+### 5. `src/lib/parse-trips.ts` — bulk paste parser
+- Skip pax lines that are non-meaningful after phone extraction, so pasting a WhatsApp block with a stray phone-only line doesn't create empty pax.
 
-## Technical notes
-- Phone regex: `/(\+?\d[\d\s\-().]{6,}\d)/` then strip non-digits, keep leading `+` if present; require ≥7 digits to avoid matching room numbers.
-- Guard against false positives: if the "name" becomes empty after stripping, keep the original pax entry unchanged.
-- All server writes go through `supabaseAdmin` with the existing chain-access assertion, matching current patterns.
+## Non-goals
+- No schema changes.
+- No changes to driver-facing screens (they'll reflect the cleaned pax automatically).
+- No UI redesign of the Edit trip dialog.
