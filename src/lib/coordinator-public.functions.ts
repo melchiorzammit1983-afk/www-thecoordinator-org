@@ -752,8 +752,8 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
-      thread_kind: data.thread_kind,
-      client_identity_id: data.thread_kind === "private" ? identityId : null,
+      thread_kind: effectiveKind,
+      client_identity_id: effectiveKind === "private" ? identityId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
