@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Users, Tag, Trash2, Combine, Link2, X, Loader2 } from "lucide-react";
+import { Users, Tag, Trash2, Combine, Link2, Link2Off, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
+  assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped, ungroupJobs,
 } from "@/lib/coordinator.functions";
 import { GroupDialog } from "./GroupDialog";
 
@@ -25,6 +25,7 @@ export type BulkJob = {
   to_location: string;
   driver_id: string | null;
   driver_accepted_at: string | null;
+  group_id?: string | null;
   labels?: { id: string; name: string; color: string }[];
   pax?: { id: string }[];
 };
@@ -45,6 +46,35 @@ export function BulkActionBar({
 
   const assignFn = useServerFn(assignDriver);
   const deleteFn = useServerFn(deleteJob);
+  const ungroupFn = useServerFn(ungroupJobs);
+
+  // Collect distinct group_ids from selected jobs where NO member has been accepted by driver yet.
+  const groupIds = Array.from(new Set(jobs.map((j) => j.group_id).filter(Boolean) as string[]));
+  const acceptedGroupIds = new Set(
+    jobs.filter((j) => j.group_id && j.driver_accepted_at).map((j) => j.group_id as string),
+  );
+  const ungroupableGroupIds = groupIds.filter((g) => !acceptedGroupIds.has(g));
+  const canUngroup = ungroupableGroupIds.length > 0;
+
+  const ungroupMut = useMutation({
+    mutationFn: async () => {
+      for (const gid of ungroupableGroupIds) {
+        await ungroupFn({ data: { group_id: gid } });
+      }
+      return ungroupableGroupIds.length;
+    },
+    onSuccess: (n) => {
+      const skipped = groupIds.length - n;
+      toast.success(
+        `Ungrouped ${n} bundle${n === 1 ? "" : "s"}` +
+          (skipped > 0 ? ` · ${skipped} skipped (driver already accepted)` : ""),
+      );
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      onClear();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
@@ -135,6 +165,30 @@ export function BulkActionBar({
             >
               <Link2 className="h-4 w-4 mr-1" /> Group
             </Button>
+
+            <Button
+              size="sm" variant="outline"
+              disabled={!canUngroup || busy || ungroupMut.isPending}
+              title={
+                groupIds.length === 0
+                  ? "Select grouped cards to ungroup"
+                  : canUngroup
+                  ? "Break these bundles back into individual cards"
+                  : "Driver already accepted — can't ungroup"
+              }
+              onClick={() => {
+                const n = ungroupableGroupIds.length;
+                if (confirm(`Ungroup ${n} bundle${n === 1 ? "" : "s"}? Cards will return to normal.`)) {
+                  ungroupMut.mutate();
+                }
+              }}
+            >
+              {ungroupMut.isPending
+                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                : <Link2Off className="h-4 w-4 mr-1" />}
+              Ungroup
+            </Button>
+
 
             <Button
               size="sm" variant="outline"
