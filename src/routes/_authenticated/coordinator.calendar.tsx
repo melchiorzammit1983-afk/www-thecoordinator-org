@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
+  Pencil, Sparkles,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner,
@@ -17,8 +18,9 @@ import {
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
-  ungroupJobs,
+  ungroupJobs, groupJobs, shareGroupToDriver,
 } from "@/lib/coordinator.functions";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +45,8 @@ import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
+import { GroupDialog } from "@/components/coordinator/GroupDialog";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Dispatch — Coordinator" }] }),
@@ -96,7 +100,9 @@ function CalendarPage() {
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const qc = useQueryClient();
+
 
   const toggleExpandedGroup = (gid: string) => setExpandedGroups((s) => {
     const n = new Set(s); if (n.has(gid)) n.delete(gid); else n.add(gid); return n;
@@ -174,11 +180,18 @@ function CalendarPage() {
   }, [jobs, flightFn, refetch]);
 
   function onDragEnd(e: DragEndEvent) {
-    const jobId = String(e.active.id);
+    const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
-    if (dropId === "unassigned") assignMut.mutate({ job_id: jobId, driver_id: null });
-    else if (dropId.startsWith("driver:")) assignMut.mutate({ job_id: jobId, driver_id: dropId.slice(7) });
+    const driverId = dropId === "unassigned" ? null : dropId.startsWith("driver:") ? dropId.slice(7) : undefined;
+    if (driverId === undefined) return;
+    if (rawId.startsWith("group:")) {
+      const gid = rawId.slice(6);
+      const memberIds = (jobs ?? []).filter((j) => j.group_id === gid).map((j) => j.id);
+      for (const id of memberIds) assignMut.mutate({ job_id: id, driver_id: driverId });
+    } else {
+      assignMut.mutate({ job_id: rawId, driver_id: driverId });
+    }
   }
 
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
@@ -191,7 +204,9 @@ function CalendarPage() {
     highlightId: justAcceptedId,
     selected, onToggleSelect: toggleSelect,
     expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
+    onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
   };
+
 
   function handleAccepted(res: { id: string; date: string | null }) {
     if (res.date) {
@@ -282,6 +297,21 @@ function CalendarPage() {
         }
       />
 
+      {editGroup && (
+        <GroupDialog
+          mode="edit"
+          open={!!editGroup}
+          onOpenChange={(v) => !v && setEditGroup(null)}
+          groupId={editGroup.groupId}
+          jobs={editGroup.jobs}
+          drivers={drivers ?? []}
+          initialName={editGroup.jobs.find((j) => j.group_name)?.group_name ?? ""}
+          initialNote={editGroup.jobs.find((j) => j.group_note)?.group_note ?? ""}
+          initialDriverId={editGroup.jobs.find((j) => j.driver_id)?.driver_id ?? null}
+          onDone={() => setEditGroup(null)}
+        />
+      )}
+
       {selected.size > 0 && (
         <>
           <div aria-hidden className="h-16" />
@@ -309,7 +339,20 @@ type CardCtx = {
   onToggleSelect: (id: string) => void;
   expandedGroups: Set<string>;
   onToggleExpandedGroup: (gid: string) => void;
+  onEditGroup: (groupId: string, jobs: Job[]) => void;
 };
+
+/* --- deterministic per-group hue for a colored stripe --- */
+function groupHue(gid: string): number {
+  let h = 0;
+  for (let i = 0; i < gid.length; i++) h = (h * 31 + gid.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+function groupStripeStyle(gid: string | null | undefined): React.CSSProperties | undefined {
+  if (!gid) return undefined;
+  return { boxShadow: `inset 4px 0 0 hsl(${groupHue(gid)} 70% 50%)` };
+}
+
 
 /* ------------------------------ Grouping helpers ------------------------------ */
 
@@ -452,11 +495,36 @@ function OutboundBoard() {
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
+  const suggestions = useMemo(() => suggestGroups(jobs), [jobs]);
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
+      {suggestions.length > 0 && (
+        <div className="mb-2 rounded-md border border-primary/40 bg-primary/5 p-2 space-y-1.5">
+          <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
+            <Sparkles className="h-3 w-3" /> Auto-group suggestions
+          </div>
+          {suggestions.slice(0, 3).map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <span className="truncate flex-1">
+                <span className="font-medium">{s.jobs.length} trips</span>{" "}
+                · {s.label}
+              </span>
+              <button
+                className="text-primary hover:underline shrink-0"
+                onClick={() => {
+                  for (const j of s.jobs) if (!ctx.selected.has(j.id)) ctx.onToggleSelect(j.id);
+                  toast.success(`Selected ${s.jobs.length} trips — tap "Group" in the bar`);
+                }}
+              >
+                Select
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
         {renderItems(items, ctx)}
@@ -464,6 +532,51 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
     </div>
   );
 }
+
+/* Suggest groups from ungrouped jobs sharing date+from+to within a 60-min window. */
+function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
+  const eligible = jobs.filter((j) => !j.group_id);
+  const buckets = new Map<string, Job[]>();
+  for (const j of eligible) {
+    const key = `${j.date}|${(j.from_location ?? "").toLowerCase().trim()}|${(j.to_location ?? "").toLowerCase().trim()}`;
+    const arr = buckets.get(key) ?? [];
+    arr.push(j);
+    buckets.set(key, arr);
+  }
+  const out: { label: string; jobs: Job[] }[] = [];
+  for (const [, arr] of buckets) {
+    if (arr.length < 2) continue;
+    const sorted = [...arr].sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
+    // Cluster ones within 60 min of each other
+    let cluster: Job[] = [sorted[0]];
+    const flush = () => {
+      if (cluster.length >= 2) {
+        const first = cluster[0];
+        out.push({
+          label: `${first.date} · ${first.from_location} → ${first.to_location} (${cluster[0].time?.slice(0,5)}–${cluster[cluster.length-1].time?.slice(0,5)})`,
+          jobs: [...cluster],
+        });
+      }
+      cluster = [];
+    };
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1].time ?? "00:00";
+      const cur = sorted[i].time ?? "00:00";
+      const diff = minutesBetween(prev, cur);
+      if (diff <= 60) cluster.push(sorted[i]);
+      else { flush(); cluster = [sorted[i]]; }
+    }
+    flush();
+  }
+  return out;
+}
+
+function minutesBetween(a: string, b: string): number {
+  const [ah, am] = a.split(":").map(Number);
+  const [bh, bm] = b.split(":").map(Number);
+  return Math.abs((bh * 60 + (bm || 0)) - (ah * 60 + (am || 0)));
+}
+
 
 function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
   return (
@@ -566,25 +679,79 @@ function GroupedStackCard({
     new Set(jobs.map((j) => driverNameOf?.(j) ?? j.drivers?.name).filter(Boolean) as string[]),
   );
 
+  const stripe = groupStripeStyle(groupId);
+
+  const shareGroupFn = useServerFn(shareGroupToDriver);
+  const shareGroupMut = useMutation({
+    mutationFn: () => shareGroupFn({ data: { group_id: groupId } }) as Promise<any>,
+    onSuccess: (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      const lines: string[] = [];
+      lines.push(`🚐 Group assignment${res.driver_name ? ` — ${res.driver_name}` : ""}`);
+      if (res.group_name) lines.push(`📎 ${res.group_name}`);
+      lines.push(`🧾 ${res.jobs.length} trips · ${res.total_pax} pax total`);
+      lines.push("");
+      for (const j of res.jobs) {
+        const when = j.pickup_at
+          ? new Date(j.pickup_at).toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+          : `${j.date} ${j.time?.slice(0, 5) ?? ""}`;
+        const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
+        const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
+        lines.push(`• ${when} — ${from} → ${to} (${j.pax_count}p)`);
+      }
+      if (res.group_note) { lines.push(""); lines.push(`📝 ${res.group_note}`); }
+      lines.push("", `Open manifest: ${url}`);
+      window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Drag whole stack (only when collapsed)
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `group:${groupId}`,
+    disabled: expanded,
+  });
+  const dragStyle: React.CSSProperties = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
+    : {};
+
   if (expanded) {
     return (
-      <div className={`rounded-md border-2 p-2 space-y-2 ${tone}`}>
-        <div className="flex items-center gap-2">
+      <div className={`rounded-md border-2 p-2 space-y-2 ${tone}`} style={stripe}>
+        <div className="flex items-center gap-2 flex-wrap">
           <Checkbox
             checked={allSelected ? true : someSelected ? "indeterminate" : false}
             onCheckedChange={toggleAll}
             aria-label="Select group"
           />
-          <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1">
-            <Link2 className="h-3 w-3" />
-            {groupName || "Grouped"} · {jobs.length}
+          <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1 min-w-0">
+            <Link2 className="h-3 w-3 shrink-0" />
+            <span className="truncate">{groupName || "Grouped"} · {jobs.length}</span>
           </div>
-          <button
-            className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline"
-            onClick={() => ctx.onToggleExpandedGroup(groupId)}
-          >
-            Collapse
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="sm" variant="ghost" className="h-7 px-2 text-[11px]"
+              onClick={() => ctx.onEditGroup(groupId, jobs)}
+              title="Edit group name, note, driver"
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+            </Button>
+            {jobs.every((j) => j.driver_id === jobs[0].driver_id) && jobs[0].driver_id && (
+              <Button
+                size="sm" variant="ghost" className="h-7 px-2 text-[11px] text-emerald-600"
+                onClick={() => shareGroupMut.mutate()} disabled={shareGroupMut.isPending}
+                title="Share whole group on WhatsApp"
+              >
+                <MessageCircle className="h-3.5 w-3.5 mr-1" /> WhatsApp
+              </Button>
+            )}
+            <button
+              className="text-[11px] text-muted-foreground hover:text-foreground underline px-1"
+              onClick={() => ctx.onToggleExpandedGroup(groupId)}
+            >
+              Collapse
+            </button>
+          </div>
         </div>
         {groupNote && (
           <div className="text-[11px] text-muted-foreground italic px-1">{groupNote}</div>
@@ -596,9 +763,9 @@ function GroupedStackCard({
     );
   }
 
-  // Collapsed stack — layered look
+  // Collapsed stack — layered look, draggable
   return (
-    <div className="relative">
+    <div ref={setNodeRef} style={dragStyle} className="relative">
       {/* Fanned back layers */}
       {jobs.length >= 3 && (
         <div className={`absolute inset-x-2 -bottom-1.5 h-3 rounded-md border-2 ${tone} opacity-40`} />
@@ -606,7 +773,7 @@ function GroupedStackCard({
       {jobs.length >= 2 && (
         <div className={`absolute inset-x-1 -bottom-0.5 h-3 rounded-md border-2 ${tone} opacity-70`} />
       )}
-      <div className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm ${tone}`}>
+      <div className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm ${tone}`} style={stripe}>
         {/* Checkbox */}
         <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
           <Checkbox
@@ -615,10 +782,19 @@ function GroupedStackCard({
             aria-label="Select group"
           />
         </div>
+        {/* Drag handle */}
+        <button
+          className="absolute top-1.5 right-1 text-muted-foreground p-1 touch-none hidden sm:inline-flex"
+          {...attributes} {...listeners}
+          aria-label="Drag group"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={() => ctx.onToggleExpandedGroup(groupId)}
-          className="w-full text-left"
+          className="w-full text-left pr-6"
         >
           <div className="flex items-center gap-2 text-[11px] text-primary font-semibold uppercase tracking-wide">
             <Link2 className="h-3 w-3" />
@@ -650,11 +826,12 @@ function GroupedStackCard({
           {groupNote && (
             <div className="text-[11px] text-muted-foreground italic mt-1 truncate">{groupNote}</div>
           )}
-          <div className="text-[10px] text-primary/70 mt-1">Tap to expand</div>
+          <div className="text-[10px] text-primary/70 mt-1">Tap to expand · drag to assign</div>
         </button>
       </div>
     </div>
   );
+
 }
 
 
@@ -684,9 +861,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     ? "border-amber-500/70 bg-amber-500/5"
     : "border-border bg-background";
 
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
-    : {};
+  const gStripe = groupStripeStyle(job.group_id);
+  const style: React.CSSProperties = {
+    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
+    ...(gStripe ?? {}),
+  };
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;

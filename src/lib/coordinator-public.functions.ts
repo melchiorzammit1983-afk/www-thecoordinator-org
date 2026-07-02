@@ -103,10 +103,17 @@ export const listTripMessages = createServerFn({ method: "GET" })
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    let ids: string[] = [data.job_id];
+    const gid = (job as any).group_id as string | null;
+    if (gid) {
+      const { data: sibs } = await supabaseAdmin.from("jobs").select("id").eq("group_id" as any, gid);
+      const sibIds = (sibs ?? []).map((s: any) => s.id as string);
+      if (sibIds.length) ids = sibIds;
+    }
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
       .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at")
-      .eq("job_id", data.job_id).order("created_at", { ascending: true });
+      .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const unreadIds = (rows ?? []).filter((r) => r.sender_kind === "coordinator" && !r.read_by_driver_at).map((r) => r.id);
     if (unreadIds.length) {
@@ -116,6 +123,7 @@ export const listTripMessages = createServerFn({ method: "GET" })
     }
     return rows ?? [];
   });
+
 
 export const postTripMessage = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
