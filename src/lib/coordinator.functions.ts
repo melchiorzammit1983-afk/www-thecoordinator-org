@@ -320,11 +320,16 @@ export const assignDriver = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const { error } = await supabaseAdmin.from("jobs")
-      .update({ driver_id: data.driver_id })
-      .eq("id", data.job_id).eq("company_id", c.id);
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, group_id" as any)
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (!job) throw new Error("Job not found");
+    const gid = (job as any).group_id as string | null;
+    let q = supabaseAdmin.from("jobs").update({ driver_id: data.driver_id }).eq("company_id", c.id);
+    q = gid ? q.eq("group_id" as any, gid) : q.eq("id", data.job_id);
+    const { error } = await q;
     if (error) throw new Error(error.message);
-    return { ok: true };
+    return { ok: true, group_id: gid };
   });
 
 export const cloneJob = createServerFn({ method: "POST" })
