@@ -187,6 +187,90 @@ export type Database = {
           },
         ]
       }
+      client_link_identities: {
+        Row: {
+          chosen_at: string
+          device_id: string
+          pax_id: string | null
+          pax_name: string | null
+          token: string
+        }
+        Insert: {
+          chosen_at?: string
+          device_id: string
+          pax_id?: string | null
+          pax_name?: string | null
+          token: string
+        }
+        Update: {
+          chosen_at?: string
+          device_id?: string
+          pax_id?: string | null
+          pax_name?: string | null
+          token?: string
+        }
+        Relationships: []
+      }
+      client_locations: {
+        Row: {
+          accuracy_m: number | null
+          captured_at: string
+          company_id: string
+          device_id: string
+          id: string
+          job_id: string
+          latitude: number
+          longitude: number
+          mode: string
+          pax_id: string | null
+          pax_name: string | null
+          token: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          captured_at?: string
+          company_id: string
+          device_id: string
+          id?: string
+          job_id: string
+          latitude: number
+          longitude: number
+          mode?: string
+          pax_id?: string | null
+          pax_name?: string | null
+          token: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          captured_at?: string
+          company_id?: string
+          device_id?: string
+          id?: string
+          job_id?: string
+          latitude?: number
+          longitude?: number
+          mode?: string
+          pax_id?: string | null
+          pax_name?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_locations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_locations_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           access_end: string | null
@@ -759,6 +843,7 @@ export type Database = {
       }
       jobs: {
         Row: {
+          client_link_token: string | null
           clientcompanyname: string | null
           company_id: string
           contact_phone: string | null
@@ -790,11 +875,13 @@ export type Database = {
           grouped_count: number | null
           id: string
           origin_company_id: string | null
+          parent_job_id: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
           points_charged: Json
           qr_strict_mode: boolean
           self_assigned_user_id: string | null
+          source: string
           status: Database["public"]["Enums"]["job_status"]
           time: string
           to_flight: string | null
@@ -804,6 +891,7 @@ export type Database = {
           vehicle: string | null
         }
         Insert: {
+          client_link_token?: string | null
           clientcompanyname?: string | null
           company_id: string
           contact_phone?: string | null
@@ -837,11 +925,13 @@ export type Database = {
           grouped_count?: number | null
           id?: string
           origin_company_id?: string | null
+          parent_job_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time: string
           to_flight?: string | null
@@ -851,6 +941,7 @@ export type Database = {
           vehicle?: string | null
         }
         Update: {
+          client_link_token?: string | null
           clientcompanyname?: string | null
           company_id?: string
           contact_phone?: string | null
@@ -884,11 +975,13 @@ export type Database = {
           grouped_count?: number | null
           id?: string
           origin_company_id?: string | null
+          parent_job_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
           to_flight?: string | null
@@ -924,6 +1017,13 @@ export type Database = {
             columns: ["origin_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_parent_job_id_fkey"
+            columns: ["parent_job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
