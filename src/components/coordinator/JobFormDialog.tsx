@@ -414,17 +414,22 @@ function PaxEditor({ jobId }: { jobId: string }) {
   const addMut = useMutation({
     mutationFn: async (raw: string) => {
       const { cleanName, phone } = extractPhoneFromName(raw);
-      const finalName = cleanName || raw;
-      await addFn({ data: { job_id: jobId, name: finalName } });
+      const hasName = isMeaningfulName(cleanName);
+      if (hasName) {
+        await addFn({ data: { job_id: jobId, name: cleanName } });
+      }
       if (phone) {
         try {
           const r: any = await setPhoneFn({ data: { job_id: jobId, phone } });
-          if (r?.set) toast.success(`Moved ${phone} to phone number`);
+          if (r?.set) toast.success(hasName ? `Moved ${phone} to phone number` : `Saved phone number ${phone}`);
         } catch { /* ignore */ }
+      } else if (!hasName) {
+        toast.error("Enter a passenger name or a phone number");
+        throw new Error("empty");
       }
     },
     onSuccess: () => { setName(""); invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => { if (e.message !== "empty") toast.error(e.message); },
   });
   const removeMut = useMutation({
     mutationFn: (id: string) => removeFn({ data: { pax_id: id } }),
