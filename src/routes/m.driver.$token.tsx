@@ -89,6 +89,12 @@ function DriverManifest() {
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
+  const [chatJob, setChatJob] = useState<Job | null>(null);
+
+  useEffect(() => {
+    if (data?.driver && !data.driver.profile_updated_at) setProfileOpen(true);
+  }, [data?.driver]);
+
   const [showArchived, setShowArchived] = useState(false);
   const { activeJobs, archivedJobs } = useMemo(() => {
     if (!data) return { activeJobs: [] as Job[], archivedJobs: [] as Job[] };
