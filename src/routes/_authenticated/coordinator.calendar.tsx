@@ -1623,7 +1623,8 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
   });
   const { data: sosData } = useQuery({
     queryKey: ["active-sos-points"],
-    queryFn: () => sosFn(undefined as unknown as void) as Promise<any[]>,
+    queryFn: () => sosFn({} as any) as Promise<any[]>,
+
     refetchInterval: 15_000,
   });
   useEffect(() => {
