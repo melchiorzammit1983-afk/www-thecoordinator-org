@@ -38,6 +38,7 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
+import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
@@ -205,6 +206,9 @@ function CalendarPage() {
             </div>
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
+        </div>
+        <div className="flex justify-end">
+          <AutoRefreshToggle jobs={jobs ?? []} />
         </div>
       </header>
 
