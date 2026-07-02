@@ -758,7 +758,7 @@ function csvCell(v: unknown): string {
 }
 
 function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; token: string; onOpenChange: (v: boolean) => void }) {
-  const [scanning, setScanning] = useState(false);
+  // (QR scanning removed — manual confirm / no-show is used everywhere now.)
   const qc = useQueryClient();
   const listFn = useServerFn(listJobPaxDriver);
   const markFn = useServerFn(markPaxOnboard);
