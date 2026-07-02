@@ -199,7 +199,7 @@ export function DriverLiveMap({
     for (const [id, m] of sosMarkersRef.current.entries()) {
       if (!seen.has(id)) { m.marker.setMap(null); sosMarkersRef.current.delete(id); }
     }
-  }, [sosPoints]);
+  }, [sosPoints, mapReady]);
 
 
   // Sync markers with points.
