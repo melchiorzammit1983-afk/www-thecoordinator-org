@@ -380,6 +380,10 @@ type CardCtx = {
   onEditGroup: (groupId: string, jobs: Job[]) => void;
   clientPortalEnabled: boolean;
   clientPresence?: Record<string, string>;
+  signals?: Record<string, {
+    unread_client: number; unread_driver: number;
+    client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+  }>;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
