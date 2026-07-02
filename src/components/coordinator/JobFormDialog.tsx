@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText } from "@/lib/coordinator.functions";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2 } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -297,9 +297,38 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
   const parsed = useMemo(() => parseTrips(raw), [raw]);
   const valid = parsed.filter((t) => t.errors.length === 0);
   const incomplete = parsed.filter((t) => t.errors.length > 0);
+  const aiEnabled = useFeature("ai_extraction");
 
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
+  const aiFn = useServerFn(extractTripsFromText);
+
+  const aiMut = useMutation({
+    mutationFn: () => aiFn({ data: { text: raw } }) as Promise<{ trips: any[] }>,
+    onSuccess: (res) => {
+      const trips = res?.trips ?? [];
+      if (!trips.length) { toast.error("AI could not find any trips"); return; }
+      // Convert AI trips back to the parser's paste format so the existing review UI handles them.
+      const blocks = trips.map((t) => {
+        const lines: string[] = [];
+        if (t.pickup_date) lines.push(`📅 ${t.pickup_date} ⏰ ${t.pickup_time || ""}`.trim());
+        if (t.client_company) lines.push(`🏢 ${t.client_company}`);
+        if (t.from_location || t.flight_code) lines.push(`📍 From: ${t.from_location || "Airport"}`);
+        if (t.to_location || t.flight_code) lines.push(`📍 To: ${t.to_location || "Airport"}`);
+        if (t.flight_code) lines.push(`✈ ${t.flight_code}`);
+        if (t.contact_phone) lines.push(`📞 ${t.contact_phone}`);
+        if (t.passengers?.length) {
+          lines.push("👤 Names");
+          for (const p of t.passengers) lines.push(`• ${p}`);
+        }
+        return lines.join("\n");
+      }).join("\n\n");
+      setRaw(blocks);
+      toast.success(`AI extracted ${trips.length} trip${trips.length === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const mut = useMutation({
     mutationFn: () => bulkFn({ data: { trips: valid.map((t) => ({
       from_location: t.from_location, to_location: t.to_location,
@@ -321,15 +350,30 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label>Paste trips</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label>Paste trips</Label>
+          {aiEnabled && (
+            <Button
+              type="button" size="sm" variant="outline"
+              disabled={aiMut.isPending || raw.trim().length < 3}
+              onClick={() => aiMut.mutate()}
+              className="h-7"
+            >
+              <Sparkles className="h-3 w-3 mr-1" />
+              {aiMut.isPending ? "Understanding…" : "Understand with AI"}
+            </Button>
+          )}
+        </div>
         <Textarea
           rows={10} value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          placeholder={"📅Wed 01 Jul 2026⏰11:00\n👤Names\n*🔁 ELMER CLEMENTE AGUINALDO\n•🔁 NIXON KALATHILAPARAMBIL VINCENT\n🏢 rosetti\n📍 From: cerviola\n📍 To: Airport\n\n— or plain text —\n01/07/2026 11:00\nFrom: Cerviola\nTo: Airport\nEK109\nELMER CLEMENTE AGUINALDO"}
+          placeholder={"📅Wed 01 Jul 2026⏰11:00\n👤Names\n*🔁 ELMER CLEMENTE AGUINALDO\n•🔁 NIXON KALATHILAPARAMBIL VINCENT\n🏢 rosetti\n📍 From: cerviola\n📍 To: Airport\n\n— or plain text / email / WhatsApp in any language —"}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
-          Emojis optional. Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual.
+          {aiEnabled
+            ? "Emojis optional. Paste any message (any language) and click ✨ Understand with AI, or use the parser directly."
+            : "Emojis optional. Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
         </p>
       </div>
       {parsed.length > 0 && (

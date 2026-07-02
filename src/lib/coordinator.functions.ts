@@ -1581,3 +1581,80 @@ export const setJobContactPhoneIfEmpty = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true, set: true };
   });
+
+// ---------- AI TRIP EXTRACTION ----------
+export const extractTripsFromText = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ text: z.string().min(3).max(20000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await getAdminClient();
+    // Feature gate — admin can disable per company
+    const { data: co } = await supabaseAdmin
+      .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    if (co) {
+      const { data: ent } = await supabaseAdmin
+        .from("company_feature_entitlements")
+        .select("enabled, expires_at")
+        .eq("company_id", co.id).eq("feature", "ai_extraction").maybeSingle();
+      if (ent) {
+        const expired = ent.expires_at ? new Date(ent.expires_at).getTime() <= Date.now() : false;
+        if (!ent.enabled || expired) throw new Error("AI extraction is disabled for your company");
+      }
+    }
+
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) throw new Error("AI is not configured");
+
+    const { generateText, Output, NoObjectGeneratedError } = await import("ai");
+    const { createLovableAiGatewayProvider } = await import("@/lib/ai-gateway.server");
+    const gateway = createLovableAiGatewayProvider(key);
+    const model = gateway("google/gemini-3-flash-preview");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const schema = z.object({
+      trips: z.array(z.object({
+        from_location: z.string(),
+        to_location: z.string(),
+        pickup_date: z.string(), // YYYY-MM-DD
+        pickup_time: z.string(), // HH:mm 24h
+        flight_code: z.string().nullable(),
+        contact_phone: z.string().nullable(),
+        client_company: z.string().nullable(),
+        notes: z.string().nullable(),
+        passengers: z.array(z.string()),
+      })),
+    });
+
+    const system = [
+      "You extract crew-change transport trips from messages in ANY language (English, Italian, Spanish, French, Tagalog, etc.).",
+      "Return one entry per distinct trip. Split multiple trips when dates/times/routes clearly differ.",
+      "Rules:",
+      `- Today's date is ${today}. Resolve relative words ("today"/"oggi", "tomorrow"/"domani") to YYYY-MM-DD.`,
+      "- pickup_time must be 24h HH:mm.",
+      "- flight_code: uppercase, no space (e.g. 'km 643' -> 'KM643'). null if none.",
+      "- If a flight is present and location is missing, use 'Airport'.",
+      "- contact_phone: extract any phone number in E.164-ish form. null if none.",
+      "- passengers: array of clean human names only, no phone numbers, no emojis, no bullet chars.",
+      "- Do NOT invent data. Leave string fields empty ('') and null nullable fields when unknown.",
+    ].join("\n");
+
+    try {
+      const { output } = await generateText({
+        model,
+        system,
+        prompt: data.text,
+        output: Output.object({ schema }),
+      });
+      return output;
+    } catch (err: any) {
+      if (NoObjectGeneratedError.isInstance?.(err)) {
+        throw new Error("AI could not extract trips from this text");
+      }
+      const msg = String(err?.message ?? err);
+      if (msg.includes("429")) throw new Error("AI is rate limited — try again in a moment");
+      if (msg.includes("402")) throw new Error("AI credits exhausted — add credits in Settings → Plans & credits");
+      throw new Error(msg);
+    }
+  });

@@ -10,7 +10,8 @@ export type FeatureKey =
   | "live_tracking"
   | "flight_tracking"
   | "bulk_paste"
-  | "chat";
+  | "chat"
+  | "ai_extraction";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -25,6 +26,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "flight_tracking", label: "Flight tracking",   description: "AviationStack flight status" },
   { key: "bulk_paste",      label: "Bulk paste",        description: "WhatsApp bulk trip import" },
   { key: "chat",            label: "Trip chat",         description: "Coordinator ↔ driver chat on trips" },
+  { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages (any language) into trips using AI" },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
