@@ -435,10 +435,17 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
             {paid ? "Mark pending" : "Mark paid"}
           </Button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-            onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
-            <X className="h-4 w-4 mr-1" /> Hide
-          </Button>
+          {job.driver_hidden_at ? (
+            <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
+              onClick={() => unhideMut.mutate()}>
+              Restore
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
+              onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
+              <X className="h-4 w-4 mr-1" /> Hide
+            </Button>
+          )}
         </div>
       </div>
     </article>
