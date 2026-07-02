@@ -13,7 +13,11 @@ export type FeatureKey =
   | "chat"
   | "ai_extraction"
   | "ai_group_suggestions"
-  | "client_trip_portal";
+  | "client_trip_portal"
+  | "client_push_notifications"
+  | "client_eta"
+  | "client_sos"
+  | "client_offline_mode";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -31,6 +35,10 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages (any language) into trips using AI" },
   { key: "ai_group_suggestions", label: "AI auto-group suggestions", description: "Suggest groupings of unassigned trips by time & route" },
   { key: "client_trip_portal", label: "Client trip portal", description: "Per-trip client link with chat, live tracking, share location & rebook" },
+  { key: "client_push_notifications", label: "Client push alerts", description: "Browser/PWA push notifications for driver assigned, en-route, arriving" },
+  { key: "client_eta",      label: "Client live ETA",   description: "Traffic-aware ETA countdown on client portal from driver location" },
+  { key: "client_sos",      label: "Client SOS button", description: "Emergency SOS on client portal with location broadcast to coordinator" },
+  { key: "client_offline_mode", label: "Client offline mode", description: "Cache last trip data so the portal works with no signal" },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
