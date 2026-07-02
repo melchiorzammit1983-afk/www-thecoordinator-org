@@ -79,6 +79,8 @@ export function JobFormDialog({
         </DialogHeader>
         {isEdit ? (
           <ManualForm drivers={drivers} job={job} onSaved={onSaved} />
+        ) : !bulkEnabled ? (
+          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
         ) : (
           <Tabs value={tab} onValueChange={(v) => setTab(v as "manual" | "bulk")}>
             <TabsList className="grid w-full grid-cols-2">
