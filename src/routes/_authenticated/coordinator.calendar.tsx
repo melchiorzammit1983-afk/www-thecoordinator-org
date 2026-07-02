@@ -282,6 +282,8 @@ type CardCtx = {
   drivers: Driver[];
   unread: Record<string, number>;
   highlightId?: string | null;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
 };
 
 
