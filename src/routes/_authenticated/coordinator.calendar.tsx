@@ -37,6 +37,7 @@ import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coord
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
+import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
