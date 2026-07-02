@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { useMyCompany } from "@/hooks/use-coordinator";
 import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
+import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
   component: CoordinatorLayout,
@@ -40,11 +42,23 @@ function CoordinatorLayout() {
     retry: false,
   });
 
+  const [mustChangePw, setMustChangePw] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      const meta = (data.user?.user_metadata ?? {}) as { must_change_password?: boolean };
+      setMustChangePw(!!meta.must_change_password);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!isLoading && !company && identity?.isAdmin) {
       navigate({ to: "/admin", replace: true });
     }
   }, [company, identity?.isAdmin, isLoading, navigate]);
+
 
   if (isLoading || (!company && identityLoading)) {
     return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
