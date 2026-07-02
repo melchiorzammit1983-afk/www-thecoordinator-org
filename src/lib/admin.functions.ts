@@ -34,6 +34,30 @@ async function getIsAdmin(userId: string) {
   return (adminRows ?? []).some((row) => row.email?.toLowerCase() === email);
 }
 
+function readableError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message && error.message !== "{}") return error.message;
+  if (error && typeof error === "object") {
+    const maybe = error as { message?: unknown; error?: unknown; code?: unknown; status?: unknown };
+    const message = typeof maybe.message === "string" ? maybe.message : undefined;
+    const nested = typeof maybe.error === "string" ? maybe.error : undefined;
+    if (message && message !== "{}") return message;
+    if (nested && nested !== "{}") return nested;
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== "{}") return json;
+    } catch {
+      // fall through to fallback
+    }
+  }
+  return fallback;
+}
+
+function isMissingAuthUserError(error: unknown) {
+  const msg = readableError(error, "").toLowerCase();
+  const status = error && typeof error === "object" ? (error as { status?: number }).status : undefined;
+  return status === 404 || /not.?found|user.*missing|does not exist/.test(msg);
+}
+
 // ---------- COMPANIES ----------
 
 export const listCompanies = createServerFn({ method: "GET" })
@@ -232,45 +256,63 @@ export const deleteCoordinator = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const supabaseAdmin = await assertAdmin(context);
-    const { data: company, error: cErr } = await supabaseAdmin
-      .from("companies")
-      .select("id, owner_user_id")
-      .eq("id", data.company_id)
-      .single();
-    if (cErr || !company) throw new Error(cErr?.message ?? "Company not found");
+    try {
+      const { data: company, error: cErr } = await supabaseAdmin
+        .from("companies")
+        .select("id, owner_user_id")
+        .eq("id", data.company_id)
+        .single();
+      if (cErr || !company) throw new Error(readableError(cErr, "Company not found"));
 
-    if (company.owner_user_id) {
-      try {
-        const { error: uErr } = await supabaseAdmin.auth.admin.deleteUser(company.owner_user_id);
-        if (uErr) {
-          const msg = (uErr as { message?: string; code?: string; status?: number })?.message ?? JSON.stringify(uErr);
-          const status = (uErr as { status?: number })?.status;
-          if (status !== 404 && !/not.?found/i.test(msg)) {
-            console.error("deleteUser failed", { status, msg, uErr });
-            throw new Error(msg || "Failed to delete auth user");
+      let authUserDeleted = false;
+      let authUserMissing = false;
+      let authWarning: string | null = null;
+
+      if (company.owner_user_id) {
+        try {
+          const { error: uErr } = await supabaseAdmin.auth.admin.deleteUser(company.owner_user_id);
+          if (uErr) {
+            if (isMissingAuthUserError(uErr)) {
+              authUserMissing = true;
+            } else {
+              authWarning = readableError(uErr, "Auth account could not be confirmed as deleted");
+              console.warn("deleteUser returned a non-fatal error", { authWarning });
+            }
+          } else {
+            authUserDeleted = true;
+          }
+        } catch (e) {
+          if (isMissingAuthUserError(e)) {
+            authUserMissing = true;
+          } else {
+            authWarning = readableError(e, "Auth account could not be confirmed as deleted");
+            console.warn("deleteUser threw a non-fatal error", { authWarning });
           }
         }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : JSON.stringify(e);
-        if (!/not.?found/i.test(msg)) throw new Error(msg || "Failed to delete auth user");
+      } else {
+        authUserMissing = true;
       }
-    }
 
-    if (data.also_delete_company) {
-      const { error: dErr } = await supabaseAdmin
+      if (data.also_delete_company) {
+        const { error: dErr } = await supabaseAdmin
+          .from("companies")
+          .delete()
+          .eq("id", data.company_id);
+        if (dErr) throw new Error(readableError(dErr, "Failed to delete company"));
+        return { ok: true, company_deleted: true, auth_user_deleted: authUserDeleted, auth_user_missing: authUserMissing, warning: authWarning };
+      }
+
+      const { error: clearErr } = await supabaseAdmin
         .from("companies")
-        .delete()
+        .update({ owner_user_id: null })
         .eq("id", data.company_id);
-      if (dErr) throw new Error(dErr.message);
-      return { ok: true, company_deleted: true };
+      if (clearErr) throw new Error(readableError(clearErr, "Failed to clear coordinator assignment"));
+      return { ok: true, company_deleted: false, auth_user_deleted: authUserDeleted, auth_user_missing: authUserMissing, warning: authWarning };
+    } catch (e) {
+      const message = readableError(e, "Coordinator deletion failed");
+      console.error("deleteCoordinator failed", { message });
+      return { ok: false, company_deleted: false, auth_user_deleted: false, auth_user_missing: false, warning: message };
     }
-
-    const { error: clearErr } = await supabaseAdmin
-      .from("companies")
-      .update({ owner_user_id: null })
-      .eq("id", data.company_id);
-    if (clearErr) throw new Error(clearErr.message);
-    return { ok: true, company_deleted: false };
   });
 
 // ---------- ACCESS REQUESTS ----------
