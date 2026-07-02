@@ -360,6 +360,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         {/* Meta chips */}
         <div className="flex flex-wrap gap-1.5 mt-3">
           {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
+          {(job.grouped_count ?? 0) >= 2 && (
+            <Badge className="text-[10px] gap-1 bg-primary/15 text-primary hover:bg-primary/15 border border-primary/30">
+              ⛬ Grouped · {job.grouped_count} trips
+            </Badge>
+          )}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
           <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
           
