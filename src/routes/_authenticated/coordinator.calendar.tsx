@@ -609,25 +609,79 @@ function GroupedStackCard({
     new Set(jobs.map((j) => driverNameOf?.(j) ?? j.drivers?.name).filter(Boolean) as string[]),
   );
 
+  const stripe = groupStripeStyle(groupId);
+
+  const shareGroupFn = useServerFn(shareGroupToDriver);
+  const shareGroupMut = useMutation({
+    mutationFn: () => shareGroupFn({ data: { group_id: groupId } }) as Promise<any>,
+    onSuccess: (res: any) => {
+      const url = `${window.location.origin}/m/driver/${res.token}`;
+      const lines: string[] = [];
+      lines.push(`🚐 Group assignment${res.driver_name ? ` — ${res.driver_name}` : ""}`);
+      if (res.group_name) lines.push(`📎 ${res.group_name}`);
+      lines.push(`🧾 ${res.jobs.length} trips · ${res.total_pax} pax total`);
+      lines.push("");
+      for (const j of res.jobs) {
+        const when = j.pickup_at
+          ? new Date(j.pickup_at).toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+          : `${j.date} ${j.time?.slice(0, 5) ?? ""}`;
+        const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
+        const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
+        lines.push(`• ${when} — ${from} → ${to} (${j.pax_count}p)`);
+      }
+      if (res.group_note) { lines.push(""); lines.push(`📝 ${res.group_note}`); }
+      lines.push("", `Open manifest: ${url}`);
+      window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Drag whole stack (only when collapsed)
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `group:${groupId}`,
+    disabled: expanded,
+  });
+  const dragStyle: React.CSSProperties = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
+    : {};
+
   if (expanded) {
     return (
-      <div className={`rounded-md border-2 p-2 space-y-2 ${tone}`}>
-        <div className="flex items-center gap-2">
+      <div className={`rounded-md border-2 p-2 space-y-2 ${tone}`} style={stripe}>
+        <div className="flex items-center gap-2 flex-wrap">
           <Checkbox
             checked={allSelected ? true : someSelected ? "indeterminate" : false}
             onCheckedChange={toggleAll}
             aria-label="Select group"
           />
-          <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1">
-            <Link2 className="h-3 w-3" />
-            {groupName || "Grouped"} · {jobs.length}
+          <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1 min-w-0">
+            <Link2 className="h-3 w-3 shrink-0" />
+            <span className="truncate">{groupName || "Grouped"} · {jobs.length}</span>
           </div>
-          <button
-            className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline"
-            onClick={() => ctx.onToggleExpandedGroup(groupId)}
-          >
-            Collapse
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="sm" variant="ghost" className="h-7 px-2 text-[11px]"
+              onClick={() => ctx.onEditGroup(groupId, jobs)}
+              title="Edit group name, note, driver"
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+            </Button>
+            {jobs.every((j) => j.driver_id === jobs[0].driver_id) && jobs[0].driver_id && (
+              <Button
+                size="sm" variant="ghost" className="h-7 px-2 text-[11px] text-emerald-600"
+                onClick={() => shareGroupMut.mutate()} disabled={shareGroupMut.isPending}
+                title="Share whole group on WhatsApp"
+              >
+                <MessageCircle className="h-3.5 w-3.5 mr-1" /> WhatsApp
+              </Button>
+            )}
+            <button
+              className="text-[11px] text-muted-foreground hover:text-foreground underline px-1"
+              onClick={() => ctx.onToggleExpandedGroup(groupId)}
+            >
+              Collapse
+            </button>
+          </div>
         </div>
         {groupNote && (
           <div className="text-[11px] text-muted-foreground italic px-1">{groupNote}</div>
@@ -639,9 +693,9 @@ function GroupedStackCard({
     );
   }
 
-  // Collapsed stack — layered look
+  // Collapsed stack — layered look, draggable
   return (
-    <div className="relative">
+    <div ref={setNodeRef} style={dragStyle} className="relative">
       {/* Fanned back layers */}
       {jobs.length >= 3 && (
         <div className={`absolute inset-x-2 -bottom-1.5 h-3 rounded-md border-2 ${tone} opacity-40`} />
@@ -649,7 +703,7 @@ function GroupedStackCard({
       {jobs.length >= 2 && (
         <div className={`absolute inset-x-1 -bottom-0.5 h-3 rounded-md border-2 ${tone} opacity-70`} />
       )}
-      <div className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm ${tone}`}>
+      <div className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm ${tone}`} style={stripe}>
         {/* Checkbox */}
         <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
           <Checkbox
@@ -658,10 +712,19 @@ function GroupedStackCard({
             aria-label="Select group"
           />
         </div>
+        {/* Drag handle */}
+        <button
+          className="absolute top-1.5 right-1 text-muted-foreground p-1 touch-none hidden sm:inline-flex"
+          {...attributes} {...listeners}
+          aria-label="Drag group"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={() => ctx.onToggleExpandedGroup(groupId)}
-          className="w-full text-left"
+          className="w-full text-left pr-6"
         >
           <div className="flex items-center gap-2 text-[11px] text-primary font-semibold uppercase tracking-wide">
             <Link2 className="h-3 w-3" />
@@ -693,11 +756,12 @@ function GroupedStackCard({
           {groupNote && (
             <div className="text-[11px] text-muted-foreground italic mt-1 truncate">{groupNote}</div>
           )}
-          <div className="text-[10px] text-primary/70 mt-1">Tap to expand</div>
+          <div className="text-[10px] text-primary/70 mt-1">Tap to expand · drag to assign</div>
         </button>
       </div>
     </div>
   );
+
 }
 
 
