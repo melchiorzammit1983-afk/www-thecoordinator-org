@@ -113,7 +113,7 @@ function ManualForm({
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
-  const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
+  
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
@@ -134,7 +134,7 @@ function ManualForm({
         from_flight: fromFlight, to_flight: toFlight,
         clientcompanyname: client, contact_phone: phone,
         driver_id: driverId === "__none__" ? null : driverId,
-        qr_strict_mode: qr, tracking_enabled: track,
+        qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
@@ -213,10 +213,6 @@ function ManualForm({
       )}
       {job && <PaxEditor jobId={job.id} />}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
-      <ToggleRow
-        label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
-        checked={qr} onChange={setQr}
-      />
       <ToggleRow
         label="Enable Live Tracking" hint="GPS updates from driver device"
         checked={track} onChange={setTrack}

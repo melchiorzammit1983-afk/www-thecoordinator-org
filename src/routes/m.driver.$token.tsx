@@ -360,7 +360,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
           <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
-          {job.qr_strict_mode && <Badge className="text-[10px] gap-1"><QrCode className="h-3 w-3" /> QR required</Badge>}
+          
           {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
           {paid
             ? <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">Paid</Badge>
@@ -614,14 +614,9 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
         <DialogHeader>
           <DialogTitle>{job?.from_location} → {job?.to_location}</DialogTitle>
           <DialogDescription>
-            {job?.qr_strict_mode ? "QR scan required for boarding." : "Scan QR or manually confirm each passenger."}
+            Tap "Confirm" next to each passenger as they board.
           </DialogDescription>
         </DialogHeader>
-        {scanning ? (
-          <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />
-        ) : (
-          <Button size="lg" onClick={() => setScanning(true)}>Open QR scanner</Button>
-        )}
         <div className="space-y-2 max-h-72 overflow-auto">
           {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
           {(pax ?? []).map((p) => (
@@ -630,10 +625,10 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
                 <div className="font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground capitalize">{p.status}</div>
               </div>
-              {p.status !== "onboard" && !job?.qr_strict_mode && (
+              {p.status !== "onboard" && (
                 <Button size="sm" variant="secondary" disabled={markMut.isPending}
                   onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
-                  Manually confirm
+                  Confirm
                 </Button>
               )}
               {p.status === "onboard" && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
