@@ -111,7 +111,7 @@ function ManualForm({
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
-  const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
+  const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
   const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
