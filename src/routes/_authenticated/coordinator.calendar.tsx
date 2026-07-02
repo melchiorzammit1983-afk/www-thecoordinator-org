@@ -297,6 +297,21 @@ function CalendarPage() {
         }
       />
 
+      {editGroup && (
+        <GroupDialog
+          mode="edit"
+          open={!!editGroup}
+          onOpenChange={(v) => !v && setEditGroup(null)}
+          groupId={editGroup.groupId}
+          jobs={editGroup.jobs}
+          drivers={drivers ?? []}
+          initialName={editGroup.jobs.find((j) => j.group_name)?.group_name ?? ""}
+          initialNote={editGroup.jobs.find((j) => j.group_note)?.group_note ?? ""}
+          initialDriverId={editGroup.jobs.find((j) => j.driver_id)?.driver_id ?? null}
+          onDone={() => setEditGroup(null)}
+        />
+      )}
+
       {selected.size > 0 && (
         <>
           <div aria-hidden className="h-16" />
@@ -324,7 +339,20 @@ type CardCtx = {
   onToggleSelect: (id: string) => void;
   expandedGroups: Set<string>;
   onToggleExpandedGroup: (gid: string) => void;
+  onEditGroup: (groupId: string, jobs: Job[]) => void;
 };
+
+/* --- deterministic per-group hue for a colored stripe --- */
+function groupHue(gid: string): number {
+  let h = 0;
+  for (let i = 0; i < gid.length; i++) h = (h * 31 + gid.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+function groupStripeStyle(gid: string | null | undefined): React.CSSProperties | undefined {
+  if (!gid) return undefined;
+  return { boxShadow: `inset 4px 0 0 hsl(${groupHue(gid)} 70% 50%)` };
+}
+
 
 /* ------------------------------ Grouping helpers ------------------------------ */
 
