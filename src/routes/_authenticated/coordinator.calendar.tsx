@@ -88,7 +88,13 @@ function CalendarPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+
+  const toggleSelect = (id: string) => setSelected((s) => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const clearSelect = () => setSelected(new Set());
 
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
