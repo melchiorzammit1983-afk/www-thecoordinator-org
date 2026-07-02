@@ -12,6 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.2",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.1",
     "@capacitor/cli": "^8.4.1",
@@ -56,6 +57,7 @@
     "@tanstack/router-plugin": "^1.168.18",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.23.0",
+    "ai": "^7.0.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
