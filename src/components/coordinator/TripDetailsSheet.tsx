@@ -8,7 +8,7 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
