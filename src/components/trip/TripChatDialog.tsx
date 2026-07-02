@@ -87,8 +87,14 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-4 py-3 border-b">
-          <DialogTitle className="text-base">Trip chat</DialogTitle>
-          <DialogDescription className="text-xs truncate">{title ?? "Messages for this trip"}</DialogDescription>
+          <DialogTitle className="text-base">
+            {paxName ? `Chat with ${paxName}` : "Trip chat"}
+          </DialogTitle>
+          <DialogDescription className="text-xs truncate">
+            {paxName
+              ? (identityId ? "Private thread · only this passenger sees your replies" : "Passenger hasn't picked their name yet — showing group thread")
+              : (title ?? "Messages for this trip")}
+          </DialogDescription>
         </DialogHeader>
         <div ref={scrollRef} className="max-h-[55vh] min-h-[240px] overflow-y-auto px-3 py-3 space-y-2 bg-muted/30">
           {(messages ?? []).length === 0 && (
