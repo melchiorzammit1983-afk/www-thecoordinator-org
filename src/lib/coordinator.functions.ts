@@ -3,17 +3,6 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
-type FeatureName =
-  | "tracking"
-  | "bulkupload"
-  | "client_booking"
-  | "qr"
-  | "magic_link_driver"
-  | "magic_link_client"
-  | "split_job"
-  | "clone_job"
-  | "recurring_schedule"
-  | "dispatch_partner";
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -55,14 +44,14 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
   const isAdmin = await checkIsAdmin(ctx.userId);
   if (isAdmin && companyIdOverride) {
     const { data, error } = await supabaseAdmin
-      .from("companies").select("id, points_balance, name, status")
+      .from("companies").select("id, name, status")
       .eq("id", companyIdOverride).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error("Company not found");
     return { ...data, isAdmin: true };
   }
   const { data, error } = await supabaseAdmin
-    .from("companies").select("id, points_balance, name, status")
+    .from("companies").select("id, name, status")
     .eq("owner_user_id", ctx.userId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("No company assigned to this account");
@@ -78,22 +67,13 @@ export const getMyCompany = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("companies")
-      .select("id, points_balance, name, status, access_end, require_client_company, custom_link")
+      .select("id, name, status, access_end, require_client_company, custom_link")
       .eq("owner_user_id", context.userId)
       .maybeSingle();
     if (error) return null;
     return data ?? null;
   });
 
-
-export const getFeatureCosts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async () => {
-    const supabaseAdmin = await getAdminClient();
-    const { data, error } = await supabaseAdmin.from("feature_costs").select("feature_name, points_cost");
-    if (error) throw new Error(error.message);
-    return (data ?? []) as { feature_name: string; points_cost: number }[];
-  });
 
 export const getDashboardSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -221,44 +201,6 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
   }
 }
 
-async function chargeIfNeeded(
-  ctx: Ctx, companyId: string, feature: FeatureName, jobId: string | null, charged: Record<string, boolean>,
-) {
-  if (charged[feature]) return;
-  const supabaseAdmin = await getAdminClient();
-  const { data: costRow, error: costError } = await supabaseAdmin
-    .from("feature_costs")
-    .select("points_cost")
-    .eq("feature_name", feature)
-    .maybeSingle();
-  if (costError) throw new Error(costError.message);
-  const cost = Number(costRow?.points_cost ?? 0);
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("points_balance")
-    .eq("id", companyId)
-    .single();
-  if (companyError || !company) throw new Error("company_not_found");
-  const balance = Number(company.points_balance ?? 0);
-  if (cost > 0 && balance < cost) throw new Error("insufficient_points");
-  if (cost > 0) {
-    const { error: updateError } = await supabaseAdmin
-      .from("companies")
-      .update({ points_balance: balance - cost })
-      .eq("id", companyId);
-    if (updateError) throw new Error(updateError.message);
-  }
-  const { error: ledgerError } = await supabaseAdmin.from("points_ledger").insert({
-    company_id: companyId,
-    job_id: jobId,
-    feature_used: feature,
-    points_deducted: cost,
-    note: `Feature: ${feature}`,
-  });
-  if (ledgerError) throw new Error(ledgerError.message);
-  charged[feature] = true;
-}
-
 export const createJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => jobInput.parse(i))
@@ -283,12 +225,6 @@ export const createJob = createServerFn({ method: "POST" })
       driver_id: data.driver_id || null,
     }).select().single();
     if (error) throw new Error(error.message);
-    const charged: Record<string, boolean> = {};
-    if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", row.id, charged);
-    if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", row.id, charged);
-    if (Object.keys(charged).length) {
-      await supabaseAdmin.from("jobs").update({ points_charged: charged }).eq("id", row.id);
-    }
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     return row;
   });
@@ -300,11 +236,8 @@ export const updateJob = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
-      .from("jobs").select("id, points_charged").eq("id", data.id).eq("company_id", c.id).single();
+      .from("jobs").select("id").eq("id", data.id).eq("company_id", c.id).single();
     if (e1 || !existing) throw new Error("Job not found");
-    const charged: Record<string, boolean> = { ...((existing.points_charged as Record<string, boolean> | null) ?? {}) };
-    if (data.qr_strict_mode) await chargeIfNeeded(context, c.id, "qr", data.id, charged);
-    if (data.tracking_enabled) await chargeIfNeeded(context, c.id, "tracking", data.id, charged);
     const pickup_at = makePickupIso(data.date, data.time);
     const { error } = await supabaseAdmin.from("jobs").update({
       from_location: data.from_location, to_location: data.to_location,
@@ -315,7 +248,6 @@ export const updateJob = createServerFn({ method: "POST" })
       clientcompanyname: data.clientcompanyname || null,
       qr_strict_mode: data.qr_strict_mode, tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null, driver_id: data.driver_id || null,
-      points_charged: charged,
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
@@ -348,7 +280,6 @@ export const cloneJob = createServerFn({ method: "POST" })
     const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
-    await chargeIfNeeded(context, c.id, "clone_job", null, {});
     const pickup_at = makePickupIso(data.target_date, src.time as string);
     const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
@@ -376,7 +307,6 @@ export const splitJob = createServerFn({ method: "POST" })
     const { data: src, error } = await supabaseAdmin.from("jobs")
       .select("*").eq("id", data.job_id).eq("company_id", c.id).single();
     if (error || !src) throw new Error("Job not found");
-    await chargeIfNeeded(context, c.id, "split_job", data.job_id, {});
     const rows = [];
     for (const s of data.splits) {
       const { data: row, error: iErr } = await supabaseAdmin.from("jobs").insert({
@@ -571,7 +501,6 @@ export const approveBooking = createServerFn({ method: "POST" })
     const { data: b, error } = await supabaseAdmin.from("client_bookings")
       .select("*").eq("id", data.id).eq("company_id", c.id).single();
     if (error || !b) throw new Error("Booking not found");
-    await chargeIfNeeded(context, c.id, "client_booking", null, {});
     const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
     const { data: job, error: jErr } = await supabaseAdmin.from("jobs").insert({
       company_id: c.id,
@@ -663,7 +592,6 @@ export const generateMagicLink = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const feature = data.kind === "driver" ? "magic_link_driver" : "magic_link_client";
-    await chargeIfNeeded(context, c.id, feature, null, {});
     const token = makeToken();
     const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
     const { data: row, error } = await supabaseAdmin.from("magic_links").insert({
@@ -771,27 +699,6 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
     return { token: link.token, expires_at: link.expires_at, job: { ...job, pax_count: paxCount ?? 0 }, company: { name: c.name } };
   });
 
-// ---------- TOPUP REQUEST ----------
-
-
-export const requestTopUp = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({
-      points_requested: z.number().int().min(1).max(1_000_000),
-      note: z.string().trim().max(500).optional(),
-    }).parse(i),
-  )
-  .handler(async ({ data, context }) => {
-    const c = await resolveCompany(context);
-    const supabaseAdmin = await getAdminClient();
-    const { error } = await supabaseAdmin.from("topup_requests").insert({
-      company_id: c.id, requested_by: context.userId,
-      points_requested: data.points_requested, note: data.note ?? null,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
 
 // ---------- BULK CREATE + PAX SPLIT ----------
 
@@ -1265,18 +1172,9 @@ export const buildStatement = createServerFn({ method: "POST" })
       for (const cp of comps ?? []) nameById[cp.id] = cp.name;
     }
 
-    // Points ledger totals per job
     const jobIds = jobs.map((j) => j.id);
-    const pointsByJob: Record<string, number> = {};
-    if (jobIds.length) {
-      const { data: led } = await supabaseAdmin.from("points_ledger")
-        .select("job_id,points_deducted").in("job_id", jobIds);
-      for (const r of (led ?? []) as { job_id: string | null; points_deducted: number | null }[]) {
-        if (!r.job_id) continue;
-        pointsByJob[r.job_id] = (pointsByJob[r.job_id] ?? 0) + (r.points_deducted ?? 0);
-      }
+    void jobIds;
 
-    }
 
     // Shape DTO
     const shaped = jobs.map((j) => {
@@ -1318,7 +1216,7 @@ export const buildStatement = createServerFn({ method: "POST" })
         driver_accepted_at: j.driver_accepted_at,
         deletion_requested_at: j.deletion_requested_at,
         created_at: j.created_at,
-        points_charged: pointsByJob[j.id] ?? 0,
+        
         hops: hops.map((h: any) => ({
           index: h.hop_index,
           from: nameById[h.from_company_id] ?? "",
@@ -1339,7 +1237,7 @@ export const buildStatement = createServerFn({ method: "POST" })
       rows: shaped,
       total_trips: shaped.length,
       total_pax: shaped.reduce((s, r) => s + r.pax_count, 0),
-      total_points: shaped.reduce((s, r) => s + r.points_charged, 0),
+      
       truncated,
     };
   });

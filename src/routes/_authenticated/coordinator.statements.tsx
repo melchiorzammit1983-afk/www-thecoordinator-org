@@ -35,7 +35,7 @@ type Row = {
   company_name: string; origin_company: string; executor_company: string;
   chain: string; chain_hops: number; dispatch_status: string;
   driver_accepted_at: string | null; deletion_requested_at: string | null;
-  created_at: string; points_charged: number;
+  created_at: string;
   hops: { index: number; from: string; to: string; status: string; decided_at: string | null; note: string }[];
   pax_rows: { id: string; name: string; status: string; boarded_at: string | null }[];
 };
@@ -43,7 +43,7 @@ type Row = {
 type Statement = {
   generated_at: string;
   company: { id: string; name: string };
-  rows: Row[]; total_trips: number; total_pax: number; total_points: number; truncated: boolean;
+  rows: Row[]; total_trips: number; total_pax: number; truncated: boolean;
 };
 
 const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: string }[] = [
@@ -73,7 +73,7 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "dispatch_status", label: "Dispatch status", group: "Chain" },
   { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
   { key: "deletion_requested_at", label: "Deletion requested", group: "Ops" },
-  { key: "points_charged", label: "Points charged", group: "Costs" },
+  
 ];
 const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_status"];
 const STORAGE_KEY = "statement:columns:v2";
@@ -410,7 +410,7 @@ function StatementsPage() {
             <div className="flex gap-3 text-sm">
               <span><b>{statement?.total_trips ?? 0}</b> trips</span>
               <span><b>{statement?.total_pax ?? 0}</b> pax</span>
-              <span><b>{statement?.total_points ?? 0}</b> points</span>
+              
             </div>
           </div>
           {activeFilterChips.length > 0 && (

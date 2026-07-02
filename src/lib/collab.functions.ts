@@ -4,46 +4,11 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: any; userId: string };
 
-type FeatureName = "dispatch_partner";
-
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
-async function chargeFeature(companyId: string, feature: FeatureName, jobId: string | null, note: string) {
-  const supabaseAdmin = await getAdminClient();
-  const { data: costRow, error: costError } = await supabaseAdmin
-    .from("feature_costs")
-    .select("points_cost")
-    .eq("feature_name", feature)
-    .maybeSingle();
-  if (costError) throw new Error(costError.message);
-  const cost = Number(costRow?.points_cost ?? 0);
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("points_balance")
-    .eq("id", companyId)
-    .single();
-  if (companyError || !company) throw new Error("company_not_found");
-  const balance = Number(company.points_balance ?? 0);
-  if (cost > 0 && balance < cost) throw new Error("insufficient_points");
-  if (cost > 0) {
-    const { error: updateError } = await supabaseAdmin
-      .from("companies")
-      .update({ points_balance: balance - cost })
-      .eq("id", companyId);
-    if (updateError) throw new Error(updateError.message);
-  }
-  const { error: ledgerError } = await supabaseAdmin.from("points_ledger").insert({
-    company_id: companyId,
-    job_id: jobId,
-    feature_used: feature,
-    points_deducted: cost,
-    note,
-  });
-  if (ledgerError) throw new Error(ledgerError.message);
-}
 
 async function myCompany(ctx: Ctx) {
   const supabaseAdmin = await getAdminClient();
@@ -254,7 +219,6 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
     const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
     if (chain.includes(data.partner_company_id)) throw new Error("This dispatch would create a loop");
 
-    await chargeFeature(c.id, "dispatch_partner", data.job_id, "Dispatch to partner");
 
     const { data: hops, error: hopReadError } = await supabaseAdmin
       .from("job_dispatch_hops")

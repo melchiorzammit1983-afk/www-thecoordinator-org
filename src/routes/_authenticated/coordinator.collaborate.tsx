@@ -119,7 +119,7 @@ function CollaboratePage() {
                       </label>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">Top-ups and points always stay with you.</p>
+                  
                 </div>
               )}
             </div>

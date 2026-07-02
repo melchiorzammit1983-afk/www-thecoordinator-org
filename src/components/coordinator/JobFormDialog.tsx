@@ -16,9 +16,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { useFeatureCost, useMyCompany } from "@/hooks/use-coordinator";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Coins, Users, PencilLine } from "lucide-react";
+import { Users, PencilLine } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -118,10 +117,7 @@ function ManualForm({
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
   const bulkFn = useServerFn(createJobsBulk);
-  const qrCost = useFeatureCost("qr");
-  const trackCost = useFeatureCost("tracking");
-  const { data: company } = useMyCompany();
-  const balance = company?.points_balance ?? 0;
+
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -154,10 +150,7 @@ function ManualForm({
       qc.invalidateQueries({ queryKey: ["jobs"] });
       onSaved();
     },
-    onError: (e: Error) => {
-      if (e.message === "insufficient_points") toast.error("Top-Up Required to enable that feature");
-      else toast.error(e.message);
-    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
@@ -216,11 +209,11 @@ function ManualForm({
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
         label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
-        cost={qrCost} balance={balance} checked={qr} onChange={setQr}
+        checked={qr} onChange={setQr}
       />
       <ToggleRow
         label="Enable Live Tracking" hint="GPS updates from driver device"
-        cost={trackCost} balance={balance} checked={track} onChange={setTrack}
+        checked={track} onChange={setTrack}
       />
       <DialogFooter>
         <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
@@ -314,28 +307,19 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
 }
 
 function ToggleRow({
-  label, hint, cost, balance, checked, onChange,
+  label, hint, checked, onChange,
 }: {
-  label: string; hint: string; cost: number | undefined; balance: number;
+  label: string; hint: string;
   checked: boolean; onChange: (v: boolean) => void;
 }) {
-  const free = cost === 0 || cost === undefined;
-  const canAfford = free || balance >= (cost ?? 0);
   return (
     <div className="flex items-center justify-between rounded-md border p-3">
       <div>
-        <div className="text-sm font-medium flex items-center gap-2">
-          {label}
-          {!free && cost ? (
-            <span className="inline-flex items-center gap-1 text-[10px] rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
-              <Coins className="h-3 w-3" /> {cost}
-            </span>
-          ) : null}
-        </div>
+        <div className="text-sm font-medium">{label}</div>
         <div className="text-xs text-muted-foreground">{hint}</div>
-        {!canAfford && !checked && <div className="text-xs text-destructive mt-1">Top-Up Required</div>}
       </div>
-      <Switch checked={checked} disabled={!canAfford && !checked} onCheckedChange={onChange} />
+      <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
+

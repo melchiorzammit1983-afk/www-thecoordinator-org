@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "The dispatch board built for self-employed drivers and coordinators. Live flight tracking, magic-link driver jobs, client portals, and points-based collaboration.",
+          "The dispatch board built for self-employed drivers and coordinators. Live flight tracking, magic-link driver jobs, client portals, and partner collaboration.",
       },
       { property: "og:title", content: "Crew Change — Run your transport hustle like a pro" },
       {
@@ -138,8 +138,8 @@ function Hero({ refCode }: { refCode: string }) {
           </h1>
           <p className="mt-5 text-lg text-muted-foreground max-w-xl">
             Crew Change is the dispatch board coordinators and self-employed drivers actually enjoy using.
-            Live flight tracking, one-tap driver links, client portals, and a points system that pays you back
-            when you refer.
+            Live flight tracking, one-tap driver links, and client portals — plus a referral program
+            that rewards you when you bring partners on board.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
@@ -158,7 +158,7 @@ function Hero({ refCode }: { refCode: string }) {
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-primary" /> Cancel anytime</span>
           </div>
           {refCode && (
-            <p className="mt-4 text-xs text-primary">✓ Referral <span className="font-semibold">{refCode}</span> applied — you'll get bonus points on approval.</p>
+            <p className="mt-4 text-xs text-primary">✓ Referral <span className="font-semibold">{refCode}</span> applied.</p>
           )}
         </div>
 
@@ -262,8 +262,8 @@ function HowItWorks() {
     },
     {
       icon: Wallet,
-      title: "4. Get paid & referred",
-      body: "Mark paid or pending, export statements, and earn points every time you refer a partner or take a hop.",
+      title: "4. Get paid & grow",
+      body: "Mark paid or pending, export statements, and grow your network with every partner you invite.",
     },
   ];
   return (
@@ -330,13 +330,13 @@ function Referral({ refLink }: { refLink: string }) {
               <Gift className="h-3.5 w-3.5 text-primary" /> Referral program
             </div>
             <h2 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight">
-              Refer a driver or coordinator. Earn points for every trip they dispatch.
+              Refer a driver or coordinator. Grow the network you dispatch from.
             </h2>
             <ul className="mt-6 space-y-2.5 text-sm">
               {[
-                "50 bonus points when your friend is approved",
-                "1 point every time you pass them a hop",
-                "No cap — the more you build the network, the more you earn",
+                "Priority approval for anyone you introduce",
+                "Direct dispatch chain with your referrals",
+                "No cap — the more partners, the more coverage",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-primary mt-0.5" /> <span>{b}</span>
@@ -507,10 +507,10 @@ function Field({ label, value, onChange, type = "text", placeholder }: {
 
 function FAQ() {
   const items = [
-    { q: "Is it really free to start?", a: "Yes. You get a starter balance of points to try every feature. Top up only when you need more." },
+    { q: "Is it really free to start?", a: "Yes. Request access, get approved, and start dispatching." },
     { q: "Do my drivers need an account?", a: "No. They open a magic link on WhatsApp, accept the trip, and update status from their phone." },
     { q: "Can I pass a job to another company?", a: "Yes — the multi-hop chain keeps A → B → C → driver visible to everyone in the chain in real time." },
-    { q: "How do referrals get paid out?", a: "You earn points automatically when your referral is approved and every time you dispatch to them." },
+    { q: "How does the referral program work?", a: "Share your referral link. When your contact is approved, they land straight in your partner network." },
   ];
   return (
     <section className="max-w-4xl mx-auto px-6 py-16">

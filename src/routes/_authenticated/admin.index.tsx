@@ -9,7 +9,6 @@ import {
   listCompanies,
   createCompany,
   setCompanyStatus,
-  topUpPoints,
   setAccessEnd,
   regenerateCustomLink,
   setRequireClientCompany,
@@ -37,7 +36,6 @@ type CompanyRow = {
   email: string;
   phone: string | null;
   access_end: string | null;
-  points_balance: number;
   custom_link: string;
   require_client_company: boolean;
   status: "pending" | "approved" | "suspended";
@@ -69,7 +67,7 @@ function CompaniesPage() {
         <div>
           <h1 className="text-2xl font-semibold">Companies</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Approve access, manage points, and share booking links.
+            Approve access and share booking links.
           </p>
         </div>
         <CreateCompanyDialog onCreated={() => qc.invalidateQueries({ queryKey: ["companies"] })} />
@@ -79,10 +77,9 @@ function CompaniesPage() {
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow>
+                <TableRow>
                 <TableHead>Company</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Points</TableHead>
                 <TableHead>Access until</TableHead>
                 <TableHead>Custom link</TableHead>
                 <TableHead>Require client co.</TableHead>
@@ -91,9 +88,9 @@ function CompaniesPage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
               ) : !data?.length ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No companies yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No companies yet.</TableCell></TableRow>
               ) : (
                 data.map((c) => <CompanyRowView key={c.id} c={c} />)
               )}
@@ -139,7 +136,6 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
       <TableCell>
         <Badge variant={statusVariant(c.status)} className="capitalize">{c.status}</Badge>
       </TableCell>
-      <TableCell className="text-right font-mono">{c.points_balance}</TableCell>
       <TableCell className="text-sm">
         {c.access_end ? new Date(c.access_end).toLocaleDateString() : <span className="text-muted-foreground">—</span>}
       </TableCell>
@@ -167,7 +163,7 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
               <SelectItem value="suspended">Suspended</SelectItem>
             </SelectContent>
           </Select>
-          <TopUpDialog company={c} onDone={invalidate} />
+          
           <AccessDialog company={c} onDone={invalidate} />
           <CoordinatorDialog company={c} onDone={invalidate} />
           <DeleteCoordinatorDialog company={c} onDone={invalidate} />
@@ -225,44 +221,6 @@ function CreateCompanyDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function TopUpDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [points, setPoints] = useState<string>("");
-  const [note, setNote] = useState("");
-  const fn = useServerFn(topUpPoints);
-  const mut = useMutation({
-    mutationFn: () => fn({ data: { company_id: company.id, points: Number(points), note: note || undefined } }),
-    onSuccess: () => { toast.success("Points updated"); setOpen(false); setPoints(""); setNote(""); onDone(); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline">Points</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Adjust points — {company.name}</DialogTitle>
-          <DialogDescription>Current balance: <strong>{company.points_balance}</strong>. Use a negative number to deduct.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="tp-points">Amount</Label>
-            <Input id="tp-points" type="number" step={1} value={points} onChange={(e) => setPoints(e.target.value)} required />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tp-note">Note (optional)</Label>
-            <Input id="tp-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={mut.isPending || !points}>{mut.isPending ? "Saving…" : "Apply"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function AccessDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
   const [open, setOpen] = useState(false);

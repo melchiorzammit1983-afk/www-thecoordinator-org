@@ -31,8 +31,6 @@ import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
-import { Route as AuthenticatedAdminLedgerRouteImport } from './routes/_authenticated/admin.ledger'
-import { Route as AuthenticatedAdminFeatureCostsRouteImport } from './routes/_authenticated/admin.feature-costs'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -155,18 +153,6 @@ const AuthenticatedAdminRequestsRoute =
     path: '/requests',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminLedgerRoute =
-  AuthenticatedAdminLedgerRouteImport.update({
-    id: '/ledger',
-    path: '/ledger',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminFeatureCostsRoute =
-  AuthenticatedAdminFeatureCostsRouteImport.update({
-    id: '/feature-costs',
-    path: '/feature-costs',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -176,8 +162,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
-  '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
-  '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -199,8 +183,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
-  '/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
-  '/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -226,8 +208,6 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
-  '/_authenticated/admin/feature-costs': typeof AuthenticatedAdminFeatureCostsRoute
-  '/_authenticated/admin/ledger': typeof AuthenticatedAdminLedgerRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -253,8 +233,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/coordinator'
     | '/c/$token'
-    | '/admin/feature-costs'
-    | '/admin/ledger'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -276,8 +254,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/c/$token'
-    | '/admin/feature-costs'
-    | '/admin/ledger'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -302,8 +278,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/c/$token'
-    | '/_authenticated/admin/feature-costs'
-    | '/_authenticated/admin/ledger'
     | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -487,33 +461,15 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/ledger': {
-      id: '/_authenticated/admin/ledger'
-      path: '/ledger'
-      fullPath: '/admin/ledger'
-      preLoaderRoute: typeof AuthenticatedAdminLedgerRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/feature-costs': {
-      id: '/_authenticated/admin/feature-costs'
-      path: '/feature-costs'
-      fullPath: '/admin/feature-costs'
-      preLoaderRoute: typeof AuthenticatedAdminFeatureCostsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
   }
 }
 
 interface AuthenticatedAdminRouteChildren {
-  AuthenticatedAdminFeatureCostsRoute: typeof AuthenticatedAdminFeatureCostsRoute
-  AuthenticatedAdminLedgerRoute: typeof AuthenticatedAdminLedgerRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
-  AuthenticatedAdminFeatureCostsRoute: AuthenticatedAdminFeatureCostsRoute,
-  AuthenticatedAdminLedgerRoute: AuthenticatedAdminLedgerRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
