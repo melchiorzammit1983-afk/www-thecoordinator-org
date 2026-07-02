@@ -356,22 +356,29 @@ export function TripDetailsSheet({
                   const msg = act?.last_message;
                   const isClientMsg = msg?.sender_kind === "client";
                   const isRead = !!msg?.read_by_coordinator_at;
+                  const paxSos = sosByPax.get((p.name ?? "").trim().toLowerCase()) ?? [];
                   return (
                     <li key={p.id} className="p-0">
                       <button
                         type="button"
                         onClick={() => setPaxChat({ paxId: p.id, name: p.name, identityId: act?.identity_id ?? null })}
-                        className="w-full text-left px-3 py-2 text-sm space-y-1 hover:bg-muted/60 focus:bg-muted/60 focus:outline-none transition-colors"
+                        className={`w-full text-left px-3 py-2 text-sm space-y-1 hover:bg-muted/60 focus:bg-muted/60 focus:outline-none transition-colors ${paxSos.length ? "bg-red-50 dark:bg-red-950/30" : ""}`}
                         aria-label={`Open chat with ${p.name}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate flex items-center gap-1.5">
                             {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
                             <span className="truncate">{p.name}</span>
+                            {paxSos.length > 0 && (
+                              <Badge className="h-4 px-1.5 text-[9px] bg-red-600 hover:bg-red-600 animate-pulse gap-1">
+                                <ShieldAlert className="h-2.5 w-2.5" /> SOS
+                              </Badge>
+                            )}
                             {act && act.unread_count > 0 && (
                               <Badge className="h-4 px-1.5 text-[9px] bg-primary hover:bg-primary">{act.unread_count} new</Badge>
                             )}
                           </span>
+
                           <span className="flex items-center gap-2 shrink-0">
                             <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
                               {p.status ?? "pending"}
