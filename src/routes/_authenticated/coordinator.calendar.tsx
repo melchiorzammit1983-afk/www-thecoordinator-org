@@ -307,7 +307,49 @@ type CardCtx = {
   highlightId?: string | null;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
+  expandedGroups: Set<string>;
+  onToggleExpandedGroup: (gid: string) => void;
 };
+
+/* ------------------------------ Grouping helpers ------------------------------ */
+
+type RenderItem =
+  | { kind: "single"; job: Job }
+  | { kind: "group"; group_id: string; jobs: Job[] };
+
+function bucketByGroup(jobs: Job[]): RenderItem[] {
+  const groups = new Map<string, Job[]>();
+  for (const j of jobs) if (j.group_id) {
+    const a = groups.get(j.group_id) ?? []; a.push(j); groups.set(j.group_id, a);
+  }
+  const items: RenderItem[] = [];
+  const seen = new Set<string>();
+  for (const j of jobs) {
+    if (j.group_id) {
+      if (seen.has(j.group_id)) continue;
+      seen.add(j.group_id);
+      const arr = groups.get(j.group_id)!;
+      if (arr.length < 2) items.push({ kind: "single", job: arr[0] });
+      else items.push({
+        kind: "group",
+        group_id: j.group_id,
+        jobs: [...arr].sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""))),
+      });
+    } else {
+      items.push({ kind: "single", job: j });
+    }
+  }
+  return items;
+}
+
+function renderItems(items: RenderItem[], ctx: CardCtx, driverNameOf?: (j: Job) => string | undefined) {
+  return items.map((it) =>
+    it.kind === "single"
+      ? <TripCard key={it.job.id} job={it.job} ctx={ctx} driverName={driverNameOf?.(it.job)} />
+      : <GroupedStackCard key={it.group_id} groupId={it.group_id} jobs={it.jobs} ctx={ctx} driverNameOf={driverNameOf} />,
+  );
+}
+
 
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
