@@ -392,6 +392,10 @@ function CalendarPage() {
       {/* Outbound (my trips currently at partners) */}
       <OutboundBoard />
 
+      {/* Client-requested trips awaiting coordinator approval */}
+      <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
+
+
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
           <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
