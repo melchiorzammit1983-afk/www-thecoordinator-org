@@ -455,38 +455,3 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
-// ---------- Live driver GPS tracking ----------
-
-export const pushDriverLocation = createServerFn({ method: "POST" })
-  .inputValidator((i: unknown) =>
-    z.object({
-      token: z.string().min(8).max(128),
-      job_id: z.string().uuid(),
-      latitude: z.number().gte(-90).lte(90),
-      longitude: z.number().gte(-180).lte(180),
-      accuracy_m: z.number().nonnegative().max(100000).optional().nullable(),
-      heading: z.number().gte(0).lt(360).optional().nullable(),
-      speed_mps: z.number().gte(0).max(200).optional().nullable(),
-    }).parse(i),
-  )
-  .handler(async ({ data }) => {
-    const { job, link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    // Only accept pings while the trip is actively running
-    const active = ["en_route", "arrived", "in_progress", "active"].includes(String(job.status ?? ""));
-    if (!active) return { ok: false, reason: "not_active" };
-    if (!job.driver_id) return { ok: false, reason: "no_driver" };
-    const { error } = await supabaseAdmin.from("driver_locations").insert({
-      driver_id: job.driver_id,
-      job_id: data.job_id,
-      company_id: job.executor_company_id ?? job.company_id ?? link.company_id,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      accuracy_m: data.accuracy_m ?? null,
-      heading: data.heading ?? null,
-      speed_mps: data.speed_mps ?? null,
-      captured_at: new Date().toISOString(),
-    } as never);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });

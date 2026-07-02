@@ -1,52 +1,22 @@
-## Live Driver Tracking on Google Maps
+## Root cause
 
-Track driver GPS during active trips only, show them to the coordinator on both a compact panel in the Dispatch Calendar and a full-screen `/coordinator/map` page.
+The `enforce_company_owner_update` trigger blocks any update to `companies.points_balance`, `status`, or `owner_user_id` unless `public.is_admin(auth.uid())` returns true.
 
-### 1. Database (single migration)
+All coordinator/admin server functions run through `supabaseAdmin` (service-role key). Inside a service-role request, `auth.uid()` is `NULL`, so `is_admin(NULL)` returns false and the trigger raises `only_admin_can_update_sensitive_company_fields` — even though the caller was already validated as an admin (or an authorized owner) in the server function itself.
 
-New table `public.driver_locations`:
-- `driver_id` (fk drivers), `job_id` (fk jobs, nullable — set to the active job), `company_id` (fk companies — owner or executor company at capture time)
-- `latitude` numeric, `longitude` numeric, `accuracy_m` numeric, `heading` numeric, `speed_mps` numeric
-- `captured_at` timestamptz
-- Indexes on `(job_id)`, `(driver_id, captured_at desc)`
-- GRANT to authenticated + service_role
-- RLS: SELECT allowed if the requesting company is anywhere in the job's dispatch chain (`company_id`, `executor_company_id`, `origin_company_id`, `dispatch_chain_company_ids`); INSERT allowed only through the server function (service-role path).
-- Add table to `supabase_realtime` publication.
+That is why the error shows up on legitimate admin actions like top-ups, status changes, access-end extension, assigning a coordinator (`owner_user_id`), and also whenever coordinator flows indirectly touch a `companies` row.
 
-### 2. Backend server functions
+## Fix (single migration)
 
-`src/lib/coordinator-public.functions.ts` (driver-side, magic-link auth):
-- `pushDriverLocation({ token, job_id, lat, lng, accuracy, heading, speed })` — validates the driver's magic link, confirms the job is active (`accepted` + status in `en_route|arrived|in_progress`), inserts a row.
+Update `public.enforce_company_owner_update` so it recognizes trusted server contexts:
 
-`src/lib/coordinator.functions.ts` (coordinator-side, auth):
-- `listActiveDriverLocations()` — returns latest location per active driver for every job the coordinator's company sits on (owner / executor / origin / chain member).
-- `listJobLocationTrail({ job_id, since? })` — recent breadcrumb for one trip (for the map details panel).
+- Allow the update when `auth.uid() IS NULL` **and** the current Postgres role is `service_role` (our server functions using the service key). Authorization is already enforced in the server function layer (`assertAdmin`, ownership checks).
+- Keep the existing admin bypass for real authenticated admin sessions.
+- Keep the block for regular authenticated non-admin users trying to change `points_balance`, `status`, or `owner_user_id`.
 
-### 3. Driver portal — capture GPS
+No app code changes required — this only relaxes the trigger for the trusted service-role path we already use everywhere.
 
-In `src/routes/m.driver.$token.tsx`:
-- When any job on the manifest is in `en_route | arrived | in_progress`, start a `navigator.geolocation.watchPosition` loop.
-- Throttle to at most one push every ~15s and only when position changed >20m.
-- Stop the watcher when no job is active or the tab is hidden > 5 min.
-- Small on-screen indicator: "Location sharing on" with a manual pause toggle (safety net).
-- No new points cost — this is part of an active trip.
+## Verification
 
-### 4. Coordinator UI
-
-New component `src/components/coordinator/DriverMap.tsx` — loads Google Maps JS via the browser key with `loading=async` + `callback`, uses `google.maps.Marker` (no `mapId`, no AdvancedMarkerElement), one marker per active driver colored by trip status, click marker → opens the existing `TripDetailsSheet`.
-
-Realtime: subscribe to `postgres_changes` on `driver_locations` filtered by the coordinator's company and update markers in place (see cloud-realtime pattern — subscribe inside `useEffect`, tear channel down on unmount).
-
-Placement:
-- Collapsible **"Live map"** panel at the top of `/coordinator/calendar` (default collapsed on mobile).
-- New sidebar link **"Live map"** → `/coordinator/map.tsx` — full-screen map + a side list of currently-tracked drivers with filters (driver, label, status).
-
-### 5. Connector setup
-
-Uses the Google Maps Platform connector (managed key works on `*.lovable.app`; the browser key `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY` is loaded via `<script>`). No server-side geocoding needed for v1. If not already linked in this workspace, I'll trigger the connect flow before writing the map component.
-
-### Out of scope for this pass
-
-- Historical playback UI (data is stored; UI can come later).
-- Geofencing / ETA calculations.
-- Background tracking when the driver's browser tab is fully closed (mobile browsers don't allow this without a native app).
+- Admin top-up (`topUpPoints`), approve/suspend company (`setCompanyStatus`), extend access (`setAccessEnd`), and assign coordinator (`createCoordinator` → sets `owner_user_id`) should all succeed.
+- A direct update from an authenticated non-admin user attempting to change those sensitive fields must still fail with `only_admin_can_update_sensitive_company_fields` (RLS + trigger both hold).

@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, MapPin } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,6 @@ export const Route = createFileRoute("/_authenticated/coordinator")({
 const NAV = [
   { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false },
-  { to: "/coordinator/map", label: "Live map", icon: MapPin, exact: false },
   { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false },
   { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false },
   { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false },
