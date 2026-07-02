@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "The dispatch board built for self-employed drivers and coordinators. Live flight tracking, magic-link driver jobs, client portals, and points-based collaboration.",
+          "The dispatch board built for self-employed drivers and coordinators. Live flight tracking, magic-link driver jobs, client portals, and partner collaboration.",
       },
       { property: "og:title", content: "Crew Change — Run your transport hustle like a pro" },
       {
@@ -138,8 +138,8 @@ function Hero({ refCode }: { refCode: string }) {
           </h1>
           <p className="mt-5 text-lg text-muted-foreground max-w-xl">
             Crew Change is the dispatch board coordinators and self-employed drivers actually enjoy using.
-            Live flight tracking, one-tap driver links, client portals, and a points system that pays you back
-            when you refer.
+            Live flight tracking, one-tap driver links, and client portals — plus a referral program
+            that rewards you when you bring partners on board.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a

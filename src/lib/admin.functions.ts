@@ -94,40 +94,6 @@ export const setCompanyStatus = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const topUpPoints = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z
-      .object({
-        company_id: z.string().uuid(),
-        points: z.number().int().refine((n) => n !== 0, "Points must be non-zero"),
-        note: z.string().trim().max(500).optional(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data, context }) => {
-    const supabaseAdmin = await assertAdmin(context);
-    const { data: company, error: cErr } = await supabaseAdmin
-      .from("companies")
-      .select("points_balance")
-      .eq("id", data.company_id)
-      .single();
-    if (cErr || !company) throw new Error(cErr?.message ?? "Company not found");
-    const newBalance = (company.points_balance ?? 0) + data.points;
-    const { error: uErr } = await supabaseAdmin
-      .from("companies")
-      .update({ points_balance: newBalance })
-      .eq("id", data.company_id);
-    if (uErr) throw new Error(uErr.message);
-    // Ledger convention: positive = deducted, negative = top-up
-    const { error: lErr } = await supabaseAdmin.from("points_ledger").insert({
-      company_id: data.company_id,
-      points_deducted: -data.points,
-      note: data.note ?? (data.points > 0 ? "Admin top-up" : "Admin adjustment"),
-    });
-    if (lErr) throw new Error(lErr.message);
-    return { balance: newBalance };
-  });
 
 export const setAccessEnd = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -181,64 +147,6 @@ export const setRequireClientCompany = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// ---------- FEATURE COSTS ----------
-
-export const listFeatureCosts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const supabaseAdmin = await assertAdmin(context);
-    const { data, error } = await supabaseAdmin
-      .from("feature_costs")
-      .select("*")
-      .order("feature_name");
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
-
-export const setFeatureCost = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z
-      .object({
-        feature_name: z.enum(["tracking", "bulkupload", "client_booking", "qr"]),
-        points_cost: z.number().int().min(0).max(1_000_000),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data, context }) => {
-    const supabaseAdmin = await assertAdmin(context);
-    const { error } = await supabaseAdmin
-      .from("feature_costs")
-      .update({ points_cost: data.points_cost })
-      .eq("feature_name", data.feature_name);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-// ---------- LEDGER ----------
-
-export const listLedger = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z
-      .object({
-        company_id: z.string().uuid().optional(),
-        limit: z.number().int().min(1).max(500).default(100),
-      })
-      .parse(input ?? {}),
-  )
-  .handler(async ({ data, context }) => {
-    const supabaseAdmin = await assertAdmin(context);
-    let q = supabaseAdmin
-      .from("points_ledger")
-      .select("id, company_id, job_id, feature_used, points_deducted, note, created_at, companies(name)")
-      .order("created_at", { ascending: false })
-      .limit(data.limit);
-    if (data.company_id) q = q.eq("company_id", data.company_id);
-    const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
-    return rows ?? [];
-  });
 
 // ---------- WHOAMI ----------
 

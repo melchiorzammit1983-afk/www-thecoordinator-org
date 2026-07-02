@@ -215,7 +215,7 @@ export const getDriverStatement = createServerFn({ method: "GET" })
     if (!link) throw new Error("invalid_or_expired_link");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
-      .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status, points_charged")
+      .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status")
       .order("date", { ascending: true }).order("time", { ascending: true });
     if (link.subject_id) {
       q = q.eq("driver_id", link.subject_id);

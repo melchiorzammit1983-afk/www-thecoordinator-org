@@ -6,7 +6,7 @@ import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handsh
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PointsHeader } from "@/components/coordinator/PointsHeader";
+
 import { useMyCompany } from "@/hooks/use-coordinator";
 import { whoAmI } from "@/lib/admin.functions";
 
@@ -108,7 +108,6 @@ function CoordinatorLayout() {
         </div>
       </aside>
       <main className="flex-1 min-w-0">
-        <PointsHeader />
         <Outlet />
       </main>
     </div>
