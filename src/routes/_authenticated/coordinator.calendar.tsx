@@ -879,6 +879,7 @@ function GroupedStackCard({
       </div>
     </div>
   );
+}
 
 /* ---------- Collapsed strip for completed / cancelled trips ---------- */
 function CompletedStrip({
