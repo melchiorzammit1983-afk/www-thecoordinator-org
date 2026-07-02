@@ -59,8 +59,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
-      .is("driver_hidden_at", null)
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
