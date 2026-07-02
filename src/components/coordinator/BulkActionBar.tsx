@@ -301,7 +301,7 @@ function BulkMergeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Group {jobs.length} trips</DialogTitle>
+          <DialogTitle>Merge {jobs.length} trips</DialogTitle>
           <DialogDescription>
             Passengers from the other trips will be moved into the earliest one, then the empty trips will be removed.
             Trips already accepted by a driver will require driver approval before removal.
