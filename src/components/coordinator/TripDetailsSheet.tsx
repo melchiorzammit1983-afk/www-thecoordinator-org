@@ -262,3 +262,57 @@ export function TripDetailsSheet({
     </Sheet>
   );
 }
+
+function TripLiveLocation({ driverId }: { driverId: string }) {
+  const fn = useServerFn(listActiveDriverLocations);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["live-locations"],
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    refetchInterval: 30_000,
+  });
+  useEffect(() => {
+    const ch = supabase
+      .channel(`driver-live-${driverId}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "driver_locations", filter: `driver_id=eq.${driverId}` },
+        () => qc.invalidateQueries({ queryKey: ["live-locations"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc, driverId]);
+
+  const points = (data ?? []).filter((p) => p.driver_id === driverId);
+  const p = points[0];
+  const ageSec = p ? Math.max(0, Math.floor((Date.now() - new Date(p.captured_at).getTime()) / 1000)) : null;
+  const state: "live" | "paused" | "offline" | "none" =
+    !p ? "none" : ageSec! < 30 ? "live" : ageSec! < 120 ? "paused" : "offline";
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium inline-flex items-center gap-1">
+          <MapPin className="h-3 w-3" /> Live location
+        </div>
+        {state !== "none" && (
+          <Badge
+            className={`text-[10px] ${
+              state === "live" ? "bg-emerald-600 hover:bg-emerald-600" :
+              state === "paused" ? "bg-amber-500 hover:bg-amber-500" :
+              "bg-muted-foreground/70 hover:bg-muted-foreground/70"
+            }`}
+          >
+            {state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
+            {ageSec != null && ageSec >= 5 && ` · ${ageSec < 60 ? `${ageSec}s` : `${Math.floor(ageSec/60)}m`} ago`}
+          </Badge>
+        )}
+      </div>
+      {state === "none" ? (
+        <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
+          Driver hasn't shared location yet. They can enable it from their manifest.
+        </div>
+      ) : (
+        <DriverLiveMap points={points} focusDriverId={driverId} height={220} />
+      )}
+    </section>
+  );
+}
