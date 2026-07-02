@@ -132,6 +132,15 @@ function ClientTripPortal() {
                 Flight status: {job.flight_status}
               </div>
             )}
+            {job.client_confirmed_at ? (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+                <CheckCircle2 className="h-4 w-4" /> You confirmed you'll be there
+              </div>
+            ) : (
+              <Button className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => confirmMut.mutate()} disabled={confirmMut.isPending}>
+                <CheckCircle2 className="h-4 w-4 mr-2" /> I'll be there — confirm
+              </Button>
+            )}
           </section>
 
           {/* Driver + tracking */}
