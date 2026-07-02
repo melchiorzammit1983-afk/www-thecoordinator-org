@@ -12,8 +12,9 @@ import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, list
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck,
 } from "lucide-react";
+
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
 type DriverEmbed = { name: string; vehicle?: string | null; phone?: string | null; seats_available?: number | null; availability_note?: string | null };
