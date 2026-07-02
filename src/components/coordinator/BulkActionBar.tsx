@@ -73,13 +73,15 @@ export function BulkActionBar({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // group/merge only if all selected trips share date + from + to
-  const mergeable =
+  // Allow grouping with 2+ selections; warn in dialog if date/from/to differ.
+  const mergeable = jobs.length >= 2;
+  const norm = (s: string) => (s ?? "").trim().toLowerCase();
+  const uniform =
     jobs.length >= 2 &&
     jobs.every((j) =>
       j.date === jobs[0].date &&
-      j.from_location.trim().toLowerCase() === jobs[0].from_location.trim().toLowerCase() &&
-      j.to_location.trim().toLowerCase() === jobs[0].to_location.trim().toLowerCase()
+      norm(j.from_location) === norm(jobs[0].from_location) &&
+      norm(j.to_location) === norm(jobs[0].to_location)
     );
 
   const count = jobs.length;
