@@ -138,7 +138,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -205,6 +205,7 @@ const jobInput = z.object({
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
+  contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
@@ -246,6 +247,7 @@ export const createJob = createServerFn({ method: "POST" })
       qr_strict_mode: data.qr_strict_mode,
       tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null,
+      contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
     }).select().single();
     if (error) throw new Error(error.message);
@@ -271,10 +273,42 @@ export const updateJob = createServerFn({ method: "POST" })
       to_flight: (data.to_flight || "").toUpperCase() || null,
       clientcompanyname: data.clientcompanyname || null,
       qr_strict_mode: data.qr_strict_mode, tracking_enabled: data.tracking_enabled,
-      vehicle: data.vehicle || null, driver_id: data.driver_id || null,
+      vehicle: data.vehicle || null, contact_phone: data.contact_phone || null,
+      driver_id: data.driver_id || null,
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
+    return { ok: true };
+  });
+
+export const addJobPax = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), name: z.string().trim().min(1).max(200) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin
+      .from("jobs").select("id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (je || !job) throw new Error("Job not found");
+    const { error } = await supabaseAdmin.from("pax").insert({ job_id: data.job_id, name: data.name });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const removeJobPax = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ pax_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error: pe } = await supabaseAdmin
+      .from("pax").select("id, job_id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+    if (pe || !row) throw new Error("Passenger not found");
+    if ((row as any).jobs?.company_id !== c.id) throw new Error("Forbidden");
+    const { error } = await supabaseAdmin.from("pax").delete().eq("id", data.pax_id);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 

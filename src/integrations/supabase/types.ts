@@ -758,6 +758,7 @@ export type Database = {
         Row: {
           clientcompanyname: string | null
           company_id: string
+          contact_phone: string | null
           created_at: string
           date: string
           deletion_requested_at: string | null
@@ -797,6 +798,7 @@ export type Database = {
         Insert: {
           clientcompanyname?: string | null
           company_id: string
+          contact_phone?: string | null
           created_at?: string
           date: string
           deletion_requested_at?: string | null
@@ -838,6 +840,7 @@ export type Database = {
         Update: {
           clientcompanyname?: string | null
           company_id?: string
+          contact_phone?: string | null
           created_at?: string
           date?: string
           deletion_requested_at?: string | null

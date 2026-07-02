@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax } from "@/lib/coordinator.functions";
 import { parseTrips, type ParsedTrip } from "@/lib/parse-trips";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2 } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -31,6 +31,7 @@ type Job = {
   to_flight: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   vehicle: string | null;
+  contact_phone: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
   labels?: { id: string; name: string; color: string }[];
@@ -110,7 +111,7 @@ function ManualForm({
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
-  const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
+  const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
   const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
@@ -131,7 +132,7 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
-        clientcompanyname: client, vehicle,
+        clientcompanyname: client, contact_phone: phone,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
         label_ids: labelIds,
@@ -188,7 +189,7 @@ function ManualForm({
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
         <div className="space-y-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></div>
         <div className="space-y-1.5"><Label>Client company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Vehicle</Label><Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} /></div>
+        <div className="space-y-1.5"><Label>Phone number</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
         <div className="space-y-1.5 col-span-2">
           <Label>Driver</Label>
           <Select value={driverId} onValueChange={setDriverId}>
@@ -210,6 +211,7 @@ function ManualForm({
           />
         </div>
       )}
+      {job && <PaxEditor jobId={job.id} />}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
         label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
@@ -326,4 +328,74 @@ function ToggleRow({
     </div>
   );
 }
+
+function PaxEditor({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listJobPax);
+  const addFn = useServerFn(addJobPax);
+  const removeFn = useServerFn(removeJobPax);
+  const [name, setName] = useState("");
+
+  const { data } = useQuery({
+    queryKey: ["job-pax", jobId],
+    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<Array<{ id: string; name: string }>>,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["job-pax", jobId] });
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+  };
+
+  const addMut = useMutation({
+    mutationFn: (n: string) => addFn({ data: { job_id: jobId, name: n } }),
+    onSuccess: () => { setName(""); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removeFn({ data: { pax_id: id } }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const submitAdd = () => {
+    const n = name.trim();
+    if (!n) return;
+    addMut.mutate(n);
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers ({data?.length ?? 0})</Label>
+      {(data ?? []).length > 0 ? (
+        <ul className="space-y-1">
+          {(data ?? []).map((p) => (
+            <li key={p.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1 text-sm">
+              <span className="truncate">{p.name}</span>
+              <Button
+                type="button" size="icon" variant="ghost" className="h-7 w-7"
+                disabled={removeMut.isPending}
+                onClick={() => removeMut.mutate(p.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No passengers yet.</p>
+      )}
+      <div className="flex gap-2">
+        <Input
+          value={name} onChange={(e) => setName(e.target.value)}
+          placeholder="Add passenger name"
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAdd(); } }}
+        />
+        <Button type="button" onClick={submitAdd} disabled={addMut.isPending || !name.trim()}>
+          <Plus className="h-4 w-4 mr-1" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 

@@ -1,51 +1,30 @@
-
 ## Goal
-Let admins toggle features per coordinator, optionally with an expiry (1 day, 7 days, or custom). Expired or disabled features disappear from that coordinator's dashboard and driver-facing surfaces.
+In the Edit trip dialog, replace the **Vehicle** field with a **Phone number** field, and let the coordinator view / add / remove passenger names while editing. The trip card refreshes to reflect changes.
 
-## Feature catalog (initial set — matches sidebar + key flows)
-- `dispatch` — Dispatch calendar
-- `pending` — Pending approvals
-- `drivers` — Drivers management
-- `portal_links` — Magic link generator
-- `labels` — Trip labels
-- `statements` — Statement/report builder
-- `collaborate` — Partner connections & multi-hop dispatch
-- `my_driving` — Self-driving portal
-- `live_tracking` — Live GPS map on cards
-- `flight_tracking` — AviationStack integration
-- `bulk_paste` — WhatsApp bulk trip paste
-- `chat` — Trip chat with drivers
-
-Every feature defaults to **enabled** so existing coordinators are unaffected.
-
-## Database (migration)
-New table `public.company_feature_entitlements`:
-- `company_id uuid` → companies, `feature text` (from catalog), `enabled boolean default true`, `expires_at timestamptz null`, `created_by uuid`, `created_at`, `updated_at`.
-- Unique `(company_id, feature)`.
-- RLS: admins full access via `is_admin(auth.uid())`; company owner can `SELECT` own rows (read-only, to hydrate the UI). Standard GRANTs (`authenticated`, `service_role`).
-- Helper SQL function `public.has_feature(_company uuid, _feature text)` → true if no row exists (default on) OR row is `enabled AND (expires_at IS NULL OR expires_at > now())`. `SECURITY DEFINER`, granted to `authenticated`.
-
-## Backend (`src/lib/admin.functions.ts`)
-- `listFeatureEntitlements({ companyId })` — admin only, returns catalog merged with rows.
-- `setFeatureEntitlement({ companyId, feature, enabled, durationDays? })` — admin only, upserts; `durationDays` computes `expires_at = now() + interval`; `null` = permanent.
-- `clearFeatureEntitlement({ companyId, feature })` — deletes row (reverts to default enabled).
+## Database
+- Add nullable `contact_phone text` column to `public.jobs` (migration). Existing `vehicle` column stays untouched (still used elsewhere / on drivers).
+- Include `contact_phone` in the jobs SELECT projection used by `listJobs`.
 
 ## Backend (`src/lib/coordinator.functions.ts`)
-- Extend `whoAmI` (or add `getMyFeatures`) to return a `features: Record<string, boolean>` map for the current company, computed from entitlements + expiry.
-- Guard server functions of gated features (e.g. `createBulkJobs`, statement export, collaborate actions) with a `assertFeature(company, key)` helper that throws `feature_disabled`.
+- Extend `jobInput` schema: add `contact_phone: z.string().trim().max(40).optional()`.
+- `createJob` + `updateJob`: persist `contact_phone`.
+- New server fns (auth + owner-company scoped via existing `resolveCompany` pattern):
+  - `listJobPax({ job_id })` → returns `[{ id, name, status, boarded_at }]`.
+  - `addJobPax({ job_id, name })` → inserts row into `pax`.
+  - `removeJobPax({ pax_id })` → deletes row (verifies pax belongs to a job in caller's company).
 
-## Frontend
-- **Coordinator layout** (`src/routes/_authenticated/coordinator.tsx`): fetch features via TanStack Query; filter `NAV` array to hide disabled items. Also gate route components (e.g. redirect to `/coordinator` with toast if a user hits a disabled URL directly).
-- **Feature hook** `src/hooks/use-features.ts` exposes `useFeature(key)` for inline gating (bulk paste tab, chat button, live map, flight badges).
-- **Driver portal**: chat and live-share are gated by the owning company's features (passed through `getDriverManifest` response).
-- **Admin UI** (`src/routes/_authenticated/admin.index.tsx`): add a "Features" button per company row → opens `FeatureEntitlementsDialog`:
-  - Table listing each feature with an Enabled switch, a duration select (Permanent / 1 day / 7 days / 30 days / Custom days), and an "Expires in Xh" badge when active.
-  - Save calls `setFeatureEntitlement`; "Reset" calls `clearFeatureEntitlement`.
-  - Live countdown recomputed on open.
+## Frontend (`src/components/coordinator/JobFormDialog.tsx`)
+- Replace Vehicle input with **Phone number** input (`tel` type). Bind to `contact_phone` on create + edit.
+- In edit mode, render a **Passengers** section:
+  - Fetches pax via `useQuery(['job-pax', job.id])` using `listJobPax`.
+  - List each name with a remove (trash) button → `removeJobPax` mutation.
+  - Inline "Add passenger" input + button → `addJobPax` mutation.
+  - Each mutation invalidates `['job-pax', job.id]` and `['jobs']` so the calendar card updates automatically.
+- Keep the existing bulk-paste textarea path only for create mode (unchanged).
 
-## Expiry behavior
-No cron needed — `has_feature` and the client hook both check `expires_at > now()` at read time, so features vanish automatically the moment they expire (next page load / query refetch). Query invalidation on 60s interval keeps the UI honest.
+## Job type / props
+- Add `contact_phone: string | null` to the local `Job` type in `JobFormDialog` and to the shared job type consumed by the calendar card.
 
 ## Out of scope
-- Per-driver entitlements (system is per-company/coordinator).
-- Feature usage analytics.
+- Editing pax names (only add/remove).
+- Vehicle field removal from other screens (drivers table, statements, etc.).
