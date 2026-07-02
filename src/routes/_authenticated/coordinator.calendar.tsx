@@ -46,6 +46,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
+import { useFeature } from "@/hooks/use-features";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
