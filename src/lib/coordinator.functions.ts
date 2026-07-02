@@ -2093,3 +2093,91 @@ export const acknowledgeSosCoord = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ============================================================
+// CARD SIGNALS (unread + client changes + SOS + driver status)
+// ============================================================
+export const getCardSignalsCoord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_ids: z.array(z.string().uuid()).max(800) }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    if (!data.job_ids.length) {
+      return {} as Record<string, {
+        unread_client: number;
+        unread_driver: number;
+        client_change: boolean;
+        sos_open: boolean;
+        driver_status_new: boolean;
+      }>;
+    }
+    // 1) fetch jobs (with viewed_at, updated_at, status, client_link_token)
+    const { data: jobs } = await supabaseAdmin.from("jobs")
+      .select("id, status, updated_at, coordinator_last_viewed_at, client_link_token")
+      .in("id", data.job_ids);
+    // 2) unread messages
+    const { data: msgs } = await supabaseAdmin.from("trip_messages")
+      .select("job_id, sender_kind")
+      .eq("company_id", c.id)
+      .in("job_id", data.job_ids)
+      .is("read_by_coordinator_at", null)
+      .in("sender_kind", ["driver", "client"]);
+    // 3) open SOS
+    const { data: sos } = await supabaseAdmin.from("client_sos_events")
+      .select("job_id").in("job_id", data.job_ids).is("acknowledged_at", null);
+    // 4) pending client modifications on linked bookings
+    const tokens = (jobs ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
+    let bookingByToken: Record<string, string> = {};
+    let modsByBooking = new Set<string>();
+    if (tokens.length) {
+      const { data: bks } = await supabaseAdmin.from("client_bookings")
+        .select("id, magic_token").in("magic_token", tokens);
+      for (const b of (bks ?? []) as any[]) bookingByToken[b.magic_token] = b.id;
+      const bkIds = Object.values(bookingByToken);
+      if (bkIds.length) {
+        const { data: mods } = await supabaseAdmin.from("client_booking_modifications")
+          .select("booking_id").eq("status", "pending").in("booking_id", bkIds);
+        modsByBooking = new Set((mods ?? []).map((m: any) => m.booking_id));
+      }
+    }
+
+    const out: Record<string, {
+      unread_client: number; unread_driver: number;
+      client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+    }> = {};
+    for (const id of data.job_ids) {
+      out[id] = { unread_client: 0, unread_driver: 0, client_change: false, sos_open: false, driver_status_new: false };
+    }
+    for (const m of (msgs ?? []) as any[]) {
+      const row = out[m.job_id]; if (!row) continue;
+      if (m.sender_kind === "client") row.unread_client += 1;
+      else row.unread_driver += 1;
+    }
+    for (const s of (sos ?? []) as any[]) {
+      const row = out[s.job_id]; if (row) row.sos_open = true;
+    }
+    for (const j of (jobs ?? []) as any[]) {
+      const row = out[j.id]; if (!row) continue;
+      const tok = j.client_link_token as string | null;
+      if (tok && bookingByToken[tok] && modsByBooking.has(bookingByToken[tok])) row.client_change = true;
+      // driver status changed since last view?
+      const viewed = j.coordinator_last_viewed_at ? new Date(j.coordinator_last_viewed_at).getTime() : 0;
+      const updated = j.updated_at ? new Date(j.updated_at).getTime() : 0;
+      const isTerminal = j.status === "completed" || j.status === "cancelled";
+      if (!isTerminal && updated > viewed + 500) row.driver_status_new = true;
+    }
+    return out;
+  });
+
+export const markJobViewedCoord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    await supabaseAdmin.from("jobs")
+      .update({ coordinator_last_viewed_at: new Date().toISOString() } as never)
+      .eq("id", data.job_id);
+    return { ok: true };
+  });
