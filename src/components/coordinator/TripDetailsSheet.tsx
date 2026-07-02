@@ -218,7 +218,7 @@ export function TripDetailsSheet({
           {/* Options */}
           <section className="flex flex-wrap gap-1.5">
             {job.tracking_enabled && <Badge variant="outline" className="text-[10px]"><Navigation2 className="h-3 w-3 mr-1" />Tracking on</Badge>}
-            {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]"><QrCode className="h-3 w-3 mr-1" />QR strict</Badge>}
+            
             <Badge variant={paid ? "default" : "secondary"} className={paid ? "bg-emerald-600 hover:bg-emerald-600 text-[10px]" : "text-[10px]"}>
               {paid ? "Paid" : "Payment pending"}
             </Badge>
