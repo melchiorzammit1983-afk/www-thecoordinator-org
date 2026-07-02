@@ -165,13 +165,18 @@ function DriverManifest() {
           token={token}
           hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
         />
-        {jobs.length === 0 && (
+        {jobs.length === 0 && archivedJobs.length === 0 && (
           <div className="text-center py-20">
             <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
               <MapPin className="h-6 w-6 text-muted-foreground" />
             </div>
             <div className="font-medium">No trips yet</div>
             <div className="text-sm text-muted-foreground mt-1">Your coordinator hasn't assigned trips.</div>
+          </div>
+        )}
+        {jobs.length === 0 && archivedJobs.length > 0 && (
+          <div className="text-center py-6 text-sm text-muted-foreground">
+            No active trips — archived trips are shown below.
           </div>
         )}
         {jobs.map((j) => (
