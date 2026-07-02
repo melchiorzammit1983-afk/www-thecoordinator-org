@@ -398,6 +398,7 @@ function PaxEditor({ jobId }: { jobId: string }) {
   const listFn = useServerFn(listJobPax);
   const addFn = useServerFn(addJobPax);
   const removeFn = useServerFn(removeJobPax);
+  const setPhoneFn = useServerFn(setJobContactPhoneIfEmpty);
   const [name, setName] = useState("");
 
   const { data } = useQuery({
@@ -411,7 +412,17 @@ function PaxEditor({ jobId }: { jobId: string }) {
   };
 
   const addMut = useMutation({
-    mutationFn: (n: string) => addFn({ data: { job_id: jobId, name: n } }),
+    mutationFn: async (raw: string) => {
+      const { cleanName, phone } = extractPhoneFromName(raw);
+      const finalName = cleanName || raw;
+      await addFn({ data: { job_id: jobId, name: finalName } });
+      if (phone) {
+        try {
+          const r: any = await setPhoneFn({ data: { job_id: jobId, phone } });
+          if (r?.set) toast.success(`Moved ${phone} to phone number`);
+        } catch { /* ignore */ }
+      }
+    },
     onSuccess: () => { setName(""); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
