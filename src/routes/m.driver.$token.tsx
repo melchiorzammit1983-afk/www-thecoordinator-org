@@ -21,6 +21,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { QrScanner } from "@/components/driver/QrScanner";
+import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
