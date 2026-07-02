@@ -240,8 +240,20 @@ export const deleteCoordinator = createServerFn({ method: "POST" })
     if (cErr || !company) throw new Error(cErr?.message ?? "Company not found");
 
     if (company.owner_user_id) {
-      const { error: uErr } = await supabaseAdmin.auth.admin.deleteUser(company.owner_user_id);
-      if (uErr && !/not.?found/i.test(uErr.message)) throw new Error(uErr.message);
+      try {
+        const { error: uErr } = await supabaseAdmin.auth.admin.deleteUser(company.owner_user_id);
+        if (uErr) {
+          const msg = (uErr as { message?: string; code?: string; status?: number })?.message ?? JSON.stringify(uErr);
+          const status = (uErr as { status?: number })?.status;
+          if (status !== 404 && !/not.?found/i.test(msg)) {
+            console.error("deleteUser failed", { status, msg, uErr });
+            throw new Error(msg || "Failed to delete auth user");
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : JSON.stringify(e);
+        if (!/not.?found/i.test(msg)) throw new Error(msg || "Failed to delete auth user");
+      }
     }
 
     if (data.also_delete_company) {
