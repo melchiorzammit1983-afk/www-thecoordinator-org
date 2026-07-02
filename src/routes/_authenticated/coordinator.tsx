@@ -33,6 +33,7 @@ function CoordinatorLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: company, isLoading, error } = useMyCompany();
   const whoAmIFn = useServerFn(whoAmI);
+  const { data: features } = useFeatures();
   const { data: identity, isLoading: identityLoading } = useQuery({
     queryKey: ["whoami"],
     queryFn: () => whoAmIFn(),
