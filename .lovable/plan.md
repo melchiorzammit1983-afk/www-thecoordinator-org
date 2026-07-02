@@ -1,47 +1,50 @@
-## Goal
+## Why status is blank today
 
-- Coordinators sign in with **phone number + password** (no SMS/OTP — simplest, works today with Supabase phone auth).
-- Admin keeps **email + password** sign-in and remains a single, protected account.
-- On first sign-in with the admin-issued password, coordinator sees a **modal to set a new password** before they can use the dashboard.
+- The Flight section in `TripDetailsSheet.tsx` only prints the flight code and the scheduled/estimated timestamps. `job.flight_status` and `job.flight_status_note` are read for the red "DELAYED / CANCELLED" badge but are **not rendered when the flight is on time or unknown**.
+- The poller (`checkFlightStatus`) calls AviationStack and returns a no-op when `AVIATIONSTACK_API_KEY` isn't set, so `flight_status` stays `null` on every job and nothing ever shows.
 
-## Changes
+## What we'll build
 
-### 1. Auth mode
-- Enable Supabase phone auth (password grant, no SMS provider needed) via `supabase--configure_auth`. Email signup stays enabled for the admin only.
-- Coordinator accounts are created by admin with `supabaseAdmin.auth.admin.createUser({ phone, password, phone_confirm: true, user_metadata: { must_change_password: true, role: 'coordinator' } })` — no email required.
-- Admin sign-in path (`/admin-auth`) is unchanged (email + password).
-- Coordinator sign-in path (`/auth`) swaps the email field for a phone-number field (E.164, with a simple country-code helper) and calls `supabase.auth.signInWithPassword({ phone, password })`.
+Use **Malta International Airport's public arrivals/departures pages** as the live source (no paid API), and always render the current status in the details panel.
 
-### 2. Single admin enforcement
-- `admin_emails` table already gates admin access. Add a DB check/trigger so it holds **at most one row**; server function `createAdmin` refuses if one already exists.
-- Admin creation UI (if any) is hidden once an admin exists; the seeded admin cannot be duplicated.
+### 1. Connect Firecrawl (required)
+Firecrawl is the scraper. If it isn't linked yet we link it via the connectors flow; the `FIRECRAWL_API_KEY` becomes available to server functions automatically.
 
-### 3. Admin coordinator management
-- Replace the "Email" field in the create/edit coordinator dialog with a **Phone number** field + initial password (already there).
-- Store phone on `companies.phone` (add column) for display; auth user's `phone` is the source of truth.
-- `deleteCoordinator` continues to work by user id.
-- Existing email-based coordinators: admin can attach a phone via an "Add phone number" action per row (calls `supabaseAdmin.auth.admin.updateUserById`). Until then, they can still sign in via email on a hidden fallback (kept internally, not shown in UI).
+### 2. New server function: `getMaltaFlightStatus`
+`src/lib/coordinator.functions.ts` (protected with `requireSupabaseAuth`):
 
-### 4. Forced password change on first login
-- On coordinator creation, set `user_metadata.must_change_password = true`.
-- Add a global gate in `src/routes/_authenticated/coordinator.tsx` that reads `supabase.auth.getUser()` and, if `user_metadata.must_change_password === true`, renders a blocking `ChangePasswordDialog` (cannot dismiss) instead of the dashboard.
-- Submitting the dialog calls `supabase.auth.updateUser({ password, data: { must_change_password: false } })`, then refreshes the session.
-- Admin is exempt (flag never set on the admin account).
+- Input: `{ job_id }`. Reads the job (with chain access check), picks the relevant code — `from_flight` → arrivals page, `to_flight` → departures page.
+- Uses Firecrawl SDK `scrape(url, { formats: [{ type: "json", schema, prompt }], onlyMainContent: true })` against:
+  - `https://maltairport.com/flights/arrivals/`
+  - `https://maltairport.com/flights/departures/`
+- Schema asks for an array `{ flight, airline, origin_or_destination, scheduled, estimated, status, gate, terminal }`. Prompt narrows to the row where `flight` equals the requested code (case-insensitive, ignoring spaces).
+- Normalises the status string into our existing enum-ish values (`scheduled | active | landed | delayed | cancelled | diverted | time_mismatch`) and reuses the existing 45-min pickup mismatch check.
+- Persists back to `jobs`: `flight_status`, `flight_status_note` (human string like `On time — 14:20`, `Delayed → 15:05`, `Landed 13:58`, `Gate B4`), `flight_status_updated_at`, `flight_scheduled_at`, `flight_estimated_at`. In-memory 60 s cache per flight code to avoid burning Firecrawl credits when several jobs share a flight.
 
-### 5. Copy / UX
-- Update landing page, sign-in card, and any help text that says "email" for coordinators to say "phone number".
-- Sign-in error messages localized: invalid phone format, wrong password, account disabled.
+### 3. Wire the poller to Malta
+`checkFlightStatus` gets a Malta branch: for each job with a flight code, call the same helper the new function uses (batched, dedup by code). AviationStack path stays as a fallback when the key exists, so we don't break existing behaviour. Poll interval and 48 h horizon on the calendar stay as-is.
 
-## Technical notes
+### 4. Render status in the details sheet
+`src/components/coordinator/TripDetailsSheet.tsx`, inside the Flight section (the div the user selected):
 
-- No SMS provider, no OTP: uses Supabase's phone+password grant. Users never receive an SMS.
-- Phone stored in E.164 (e.g. `+35699123456`). Client-side validation with a light regex; server trusts Supabase's validation.
-- `admin_emails` singleton enforced with a partial unique index or `CHECK ((SELECT count(*) FROM admin_emails) <= 1)` via trigger.
-- Migration adds `companies.phone TEXT` (nullable) and the admin singleton trigger. Grants unchanged.
-- No changes to magic links, driver portal, or partner flows — those are token-based and unrelated to auth.
+- For each flight row, show:
+  - `✈ KM 643` (code)
+  - **Status pill** derived from `flight_status`: green (`landed`, `active`, `scheduled` when on time), amber (`delayed`, `time_mismatch`), red (`cancelled`, `diverted`), grey (`unknown`).
+  - Second line: `flight_status_note` if present, otherwise `Scheduled HH:MM` from `flight_scheduled_at`, and `Estimated HH:MM` in bold when it differs.
+  - Small "Updated Xm ago · Malta Airport" caption with a link to the source page.
+- Add a "Refresh" icon-button that calls the new `getMaltaFlightStatus` and re-fetches the job. This gives coordinators an on-demand check without waiting for the 3-minute poller.
+- Remove the "only show when there's a problem" gate so the panel always shows current status when a flight code is set.
 
-## Out of scope
+### 5. Card rim behaviour (unchanged)
+`TripCard` already turns red for `delayed / cancelled / time_mismatch`; nothing changes there.
 
-- SMS OTP / passwordless phone login.
-- Migrating existing email coordinators automatically (admin does it per user when convenient).
-- Password strength rules beyond Supabase defaults.
+## Files touched
+
+- `src/lib/coordinator.functions.ts` — add `getMaltaFlightStatus`, extend `checkFlightStatus` with Malta branch, small in-memory cache.
+- `src/components/coordinator/TripDetailsSheet.tsx` — status pill + note + refresh button in the Flight section.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — no code change; the existing 3-min `checkFlightStatus` poll will now populate Malta statuses too.
+
+## Not in scope
+
+- Non-Malta flights: this data source only covers MLA arrivals/departures. Flights that aren't listed there return `unknown` with a "Not found on Malta Airport" note; AviationStack (if ever configured) still handles those.
+- Historical status charting.
