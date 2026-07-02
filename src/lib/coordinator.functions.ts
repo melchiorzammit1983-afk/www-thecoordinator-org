@@ -1143,7 +1143,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
-      r.sender_kind === "driver" && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
+      (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
     if (unreadIds.length) {
       await supabaseAdmin.from("trip_messages")
         .update({ read_by_coordinator_at: new Date().toISOString() })
