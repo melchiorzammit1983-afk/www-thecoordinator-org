@@ -91,9 +91,14 @@ export function TripDetailsSheet({
     (async () => {
       try {
         const r: any = await normalizeFn({ data: { job_id: job.id } });
-        if (!cancelled && r?.changed) {
+        if (cancelled) return;
+        if (r?.changed || r?.removed) {
           qc.invalidateQueries({ queryKey: ["jobs"] });
-          if (r.phoneMoved) toast.success("Moved phone number from passenger list");
+          qc.invalidateQueries({ queryKey: ["job-pax", job.id] });
+          const parts: string[] = [];
+          if (r.removed) parts.push(`Removed ${r.removed} blank passenger${r.removed > 1 ? "s" : ""}`);
+          if (r.phoneMoved) parts.push("moved phone number");
+          if (parts.length) toast.success(parts.join(" · "));
         }
       } catch { /* silent */ }
     })();
