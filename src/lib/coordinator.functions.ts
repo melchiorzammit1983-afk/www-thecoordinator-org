@@ -1559,7 +1559,7 @@ export const normalizeJobData = createServerFn({ method: "POST" })
       changed += Object.keys(jobPatch).length;
     }
 
-    return { ok: true, changed, phoneMoved: !!jobPatch.contact_phone };
+    return { ok: true, changed, removed, phoneMoved: !!jobPatch.contact_phone };
   });
 
 // Lightweight setter used when a coordinator adds a passenger with a phone
