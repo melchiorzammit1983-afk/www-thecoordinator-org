@@ -1143,7 +1143,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
-      r.sender_kind === "driver" && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
+      (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
     if (unreadIds.length) {
       await supabaseAdmin.from("trip_messages")
         .update({ read_by_coordinator_at: new Date().toISOString() })
@@ -1180,7 +1180,8 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin.from("trip_messages")
-      .select("job_id").eq("company_id", c.id).eq("sender_kind", "driver").is("read_by_coordinator_at", null);
+      .select("job_id, sender_kind").eq("company_id", c.id).is("read_by_coordinator_at", null)
+      .in("sender_kind", ["driver", "client"]);
     if (error) throw new Error(error.message);
     const acc: Record<string, number> = {};
     for (const m of (data ?? []) as { job_id: string }[]) acc[m.job_id] = (acc[m.job_id] ?? 0) + 1;
@@ -1868,3 +1869,53 @@ export const shareGroupToDriver = createServerFn({ method: "POST" })
     };
   });
 
+
+
+// ---------- CLIENT TRIP LINK (per-trip client portal) ----------
+
+export const getClientTripLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, client_link_token, from_location, from_flight, to_location, to_flight, date, time, pickup_at, group_id, group_name")
+      .eq("id", data.job_id).single();
+    if (error) throw new Error(error.message);
+    let token = (job as any).client_link_token as string | null;
+    if (!token) {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const { error: uErr } = await supabaseAdmin.from("jobs")
+        .update({ client_link_token: token } as never).eq("id", data.job_id);
+      if (uErr) throw new Error(uErr.message);
+    }
+    const { count } = await supabaseAdmin.from("pax")
+      .select("id", { count: "exact", head: true }).eq("job_id", data.job_id);
+    return { token, job: { ...job, pax_count: count ?? 0 } };
+  });
+
+export const listClientLocationsCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const since = new Date(Date.now() - 6 * 3600_000).toISOString();
+    const { data: rows, error } = await supabaseAdmin.from("client_locations")
+      .select("device_id, pax_name, latitude, longitude, accuracy_m, mode, captured_at")
+      .eq("job_id", data.job_id).gte("captured_at", since)
+      .order("captured_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    // Latest per device
+    const seen = new Set<string>();
+    const latest: any[] = [];
+    for (const r of rows ?? []) {
+      if (seen.has(r.device_id)) continue;
+      seen.add(r.device_id);
+      latest.push(r);
+    }
+    return latest;
+  });

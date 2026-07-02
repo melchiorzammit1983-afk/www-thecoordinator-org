@@ -18,7 +18,7 @@ import {
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
-  ungroupJobs, groupJobs, shareGroupToDriver,
+  ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
 } from "@/lib/coordinator.functions";
 
 import { Button } from "@/components/ui/button";
@@ -1083,6 +1083,43 @@ function TripMenu({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const clientLinkFn = useServerFn(getClientTripLink);
+  function buildClientWhatsappText(res: any) {
+    const url = `${window.location.origin}/t/${res.token}`;
+    const j = res.job;
+    const when = j.pickup_at
+      ? new Date(j.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+      : `${j.date}${j.time ? " " + j.time.slice(0, 5) : ""}`;
+    const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
+    const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
+    const lines = [
+      "🚐 Your transfer",
+      `🕒 ${when}`,
+      `📍 ${from || "?"} → ${to || "?"}`,
+      "",
+      "Track your ride, chat with us, and share your location:",
+      url,
+    ];
+    return { url, text: lines.join("\n") };
+  }
+  const shareClientWa = useMutation({
+    mutationFn: () => clientLinkFn({ data: { job_id: job.id } }) as Promise<any>,
+    onSuccess: (res) => {
+      const { text } = buildClientWhatsappText(res);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const copyClientLink = useMutation({
+    mutationFn: () => clientLinkFn({ data: { job_id: job.id } }) as Promise<any>,
+    onSuccess: async (res) => {
+      const { url } = buildClientWhatsappText(res);
+      try { await navigator.clipboard.writeText(url); toast.success("Client link copied"); }
+      catch { toast.error("Copy failed — " + url); }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1128,6 +1165,14 @@ function TripMenu({
             <Link2 className="h-4 w-4 mr-2" /> Copy link
           </DropdownMenuItem>
         )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Client</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
+          <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => copyClientLink.mutate()} disabled={copyClientLink.isPending}>
+          <Link2 className="h-4 w-4 mr-2" /> Copy client link
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenSplit}>
           <Split className="h-4 w-4 mr-2" /> Split into vehicles

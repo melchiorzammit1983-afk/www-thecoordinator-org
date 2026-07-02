@@ -13,7 +13,7 @@ import { listTripMessagesCoord, postTripMessageCoord } from "@/lib/coordinator.f
 
 type Msg = {
   id: string;
-  sender_kind: "driver" | "coordinator";
+  sender_kind: "driver" | "coordinator" | "client";
   sender_label: string | null;
   body: string;
   created_at: string;

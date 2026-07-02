@@ -574,3 +574,215 @@ export const pushDriverLocation = createServerFn({ method: "POST" })
     return { ok: true, inserted: rows.length, job_id: active.id };
   });
 
+// ============================================================
+// CLIENT TRIP PORTAL (per-trip link on jobs.client_link_token)
+// ============================================================
+
+async function loadJobByClientToken(token: string) {
+  const supabaseAdmin = await getAdminClient();
+  const { data: job, error } = await supabaseAdmin.from("jobs")
+    .select("*").eq("client_link_token" as any, token).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!job) throw new Error("invalid_or_expired_link");
+  return { job, supabaseAdmin };
+}
+
+async function siblingIds(supabaseAdmin: any, job: any): Promise<string[]> {
+  const gid = job.group_id as string | null;
+  if (!gid) return [job.id];
+  const { data: sibs } = await supabaseAdmin.from("jobs").select("id").eq("group_id" as any, gid);
+  const ids = (sibs ?? []).map((s: any) => s.id as string);
+  return ids.length ? ids : [job.id];
+}
+
+export const getClientTripPortal = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), device_id: z.string().min(4).max(80).optional() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const ids = await siblingIds(supabaseAdmin, job);
+
+    const [{ data: siblings }, { data: pax }, { data: company }, { data: driver }] = await Promise.all([
+      supabaseAdmin.from("jobs")
+        .select("id, from_location, to_location, from_flight, to_flight, date, time, pickup_at, status, flight_status, driver_id, group_id, group_name")
+        .in("id", ids),
+      supabaseAdmin.from("pax").select("id, name, status, job_id").in("job_id", ids).order("name"),
+      supabaseAdmin.from("companies").select("id, name").eq("id", job.company_id).maybeSingle(),
+      job.driver_id
+        ? supabaseAdmin.from("drivers").select("id, name, phone").eq("id", job.driver_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    // latest driver location for any assigned driver in the group
+    const driverIds = Array.from(new Set((siblings ?? []).map((s: any) => s.driver_id).filter(Boolean)));
+    let driverLocations: any[] = [];
+    if (driverIds.length) {
+      const since = new Date(Date.now() - 30 * 60_000).toISOString();
+      const { data: pts } = await supabaseAdmin.from("driver_locations")
+        .select("driver_id, latitude, longitude, heading, speed_mps, captured_at")
+        .in("driver_id", driverIds)
+        .gte("captured_at", since)
+        .order("captured_at", { ascending: false });
+      const seen = new Set<string>();
+      for (const p of pts ?? []) {
+        if (seen.has(p.driver_id)) continue;
+        seen.add(p.driver_id);
+        driverLocations.push(p);
+      }
+    }
+
+    // identity chosen on this device
+    let identity: any = null;
+    if (data.device_id) {
+      const { data: id } = await supabaseAdmin.from("client_link_identities")
+        .select("pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      identity = id ?? null;
+    }
+
+    return {
+      job: {
+        id: job.id, group_id: job.group_id, group_name: job.group_name,
+        from_location: job.from_location, to_location: job.to_location,
+        from_flight: job.from_flight, to_flight: job.to_flight,
+        date: job.date, time: job.time, pickup_at: job.pickup_at,
+        status: job.status, flight_status: job.flight_status,
+        driver_id: job.driver_id,
+      },
+      siblings: siblings ?? [],
+      pax: pax ?? [],
+      company,
+      driver,
+      driverLocations,
+      identity,
+    };
+  });
+
+export const chooseClientIdentity = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      pax_id: z.string().uuid().nullable(),
+      pax_name: z.string().trim().min(1).max(200).nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadJobByClientToken(data.token);
+    const { error } = await supabaseAdmin.from("client_link_identities").upsert({
+      token: data.token, device_id: data.device_id,
+      pax_id: data.pax_id, pax_name: data.pax_name,
+      chosen_at: new Date().toISOString(),
+    } as never);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const listClientTripMessages = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128) }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const ids = await siblingIds(supabaseAdmin, job);
+    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at")
+      .in("job_id", ids).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const postClientTripMessage = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      body: z.string().trim().min(1).max(4000),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const { data: id } = await supabaseAdmin.from("client_link_identities")
+      .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const label = id?.pax_name ?? "Passenger";
+    const { error } = await supabaseAdmin.from("trip_messages").insert({
+      job_id: job.id, company_id: job.company_id,
+      sender_kind: "client", sender_label: label, body: data.body,
+    } as never);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const pushClientLocation = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      latitude: z.number().gte(-90).lte(90),
+      longitude: z.number().gte(-180).lte(180),
+      accuracy_m: z.number().nonnegative().max(100000).nullable().optional(),
+      mode: z.enum(["live", "pin"]).default("live"),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const { data: id } = await supabaseAdmin.from("client_link_identities")
+      .select("pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const { error } = await supabaseAdmin.from("client_locations").insert({
+      token: data.token, job_id: job.id, company_id: job.company_id,
+      device_id: data.device_id, pax_id: id?.pax_id ?? null, pax_name: id?.pax_name ?? null,
+      latitude: data.latitude, longitude: data.longitude,
+      accuracy_m: data.accuracy_m ?? null, mode: data.mode,
+    } as never);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const requestClientFollowUp = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      from_location: z.string().trim().min(1).max(255),
+      to_location: z.string().trim().min(1).max(255),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      time: z.string().regex(/^\d{2}:\d{2}$/),
+      notes: z.string().trim().max(1000).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const { data: id } = await supabaseAdmin.from("client_link_identities")
+      .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const paxName = id?.pax_name ?? "Passenger";
+    const [y, mo, d] = data.date.split("-").map(Number);
+    const [hh, mm] = data.time.split(":").map(Number);
+    const pickup_at = new Date(Date.UTC(y, mo - 1, d, hh, mm)).toISOString();
+
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const clientToken = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+    const { data: newJob, error } = await supabaseAdmin.from("jobs").insert({
+      company_id: job.company_id,
+      from_location: data.from_location, to_location: data.to_location,
+      date: data.date, time: `${data.time}:00`, pickup_at,
+      status: "pending",
+      parent_job_id: job.id,
+      source: "client_followup",
+      client_link_token: clientToken,
+      clientcompanyname: job.clientcompanyname ?? null,
+    } as never).select("id").single();
+    if (error) throw new Error(error.message);
+
+    await supabaseAdmin.from("pax").insert({ job_id: newJob!.id, name: paxName } as never);
+    if (data.notes) {
+      await supabaseAdmin.from("trip_messages").insert({
+        job_id: newJob!.id, company_id: job.company_id,
+        sender_kind: "client", sender_label: paxName,
+        body: `Follow-up request: ${data.notes}`,
+      } as never);
+    }
+    return { ok: true, job_id: newJob!.id };
+  });
+
