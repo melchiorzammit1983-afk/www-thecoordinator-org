@@ -207,6 +207,9 @@ function CalendarPage() {
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
         </div>
+        <div className="flex justify-end">
+          <AutoRefreshToggle jobs={jobs ?? []} />
+        </div>
       </header>
 
       {/* Live driver map */}
