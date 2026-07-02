@@ -8,10 +8,11 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw,
 } from "lucide-react";
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
