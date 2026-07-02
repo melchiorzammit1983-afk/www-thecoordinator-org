@@ -99,7 +99,9 @@ export function DriverLiveMap({
   const markersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const sosMarkersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const [err, setErr] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [, force] = useState(0);
+
 
   // Expose the ack callback to inline InfoWindow buttons.
   useEffect(() => {
@@ -120,14 +122,22 @@ export function DriverLiveMap({
     loadGoogleMaps()
       .then((gmaps) => {
         if (cancelled || !containerRef.current) return;
-        mapRef.current = new gmaps.Map(containerRef.current, {
-          center: { lat: 20, lng: 0 },
-          zoom: 2,
+        const map = new gmaps.Map(containerRef.current, {
+          center: { lat: 35.9, lng: 14.5 }, // Malta default
+          zoom: 10,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
           clickableIcons: false,
+          gestureHandling: "greedy",
         });
+        mapRef.current = map;
+        // Always-on live traffic overlay.
+        try { new gmaps.TrafficLayer().setMap(map); } catch { /* ignore */ }
+        // Trigger the marker-sync effects now that the map is ready.
+        setMapReady(true);
+        force((x) => x + 1);
+
       })
       .catch((e: Error) => { if (!cancelled) setErr(e.message); });
     return () => {
@@ -138,6 +148,7 @@ export function DriverLiveMap({
       sosMarkersRef.current.clear();
     };
   }, []);
+
 
   // Sync SOS markers.
   useEffect(() => {
@@ -188,7 +199,7 @@ export function DriverLiveMap({
     for (const [id, m] of sosMarkersRef.current.entries()) {
       if (!seen.has(id)) { m.marker.setMap(null); sosMarkersRef.current.delete(id); }
     }
-  }, [sosPoints]);
+  }, [sosPoints, mapReady]);
 
 
   // Sync markers with points.
@@ -262,7 +273,7 @@ export function DriverLiveMap({
       for (const c of allCoords) bounds.extend(c);
       map.fitBounds(bounds, 48);
     }
-  }, [points, sosPoints, focusDriverId]);
+  }, [points, sosPoints, focusDriverId, mapReady]);
 
 
   if (!BROWSER_KEY) {
