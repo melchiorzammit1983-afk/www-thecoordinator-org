@@ -294,7 +294,13 @@ function CalendarPage() {
       return { ...prev, [id]: { ...prev[id], driver_status_new: false } };
     });
   };
-  const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
+  const hasAlert = (jobId: string) => {
+    const s = cardSignals?.[jobId];
+    if (!s) return false;
+    return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new;
+  };
+  const visibleJobs = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const unassigned = visibleJobs.filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
