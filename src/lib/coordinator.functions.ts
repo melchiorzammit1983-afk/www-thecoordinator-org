@@ -1222,6 +1222,70 @@ export const getClientPresenceCoord = createServerFn({ method: "GET" })
     return out;
   });
 
+export const listPaxActivityCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const jobIds = await siblingGroupJobIds(supabaseAdmin, data.job_id);
+
+    const [{ data: paxRows }, { data: jobsRows }, { data: msgRows }] = await Promise.all([
+      supabaseAdmin.from("pax").select("id, name, job_id").in("job_id", jobIds),
+      supabaseAdmin.from("jobs").select("id, client_link_token").in("id", jobIds),
+      supabaseAdmin.from("trip_messages")
+        .select("id, job_id, client_identity_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
+        .in("job_id", jobIds).order("created_at", { ascending: true }),
+    ]);
+
+    const tokens = (jobsRows ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
+    const { data: idents } = tokens.length
+      ? await supabaseAdmin.from("client_link_identities")
+          .select("id, token, pax_id, pax_name, last_seen_at").in("token", tokens)
+      : { data: [] as any[] };
+
+    const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    type Ident = { id: string; pax_id: string | null; pax_name: string | null; last_seen_at: string | null };
+    const identsArr = (idents ?? []) as Ident[];
+
+    const out: Record<string, {
+      identity_id: string | null;
+      last_seen_at: string | null;
+      last_message: { body: string; created_at: string; sender_kind: string; sender_label: string | null; read_by_coordinator_at: string | null } | null;
+      unread_count: number;
+    }> = {};
+
+    for (const p of (paxRows ?? []) as { id: string; name: string; job_id: string }[]) {
+      const byId = identsArr.find((i) => i.pax_id === p.id);
+      const byName = byId ?? identsArr.find((i) => norm(i.pax_name) === norm(p.name));
+      const ident = byId ?? byName ?? null;
+
+      let msgs = (msgRows ?? []).filter((m: any) => m.sender_kind !== "coordinator");
+      if (ident) {
+        msgs = msgs.filter((m: any) => m.client_identity_id === ident.id || (m.thread_kind === "group" && m.client_identity_id === null));
+      } else {
+        // no identity yet — only surface group messages that could be from anyone
+        msgs = msgs.filter((m: any) => m.sender_kind === "client" && m.thread_kind === "group");
+      }
+      const last = msgs.length ? msgs[msgs.length - 1] : null;
+      const unread = msgs.filter((m: any) => m.sender_kind === "client" && !m.read_by_coordinator_at).length;
+
+      out[p.id] = {
+        identity_id: ident?.id ?? null,
+        last_seen_at: ident?.last_seen_at ?? null,
+        last_message: last ? {
+          body: last.body, created_at: last.created_at,
+          sender_kind: last.sender_kind, sender_label: last.sender_label,
+          read_by_coordinator_at: last.read_by_coordinator_at,
+        } : null,
+        unread_count: unread,
+      };
+    }
+    return out;
+  });
+
+
+
 // ---------- TRIP LABELS ----------
 
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
