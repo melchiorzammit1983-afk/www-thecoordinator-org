@@ -180,11 +180,18 @@ function CalendarPage() {
   }, [jobs, flightFn, refetch]);
 
   function onDragEnd(e: DragEndEvent) {
-    const jobId = String(e.active.id);
+    const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
-    if (dropId === "unassigned") assignMut.mutate({ job_id: jobId, driver_id: null });
-    else if (dropId.startsWith("driver:")) assignMut.mutate({ job_id: jobId, driver_id: dropId.slice(7) });
+    const driverId = dropId === "unassigned" ? null : dropId.startsWith("driver:") ? dropId.slice(7) : undefined;
+    if (driverId === undefined) return;
+    if (rawId.startsWith("group:")) {
+      const gid = rawId.slice(6);
+      const memberIds = (jobs ?? []).filter((j) => j.group_id === gid).map((j) => j.id);
+      for (const id of memberIds) assignMut.mutate({ job_id: id, driver_id: driverId });
+    } else {
+      assignMut.mutate({ job_id: rawId, driver_id: driverId });
+    }
   }
 
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
@@ -197,7 +204,9 @@ function CalendarPage() {
     highlightId: justAcceptedId,
     selected, onToggleSelect: toggleSelect,
     expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
+    onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
   };
+
 
   function handleAccepted(res: { id: string; date: string | null }) {
     if (res.date) {
