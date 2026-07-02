@@ -522,10 +522,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             </Button>
           ) : (
             <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-              onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
+              onClick={() => setConfirmHideOpen(true)}>
               <X className="h-4 w-4 mr-1" /> Hide
             </Button>
           )}
+
         </div>
       </div>
 
