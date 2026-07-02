@@ -273,7 +273,7 @@ export function DriverLiveMap({
       for (const c of allCoords) bounds.extend(c);
       map.fitBounds(bounds, 48);
     }
-  }, [points, sosPoints, focusDriverId]);
+  }, [points, sosPoints, focusDriverId, mapReady]);
 
 
   if (!BROWSER_KEY) {
