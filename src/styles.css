@@ -142,3 +142,45 @@
     color: var(--color-foreground);
   }
 }
+
+/* ============ Trip card signal overlays ============ */
+@keyframes signal-stripe-pulse {
+  0%, 100% { opacity: 0.55; box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+  50%      { opacity: 1;    box-shadow: 0 0 10px 2px rgba(59,130,246,0.75); }
+}
+@keyframes signal-corner-pulse {
+  0%, 100% { transform: scale(1);   opacity: 0.85; }
+  50%      { transform: scale(1.25); opacity: 1; }
+}
+@keyframes signal-dot-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+.signal-stripe-msg {
+  position: absolute; inset: 0 auto 0 0; width: 4px;
+  background: rgb(59,130,246); border-radius: 2px 0 0 2px;
+  animation: signal-stripe-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.signal-corner-change {
+  position: absolute; top: -4px; right: -4px;
+  width: 14px; height: 14px; border-radius: 9999px;
+  background: rgb(250,204,21);
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 8px 2px rgba(250,204,21,0.65);
+  animation: signal-corner-pulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.signal-corner-sos {
+  position: absolute; top: -4px; right: -4px;
+  width: 14px; height: 14px; border-radius: 9999px;
+  background: rgb(239,68,68);
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 10px 3px rgba(239,68,68,0.8);
+  animation: signal-corner-pulse 0.9s ease-in-out infinite;
+  pointer-events: none;
+}
+.signal-dot-driver {
+  display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+  background: rgb(168,85,247);
+  animation: signal-dot-pulse 1.4s ease-in-out infinite;
+}
+
