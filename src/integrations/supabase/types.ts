@@ -972,7 +972,6 @@ export type Database = {
           id: string
           job_id: string
           name: string
-          qr_code: string
           status: Database["public"]["Enums"]["pax_status"]
           updated_at: string
         }
@@ -984,7 +983,6 @@ export type Database = {
           id?: string
           job_id: string
           name: string
-          qr_code?: string
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
@@ -996,7 +994,6 @@ export type Database = {
           id?: string
           job_id?: string
           name?: string
-          qr_code?: string
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
