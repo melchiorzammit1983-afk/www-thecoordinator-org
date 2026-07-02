@@ -132,6 +132,16 @@ function CalendarPage() {
     queryFn: () => presenceFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, string>>,
     refetchInterval: 20_000,
   });
+  const signalsFn = useServerFn(getCardSignalsCoord);
+  const { data: cardSignals } = useQuery({
+    queryKey: ["coord-card-signals", presenceJobIds.join(",")],
+    enabled: presenceJobIds.length > 0,
+    queryFn: () => signalsFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, {
+      unread_client: number; unread_driver: number;
+      client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+    }>>,
+    refetchInterval: 15_000,
+  });
 
   const range = useMemo(() => {
     if (view === "day") return { from: format(anchor, "yyyy-MM-dd"), to: format(anchor, "yyyy-MM-dd"), days: [anchor] };
