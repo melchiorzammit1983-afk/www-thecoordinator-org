@@ -1641,13 +1641,13 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     ].join("\n");
 
     try {
-      const { experimental_output } = await generateText({
+      const { output } = await generateText({
         model,
         system,
         prompt: data.text,
-        experimental_output: Output.object({ schema }),
+        output: Output.object({ schema }),
       });
-      return experimental_output;
+      return output;
     } catch (err: any) {
       if (NoObjectGeneratedError.isInstance?.(err)) {
         throw new Error("AI could not extract trips from this text");
