@@ -474,6 +474,12 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
                 {nextStatus.label}
               </Button>
             )}
+            {job.status !== "completed" && (
+              <Button variant="outline" className="h-10"
+                onClick={() => setLateOpen(true)}>
+                <Timer className="h-4 w-4 mr-1.5" /> Running late
+              </Button>
+            )}
             {job.status !== "in_progress" && job.status !== "completed" && (
               <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
                 onClick={() => setRejectOpen(true)}>
@@ -482,6 +488,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             )}
           </>
         )}
+
 
         <Button variant="outline" className="h-10" asChild>
           <a href={mapsUrl} target="_blank" rel="noreferrer">
