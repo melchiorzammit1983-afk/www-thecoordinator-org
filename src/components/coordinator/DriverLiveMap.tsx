@@ -135,7 +135,9 @@ export function DriverLiveMap({
         // Always-on live traffic overlay.
         try { new gmaps.TrafficLayer().setMap(map); } catch { /* ignore */ }
         // Trigger the marker-sync effects now that the map is ready.
+        setMapReady(true);
         force((x) => x + 1);
+
       })
       .catch((e: Error) => { if (!cancelled) setErr(e.message); });
     return () => {
