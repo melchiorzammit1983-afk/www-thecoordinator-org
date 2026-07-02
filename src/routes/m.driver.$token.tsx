@@ -95,14 +95,20 @@ function DriverManifest() {
     if (data?.driver && !data.driver.profile_updated_at) setProfileOpen(true);
   }, [data?.driver]);
 
-  const jobs = useMemo(() => {
-    if (!data) return [];
-    return [...data.jobs].sort((a, b) => {
+  const [showArchived, setShowArchived] = useState(false);
+  const { activeJobs, archivedJobs } = useMemo(() => {
+    if (!data) return { activeJobs: [] as Job[], archivedJobs: [] as Job[] };
+    const sorted = [...data.jobs].sort((a, b) => {
       const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : Infinity;
       const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : Infinity;
       return ta - tb;
     });
+    return {
+      activeJobs: sorted.filter((j) => !j.driver_hidden_at),
+      archivedJobs: sorted.filter((j) => !!j.driver_hidden_at),
+    };
   }, [data]);
+  const jobs = activeJobs;
 
   if (isLoading) {
     return (
