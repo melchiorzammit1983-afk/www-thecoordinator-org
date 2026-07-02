@@ -1373,6 +1373,7 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     if (lErr) throw new Error(lErr.message);
     const latest = new Map<string, any>();
     for (const l of locs ?? []) {
+      if (!l.job_id) continue;
       if (!latest.has(l.job_id)) latest.set(l.job_id, l);
     }
     return list
