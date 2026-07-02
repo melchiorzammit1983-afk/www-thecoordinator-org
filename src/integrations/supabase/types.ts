@@ -783,6 +783,7 @@ export type Database = {
           flightorship: string | null
           from_flight: string | null
           from_location: string
+          group_id: string | null
           grouped_at: string | null
           grouped_count: number | null
           id: string
@@ -827,6 +828,7 @@ export type Database = {
           flightorship?: string | null
           from_flight?: string | null
           from_location: string
+          group_id?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
@@ -871,6 +873,7 @@ export type Database = {
           flightorship?: string | null
           from_flight?: string | null
           from_location?: string
+          group_id?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
