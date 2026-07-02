@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
@@ -55,6 +55,33 @@ export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   component: CalendarPage,
 });
 
+/* --- module-scope helpers used by CalendarPage effects --- */
+let _audioCtx: AudioContext | null = null;
+function playAlertBeep(freq = 880, durationSec = 0.3) {
+  if (typeof window === "undefined") return;
+  const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+  if (!Ctor) return;
+  if (!_audioCtx) _audioCtx = new Ctor();
+  const ctx = _audioCtx;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine"; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationSec);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + durationSec + 0.02);
+}
+function scrollToJob(jobId: string) {
+  if (typeof document === "undefined") return;
+  const el = document.querySelector<HTMLElement>(`[data-job-id="${jobId}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ring-2", "ring-primary");
+  setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
+}
+
 type Job = {
   id: string;
   from_location: string; to_location: string;
@@ -104,6 +131,7 @@ function CalendarPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
+  const [alertsOnly, setAlertsOnly] = useState(false);
   const qc = useQueryClient();
   const clientPortalEnabled = useFeature("client_trip_portal");
 
@@ -206,6 +234,43 @@ function CalendarPage() {
     setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
   }, [jobs]);
 
+  // Track prior signals to detect NEW SOS / client-change transitions.
+  const prevSignalsRef = useRef<Record<string, { sos_open: boolean; client_change: boolean }>>({});
+  const firstSignalsRun = useRef(true);
+  useEffect(() => {
+    if (!cardSignals) return;
+    const prev = prevSignalsRef.current;
+    if (firstSignalsRun.current) {
+      // Seed baseline without alerting on already-open items.
+      const seed: typeof prev = {};
+      for (const [id, s] of Object.entries(cardSignals)) seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+      prevSignalsRef.current = seed;
+      firstSignalsRun.current = false;
+      return;
+    }
+    for (const [id, s] of Object.entries(cardSignals)) {
+      const p = prev[id] ?? { sos_open: false, client_change: false };
+      if (s.sos_open && !p.sos_open) {
+        try { playAlertBeep(880, 0.35); setTimeout(() => playAlertBeep(660, 0.35), 200); } catch { /* ignore */ }
+        const j = (jobs ?? []).find((x) => x.id === id);
+        toast.error(`SOS from client${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          duration: 10000,
+        });
+        scrollToJob(id);
+      } else if (s.client_change && !p.client_change) {
+        try { playAlertBeep(520, 0.15); } catch { /* ignore */ }
+        const j = (jobs ?? []).find((x) => x.id === id);
+        toast.warning(`Client requested a change${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          duration: 8000,
+        });
+        scrollToJob(id);
+      }
+      prev[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+    }
+  }, [cardSignals, jobs]);
+
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
@@ -229,7 +294,13 @@ function CalendarPage() {
       return { ...prev, [id]: { ...prev[id], driver_status_new: false } };
     });
   };
-  const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
+  const hasAlert = (jobId: string) => {
+    const s = cardSignals?.[jobId];
+    if (!s) return false;
+    return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new;
+  };
+  const visibleJobs = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const unassigned = visibleJobs.filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
@@ -281,7 +352,19 @@ function CalendarPage() {
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAlertsOnly((v) => !v)}
+            className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
+              alertsOnly
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground hover:text-foreground"
+            }`}
+            title="Show only cards with unread messages, client changes, or SOS"
+          >
+            {alertsOnly ? "● " : ""}Only cards with alerts
+          </button>
           <AutoRefreshToggle jobs={jobs ?? []} />
         </div>
       </header>
@@ -300,8 +383,8 @@ function CalendarPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
           <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} ctx={cardCtx} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} ctx={cardCtx} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
+            : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
 
@@ -993,16 +1076,29 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     );
   }
 
+  const totalUnreadSignal = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0);
+
   return (
     <div
       ref={setNodeRef}
+      data-job-id={job.id}
       style={style}
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
       {/* Signal overlays */}
-      {hasUnread && <span className="signal-stripe-msg" aria-label="Unread messages" />}
+      {hasUnread && (
+        <>
+          <span className="signal-stripe-msg" aria-label="Unread messages" />
+          {totalUnreadSignal > 0 && (
+            <span className="signal-unread-badge" aria-label={`${totalUnreadSignal} unread`}>
+              {totalUnreadSignal > 99 ? "99+" : totalUnreadSignal}
+            </span>
+          )}
+        </>
+      )}
+      {driverStatusNew && <span className="signal-stripe-driver" aria-label="Driver status updated" />}
       {sosOpen ? (
         <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
       ) : clientChange ? (
