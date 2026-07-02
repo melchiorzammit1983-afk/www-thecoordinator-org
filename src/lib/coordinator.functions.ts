@@ -1484,28 +1484,35 @@ export const normalizeJobData = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
-    const { extractPhoneFromName, extractFlightCode, normalizePhone } = await import("./parse-trips");
+    const { extractPhoneFromName, extractFlightCode, normalizePhone, isMeaningfulName } = await import("./parse-trips");
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: je } = await supabaseAdmin
       .from("jobs")
       .select("id, contact_phone, from_flight, to_flight, from_location, to_location, flightorship")
       .eq("id", data.job_id).maybeSingle();
-    if (je || !job) return { ok: false, changed: 0 };
+    if (je || !job) return { ok: false, changed: 0, removed: 0 };
 
     let changed = 0;
+    let removed = 0;
     let discoveredPhone = "";
 
-    // Pax cleanup
+    // Pax cleanup: strip embedded phones, delete blank/emoji-only rows.
     const { data: paxRows } = await supabaseAdmin
       .from("pax").select("id, name").eq("job_id", data.job_id);
     for (const p of paxRows ?? []) {
       const { cleanName, phone } = extractPhoneFromName(p.name ?? "");
       if (phone && !discoveredPhone) discoveredPhone = phone;
-      if (cleanName && cleanName !== (p.name ?? "").trim()) {
+      if (!isMeaningfulName(cleanName)) {
+        await supabaseAdmin.from("pax").delete().eq("id", p.id);
+        removed++;
+        continue;
+      }
+      if (cleanName !== (p.name ?? "").trim()) {
         await supabaseAdmin.from("pax").update({ name: cleanName }).eq("id", p.id);
         changed++;
       }
     }
+
 
     // Also normalize a phone already sitting in contact_phone
     const currentPhone = normalizePhone(job.contact_phone ?? "") || (job.contact_phone ?? "");
