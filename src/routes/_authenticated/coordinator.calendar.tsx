@@ -548,7 +548,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               })()}
               {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
-              {job.qr_strict_mode && <Badge variant="outline" className="text-[10px]">QR</Badge>}
+              
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
               {job.external && (
                 <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
