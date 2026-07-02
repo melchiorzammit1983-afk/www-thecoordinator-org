@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -13,29 +13,64 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { groupJobs } from "@/lib/coordinator.functions";
+import { groupJobs, updateGroupMeta } from "@/lib/coordinator.functions";
 import type { BulkJob, BulkDriver } from "./BulkActionBar";
 
 const UNASSIGNED = "__unassigned__";
 const KEEP = "__keep__";
 
-export function GroupDialog({
-  open, onOpenChange, jobs, drivers, onDone,
-}: {
+type BaseProps = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  jobs: BulkJob[];
   drivers: BulkDriver[];
   onDone: () => void;
-}) {
+};
+
+type CreateProps = BaseProps & {
+  mode?: "create";
+  jobs: BulkJob[];
+  groupId?: undefined;
+  initialName?: string;
+  initialNote?: string;
+  initialDriverId?: string | null;
+};
+
+type EditProps = BaseProps & {
+  mode: "edit";
+  groupId: string;
+  jobs: BulkJob[];
+  initialName?: string;
+  initialNote?: string;
+  initialDriverId?: string | null;
+};
+
+type Props = CreateProps | EditProps;
+
+export function GroupDialog(props: Props) {
+  const { open, onOpenChange, drivers, onDone, jobs } = props;
+  const isEdit = props.mode === "edit";
   const qc = useQueryClient();
   const groupFn = useServerFn(groupJobs);
+  const updateFn = useServerFn(updateGroupMeta);
 
-  const [name, setName] = useState("");
-  const [note, setNote] = useState("");
-  const [driverChoice, setDriverChoice] = useState<string>(KEEP);
+  const [name, setName] = useState(props.initialName ?? "");
+  const [note, setNote] = useState(props.initialNote ?? "");
+  const [driverChoice, setDriverChoice] = useState<string>(
+    isEdit
+      ? (props.initialDriverId ?? UNASSIGNED)
+      : KEEP,
+  );
 
-  // Auto-order by time (earliest first)
+  // Reset when re-opened
+  useEffect(() => {
+    if (open) {
+      setName(props.initialName ?? "");
+      setNote(props.initialNote ?? "");
+      setDriverChoice(isEdit ? (props.initialDriverId ?? UNASSIGNED) : KEEP);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const ordered = useMemo(
     () => [...jobs].sort((a, b) =>
       ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")),
@@ -47,7 +82,19 @@ export function GroupDialog({
   const mixedDrivers = currentDrivers.size > 1;
 
   const mut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (isEdit) {
+        const payload: {
+          group_id: string;
+          name?: string | null;
+          note?: string | null;
+          driver_id?: string | null;
+        } = { group_id: props.groupId! };
+        payload.name = name.trim() || null;
+        payload.note = note.trim() || null;
+        payload.driver_id = driverChoice === UNASSIGNED ? null : driverChoice;
+        return updateFn({ data: payload });
+      }
       const payload: {
         job_ids: string[];
         name?: string;
@@ -61,13 +108,12 @@ export function GroupDialog({
       if (driverChoice !== KEEP) {
         payload.driver_id = driverChoice === UNASSIGNED ? null : driverChoice;
       }
-      return groupFn({ data: payload }) as Promise<{ count: number }>;
+      return groupFn({ data: payload });
     },
-    onSuccess: (r) => {
-      toast.success(`Grouped ${r.count} trips`);
+    onSuccess: () => {
+      toast.success(isEdit ? "Group updated" : `Grouped ${jobs.length} trips`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       onOpenChange(false);
-      setName(""); setNote(""); setDriverChoice(KEEP);
       onDone();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -78,10 +124,13 @@ export function GroupDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Link2 className="h-4 w-4" /> Group {jobs.length} trips
+            <Link2 className="h-4 w-4" />
+            {isEdit ? `Edit group · ${jobs.length} trips` : `Group ${jobs.length} trips`}
           </DialogTitle>
           <DialogDescription>
-            Link these trips as a single stack. Each keeps its own details — you can ungroup any time.
+            {isEdit
+              ? "Rename, re-note, or unify the driver across every trip in this group."
+              : "Link these trips as a single stack. Each keeps its own details — you can ungroup any time."}
           </DialogDescription>
         </DialogHeader>
 
@@ -114,7 +163,9 @@ export function GroupDialog({
             <Select value={driverChoice} onValueChange={setDriverChoice}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={KEEP}>Keep current driver{mixedDrivers ? "s (mixed)" : ""}</SelectItem>
+                {!isEdit && (
+                  <SelectItem value={KEEP}>Keep current driver{mixedDrivers ? "s (mixed)" : ""}</SelectItem>
+                )}
                 <SelectItem value={UNASSIGNED}>— Unassigned —</SelectItem>
                 {drivers.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
@@ -123,7 +174,7 @@ export function GroupDialog({
                 ))}
               </SelectContent>
             </Select>
-            {mixedDrivers && driverChoice === KEEP && (
+            {mixedDrivers && driverChoice === KEEP && !isEdit && (
               <p className="text-[11px] text-amber-600">
                 Trips have different drivers today. Choose one to unify, or keep as-is.
               </p>
@@ -148,7 +199,9 @@ export function GroupDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
-            {mut.isPending ? "Grouping…" : "Group trips"}
+            {mut.isPending
+              ? (isEdit ? "Saving…" : "Grouping…")
+              : (isEdit ? "Save changes" : "Group trips")}
           </Button>
         </DialogFooter>
       </DialogContent>
