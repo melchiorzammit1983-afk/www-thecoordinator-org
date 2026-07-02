@@ -244,21 +244,20 @@ function CalendarPage() {
   }, [jobs]);
 
   // Track prior signals to detect NEW SOS / client-change transitions.
-  const prevSignalsRef = useRef<Record<string, { sos_open: boolean; client_change: boolean }>>({});
+  const prevSignalsRef = useRef<Record<string, { sos_open: boolean; client_change: boolean; rejected: boolean }>>({});
   const firstSignalsRun = useRef(true);
   useEffect(() => {
     if (!cardSignals) return;
     const prev = prevSignalsRef.current;
     if (firstSignalsRun.current) {
-      // Seed baseline without alerting on already-open items.
       const seed: typeof prev = {};
-      for (const [id, s] of Object.entries(cardSignals)) seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+      for (const [id, s] of Object.entries(cardSignals)) seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change, rejected: !!(s as any).rejected };
       prevSignalsRef.current = seed;
       firstSignalsRun.current = false;
       return;
     }
     for (const [id, s] of Object.entries(cardSignals)) {
-      const p = prev[id] ?? { sos_open: false, client_change: false };
+      const p = prev[id] ?? { sos_open: false, client_change: false, rejected: false };
       if (s.sos_open && !p.sos_open) {
         try { playAlertBeep(880, 0.35); setTimeout(() => playAlertBeep(660, 0.35), 200); } catch { /* ignore */ }
         const j = (jobs ?? []).find((x) => x.id === id);
@@ -277,8 +276,17 @@ function CalendarPage() {
           duration: 8000,
         });
         scrollToJob(id);
+      } else if ((s as any).rejected && !p.rejected) {
+        try { playAlertBeep(440, 0.25); setTimeout(() => playAlertBeep(330, 0.25), 180); } catch { /* ignore */ }
+        const j = (jobs ?? []).find((x) => x.id === id);
+        toast.warning(`⚠️ Driver rejected a trip${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setChatJob(j); } } : undefined,
+          duration: 12000,
+          description: "The trip is back in Unassigned. Check the chat for the reason.",
+        });
+        scrollToJob(id);
       }
-      prev[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+      prev[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change, rejected: !!(s as any).rejected };
     }
   }, [cardSignals, jobs]);
 
@@ -308,8 +316,9 @@ function CalendarPage() {
   const hasAlert = (jobId: string) => {
     const s = cardSignals?.[jobId];
     if (!s) return false;
-    return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new;
+    return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new || (s as any).rejected;
   };
+
   const isPendingClient = (j: Job) =>
     !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
   const visibleAll = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
