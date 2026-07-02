@@ -221,10 +221,18 @@ function CalendarPage() {
     }
   }
 
+  const markViewedFn = useServerFn(markJobViewedCoord);
+  const handleMarkViewed = (id: string) => {
+    markViewedFn({ data: { job_id: id } }).catch(() => { /* ignore */ });
+    qc.setQueryData<any>(["coord-card-signals", presenceJobIds.join(",")], (prev: any) => {
+      if (!prev || !prev[id]) return prev;
+      return { ...prev, [id]: { ...prev[id], driver_status_new: false } };
+    });
+  };
   const unassigned = (jobs ?? []).filter((j) => !j.driver_id);
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
-    onOpenDetails: setDetailsJob,
+    onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
@@ -234,6 +242,7 @@ function CalendarPage() {
     onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
     clientPortalEnabled,
     clientPresence: clientPresence ?? {},
+    signals: cardSignals ?? {},
   };
 
 
