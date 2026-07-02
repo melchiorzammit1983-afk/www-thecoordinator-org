@@ -95,6 +95,7 @@ export function TripDetailsSheet({
   const normalizeFn = useServerFn(normalizeJobData);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
+  const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
 
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
