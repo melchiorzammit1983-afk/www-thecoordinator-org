@@ -226,11 +226,15 @@ function DriverManifest() {
 function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
+  const rejectFn = useServerFn(driverRejectJob);
   const approveDelFn = useServerFn(driverApproveDeletion);
   const statusFn = useServerFn(updateJobStatus);
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
   const unhideFn = useServerFn(unhideJobForDriver);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const acceptMut = useMutation({
