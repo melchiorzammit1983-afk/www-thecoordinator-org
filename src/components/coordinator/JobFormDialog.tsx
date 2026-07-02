@@ -217,23 +217,41 @@ function ManualForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
-          <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder={fromFlight ? "Airport (auto)" : ""} />
+          <Input
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            onBlur={() => handleLocationBlur("from")}
+            placeholder={fromFlight ? "Airport (auto)" : ""}
+          />
           <Input
             value={fromFlight}
             onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
+            onBlur={() => handleFlightBlur("from")}
             placeholder="Flight / Ship (e.g. EK109)"
             className="text-xs"
           />
+          {flightHint?.side === "from" && (
+            <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
-          <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder={toFlight ? "Airport (auto)" : ""} />
+          <Input
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            onBlur={() => handleLocationBlur("to")}
+            placeholder={toFlight ? "Airport (auto)" : ""}
+          />
           <Input
             value={toFlight}
             onChange={(e) => setToFlight(e.target.value.toUpperCase())}
+            onBlur={() => handleFlightBlur("to")}
             placeholder="Flight / Ship (e.g. EK109)"
             className="text-xs"
           />
+          {flightHint?.side === "to" && (
+            <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
+          )}
         </div>
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
         <div className="space-y-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></div>
