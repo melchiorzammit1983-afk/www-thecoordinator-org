@@ -158,7 +158,7 @@ function Hero({ refCode }: { refCode: string }) {
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-primary" /> Cancel anytime</span>
           </div>
           {refCode && (
-            <p className="mt-4 text-xs text-primary">✓ Referral <span className="font-semibold">{refCode}</span> applied — you'll get bonus points on approval.</p>
+            <p className="mt-4 text-xs text-primary">✓ Referral <span className="font-semibold">{refCode}</span> applied.</p>
           )}
         </div>
 
