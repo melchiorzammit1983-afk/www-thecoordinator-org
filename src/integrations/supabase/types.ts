@@ -261,6 +261,47 @@ export type Database = {
           },
         ]
       }
+      company_feature_entitlements: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          expires_at: string | null
+          feature: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          expires_at?: string | null
+          feature: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          expires_at?: string | null
+          feature?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_feature_entitlements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connection_invites: {
         Row: {
           code: string
@@ -1181,6 +1222,10 @@ export type Database = {
           _target_company: string
           _viewer_company: string
         }
+        Returns: boolean
+      }
+      has_feature: {
+        Args: { _company_id: string; _feature: string }
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
