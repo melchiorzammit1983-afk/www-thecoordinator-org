@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useMyCompany } from "@/hooks/use-coordinator";
+import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
