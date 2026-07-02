@@ -241,7 +241,11 @@ export function DriverLiveMap({
     }
 
     // Auto-fit or focus
-    if (points.length === 0) return;
+    const allCoords = [
+      ...points.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+      ...sosPoints.map((s) => ({ lat: s.latitude, lng: s.longitude })),
+    ];
+    if (allCoords.length === 0) return;
     if (focusDriverId) {
       const target = points.find((p) => p.driver_id === focusDriverId);
       if (target) {
@@ -250,15 +254,16 @@ export function DriverLiveMap({
         return;
       }
     }
-    if (points.length === 1) {
-      map.panTo({ lat: points[0].latitude, lng: points[0].longitude });
+    if (allCoords.length === 1) {
+      map.panTo(allCoords[0]);
       if ((map.getZoom() ?? 2) < 12) map.setZoom(13);
     } else {
       const bounds = new gmaps.LatLngBounds();
-      for (const p of points) bounds.extend({ lat: p.latitude, lng: p.longitude });
+      for (const c of allCoords) bounds.extend(c);
       map.fitBounds(bounds, 48);
     }
-  }, [points, focusDriverId]);
+  }, [points, sosPoints, focusDriverId]);
+
 
   if (!BROWSER_KEY) {
     return (
