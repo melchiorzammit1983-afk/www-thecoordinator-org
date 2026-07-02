@@ -767,7 +767,7 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, splits: labels.filter(Boolean).map((l) => ({ label: l })) } }),
     onSuccess: () => { toast.success("Split into new jobs"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
-    onError: (e: Error) => e.message === "insufficient_points" ? toast.error("Top-Up Required to split") : toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
