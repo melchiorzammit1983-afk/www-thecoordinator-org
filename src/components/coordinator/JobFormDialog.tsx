@@ -117,6 +117,55 @@ function ManualForm({
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
+  const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
+
+  // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
+  // and return the normalized code plus the remaining text with the match removed.
+  const FLIGHT_RE = /(?:^|\s|#|✈|\bflight\b|\bflt\b)\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})(?=$|\s|[,.;])/i;
+  function extractFlightCode(text: string): { code: string | null; rest: string } {
+    const raw = (text ?? "").trim();
+    if (!raw) return { code: null, rest: "" };
+    const m = FLIGHT_RE.exec(raw);
+    if (!m) return { code: null, rest: raw };
+    const code = `${m[1].toUpperCase()}${m[2]}`;
+    const rest = (raw.slice(0, m.index) + " " + raw.slice(m.index + m[0].length))
+      .replace(/\b(flight|flt)\b/gi, "")
+      .replace(/[#✈]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { code, rest };
+  }
+  function showHint(side: "from" | "to", msg: string) {
+    setFlightHint({ side, msg });
+    setTimeout(() => setFlightHint((h) => (h && h.side === side && h.msg === msg ? null : h)), 3000);
+  }
+  function handleLocationBlur(side: "from" | "to") {
+    const value = side === "from" ? from : to;
+    const currentFlight = side === "from" ? fromFlight : toFlight;
+    const setLoc = side === "from" ? setFrom : setTo;
+    const setFlight = side === "from" ? setFromFlight : setToFlight;
+    const { code, rest } = extractFlightCode(value);
+    if (!code) return;
+    if (currentFlight && currentFlight.toUpperCase() !== code) {
+      setLoc(rest || "Airport");
+      showHint(side, `Kept existing flight ${currentFlight}`);
+      return;
+    }
+    setFlight(code);
+    setLoc(rest || "Airport");
+    showHint(side, `Moved ${code} to flight`);
+  }
+  function handleFlightBlur(side: "from" | "to") {
+    const value = side === "from" ? fromFlight : toFlight;
+    const loc = side === "from" ? from : to;
+    const setLoc = side === "from" ? setFrom : setTo;
+    const setFlight = side === "from" ? setFromFlight : setToFlight;
+    const { code } = extractFlightCode(value);
+    if (code) {
+      if (code !== value.trim().toUpperCase()) setFlight(code);
+      if (!loc.trim()) setLoc("Airport");
+    }
+  }
 
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
