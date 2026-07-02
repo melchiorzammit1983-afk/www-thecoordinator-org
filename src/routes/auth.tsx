@@ -27,9 +27,10 @@ export const Route = createFileRoute("/auth")({
 });
 
 const credsSchema = z.object({
-  email: z.string().trim().email().max(255),
+  phone: z.string().trim().regex(/^\+[1-9]\d{6,14}$/, "Enter phone in international format, e.g. +35699123456"),
   password: z.string().min(8).max(128),
 });
+
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -66,12 +67,13 @@ function AuthPage() {
         <Card>
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use the credentials provided by your administrator</CardDescription>
+            <CardDescription>Use the phone number and password from your administrator</CardDescription>
           </CardHeader>
           <CardContent>
             <SignInForm />
           </CardContent>
         </Card>
+
         <p className="text-xs text-muted-foreground text-center mt-6">
           <Link to="/" className="hover:underline">Back home</Link>
         </p>
@@ -90,20 +92,23 @@ function AuthPage() {
 }
 
 function SignInForm() {
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("+");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const whoAmIFn = useServerFn(whoAmI);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = credsSchema.safeParse({ email, password });
+    const parsed = credsSchema.safeParse({ phone: phone.trim(), password });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { error } = await supabase.auth.signInWithPassword({
+      phone: parsed.data.phone,
+      password: parsed.data.password,
+    });
     setLoading(false);
     if (error) {
       toast.error(error.message);
@@ -121,8 +126,18 @@ function SignInForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4 pt-4">
       <div className="space-y-2">
-        <Label htmlFor="si-email">Email</Label>
-        <Input id="si-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <Label htmlFor="si-phone">Phone number</Label>
+        <Input
+          id="si-phone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="+35699123456"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          required
+        />
+        <p className="text-xs text-muted-foreground">Include country code, e.g. +356 for Malta.</p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="si-password">Password</Label>
@@ -134,4 +149,5 @@ function SignInForm() {
     </form>
   );
 }
+
 
