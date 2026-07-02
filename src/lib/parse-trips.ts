@@ -12,8 +12,53 @@ export type ParsedTrip = {
   from_flight: string;
   to_flight: string;
   pax: string[];
+  contact_phone: string;
   errors: string[];
 };
+
+const PHONE_RE = /(\+?\d[\d\s().\-]{5,}\d)/;
+
+export function normalizePhone(raw: string): string {
+  const digits = (raw ?? "").replace(/[^\d+]/g, "");
+  if (!digits) return "";
+  const plus = digits.startsWith("+");
+  const onlyDigits = digits.replace(/\+/g, "");
+  if (onlyDigits.length < 7 || onlyDigits.length > 15) return "";
+  return (plus ? "+" : "") + onlyDigits;
+}
+
+export function extractPhoneFromName(name: string): { cleanName: string; phone: string } {
+  const s = (name ?? "").toString();
+  const m = s.match(PHONE_RE);
+  if (!m) return { cleanName: s.trim(), phone: "" };
+  const phone = normalizePhone(m[1]);
+  if (!phone) return { cleanName: s.trim(), phone: "" };
+  const cleaned = (s.slice(0, m.index!) + " " + s.slice(m.index! + m[1].length))
+    .replace(/[\-–—:·|,/\\]+\s*$/g, "")
+    .replace(/^\s*[\-–—:·|,/\\]+/g, "")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.replace(/[^A-Za-z]/g, "").length < 2) {
+    return { cleanName: s.trim(), phone };
+  }
+  return { cleanName: cleaned, phone };
+}
+
+const FLIGHT_CODE_RE = /(?:^|\s|#|✈|\bflight\b|\bflt\b)\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})(?=$|\s|[,.;])/i;
+export function extractFlightCode(text: string): { code: string | null; rest: string } {
+  const raw = (text ?? "").trim();
+  if (!raw) return { code: null, rest: "" };
+  const m = FLIGHT_CODE_RE.exec(raw);
+  if (!m) return { code: null, rest: raw };
+  const code = `${m[1].toUpperCase()}${m[2]}`;
+  const rest = (raw.slice(0, m.index) + " " + raw.slice(m.index + m[0].length))
+    .replace(/\b(flight|flt)\b/gi, "")
+    .replace(/[#✈]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { code, rest };
+}
 
 const MONTHS: Record<string, string> = {
   jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
