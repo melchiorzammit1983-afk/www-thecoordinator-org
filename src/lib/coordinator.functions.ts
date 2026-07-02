@@ -1073,6 +1073,35 @@ export const movePaxToJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const setJobGrouped = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      count: z.number().int().min(0).max(500),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, executor_company_id, grouped_count")
+      .eq("id", data.job_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!job || (job.company_id !== c.id && job.executor_company_id !== c.id)) {
+      throw new Error("Job not found");
+    }
+    const existing = (job as any).grouped_count ?? 0;
+    const total = Math.max(existing, 0) + data.count;
+    const patch = total >= 2
+      ? { grouped_count: total, grouped_at: new Date().toISOString() }
+      : { grouped_count: null, grouped_at: null };
+    const { error: uErr } = await supabaseAdmin.from("jobs")
+      .update(patch as never).eq("id", data.job_id);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, grouped_count: total };
+  });
+
 // ---------- Trip messages (coordinator side) ----------
 
 async function assertJobInCompany(ctx: Ctx, jobId: string) {
