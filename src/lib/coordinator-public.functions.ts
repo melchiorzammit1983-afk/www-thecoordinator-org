@@ -648,6 +648,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
         date: job.date, time: job.time, pickup_at: job.pickup_at,
         status: job.status, flight_status: job.flight_status,
         driver_id: job.driver_id,
+        client_confirmed_at: (job as any).client_confirmed_at ?? null,
       },
       siblings: siblings ?? [],
       pax: pax ?? [],
@@ -786,3 +787,46 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
     return { ok: true, job_id: newJob!.id };
   });
 
+
+export const confirmClientTrip = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin
+      .from("jobs")
+      .select("id, client_confirmed_at, company_id")
+      .eq("client_link_token", data.token)
+      .maybeSingle();
+    if (je) throw new Error(je.message);
+    if (!job) throw new Error("trip_not_found");
+    if (!job.client_confirmed_at) {
+      const { error } = await supabaseAdmin
+        .from("jobs")
+        .update({ client_confirmed_at: new Date().toISOString() } as never)
+        .eq("id", job.id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const heartbeatClientPortal = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const supabaseAdmin = await getAdminClient();
+    await supabaseAdmin.from("client_link_identities").upsert({
+      token: data.token,
+      device_id: data.device_id,
+      last_seen_at: new Date().toISOString(),
+    } as never);
+    return { ok: true };
+  });

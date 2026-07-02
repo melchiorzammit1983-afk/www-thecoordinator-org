@@ -138,7 +138,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -1183,9 +1183,40 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
       .select("job_id, sender_kind").eq("company_id", c.id).is("read_by_coordinator_at", null)
       .in("sender_kind", ["driver", "client"]);
     if (error) throw new Error(error.message);
-    const acc: Record<string, number> = {};
-    for (const m of (data ?? []) as { job_id: string }[]) acc[m.job_id] = (acc[m.job_id] ?? 0) + 1;
+    const acc: Record<string, { driver: number; client: number; total: number }> = {};
+    for (const m of (data ?? []) as { job_id: string; sender_kind: string }[]) {
+      const row = (acc[m.job_id] ??= { driver: 0, client: 0, total: 0 });
+      if (m.sender_kind === "client") row.client += 1;
+      else row.driver += 1;
+      row.total += 1;
+    }
     return acc;
+  });
+
+export const getClientPresenceCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_ids: z.array(z.string().uuid()).max(500) }).parse(i))
+  .handler(async ({ data, context }) => {
+    await resolveCompany(context);
+    if (!data.job_ids.length) return {} as Record<string, string>;
+    const supabaseAdmin = await getAdminClient();
+    // join via jobs.client_link_token -> identities.token
+    const { data: jobs } = await supabaseAdmin.from("jobs")
+      .select("id, client_link_token").in("id", data.job_ids);
+    const tokens = (jobs ?? []).map((j) => j.client_link_token).filter(Boolean) as string[];
+    if (!tokens.length) return {};
+    const { data: idents } = await supabaseAdmin.from("client_link_identities")
+      .select("token, last_seen_at").in("token", tokens);
+    const bestByToken: Record<string, string> = {};
+    for (const r of (idents ?? []) as { token: string; last_seen_at: string | null }[]) {
+      if (!r.last_seen_at) continue;
+      if (!bestByToken[r.token] || bestByToken[r.token] < r.last_seen_at) bestByToken[r.token] = r.last_seen_at;
+    }
+    const out: Record<string, string> = {};
+    for (const j of jobs ?? []) {
+      if (j.client_link_token && bestByToken[j.client_link_token]) out[j.id] = bestByToken[j.client_link_token];
+    }
+    return out;
   });
 
 // ---------- TRIP LABELS ----------

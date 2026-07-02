@@ -17,7 +17,7 @@ import {
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
+  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
 } from "@/lib/coordinator.functions";
 
@@ -86,6 +86,7 @@ type Job = {
   group_id?: string | null;
   group_name?: string | null;
   group_note?: string | null;
+  client_confirmed_at?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -119,8 +120,14 @@ function CalendarPage() {
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
     queryKey: ["coord-unread"],
-    queryFn: () => unreadFn() as Promise<Record<string, number>>,
+    queryFn: () => unreadFn() as Promise<Record<string, { driver: number; client: number; total: number }>>,
     refetchInterval: 15_000,
+  });
+  const presenceFn = useServerFn(getClientPresenceCoord);
+  const { data: clientPresence } = useQuery({
+    queryKey: ["coord-client-presence"],
+    queryFn: () => presenceFn() as Promise<Record<string, string>>,
+    refetchInterval: 20_000,
   });
 
   const range = useMemo(() => {
@@ -208,6 +215,7 @@ function CalendarPage() {
     expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
     onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
     clientPortalEnabled,
+    clientPresence: clientPresence ?? {},
   };
 
 
@@ -336,7 +344,7 @@ type CardCtx = {
   onOpenDetails: (j: Job) => void;
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
-  unread: Record<string, number>;
+  unread: Record<string, { driver: number; client: number; total: number }>;
   highlightId?: string | null;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
@@ -344,6 +352,7 @@ type CardCtx = {
   onToggleExpandedGroup: (gid: string) => void;
   onEditGroup: (groupId: string, jobs: Job[]) => void;
   clientPortalEnabled: boolean;
+  clientPresence?: Record<string, string>;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
@@ -852,7 +861,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const [openDispatch, setOpenDispatch] = useState(false);
 
   const paxCount = job.pax?.length ?? 0;
-  const unread = ctx.unread[job.id] ?? 0;
+  const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
+  const unread = unreadCounts.total;
   const flightIssue = job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
   const problem = flightIssue || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
@@ -922,11 +932,30 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
               <span>·</span>
               <span>{job.date}</span>
-              {unread > 0 && (
-                <span className="ml-auto inline-flex items-center gap-1 text-blue-600 font-medium">
-                  <MessagesSquare className="h-3 w-3" /> {unread} new
+              {job.client_confirmed_at && (
+                <span title="Client confirmed" className="inline-flex items-center text-emerald-600" aria-label="Client confirmed">
+                  ✓
                 </span>
               )}
+              {(() => {
+                const seen = ctx.clientPresence?.[job.id];
+                if (!seen) return null;
+                const ageMs = Date.now() - new Date(seen).getTime();
+                if (ageMs > 2 * 60_000) return null;
+                return <span title="Client online" className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-label="Client online" />;
+              })()}
+              <span className="ml-auto flex items-center gap-1">
+                {unreadCounts.driver > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium" title="Unread driver messages">
+                    <MessagesSquare className="h-3 w-3" /> {unreadCounts.driver}
+                  </span>
+                )}
+                {unreadCounts.client > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-sky-600 font-medium" title="Unread client messages">
+                    <MessageCircle className="h-3 w-3" /> {unreadCounts.client}
+                  </span>
+                )}
+              </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
               {job.from_location} <span className="text-muted-foreground">→</span> {job.to_location}

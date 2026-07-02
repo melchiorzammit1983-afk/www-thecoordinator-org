@@ -4,11 +4,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  MapPin, Send, MessageSquare, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus,
+  MapPin, Send, MessageSquare, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus, CheckCircle2,
 } from "lucide-react";
 import {
   getClientTripPortal, chooseClientIdentity, listClientTripMessages,
   postClientTripMessage, pushClientLocation, requestClientFollowUp,
+  confirmClientTrip, heartbeatClientPortal,
 } from "@/lib/coordinator-public.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,24 @@ function ClientTripPortal() {
     queryKey: ["client-portal", token, deviceId],
     queryFn: () => portalFn({ data: { token, device_id: deviceId } }),
     refetchInterval: 15_000,
+  });
+
+  // Heartbeat presence every 45s while the tab is open
+  const beatFn = useServerFn(heartbeatClientPortal);
+  useEffect(() => {
+    const ping = () => { beatFn({ data: { token, device_id: deviceId } }).catch(() => {}); };
+    ping();
+    const id = window.setInterval(ping, 45_000);
+    const onVis = () => { if (document.visibilityState === "visible") ping(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [beatFn, token, deviceId]);
+
+  const confirmFn = useServerFn(confirmClientTrip);
+  const confirmMut = useMutation({
+    mutationFn: () => confirmFn({ data: { token, device_id: deviceId } }),
+    onSuccess: () => { toast.success("Thanks — coordinator notified"); qc.invalidateQueries({ queryKey: ["client-portal"] }); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const [tab, setTab] = useState<"trip" | "chat" | "rebook">("trip");
@@ -112,6 +131,15 @@ function ClientTripPortal() {
               <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                 Flight status: {job.flight_status}
               </div>
+            )}
+            {job.client_confirmed_at ? (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+                <CheckCircle2 className="h-4 w-4" /> You confirmed you'll be there
+              </div>
+            ) : (
+              <Button className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => confirmMut.mutate()} disabled={confirmMut.isPending}>
+                <CheckCircle2 className="h-4 w-4 mr-2" /> I'll be there — confirm
+              </Button>
             )}
           </section>
 
