@@ -852,7 +852,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const [openDispatch, setOpenDispatch] = useState(false);
 
   const paxCount = job.pax?.length ?? 0;
-  const unread = ctx.unread[job.id] ?? 0;
+  const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
+  const unread = unreadCounts.total;
   const flightIssue = job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
   const problem = flightIssue || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
