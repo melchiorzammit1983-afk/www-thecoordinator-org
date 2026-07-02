@@ -86,6 +86,7 @@ type Job = {
   group_id?: string | null;
   group_name?: string | null;
   group_note?: string | null;
+  client_confirmed_at?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
