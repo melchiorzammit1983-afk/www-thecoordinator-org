@@ -505,10 +505,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </Button>
         {job.deletion_requested_at && (
           <Button variant="destructive" className="col-span-2 h-10" disabled={approveDelMut.isPending}
-            onClick={() => { if (confirm("Approve deletion?")) approveDelMut.mutate(); }}>
+            onClick={() => setConfirmDelOpen(true)}>
             {approveDelMut.isPending ? "Approving…" : "Approve deletion"}
           </Button>
         )}
+
         <div className="col-span-2 flex items-center gap-2 pt-1">
           <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
             onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
