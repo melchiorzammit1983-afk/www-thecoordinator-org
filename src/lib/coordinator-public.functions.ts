@@ -43,16 +43,17 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     // If this magic link points at a virtual driver (coordinator/partner
     // provisioning), we can't filter jobs by driver_id — those jobs are
     // dispatched at the company level. Fall back to company scope.
-    let driverRow: {
+    type DriverRow = {
       id: string; name: string; kind: string | null;
       seats_available: number | null; availability_note: string | null;
       profile_updated_at: string | null;
-    } | null = null;
+    };
+    let driverRow: DriverRow | null = null;
     if (link.subject_id) {
       const { data: drv } = await supabaseAdmin.from("drivers")
         .select("id, name, kind, seats_available, availability_note, profile_updated_at")
         .eq("id", link.subject_id).maybeSingle();
-      driverRow = (drv as typeof driverRow) ?? null;
+      driverRow = (drv as DriverRow | null) ?? null;
     }
     const isVirtualDriver = driverRow?.kind === "coordinator" || driverRow?.kind === "partner";
     const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
