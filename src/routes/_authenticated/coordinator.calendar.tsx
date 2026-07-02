@@ -899,10 +899,17 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
 
+  const sig = ctx.signals?.[job.id];
+  const isFinished = job.status === "completed" || job.status === "cancelled";
+  const hasUnread = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0) > 0;
+  const clientChange = !!sig?.client_change;
+  const sosOpen = !!sig?.sos_open;
+  const driverStatusNew = !!sig?.driver_status_new;
+
   // Color priority: red > blue(unread) > green > amber > default
   const tone = problem
     ? "border-destructive bg-destructive/10"
-    : unread > 0
+    : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
     : assignedAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
@@ -934,6 +941,13 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const isSelected = ctx.selected.has(job.id);
 
+  // Collapsed strip for finished / cancelled trips
+  if (isFinished) {
+    return (
+      <CompletedStrip job={job} ctx={ctx} driverName={shownDriver ?? undefined} isSelected={isSelected} />
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -941,6 +955,14 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
+
+      {/* Signal overlays */}
+      {hasUnread && <span className="signal-stripe-msg" aria-label="Unread messages" />}
+      {sosOpen ? (
+        <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
+      ) : clientChange ? (
+        <span className="signal-corner-change" title="Client requested a change" aria-label="Client change" />
+      ) : null}
 
       {/* Multi-select checkbox */}
       <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
