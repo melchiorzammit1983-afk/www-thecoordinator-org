@@ -120,14 +120,20 @@ export function DriverLiveMap({
     loadGoogleMaps()
       .then((gmaps) => {
         if (cancelled || !containerRef.current) return;
-        mapRef.current = new gmaps.Map(containerRef.current, {
-          center: { lat: 20, lng: 0 },
-          zoom: 2,
+        const map = new gmaps.Map(containerRef.current, {
+          center: { lat: 35.9, lng: 14.5 }, // Malta default
+          zoom: 10,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
           clickableIcons: false,
+          gestureHandling: "greedy",
         });
+        mapRef.current = map;
+        // Always-on live traffic overlay.
+        try { new gmaps.TrafficLayer().setMap(map); } catch { /* ignore */ }
+        // Trigger the marker-sync effects now that the map is ready.
+        force((x) => x + 1);
       })
       .catch((e: Error) => { if (!cancelled) setErr(e.message); });
     return () => {
@@ -138,6 +144,7 @@ export function DriverLiveMap({
       sosMarkersRef.current.clear();
     };
   }, []);
+
 
   // Sync SOS markers.
   useEffect(() => {
