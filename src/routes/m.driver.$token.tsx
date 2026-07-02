@@ -500,9 +500,40 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           )}
         </div>
       </div>
+
+      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) setRejectReason(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject this trip?</DialogTitle>
+            <DialogDescription>
+              The trip returns to your coordinator's Unassigned list and they'll get a message with your reason.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Reason (optional but recommended)</Label>
+            <Textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. Vehicle breakdown, already assigned another trip, ran late…" />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {["Vehicle issue","Double-booked","Personal emergency","Too far","Running late"].map((r) => (
+                <button key={r} type="button"
+                  className="text-[11px] rounded-full border px-2 py-0.5 hover:bg-muted"
+                  onClick={() => setRejectReason(r)}>{r}</button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={rejectMut.isPending}
+              onClick={() => rejectMut.mutate(rejectReason)}>
+              {rejectMut.isPending ? "Sending…" : "Reject trip"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }
+
 
 function ProfileDialog({ open, onOpenChange, token, driver }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driver: Driver | null;
