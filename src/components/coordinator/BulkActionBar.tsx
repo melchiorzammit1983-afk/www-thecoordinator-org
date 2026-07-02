@@ -14,8 +14,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
-  groupJobs,
 } from "@/lib/coordinator.functions";
+import { GroupDialog } from "./GroupDialog";
 
 export type BulkJob = {
   id: string;
