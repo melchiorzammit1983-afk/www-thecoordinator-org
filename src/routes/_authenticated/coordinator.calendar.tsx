@@ -77,6 +77,7 @@ type Job = {
   payment_status?: string | null;
   grouped_count?: number | null;
   grouped_at?: string | null;
+  group_id?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
