@@ -587,9 +587,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   </Badge>
                 );
               })()}
-              {(job.grouped_count ?? 0) >= 2 && (
+              {(job.group_id || (job.grouped_count ?? 0) >= 2) && (
                 <Badge className="text-[10px] gap-1 bg-primary/15 text-primary hover:bg-primary/15 border border-primary/30">
-                  ⛬ Grouped · {job.grouped_count} trips
+                  <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
               {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
