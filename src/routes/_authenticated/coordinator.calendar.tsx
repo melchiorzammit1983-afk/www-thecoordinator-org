@@ -494,8 +494,9 @@ type CardCtx = {
   clientPresence?: Record<string, string>;
   signals?: Record<string, {
     unread_client: number; unread_driver: number;
-    client_change: boolean; sos_open: boolean; driver_status_new: boolean;
+    client_change: boolean; sos_open: boolean; driver_status_new: boolean; rejected?: boolean;
   }>;
+
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
