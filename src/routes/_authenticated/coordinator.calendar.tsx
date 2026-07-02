@@ -40,6 +40,8 @@ import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Dispatch — Coordinator" }] }),
