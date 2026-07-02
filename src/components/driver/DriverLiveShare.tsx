@@ -111,6 +111,14 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
     })();
   }, []);
 
+  // Auto-start tracking the moment the driver has an active trip (first
+  // status change to en_route / arrived / in_progress). Coordinator can
+  // then see the car move without the driver having to remember to tap.
+  useEffect(() => {
+    if (hasActiveTrip && !enabled) setEnabled(true);
+  }, [hasActiveTrip, enabled]);
+
+
   // Start / stop watch when `enabled` changes.
   useEffect(() => {
     if (!enabled) {
