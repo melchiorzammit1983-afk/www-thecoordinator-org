@@ -1509,7 +1509,7 @@ export const normalizeJobData = createServerFn({ method: "POST" })
 
     // Also normalize a phone already sitting in contact_phone
     const currentPhone = normalizePhone(job.contact_phone ?? "") || (job.contact_phone ?? "");
-    const jobPatch: Record<string, unknown> = {};
+    const jobPatch: Record<string, any> = {};
     if (!job.contact_phone && discoveredPhone) {
       jobPatch.contact_phone = discoveredPhone;
     } else if (job.contact_phone && currentPhone && currentPhone !== job.contact_phone) {
