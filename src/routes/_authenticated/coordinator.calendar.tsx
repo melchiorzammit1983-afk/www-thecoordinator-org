@@ -1076,16 +1076,29 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     );
   }
 
+  const totalUnreadSignal = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0);
+
   return (
     <div
       ref={setNodeRef}
+      data-job-id={job.id}
       style={style}
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
       {/* Signal overlays */}
-      {hasUnread && <span className="signal-stripe-msg" aria-label="Unread messages" />}
+      {hasUnread && (
+        <>
+          <span className="signal-stripe-msg" aria-label="Unread messages" />
+          {totalUnreadSignal > 0 && (
+            <span className="signal-unread-badge" aria-label={`${totalUnreadSignal} unread`}>
+              {totalUnreadSignal > 99 ? "99+" : totalUnreadSignal}
+            </span>
+          )}
+        </>
+      )}
+      {driverStatusNew && <span className="signal-stripe-driver" aria-label="Driver status updated" />}
       {sosOpen ? (
         <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
       ) : clientChange ? (
