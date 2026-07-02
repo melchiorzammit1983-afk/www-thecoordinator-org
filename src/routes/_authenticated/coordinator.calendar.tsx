@@ -16,7 +16,7 @@ import {
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord,
+  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
 } from "@/lib/coordinator.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
