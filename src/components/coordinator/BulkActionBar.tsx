@@ -229,6 +229,7 @@ function BulkMergeDialog({
   const qc = useQueryClient();
   const moveFn = useServerFn(movePaxToJob);
   const deleteFn = useServerFn(deleteJob);
+  const groupFn = useServerFn(setJobGrouped);
 
   // earliest by date+time is the keeper
   const sorted = [...jobs].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -246,6 +247,8 @@ function BulkMergeDialog({
         const r = (await deleteFn({ data: { job_id: j.id } })) as { deleted?: boolean; pending?: boolean };
         if (r?.pending) pending++; else deleted++;
       }
+      // Mark the keeper as grouped. Count = trips merged in this action (others.length + 1 keeper source).
+      try { await groupFn({ data: { job_id: keeper.id, count: others.length + 1 } }); } catch { /* non-fatal */ }
       return { deleted, pending };
     },
     onSuccess: (r) => {
