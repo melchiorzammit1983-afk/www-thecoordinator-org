@@ -100,7 +100,9 @@ function CalendarPage() {
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const qc = useQueryClient();
+
 
   const toggleExpandedGroup = (gid: string) => setExpandedGroups((s) => {
     const n = new Set(s); if (n.has(gid)) n.delete(gid); else n.add(gid); return n;
