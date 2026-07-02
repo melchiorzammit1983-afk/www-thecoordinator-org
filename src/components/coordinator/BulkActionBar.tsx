@@ -129,9 +129,9 @@ export function BulkActionBar({
 
             <Button
               size="sm" variant="outline"
-              disabled={!mergeable || busy || groupMut.isPending}
+              disabled={!mergeable || busy}
               title="Link cards together as one bundle (reversible). Trip details are kept."
-              onClick={() => groupMut.mutate()}
+              onClick={() => setOpenGroup(true)}
             >
               <Link2 className="h-4 w-4 mr-1" /> Group
             </Button>
