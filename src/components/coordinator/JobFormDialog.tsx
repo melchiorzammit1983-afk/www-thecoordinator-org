@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText } from "@/lib/coordinator.functions";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2 } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 
 type Driver = { id: string; name: string; vehicle: string | null };
