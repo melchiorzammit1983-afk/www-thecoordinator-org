@@ -648,6 +648,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
         date: job.date, time: job.time, pickup_at: job.pickup_at,
         status: job.status, flight_status: job.flight_status,
         driver_id: job.driver_id,
+        client_confirmed_at: (job as any).client_confirmed_at ?? null,
       },
       siblings: siblings ?? [],
       pax: pax ?? [],
