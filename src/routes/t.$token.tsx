@@ -291,8 +291,9 @@ function ClientTripPortal() {
       )}
 
       {tab === "chat" && (
-        <ChatPanel token={token} deviceId={deviceId} driverAssigned={!!driver} isGroup={isGroup} hasIdentity={hasIdentity} />
+        <ChatPanel token={token} deviceId={deviceId} driverAssigned={!!driver} isGroup={isGroup} hasIdentity={hasIdentity} onChooseName={() => setPickerOpen(true)} />
       )}
+
       {tab === "rebook" && (
         <RebookPanel token={token} deviceId={deviceId} lastFrom={job.from_location ?? ""} lastTo={job.to_location ?? ""} />
       )}
