@@ -384,3 +384,92 @@ export const countNewAccessRequests = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return { count: count ?? 0 };
   });
+
+
+// ---------- FEATURE ENTITLEMENTS ----------
+
+import { FEATURE_CATALOG, FEATURE_KEYS, type FeatureKey } from "@/lib/features";
+
+export const listFeatureEntitlements = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ company_id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { data: rows, error } = await supabaseAdmin
+      .from("company_feature_entitlements")
+      .select("feature, enabled, expires_at")
+      .eq("company_id", data.company_id);
+    if (error) throw new Error(error.message);
+    const byKey = new Map<string, { enabled: boolean; expires_at: string | null }>();
+    for (const r of rows ?? []) byKey.set(r.feature as string, { enabled: !!r.enabled, expires_at: r.expires_at });
+    return FEATURE_CATALOG.map((f) => {
+      const row = byKey.get(f.key);
+      const active = row ? row.enabled && (!row.expires_at || new Date(row.expires_at) > new Date()) : true;
+      return {
+        key: f.key,
+        label: f.label,
+        description: f.description,
+        enabled: row ? row.enabled : true,
+        expires_at: row?.expires_at ?? null,
+        active,
+        has_override: !!row,
+      };
+    });
+  });
+
+export const setFeatureEntitlement = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        company_id: z.string().uuid(),
+        feature: z.enum(FEATURE_KEYS as [FeatureKey, ...FeatureKey[]]),
+        enabled: z.boolean(),
+        duration_days: z.number().int().positive().max(3650).nullable().optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const expiresAt = data.duration_days
+      ? new Date(Date.now() + data.duration_days * 86400_000).toISOString()
+      : null;
+    const { error } = await supabaseAdmin
+      .from("company_feature_entitlements")
+      .upsert(
+        {
+          company_id: data.company_id,
+          feature: data.feature,
+          enabled: data.enabled,
+          expires_at: expiresAt,
+          created_by: context.userId,
+        },
+        { onConflict: "company_id,feature" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const clearFeatureEntitlement = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        company_id: z.string().uuid(),
+        feature: z.enum(FEATURE_KEYS as [FeatureKey, ...FeatureKey[]]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const { error } = await supabaseAdmin
+      .from("company_feature_entitlements")
+      .delete()
+      .eq("company_id", data.company_id)
+      .eq("feature", data.feature);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+

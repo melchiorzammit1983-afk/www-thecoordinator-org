@@ -75,6 +75,30 @@ export const getMyCompany = createServerFn({ method: "GET" })
   });
 
 
+export const getMyFeatures = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const supabaseAdmin = await getAdminClient();
+    const { FEATURE_KEYS } = await import("@/lib/features");
+    const { data: co } = await supabaseAdmin
+      .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    const features: Record<string, boolean> = {};
+    for (const k of FEATURE_KEYS) features[k] = true;
+    if (!co) return features;
+    const { data: rows } = await supabaseAdmin
+      .from("company_feature_entitlements")
+      .select("feature, enabled, expires_at")
+      .eq("company_id", co.id);
+    const now = Date.now();
+    for (const r of rows ?? []) {
+      const expired = r.expires_at ? new Date(r.expires_at).getTime() <= now : false;
+      features[r.feature as string] = !!r.enabled && !expired;
+    }
+    return features;
+  });
+
+
+
 export const getDashboardSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {

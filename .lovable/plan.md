@@ -1,52 +1,51 @@
 
-## What you'll get
+## Goal
+Let admins toggle features per coordinator, optionally with an expiry (1 day, 7 days, or custom). Expired or disabled features disappear from that coordinator's dashboard and driver-facing surfaces.
 
-- **Driver trips fix (shipped now)** — "(me)" and partner virtual drivers now see all trips scoped to their company, not just ones with `driver_id = virtual`. The plain driver flow is unchanged.
-- **Native driver app** — the same web app wrapped with Capacitor for iOS and Android, so you can install it from the App Store / Play Store or side-load it on a phone.
-- **Real background GPS** — when the driver turns on "Share live location", their position keeps streaming to the dispatcher even if the phone is locked, the app is minimized, or they switch to WhatsApp. The web version stays as a fallback for desktop / drivers who don't install the app.
+## Feature catalog (initial set — matches sidebar + key flows)
+- `dispatch` — Dispatch calendar
+- `pending` — Pending approvals
+- `drivers` — Drivers management
+- `portal_links` — Magic link generator
+- `labels` — Trip labels
+- `statements` — Statement/report builder
+- `collaborate` — Partner connections & multi-hop dispatch
+- `my_driving` — Self-driving portal
+- `live_tracking` — Live GPS map on cards
+- `flight_tracking` — AviationStack integration
+- `bulk_paste` — WhatsApp bulk trip paste
+- `chat` — Trip chat with drivers
 
-## How it will look on the driver's phone
+Every feature defaults to **enabled** so existing coordinators are unaffected.
 
-- First time they toggle "Share live location", the OS asks for **Location: Always** and **Notifications**.
-- While tracking, a persistent notification shows *"Sharing live location with dispatcher"* (Android requirement) with a **Stop** button. iOS shows the blue location indicator.
-- If they force-quit the app, tracking stops (both OS's require the process to be alive).
+## Database (migration)
+New table `public.company_feature_entitlements`:
+- `company_id uuid` → companies, `feature text` (from catalog), `enabled boolean default true`, `expires_at timestamptz null`, `created_by uuid`, `created_at`, `updated_at`.
+- Unique `(company_id, feature)`.
+- RLS: admins full access via `is_admin(auth.uid())`; company owner can `SELECT` own rows (read-only, to hydrate the UI). Standard GRANTs (`authenticated`, `service_role`).
+- Helper SQL function `public.has_feature(_company uuid, _feature text)` → true if no row exists (default on) OR row is `enabled AND (expires_at IS NULL OR expires_at > now())`. `SECURITY DEFINER`, granted to `authenticated`.
 
-## Technical section
+## Backend (`src/lib/admin.functions.ts`)
+- `listFeatureEntitlements({ companyId })` — admin only, returns catalog merged with rows.
+- `setFeatureEntitlement({ companyId, feature, enabled, durationDays? })` — admin only, upserts; `durationDays` computes `expires_at = now() + interval`; `null` = permanent.
+- `clearFeatureEntitlement({ companyId, feature })` — deletes row (reverts to default enabled).
 
-### Packages
-- `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, `@capacitor/android`
-- `@capacitor-community/background-geolocation` — battle-tested background GPS plugin with iOS + Android support, persistent notification, and JS callback with `{lat, lng, accuracy, speed, bearing, time}`.
-- `@capacitor/preferences` — persist the on/off toggle and the outbound queue across process restarts.
+## Backend (`src/lib/coordinator.functions.ts`)
+- Extend `whoAmI` (or add `getMyFeatures`) to return a `features: Record<string, boolean>` map for the current company, computed from entitlements + expiry.
+- Guard server functions of gated features (e.g. `createBulkJobs`, statement export, collaborate actions) with a `assertFeature(company, key)` helper that throws `feature_disabled`.
 
-### `capacitor.config.ts`
-- `appId`: `app.lovable.transfersmt`
-- `appName`: Transfers MT
-- `webDir`: `dist`
-- `server.url`: `https://transfersmt.lovable.app` (live-reload against production so no rebuild needed after every code change)
-- `server.cleartext`: false
+## Frontend
+- **Coordinator layout** (`src/routes/_authenticated/coordinator.tsx`): fetch features via TanStack Query; filter `NAV` array to hide disabled items. Also gate route components (e.g. redirect to `/coordinator` with toast if a user hits a disabled URL directly).
+- **Feature hook** `src/hooks/use-features.ts` exposes `useFeature(key)` for inline gating (bulk paste tab, chat button, live map, flight badges).
+- **Driver portal**: chat and live-share are gated by the owning company's features (passed through `getDriverManifest` response).
+- **Admin UI** (`src/routes/_authenticated/admin.index.tsx`): add a "Features" button per company row → opens `FeatureEntitlementsDialog`:
+  - Table listing each feature with an Enabled switch, a duration select (Permanent / 1 day / 7 days / 30 days / Custom days), and an "Expires in Xh" badge when active.
+  - Save calls `setFeatureEntitlement`; "Reset" calls `clearFeatureEntitlement`.
+  - Live countdown recomputed on open.
 
-### Driver UI (`src/components/driver/DriverLiveShare.tsx`)
-- Detect runtime: `import { Capacitor } from '@capacitor/core'; Capacitor.isNativePlatform()`.
-- **Native path**: use `BackgroundGeolocation.addWatcher({ backgroundMessage: "Sharing live location with dispatcher", backgroundTitle: "Transfers MT", requestPermissions: true, stale: false, distanceFilter: 25 }, cb)`. Points POST via existing `pushDriverLocation` server fn. Queue survives with `@capacitor/preferences` and flushes when connectivity returns.
-- **Web path**: unchanged (`watchPosition` + Screen Wake Lock).
+## Expiry behavior
+No cron needed — `has_feature` and the client hook both check `expires_at > now()` at read time, so features vanish automatically the moment they expire (next page load / query refetch). Query invalidation on 60s interval keeps the UI honest.
 
-### Native project files (auto-generated by `npx cap add`)
-- `ios/App/App/Info.plist` additions: `NSLocationAlwaysAndWhenInUseUsageDescription`, `NSLocationWhenInUseUsageDescription`, `UIBackgroundModes` → `location`.
-- `android/app/src/main/AndroidManifest.xml` additions: `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS`.
-
-### What Lovable will do vs what you do
-Lovable in this sandbox can install the npm packages, write `capacitor.config.ts`, update the DriverLiveShare component, and commit those changes so they're ready to build. Lovable **cannot** run `npx cap add ios` / `cap add android` or open Xcode / Android Studio inside this environment — those need to run on your Mac/PC to produce the native app.
-
-I'll give you an exact 3-step checklist to run locally:
-1. `git pull && npm install`
-2. `npx cap add ios && npx cap add android && npx cap sync`
-3. `npx cap open ios` (Xcode → build to your phone) or `npx cap open android` (Android Studio → build).
-
-After that, every future code change you make in Lovable auto-appears in the installed app (because of live-reload `server.url`), no rebuild needed until you want to ship to the stores.
-
-### Out of scope for this pass
-- App Store / Play Store submission (you own the developer accounts).
-- Push notifications from dispatcher → driver (separate follow-up).
-- Offline map tiles for the driver.
-
-Reply **approve** and I'll install the packages and wire up the code.
+## Out of scope
+- Per-driver entitlements (system is per-company/coordinator).
+- Feature usage analytics.

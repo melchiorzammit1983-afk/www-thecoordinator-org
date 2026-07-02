@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.has_feature(uuid, text) FROM authenticated;

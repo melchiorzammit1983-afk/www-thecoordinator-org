@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useMyCompany } from "@/hooks/use-coordinator";
+import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
@@ -15,22 +16,24 @@ export const Route = createFileRoute("/_authenticated/coordinator")({
 });
 
 const NAV = [
-  { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false },
-  { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false },
-  { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false },
-  { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false },
-  { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false },
-  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false },
-  { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false },
-  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false },
+  { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true, feature: null },
+  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" as const },
+  { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" as const },
+  { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" as const },
+  { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" as const },
+  { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" as const },
+  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" as const },
+  { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" as const },
+  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" as const },
 ] as const;
+
 
 function CoordinatorLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: company, isLoading, error } = useMyCompany();
   const whoAmIFn = useServerFn(whoAmI);
+  const { data: features } = useFeatures();
   const { data: identity, isLoading: identityLoading } = useQuery({
     queryKey: ["whoami"],
     queryFn: () => whoAmIFn(),
@@ -84,7 +87,7 @@ function CoordinatorLayout() {
           </div>
         </div>
         <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.feature || features?.[item.feature] !== false).map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             return (
               <Link

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
 import { Users, PencilLine } from "lucide-react";
+import { useFeature } from "@/hooks/use-features";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -53,6 +54,7 @@ export function JobFormDialog({
   onSaved: () => void;
 }) {
   const isEdit = !!job;
+  const bulkEnabled = useFeature("bulk_paste");
   const [tab, setTab] = useState<"manual" | "bulk">("manual");
   const [prefill, setPrefill] = useState<Prefill | undefined>(undefined);
   useEffect(() => { if (open) { setTab("manual"); setPrefill(undefined); } }, [open]);
@@ -77,6 +79,8 @@ export function JobFormDialog({
         </DialogHeader>
         {isEdit ? (
           <ManualForm drivers={drivers} job={job} onSaved={onSaved} />
+        ) : !bulkEnabled ? (
+          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
         ) : (
           <Tabs value={tab} onValueChange={(v) => setTab(v as "manual" | "bulk")}>
             <TabsList className="grid w-full grid-cols-2">
