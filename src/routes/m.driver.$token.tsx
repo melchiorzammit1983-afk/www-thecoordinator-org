@@ -163,6 +163,8 @@ function DriverManifest() {
         ))}
       </main>
 
+      <LocationTracker token={token} jobs={jobs} />
+
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} token={token} driver={driver} />
       <StatementDialog open={statementOpen} onOpenChange={setStatementOpen} token={token} driverName={driver?.name ?? "driver"} />
@@ -172,6 +174,85 @@ function DriverManifest() {
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="driver" token={token}
       />
+    </div>
+  );
+}
+
+const ACTIVE_STATUSES = new Set(["en_route", "arrived", "in_progress", "active"]);
+
+function LocationTracker({ token, jobs }: { token: string; jobs: Job[] }) {
+  const pushFn = useServerFn(pushDriverLocation);
+  const activeJob = useMemo(
+    () => jobs.find((j) => !!j.driver_accepted_at && ACTIVE_STATUSES.has(String(j.status ?? ""))) ?? null,
+    [jobs],
+  );
+  const [enabled, setEnabled] = useState(true);
+  const [status, setStatus] = useState<"idle" | "on" | "denied" | "error">("idle");
+  const lastPushRef = useRef<{ at: number; lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !activeJob) { setStatus("idle"); return; }
+    if (typeof navigator === "undefined" || !navigator.geolocation) { setStatus("error"); return; }
+    let watchId: number | null = null;
+    const jobId = activeJob.id;
+    setStatus("on");
+
+    const onPos = (pos: GeolocationPosition) => {
+      const now = Date.now();
+      const last = lastPushRef.current;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      // Throttle: at most one push every 15s, and require ~20m of movement unless first push
+      if (last) {
+        const dt = now - last.at;
+        const dLat = (lat - last.lat) * 111_000;
+        const dLng = (lng - last.lng) * 111_000 * Math.cos((lat * Math.PI) / 180);
+        const moved = Math.hypot(dLat, dLng);
+        if (dt < 15_000) return;
+        if (dt < 60_000 && moved < 20) return;
+      }
+      lastPushRef.current = { at: now, lat, lng };
+      pushFn({
+        data: {
+          token,
+          job_id: jobId,
+          latitude: lat,
+          longitude: lng,
+          accuracy_m: pos.coords.accuracy ?? null,
+          heading: pos.coords.heading ?? null,
+          speed_mps: pos.coords.speed ?? null,
+        },
+      }).catch(() => { /* silent — retry on next fix */ });
+    };
+    const onErr = (err: GeolocationPositionError) => {
+      setStatus(err.code === err.PERMISSION_DENIED ? "denied" : "error");
+    };
+    watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+      enableHighAccuracy: true,
+      maximumAge: 5_000,
+      timeout: 20_000,
+    });
+    return () => {
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [enabled, activeJob, pushFn, token]);
+
+  if (!activeJob) return null;
+  return (
+    <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-30">
+      <div className="rounded-full border bg-background/95 shadow-lg px-3 py-1.5 text-xs flex items-center gap-2">
+        <span className={`inline-block h-2 w-2 rounded-full ${status === "on" ? "bg-emerald-500 animate-pulse" : status === "denied" ? "bg-destructive" : "bg-muted-foreground"}`} />
+        {status === "on" && <span>Sharing location with dispatcher</span>}
+        {status === "denied" && <span className="text-destructive">Location blocked — enable in browser</span>}
+        {status === "error" && <span>Location unavailable</span>}
+        {status === "idle" && <span>Location paused</span>}
+        <button
+          className="text-primary font-medium ml-1"
+          onClick={() => setEnabled((v) => !v)}
+        >
+          {enabled ? "Pause" : "Resume"}
+        </button>
+      </div>
     </div>
   );
 }
