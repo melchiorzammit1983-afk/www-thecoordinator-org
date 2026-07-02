@@ -462,15 +462,33 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
     if (data.status === "completed") {
+      // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
       patch.grouped_at = null;
     }
     const { error } = await supabaseAdmin.from("jobs")
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+
+    // Reversible-group auto-dissolve: if this trip belonged to a group and all
+    // sibling trips are now completed/cancelled, clear group_id on all members.
+    if (data.status === "completed") {
+      const gid = (job as any).group_id as string | null | undefined;
+      if (gid) {
+        const { data: siblings } = await supabaseAdmin.from("jobs")
+          .select("id, status")
+          .eq("group_id" as any, gid);
+        const allDone = (siblings ?? []).every((s: any) => s.status === "completed" || s.status === "cancelled");
+        if (allDone) {
+          await supabaseAdmin.from("jobs")
+            .update({ group_id: null, grouped_count: null, grouped_at: null } as never)
+            .eq("group_id" as any, gid);
+        }
+      }
+    }
     return { ok: true };
   });
 
