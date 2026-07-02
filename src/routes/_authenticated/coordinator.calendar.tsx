@@ -634,7 +634,77 @@ function OutboundBoard() {
   );
 }
 
+/* ---------- Pending Client Approval ---------- */
+function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
+  const approveFn = useServerFn(approveClientJob);
+  const rejectFn = useServerFn(rejectClientJob);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (jobs.length === 0) return null;
+
+  async function approve(id: string) {
+    setBusy(id);
+    try {
+      await approveFn({ data: { job_id: id } });
+      toast.success("Trip approved — moved to Unassigned");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to approve");
+    } finally { setBusy(null); }
+  }
+  async function reject(id: string) {
+    if (!confirm("Reject this client-requested trip? It will be deleted.")) return;
+    setBusy(id);
+    try {
+      await rejectFn({ data: { job_id: id } });
+      toast.success("Trip rejected");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to reject");
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <section className="rounded-lg border-2 border-amber-400/60 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <Inbox className="h-4 w-4" /> Client requests awaiting approval ({jobs.length})
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {jobs.map((j) => {
+          const paxLine = (j.pax ?? []).map((p) => p.name).filter(Boolean).join(", ");
+          return (
+            <div key={j.id} className="rounded-md border bg-card p-2.5 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium truncate">{j.from_location} → {j.to_location}</div>
+                <Badge variant="outline" className="shrink-0 text-[10px]">
+                  {j.source === "client_followup" ? "Follow-up" : "Client"}
+                </Badge>
+              </div>
+              <div className="text-muted-foreground">
+                {j.date} · {j.time?.slice(0,5)}
+                {(j.pax?.length ?? 0) > 0 && <> · {j.pax!.length} pax</>}
+              </div>
+              {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
+              {j.clientcompanyname && <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>}
+              <div className="flex gap-1.5 pt-1">
+                <Button size="sm" className="flex-1 h-7" disabled={busy === j.id} onClick={() => approve(j.id)}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 h-7" disabled={busy === j.id} onClick={() => reject(j.id)}>
+                  Reject
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------------ Columns ------------------------------ */
+
+
 
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
