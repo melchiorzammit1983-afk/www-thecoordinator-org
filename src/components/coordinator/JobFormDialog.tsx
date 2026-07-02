@@ -211,6 +211,7 @@ function ManualForm({
           />
         </div>
       )}
+      {job && <PaxEditor jobId={job.id} />}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <ToggleRow
         label="Require QR Code Verification" hint="Driver must scan pax QR to check in"
