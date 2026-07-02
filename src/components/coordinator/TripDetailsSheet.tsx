@@ -411,6 +411,16 @@ export function TripDetailsSheet({
           </div>
         </div>
       </SheetContent>
+      <TripChatDialog
+        open={!!paxChat}
+        onOpenChange={(v) => { if (!v) setPaxChat(null); }}
+        jobId={paxChat ? job.id : null}
+        role="coordinator"
+        identityId={paxChat?.identityId ?? null}
+        threadKind={paxChat?.identityId ? "private" : "group"}
+        paxName={paxChat?.name ?? null}
+        title={`${job.from_type} → ${job.to_type}`}
+      />
     </Sheet>
   );
 }
