@@ -221,18 +221,53 @@ export function TripDetailsSheet({
           {/* Flight */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
-              <div className="rounded-md border p-3 space-y-1 text-xs">
-                {job.from_flight && <div>From: <b>✈ {job.from_flight}</b></div>}
-                {job.to_flight && <div>To: <b>✈ {job.to_flight}</b></div>}
-                {job.flight_scheduled_at && (
-                  <div>Scheduled: {new Date(job.flight_scheduled_at).toLocaleString()}</div>
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={handleRefreshFlight}
+                  disabled={refreshingFlight}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${refreshingFlight ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+              <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    {job.from_flight && <div>From: <b>✈ {job.from_flight}</b></div>}
+                    {job.to_flight && <div>To: <b>✈ {job.to_flight}</b></div>}
+                  </div>
+                  <FlightStatusPill status={job.flight_status} />
+                </div>
+                {job.flight_status_note && (
+                  <div className={flightIssue ? "text-destructive font-medium" : "text-muted-foreground"}>
+                    {job.flight_status_note}
+                  </div>
                 )}
-                {job.flight_estimated_at && (
+                {job.flight_scheduled_at && (
+                  <div>Scheduled: {new Date(job.flight_scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                )}
+                {job.flight_estimated_at && job.flight_estimated_at !== job.flight_scheduled_at && (
                   <div>Estimated: <span className={flightIssue ? "text-destructive font-medium" : ""}>
-                    {new Date(job.flight_estimated_at).toLocaleString()}
+                    {new Date(job.flight_estimated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span></div>
                 )}
+                <div className="text-[10px] text-muted-foreground pt-1 border-t flex items-center justify-between">
+                  <span>
+                    {job.flight_status_updated_at
+                      ? `Updated ${new Date(job.flight_status_updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      : "Not checked yet"}
+                  </span>
+                  <a
+                    href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    Malta Airport
+                  </a>
+                </div>
               </div>
             </section>
           )}
