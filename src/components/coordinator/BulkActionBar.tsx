@@ -163,6 +163,7 @@ export function BulkActionBar({
 
       <BulkLabelsDialog open={openLabels} onOpenChange={setOpenLabels} jobs={jobs} onDone={onClear} />
       <BulkMergeDialog open={openMerge} onOpenChange={setOpenMerge} jobs={jobs} onDone={onClear} />
+      <GroupDialog open={openGroup} onOpenChange={setOpenGroup} jobs={jobs} drivers={drivers} onDone={onClear} />
     </>
   );
 }
