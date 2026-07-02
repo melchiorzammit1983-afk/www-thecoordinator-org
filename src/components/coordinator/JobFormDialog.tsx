@@ -329,3 +329,73 @@ function ToggleRow({
   );
 }
 
+function PaxEditor({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listJobPax);
+  const addFn = useServerFn(addJobPax);
+  const removeFn = useServerFn(removeJobPax);
+  const [name, setName] = useState("");
+
+  const { data } = useQuery({
+    queryKey: ["job-pax", jobId],
+    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<Array<{ id: string; name: string }>>,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["job-pax", jobId] });
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+  };
+
+  const addMut = useMutation({
+    mutationFn: (n: string) => addFn({ data: { job_id: jobId, name: n } }),
+    onSuccess: () => { setName(""); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removeFn({ data: { pax_id: id } }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const submitAdd = () => {
+    const n = name.trim();
+    if (!n) return;
+    addMut.mutate(n);
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers ({data?.length ?? 0})</Label>
+      {(data ?? []).length > 0 ? (
+        <ul className="space-y-1">
+          {(data ?? []).map((p) => (
+            <li key={p.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1 text-sm">
+              <span className="truncate">{p.name}</span>
+              <Button
+                type="button" size="icon" variant="ghost" className="h-7 w-7"
+                disabled={removeMut.isPending}
+                onClick={() => removeMut.mutate(p.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No passengers yet.</p>
+      )}
+      <div className="flex gap-2">
+        <Input
+          value={name} onChange={(e) => setName(e.target.value)}
+          placeholder="Add passenger name"
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAdd(); } }}
+        />
+        <Button type="button" onClick={submitAdd} disabled={addMut.isPending || !name.trim()}>
+          <Plus className="h-4 w-4 mr-1" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
