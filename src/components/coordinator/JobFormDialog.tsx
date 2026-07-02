@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax } from "@/lib/coordinator.functions";
-import { parseTrips, type ParsedTrip } from "@/lib/parse-trips";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty } from "@/lib/coordinator.functions";
+import { parseTrips, extractPhoneFromName, type ParsedTrip } from "@/lib/parse-trips";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -306,6 +306,7 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
       date: t.date, time: t.time,
       flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
       from_flight: t.from_flight, to_flight: t.to_flight,
+      contact_phone: t.contact_phone,
       pax: t.pax,
     })), label_ids: labelIds } }),
     onSuccess: (res: { created: string[] }) => {
@@ -397,6 +398,7 @@ function PaxEditor({ jobId }: { jobId: string }) {
   const listFn = useServerFn(listJobPax);
   const addFn = useServerFn(addJobPax);
   const removeFn = useServerFn(removeJobPax);
+  const setPhoneFn = useServerFn(setJobContactPhoneIfEmpty);
   const [name, setName] = useState("");
 
   const { data } = useQuery({
@@ -410,7 +412,17 @@ function PaxEditor({ jobId }: { jobId: string }) {
   };
 
   const addMut = useMutation({
-    mutationFn: (n: string) => addFn({ data: { job_id: jobId, name: n } }),
+    mutationFn: async (raw: string) => {
+      const { cleanName, phone } = extractPhoneFromName(raw);
+      const finalName = cleanName || raw;
+      await addFn({ data: { job_id: jobId, name: finalName } });
+      if (phone) {
+        try {
+          const r: any = await setPhoneFn({ data: { job_id: jobId, phone } });
+          if (r?.set) toast.success(`Moved ${phone} to phone number`);
+        } catch { /* ignore */ }
+      }
+    },
     onSuccess: () => { setName(""); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });

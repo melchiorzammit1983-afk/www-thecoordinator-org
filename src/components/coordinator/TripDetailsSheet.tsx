@@ -8,7 +8,7 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations, getMaltaFlightStatus } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -82,7 +82,23 @@ export function TripDetailsSheet({
 
   const qc = useQueryClient();
   const refreshFlightFn = useServerFn(getMaltaFlightStatus);
+  const normalizeFn = useServerFn(normalizeJobData);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
+
+  useEffect(() => {
+    if (!open || !job?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r: any = await normalizeFn({ data: { job_id: job.id } });
+        if (!cancelled && r?.changed) {
+          qc.invalidateQueries({ queryKey: ["jobs"] });
+          if (r.phoneMoved) toast.success("Moved phone number from passenger list");
+        }
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, job?.id]);
   const handleRefreshFlight = async () => {
     if (!job) return;
     setRefreshingFlight(true);
