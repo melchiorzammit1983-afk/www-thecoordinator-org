@@ -794,6 +794,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         from_flight: (t.from_flight || "").toUpperCase() || null,
         to_flight: (t.to_flight || "").toUpperCase() || null,
         clientcompanyname: t.clientcompanyname || null,
+        contact_phone: t.contact_phone || null,
         qr_strict_mode: false, tracking_enabled: false,
         vehicle: null, driver_id: null,
       }).select("id").single();
