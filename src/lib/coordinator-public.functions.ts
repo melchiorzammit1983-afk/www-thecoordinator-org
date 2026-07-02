@@ -189,6 +189,18 @@ export const hideJobForDriver = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const unhideJobForDriver = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs")
+      .update({ driver_hidden_at: null }).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const getDriverStatement = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
     z.object({
