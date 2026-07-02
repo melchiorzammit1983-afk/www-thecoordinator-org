@@ -703,10 +703,12 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
         </div>
 
         {privateBlocked ? (
-          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground">
-            Choose your name above first to start a private chat.
+          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground gap-3">
+            <p>Choose your name first to start a private chat.</p>
+            <Button size="sm" onClick={onChooseName}>Choose my name</Button>
           </div>
         ) : (
+
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
               {(messages ?? []).length === 0 && (
