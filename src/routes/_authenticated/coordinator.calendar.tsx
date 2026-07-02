@@ -495,13 +495,17 @@ function OutboundBoard() {
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
-  const suggestions = useMemo(() => suggestGroups(jobs), [jobs]);
+  const suggestionsEnabled = useFeature("ai_group_suggestions");
+  const suggestions = useMemo(
+    () => (suggestionsEnabled ? suggestGroups(jobs) : []),
+    [jobs, suggestionsEnabled],
+  );
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
-      {suggestions.length > 0 && (
+      {suggestionsEnabled && suggestions.length > 0 && (
         <div className="mb-2 rounded-md border border-primary/40 bg-primary/5 p-2 space-y-1.5">
           <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
             <Sparkles className="h-3 w-3" /> Auto-group suggestions
