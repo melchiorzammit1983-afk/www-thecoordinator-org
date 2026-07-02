@@ -241,6 +241,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     onSuccess: () => { toast.success("Removed from your list"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const unhideMut = useMutation({
+    mutationFn: () => unhideFn({ data: { token, job_id: job.id } }),
+    onSuccess: () => { toast.success("Restored"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.to_location)}`;
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
