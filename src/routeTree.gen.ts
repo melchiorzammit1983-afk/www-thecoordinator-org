@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -54,6 +55,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TTokenRoute = TTokenRouteImport.update({
+  id: '/t/$token',
+  path: '/t/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CTokenRoute = CTokenRouteImport.update({
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/t/$token': typeof TTokenRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -183,6 +190,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
+  '/t/$token': typeof TTokenRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -208,6 +216,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/t/$token': typeof TTokenRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/coordinator'
     | '/c/$token'
+    | '/t/$token'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/c/$token'
+    | '/t/$token'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/c/$token'
+    | '/t/$token'
     | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -301,6 +313,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   CTokenRoute: typeof CTokenRoute
+  TTokenRoute: typeof TTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRoute
 }
@@ -340,6 +353,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/t/$token': {
+      id: '/t/$token'
+      path: '/t/$token'
+      fullPath: '/t/$token'
+      preLoaderRoute: typeof TTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$token': {
@@ -535,6 +555,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   CTokenRoute: CTokenRoute,
+  TTokenRoute: TTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRoute,
 }
