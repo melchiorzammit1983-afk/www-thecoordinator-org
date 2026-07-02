@@ -614,14 +614,9 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
         <DialogHeader>
           <DialogTitle>{job?.from_location} → {job?.to_location}</DialogTitle>
           <DialogDescription>
-            {job?.qr_strict_mode ? "QR scan required for boarding." : "Scan QR or manually confirm each passenger."}
+            Tap "Confirm" next to each passenger as they board.
           </DialogDescription>
         </DialogHeader>
-        {scanning ? (
-          <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />
-        ) : (
-          <Button size="lg" onClick={() => setScanning(true)}>Open QR scanner</Button>
-        )}
         <div className="space-y-2 max-h-72 overflow-auto">
           {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
           {(pax ?? []).map((p) => (
@@ -630,10 +625,10 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
                 <div className="font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground capitalize">{p.status}</div>
               </div>
-              {p.status !== "onboard" && !job?.qr_strict_mode && (
+              {p.status !== "onboard" && (
                 <Button size="sm" variant="secondary" disabled={markMut.isPending}
                   onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
-                  Manually confirm
+                  Confirm
                 </Button>
               )}
               {p.status === "onboard" && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
