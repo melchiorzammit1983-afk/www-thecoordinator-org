@@ -1,41 +1,31 @@
-## Goal
-When a passenger row is just a phone number, emoji, or empty text, remove it from the passenger list instead of keeping a blank pax. Move the phone into the trip's phone-number field (already partly working) and make sure the cleanup runs on both new entries and existing trips.
+## Auto-Refresh Button on Dispatch Board
 
-## Problem observed
-In the selected trip, pax rows are showing as:
-- `⬅️`
-- `⬅️ +39 320 4192957`
-- `⬅️ FLORIO Michele`
+Add a toggle button in the Dispatch Calendar header that, when enabled, runs a full "sweep" every 60 seconds and shows a live indicator.
 
-Expected after cleanup: **1 passenger** (`FLORIO Michele`) and `+39 320 4192957` in the Phone number field.
+### What the sweep does (per tick)
+For every visible trip in the current calendar view:
+1. **Normalize data** — run `normalizeJobData` on each job (moves phone numbers out of pax names into the phone field, moves flight codes out of from/to into the flight field, deletes blank/emoji-only pax rows).
+2. **Refresh flight tracking** — call `refreshMaltaFlightForJob` for any job with a `flight_number`, updating scheduled/estimated times and the `time_mismatch` flag (red rim).
+3. **Refresh driver tracking** — invalidate the `driver_locations` query so the live map markers re-pull latest GPS pings.
+4. **Refresh passenger confirmations / statuses** — invalidate the jobs, pax, dispatch-hops, and driver-status queries so accepted/pending/on-the-way states repaint (green/orange/red).
 
-Today `normalizeJobData` extracts the phone but only trims the name — it keeps rows whose "name" is empty or just an emoji/arrow, so blank pax remain visible.
+### UI
+- New `AutoRefreshToggle` component in the calendar toolbar (next to search/filters).
+- States: **Off** (default, outline), **On** (solid teal with pulsing dot + "Auto-refresh · every 1 min · next in 42s" countdown).
+- Manual "Refresh now" icon runs one sweep immediately without toggling the timer.
+- Persists per-user in `localStorage` (`dispatch:autoRefresh`) so it stays on across reloads.
+- Toast on first enable: "Auto-refresh on — cleaning data and refreshing flights every minute."
+- Small footer line under the toggle shows last sweep result: "Cleaned 3 trips · refreshed 5 flights · 12:04:31".
 
-## Changes
+### Throttling & safety
+- Sweep runs sequentially with a small concurrency limit (e.g. 4 in parallel) to avoid hammering Firecrawl/AviationStack.
+- Skips jobs older than 24h past pickup and cancelled jobs.
+- Auto-pauses when the tab is hidden (`document.visibilityState`) and resumes on focus.
+- Errors per-job are swallowed and counted, not thrown — one bad job doesn't stop the sweep.
 
-### 1. `src/lib/parse-trips.ts`
-- Add a shared `isMeaningfulName(s)` helper: after stripping phones, emojis, arrows, punctuation and whitespace, a name is meaningful only if it still contains at least one letter (unicode letter class).
-- Update `extractPhoneFromName` to also strip leading/trailing arrow glyphs (`⬅️ ➡️ → ← -> <-`) and repeated punctuation from `cleanName`.
+### Files touched
+- `src/components/coordinator/AutoRefreshToggle.tsx` (new) — button, timer, countdown, localStorage.
+- `src/lib/coordinator.functions.ts` — small `sweepJobs({ jobIds })` server fn wrapping normalize + flight refresh per job, returning `{ cleaned, flightsRefreshed, errors }`.
+- `src/routes/coordinator/calendar.tsx` — mount toggle in toolbar; on each tick collect visible job IDs, call `sweepJobs`, then invalidate `["jobs"]`, `["job-pax"]`, `["driver-locations"]`, `["dispatch-hops"]`, `["driver-status"]` query keys.
 
-### 2. `src/lib/coordinator.functions.ts` — `normalizeJobData`
-- For each pax row:
-  - Extract the phone (as today) → if found and job has no `contact_phone`, set it.
-  - If cleaned name is **not meaningful** (empty / only symbols / only a phone), `DELETE` that pax row.
-  - Otherwise, if the cleaned name differs from stored, `UPDATE` the row.
-- Keep flight-code normalization untouched.
-- Return `{ removed, updated, phoneMoved }` for a clearer toast.
-
-### 3. `src/components/coordinator/JobFormDialog.tsx` — `PaxEditor`
-- On add, if the input reduces to a non-meaningful name after phone extraction, do **not** create the pax row — only save the phone (and toast "Saved phone number"). Prevents creating new blank rows.
-
-### 4. `src/components/coordinator/TripDetailsSheet.tsx`
-- The existing auto-run of `normalizeJobData` on open will now also invalidate `["job-pax", jobId]` so the pax list refreshes after cleanup.
-- Toast text updated to reflect removals: e.g. "Cleaned 2 blank passenger rows · Moved phone number".
-
-### 5. `src/lib/parse-trips.ts` — bulk paste parser
-- Skip pax lines that are non-meaningful after phone extraction, so pasting a WhatsApp block with a stray phone-only line doesn't create empty pax.
-
-## Non-goals
-- No schema changes.
-- No changes to driver-facing screens (they'll reflect the cleaned pax automatically).
-- No UI redesign of the Edit trip dialog.
+No schema changes. No changes to how trips are created or displayed — only a scheduled repetition of existing cleanup + refresh actions.
