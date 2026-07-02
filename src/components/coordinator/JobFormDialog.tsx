@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
 import { Users, PencilLine } from "lucide-react";
+import { useFeature } from "@/hooks/use-features";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
