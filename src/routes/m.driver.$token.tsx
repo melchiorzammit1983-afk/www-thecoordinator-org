@@ -172,6 +172,25 @@ function DriverManifest() {
         {jobs.map((j) => (
           <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
         ))}
+
+        {archivedJobs.length > 0 && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowArchived((v) => !v)}
+              className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
+            >
+              {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
+            </button>
+            {showArchived && (
+              <div className="space-y-3 mt-3 opacity-75">
+                {archivedJobs.map((j) => (
+                  <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
