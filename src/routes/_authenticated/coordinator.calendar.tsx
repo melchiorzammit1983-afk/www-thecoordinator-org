@@ -495,11 +495,36 @@ function OutboundBoard() {
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
+  const suggestions = useMemo(() => suggestGroups(jobs), [jobs]);
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
+      {suggestions.length > 0 && (
+        <div className="mb-2 rounded-md border border-primary/40 bg-primary/5 p-2 space-y-1.5">
+          <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
+            <Sparkles className="h-3 w-3" /> Auto-group suggestions
+          </div>
+          {suggestions.slice(0, 3).map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <span className="truncate flex-1">
+                <span className="font-medium">{s.jobs.length} trips</span>{" "}
+                · {s.label}
+              </span>
+              <button
+                className="text-primary hover:underline shrink-0"
+                onClick={() => {
+                  for (const j of s.jobs) if (!ctx.selected.has(j.id)) ctx.onToggleSelect(j.id);
+                  toast.success(`Selected ${s.jobs.length} trips — tap "Group" in the bar`);
+                }}
+              >
+                Select
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
         {renderItems(items, ctx)}
@@ -507,6 +532,51 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
     </div>
   );
 }
+
+/* Suggest groups from ungrouped jobs sharing date+from+to within a 60-min window. */
+function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
+  const eligible = jobs.filter((j) => !j.group_id);
+  const buckets = new Map<string, Job[]>();
+  for (const j of eligible) {
+    const key = `${j.date}|${(j.from_location ?? "").toLowerCase().trim()}|${(j.to_location ?? "").toLowerCase().trim()}`;
+    const arr = buckets.get(key) ?? [];
+    arr.push(j);
+    buckets.set(key, arr);
+  }
+  const out: { label: string; jobs: Job[] }[] = [];
+  for (const [, arr] of buckets) {
+    if (arr.length < 2) continue;
+    const sorted = [...arr].sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
+    // Cluster ones within 60 min of each other
+    let cluster: Job[] = [sorted[0]];
+    const flush = () => {
+      if (cluster.length >= 2) {
+        const first = cluster[0];
+        out.push({
+          label: `${first.date} · ${first.from_location} → ${first.to_location} (${cluster[0].time?.slice(0,5)}–${cluster[cluster.length-1].time?.slice(0,5)})`,
+          jobs: [...cluster],
+        });
+      }
+      cluster = [];
+    };
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1].time ?? "00:00";
+      const cur = sorted[i].time ?? "00:00";
+      const diff = minutesBetween(prev, cur);
+      if (diff <= 60) cluster.push(sorted[i]);
+      else { flush(); cluster = [sorted[i]]; }
+    }
+    flush();
+  }
+  return out;
+}
+
+function minutesBetween(a: string, b: string): number {
+  const [ah, am] = a.split(":").map(Number);
+  const [bh, bm] = b.split(":").map(Number);
+  return Math.abs((bh * 60 + (bm || 0)) - (ah * 60 + (am || 0)));
+}
+
 
 function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
   return (
