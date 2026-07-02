@@ -191,6 +191,7 @@ export type Database = {
         Row: {
           chosen_at: string
           device_id: string
+          last_seen_at: string | null
           pax_id: string | null
           pax_name: string | null
           token: string
@@ -198,6 +199,7 @@ export type Database = {
         Insert: {
           chosen_at?: string
           device_id: string
+          last_seen_at?: string | null
           pax_id?: string | null
           pax_name?: string | null
           token: string
@@ -205,6 +207,7 @@ export type Database = {
         Update: {
           chosen_at?: string
           device_id?: string
+          last_seen_at?: string | null
           pax_id?: string | null
           pax_name?: string | null
           token?: string
@@ -843,6 +846,7 @@ export type Database = {
       }
       jobs: {
         Row: {
+          client_confirmed_at: string | null
           client_link_token: string | null
           clientcompanyname: string | null
           company_id: string
@@ -891,6 +895,7 @@ export type Database = {
           vehicle: string | null
         }
         Insert: {
+          client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
           company_id: string
@@ -941,6 +946,7 @@ export type Database = {
           vehicle?: string | null
         }
         Update: {
+          client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
           company_id?: string
