@@ -11,6 +11,7 @@ import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck,
 } from "lucide-react";
@@ -94,6 +95,7 @@ export function TripDetailsSheet({
   const normalizeFn = useServerFn(normalizeJobData);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
+  const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
 
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
@@ -254,39 +256,52 @@ export function TripDetailsSheet({
                   const isClientMsg = msg?.sender_kind === "client";
                   const isRead = !!msg?.read_by_coordinator_at;
                   return (
-                    <li key={p.id} className="px-3 py-2 text-sm space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate flex items-center gap-1.5">
-                          {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
-                          <span className="truncate">{p.name}</span>
-                          {act && act.unread_count > 0 && (
-                            <Badge className="h-4 px-1.5 text-[9px] bg-primary hover:bg-primary">{act.unread_count} new</Badge>
-                          )}
-                        </span>
-                        <span className={`text-[10px] capitalize shrink-0 ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
-                          {p.status ?? "pending"}
-                        </span>
-                      </div>
-                      {msg && (
-                        <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3">
-                          <span className="shrink-0 mt-0.5">
-                            {isClientMsg
-                              ? (isRead
-                                  ? <CheckCheck className="h-3 w-3 text-emerald-600" aria-label="Read" />
-                                  : <Check className="h-3 w-3 text-amber-500" aria-label="New" />)
-                              : <CheckCheck className="h-3 w-3 text-sky-500" aria-label="Delivered" />}
+                    <li key={p.id} className="p-0">
+                      <button
+                        type="button"
+                        onClick={() => setPaxChat({ paxId: p.id, name: p.name, identityId: act?.identity_id ?? null })}
+                        className="w-full text-left px-3 py-2 text-sm space-y-1 hover:bg-muted/60 focus:bg-muted/60 focus:outline-none transition-colors"
+                        aria-label={`Open chat with ${p.name}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate flex items-center gap-1.5">
+                            {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
+                            <span className="truncate">{p.name}</span>
+                            {act && act.unread_count > 0 && (
+                              <Badge className="h-4 px-1.5 text-[9px] bg-primary hover:bg-primary">{act.unread_count} new</Badge>
+                            )}
                           </span>
-                          <span className="truncate flex-1">
-                            <span className={isClientMsg ? "text-foreground" : ""}>
-                              {isClientMsg ? "" : "You: "}{msg.body}
+                          <span className="flex items-center gap-2 shrink-0">
+                            <span className={`text-[10px] capitalize ${p.status === "onboard" ? "text-emerald-600 font-medium" : "text-muted-foreground"}`}>
+                              {p.status ?? "pending"}
                             </span>
+                            <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
                           </span>
-                          <span className="shrink-0">{formatRelTime(msg.created_at)}</span>
                         </div>
-                      )}
-                      {!msg && act?.identity_id && (
-                        <div className="text-[10px] text-muted-foreground pl-3">Linked · no messages yet</div>
-                      )}
+                        {msg && (
+                          <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3">
+                            <span className="shrink-0 mt-0.5">
+                              {isClientMsg
+                                ? (isRead
+                                    ? <CheckCheck className="h-3 w-3 text-emerald-600" aria-label="Read" />
+                                    : <Check className="h-3 w-3 text-amber-500" aria-label="New" />)
+                                : <CheckCheck className="h-3 w-3 text-sky-500" aria-label="Delivered" />}
+                            </span>
+                            <span className="truncate flex-1">
+                              <span className={isClientMsg ? "text-foreground" : ""}>
+                                {isClientMsg ? "" : "You: "}{msg.body}
+                              </span>
+                            </span>
+                            <span className="shrink-0">{formatRelTime(msg.created_at)}</span>
+                          </div>
+                        )}
+                        {!msg && act?.identity_id && (
+                          <div className="text-[10px] text-muted-foreground pl-3">Linked · no messages yet</div>
+                        )}
+                        {!msg && !act?.identity_id && (
+                          <div className="text-[10px] text-muted-foreground pl-3">Tap to message · shared thread until they pick their name</div>
+                        )}
+                      </button>
                     </li>
                   );
                 })}
@@ -396,6 +411,16 @@ export function TripDetailsSheet({
           </div>
         </div>
       </SheetContent>
+      <TripChatDialog
+        open={!!paxChat}
+        onOpenChange={(v) => { if (!v) setPaxChat(null); }}
+        jobId={paxChat ? job.id : null}
+        role="coordinator"
+        identityId={paxChat?.identityId ?? null}
+        threadKind={paxChat?.identityId ? "private" : "group"}
+        paxName={paxChat?.name ?? null}
+        title="Passenger chat"
+      />
     </Sheet>
   );
 }

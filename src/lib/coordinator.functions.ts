@@ -1136,43 +1136,69 @@ async function siblingGroupJobIds(supabaseAdmin: Awaited<ReturnType<typeof getAd
 
 export const listTripMessagesCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .inputValidator((i: unknown) => z.object({
+    job_id: z.string().uuid(),
+    identity_id: z.string().uuid().nullish(),
+    thread_kind: z.enum(["all", "private", "group"]).optional().default("all"),
+  }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    const unreadIds = (rows ?? []).filter((r: { sender_kind: string; read_by_coordinator_at: string | null }) =>
-      (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at).map((r: { id: string }) => r.id);
+    let filtered = (rows ?? []) as any[];
+    if (data.thread_kind === "private" && data.identity_id) {
+      filtered = filtered.filter((r) =>
+        r.sender_kind === "driver" ||
+        r.client_identity_id === data.identity_id ||
+        (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id)
+      );
+    } else if (data.thread_kind === "group") {
+      filtered = filtered.filter((r) =>
+        r.sender_kind === "driver" ||
+        r.thread_kind === "group" ||
+        r.thread_kind == null
+      );
+    }
+    const unreadIds = filtered.filter((r) =>
+      (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at).map((r) => r.id);
     if (unreadIds.length) {
       await supabaseAdmin.from("trip_messages")
         .update({ read_by_coordinator_at: new Date().toISOString() })
         .in("id", unreadIds);
     }
-    return rows ?? [];
+    return filtered;
   });
 
 
 export const postTripMessageCoord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ job_id: z.string().uuid(), body: z.string().trim().min(1).max(4000) }).parse(i),
+    z.object({
+      job_id: z.string().uuid(),
+      body: z.string().trim().min(1).max(4000),
+      identity_id: z.string().uuid().nullish(),
+      thread_kind: z.enum(["group", "private"]).optional().default("group"),
+    }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const { company } = await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
+    const isPrivate = data.thread_kind === "private" && !!data.identity_id;
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: company.id,
       sender_kind: "coordinator",
       sender_label: label,
       body: data.body,
-    });
+      thread_kind: isPrivate ? "private" : "group",
+      client_identity_id: isPrivate ? data.identity_id : null,
+    } as any);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
