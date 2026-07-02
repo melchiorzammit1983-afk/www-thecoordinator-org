@@ -19,9 +19,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { cn } from "@/lib/utils";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
+
 
 export const Route = createFileRoute("/t/$token")({
   component: ClientTripPortal,
@@ -120,7 +122,28 @@ function ClientTripPortal() {
   const driver = data.driver;
   const isGroup = (data.siblings?.length ?? 0) > 1;
   const hasIdentity = !!data.identity;
-  const needsIdentity = !hasIdentity && (data.pax?.length ?? 0) > 1;
+  const uniquePax = useMemo(() => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const p of (data.pax ?? [])) {
+      const k = (p?.name ?? "").trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+    return out;
+  }, [data.pax]);
+  const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (needsIdentity && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setPickerOpen(true);
+    }
+    if (hasIdentity) setPickerOpen(false);
+  }, [needsIdentity, hasIdentity]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -146,14 +169,35 @@ function ClientTripPortal() {
           {job.pickup_at ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : `${job.date}${job.time ? " · " + job.time.slice(0, 5) : ""}`}
         </div>
-        {data.identity?.pax_name && (
-          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
-            Signed in as <b className="ml-1">{data.identity.pax_name}</b>
+        {data.identity?.pax_name ? (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
+            <span>Signed in as <b>{data.identity.pax_name}</b></span>
+            {uniquePax.length > 1 && (
+              <button onClick={() => setPickerOpen(true)} className="underline underline-offset-2 opacity-90 hover:opacity-100">
+                Change
+              </button>
+            )}
           </div>
-        )}
+        ) : uniquePax.length > 1 ? (
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-400 text-amber-950 px-2.5 py-1 text-xs font-medium shadow-sm"
+          >
+            <Users className="h-3.5 w-3.5" /> Tap to choose your name
+          </button>
+        ) : null}
       </header>
 
-      {needsIdentity && <IdentityPicker token={token} deviceId={deviceId} pax={data.pax} onDone={() => qc.invalidateQueries({ queryKey: ["client-portal"] })} />}
+      <IdentityPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        token={token}
+        deviceId={deviceId}
+        pax={uniquePax}
+        allowSkip={!needsIdentity || hasIdentity}
+        onDone={() => { setPickerOpen(false); qc.invalidateQueries({ queryKey: ["client-portal"] }); }}
+      />
+
 
       {/* Tabs */}
       <nav className="sticky top-0 z-10 bg-white border-b flex">
@@ -247,8 +291,9 @@ function ClientTripPortal() {
       )}
 
       {tab === "chat" && (
-        <ChatPanel token={token} deviceId={deviceId} driverAssigned={!!driver} isGroup={isGroup} hasIdentity={hasIdentity} />
+        <ChatPanel token={token} deviceId={deviceId} driverAssigned={!!driver} isGroup={isGroup} hasIdentity={hasIdentity} onChooseName={() => setPickerOpen(true)} />
       )}
+
       {tab === "rebook" && (
         <RebookPanel token={token} deviceId={deviceId} lastFrom={job.from_location ?? ""} lastTo={job.to_location ?? ""} />
       )}
@@ -471,8 +516,14 @@ function SosButton({ token, deviceId }: { token: string; deviceId: string }) {
 
 /* ---------------- Identity picker ---------------- */
 
-function IdentityPicker({ token, deviceId, pax, onDone }: {
-  token: string; deviceId: string; pax: any[]; onDone: () => void;
+function IdentityPickerDialog({ open, onOpenChange, token, deviceId, pax, allowSkip, onDone }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  token: string;
+  deviceId: string;
+  pax: any[];
+  allowSkip: boolean;
+  onDone: () => void;
 }) {
   const chooseFn = useServerFn(chooseClientIdentity);
   const mut = useMutation({
@@ -482,22 +533,51 @@ function IdentityPicker({ token, deviceId, pax, onDone }: {
     onError: (e: Error) => toast.error(e.message),
   });
   return (
-    <div className="p-4">
-      <div className="rounded-2xl bg-white border p-4 shadow-sm">
-        <h2 className="font-semibold mb-1">Which passenger are you?</h2>
-        <p className="text-xs text-muted-foreground mb-3">This is remembered on your device.</p>
-        <div className="grid gap-2">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        // Only allow closing when explicitly permitted (already chose or skipped).
+        if (!v && !allowSkip) return;
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-sm"
+        onInteractOutside={(e) => { if (!allowSkip) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (!allowSkip) e.preventDefault(); }}
+      >
+        <DialogHeader>
+          <DialogTitle>Which passenger are you?</DialogTitle>
+          <DialogDescription>
+            Pick your name so the coordinator can message you privately. This is remembered on this device.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 max-h-[55vh] overflow-y-auto py-1">
           {pax.map((p) => (
-            <Button key={p.id} variant="outline" className="justify-start"
-              onClick={() => mut.mutate({ pax_id: p.id, pax_name: p.name })}>
+            <Button
+              key={p.id}
+              variant="outline"
+              className="justify-start"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate({ pax_id: p.id, pax_name: p.name })}
+            >
               {p.name}
             </Button>
           ))}
+          {pax.length === 0 && (
+            <p className="text-sm text-muted-foreground">No passenger names yet — check back soon.</p>
+          )}
         </div>
-      </div>
-    </div>
+        <DialogFooter className="sm:justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            {allowSkip ? "Close" : "Skip for now"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+
 
 /* ---------------- Share location ---------------- */
 
@@ -564,9 +644,10 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
 
 /* ---------------- Chat (Group + Private) ---------------- */
 
-function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity }: {
-  token: string; deviceId: string; driverAssigned: boolean; isGroup: boolean; hasIdentity: boolean;
+function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onChooseName }: {
+  token: string; deviceId: string; driverAssigned: boolean; isGroup: boolean; hasIdentity: boolean; onChooseName: () => void;
 }) {
+
   const listFn = useServerFn(listClientTripMessages);
   const postFn = useServerFn(postClientTripMessage);
   const [thread, setThread] = useState<"group" | "private">(isGroup ? "group" : "private");
@@ -622,10 +703,12 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity }: {
         </div>
 
         {privateBlocked ? (
-          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground">
-            Choose your name above first to start a private chat.
+          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground gap-3">
+            <p>Choose your name first to start a private chat.</p>
+            <Button size="sm" onClick={onChooseName}>Choose my name</Button>
           </div>
         ) : (
+
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
               {(messages ?? []).length === 0 && (
