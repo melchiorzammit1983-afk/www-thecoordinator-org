@@ -104,6 +104,7 @@ function CalendarPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
+  const [alertsOnly, setAlertsOnly] = useState(false);
   const qc = useQueryClient();
   const clientPortalEnabled = useFeature("client_trip_portal");
 
