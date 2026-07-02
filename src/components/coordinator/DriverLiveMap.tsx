@@ -69,26 +69,50 @@ function ageLabel(ts: string) {
   return `${h}h ago`;
 }
 
+export type SosPoint = {
+  id: string;
+  job_id: string;
+  pax_name: string | null;
+  latitude: number;
+  longitude: number;
+  note: string | null;
+  created_at: string;
+  job_from?: string | null;
+  job_to?: string | null;
+};
+
 export function DriverLiveMap({
   points,
+  sosPoints = [],
   focusDriverId,
   height = 280,
+  onAcknowledgeSos,
 }: {
   points: LivePoint[];
+  sosPoints?: SosPoint[];
   focusDriverId?: string | null;
   height?: number;
+  onAcknowledgeSos?: (sosId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
+  const sosMarkersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [, force] = useState(0);
+
+  // Expose the ack callback to inline InfoWindow buttons.
+  useEffect(() => {
+    (window as any).__coordAckSos = (id: string) => onAcknowledgeSos?.(id);
+    return () => { try { delete (window as any).__coordAckSos; } catch { /* ignore */ } };
+  }, [onAcknowledgeSos]);
 
   // Tick every 15s to refresh freshness colors/labels.
   useEffect(() => {
     const id = setInterval(() => force((x) => x + 1), 15_000);
     return () => clearInterval(id);
   }, []);
+
 
   // Initialise the map once.
   useEffect(() => {
