@@ -127,7 +127,10 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
       if (nativeWatcherRef.current) {
         (async () => {
           try {
-            const { BackgroundGeolocation } = await import("@capacitor-community/background-geolocation");
+            const { registerPlugin } = await import("@capacitor/core");
+            const BackgroundGeolocation = registerPlugin<{
+              removeWatcher(o: { id: string }): Promise<void>;
+            }>("BackgroundGeolocation");
             await BackgroundGeolocation.removeWatcher({ id: nativeWatcherRef.current! });
           } catch { /* ignore */ }
           nativeWatcherRef.current = null;
