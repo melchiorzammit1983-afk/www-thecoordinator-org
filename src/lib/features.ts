@@ -12,7 +12,8 @@ export type FeatureKey =
   | "bulk_paste"
   | "chat"
   | "ai_extraction"
-  | "ai_group_suggestions";
+  | "ai_group_suggestions"
+  | "client_trip_portal";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
