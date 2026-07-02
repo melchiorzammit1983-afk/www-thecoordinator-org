@@ -1474,3 +1474,96 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     }
     return Array.from(latest.values());
   });
+
+// ---------- DATA NORMALIZATION ----------
+// Retro-cleans an existing job: extracts phone numbers embedded in pax names
+// into contact_phone, and normalizes flight codes (from_flight/to_flight)
+// including codes typed into from_location/to_location.
+export const normalizeJobData = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const { extractPhoneFromName, extractFlightCode, normalizePhone } = await import("./parse-trips");
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin
+      .from("jobs")
+      .select("id, contact_phone, from_flight, to_flight, from_location, to_location, flightorship")
+      .eq("id", data.job_id).maybeSingle();
+    if (je || !job) return { ok: false, changed: 0 };
+
+    let changed = 0;
+    let discoveredPhone = "";
+
+    // Pax cleanup
+    const { data: paxRows } = await supabaseAdmin
+      .from("pax").select("id, name").eq("job_id", data.job_id);
+    for (const p of paxRows ?? []) {
+      const { cleanName, phone } = extractPhoneFromName(p.name ?? "");
+      if (phone && !discoveredPhone) discoveredPhone = phone;
+      if (cleanName && cleanName !== (p.name ?? "").trim()) {
+        await supabaseAdmin.from("pax").update({ name: cleanName }).eq("id", p.id);
+        changed++;
+      }
+    }
+
+    // Also normalize a phone already sitting in contact_phone
+    const currentPhone = normalizePhone(job.contact_phone ?? "") || (job.contact_phone ?? "");
+    const jobPatch: Record<string, unknown> = {};
+    if (!job.contact_phone && discoveredPhone) {
+      jobPatch.contact_phone = discoveredPhone;
+    } else if (job.contact_phone && currentPhone && currentPhone !== job.contact_phone) {
+      jobPatch.contact_phone = currentPhone;
+    }
+
+    // Flight codes: normalize existing and extract from location fields
+    const cleanFrom = extractFlightCode(job.from_flight ?? "");
+    if (cleanFrom.code && cleanFrom.code !== (job.from_flight ?? "").toUpperCase()) {
+      jobPatch.from_flight = cleanFrom.code;
+    }
+    const cleanTo = extractFlightCode(job.to_flight ?? "");
+    if (cleanTo.code && cleanTo.code !== (job.to_flight ?? "").toUpperCase()) {
+      jobPatch.to_flight = cleanTo.code;
+    }
+    const locFrom = extractFlightCode(job.from_location ?? "");
+    if (locFrom.code && !job.from_flight) {
+      jobPatch.from_flight = locFrom.code;
+      jobPatch.from_location = locFrom.rest || "Airport";
+    }
+    const locTo = extractFlightCode(job.to_location ?? "");
+    if (locTo.code && !job.to_flight) {
+      jobPatch.to_flight = locTo.code;
+      jobPatch.to_location = locTo.rest || "Airport";
+    }
+    if ((jobPatch.from_flight || jobPatch.to_flight) && !job.flightorship) {
+      jobPatch.flightorship = (jobPatch.from_flight || jobPatch.to_flight) as string;
+    }
+
+    if (Object.keys(jobPatch).length) {
+      const { error: ue } = await supabaseAdmin.from("jobs").update(jobPatch).eq("id", data.job_id);
+      if (ue) throw new Error(ue.message);
+      changed += Object.keys(jobPatch).length;
+    }
+
+    return { ok: true, changed, phoneMoved: !!jobPatch.contact_phone };
+  });
+
+// Lightweight setter used when a coordinator adds a passenger with a phone
+// number embedded — sets contact_phone only if currently empty.
+export const setJobContactPhoneIfEmpty = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), phone: z.string().trim().min(3).max(40) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job } = await supabaseAdmin
+      .from("jobs").select("contact_phone").eq("id", data.job_id).maybeSingle();
+    if (!job) throw new Error("Job not found");
+    if (job.contact_phone) return { ok: true, set: false };
+    const { error } = await supabaseAdmin.from("jobs")
+      .update({ contact_phone: data.phone }).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true, set: true };
+  });
