@@ -255,11 +255,13 @@ function CalendarPage() {
       if (s.sos_open && !p.sos_open) {
         try { playAlertBeep(880, 0.35); setTimeout(() => playAlertBeep(660, 0.35), 200); } catch { /* ignore */ }
         const j = (jobs ?? []).find((x) => x.id === id);
-        toast.error(`SOS from client${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+        toast.error(`🆘 SOS from client${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
           action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
-          duration: 10000,
+          duration: 15000,
+          description: "Open the trip to see who pressed SOS and dismiss the alert.",
         });
         scrollToJob(id);
+
       } else if (s.client_change && !p.client_change) {
         try { playAlertBeep(520, 0.15); } catch { /* ignore */ }
         const j = (jobs ?? []).find((x) => x.id === id);
