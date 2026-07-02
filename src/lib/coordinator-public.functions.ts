@@ -437,13 +437,11 @@ async function loadDriverJob(token: string, job_id: string) {
     || chainIds.includes(link.company_id);
   if (!inChain) throw new Error("forbidden");
   if (link.subject_id) {
-    // Virtual drivers (coordinator / partner) are scoped to the company,
-    // not a specific driver_id.
-    const { data: drv } = await supabaseAdmin.from("drivers")
-      .select("kind").eq("id", link.subject_id).maybeSingle();
-    const isVirtual = drv?.kind === "coordinator" || drv?.kind === "partner";
-    if (!isVirtual && job.driver_id !== link.subject_id) throw new Error("not_your_job");
+    // All drivers — including virtual coordinator/partner drivers — can only
+    // act on jobs explicitly assigned to their driver row.
+    if (job.driver_id !== link.subject_id) throw new Error("not_your_job");
   }
+
   return { link, job, supabaseAdmin };
 }
 
