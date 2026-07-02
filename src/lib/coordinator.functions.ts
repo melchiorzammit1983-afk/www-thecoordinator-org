@@ -281,22 +281,6 @@ export const updateJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const listJobPax = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
-  .handler(async ({ data, context }) => {
-    const c = await resolveCompany(context);
-    const supabaseAdmin = await getAdminClient();
-    const { data: job, error: je } = await supabaseAdmin
-      .from("jobs").select("id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
-    if (je || !job) throw new Error("Job not found");
-    const { data: rows, error } = await supabaseAdmin
-      .from("pax").select("id, name, status, boarded_at")
-      .eq("job_id", data.job_id).order("created_at", { ascending: true });
-    if (error) throw new Error(error.message);
-    return rows ?? [];
-  });
-
 export const addJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
