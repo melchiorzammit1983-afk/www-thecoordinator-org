@@ -809,15 +809,161 @@ export const createJobsBulk = createServerFn({ method: "POST" })
   });
 
 // ---------- FLIGHT STATUS ----------
-// Best-effort live flight status. Uses AviationStack if AVIATIONSTACK_API_KEY is set;
-// otherwise it's a no-op that leaves status untouched. Cards go red when status === 'delayed'.
+// ---------- MALTA AIRPORT FLIGHT STATUS ----------
+// Scrapes maltairport.com arrivals/departures via Firecrawl and persists status
+// on the job. Cards go red when status === 'delayed' / 'cancelled' / 'time_mismatch'.
+
+type MaltaFlightRow = {
+  flight?: string | null;
+  airline?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  scheduled?: string | null;
+  estimated?: string | null;
+  status?: string | null;
+  gate?: string | null;
+  terminal?: string | null;
+};
+
+const maltaCache = new Map<string, { at: number; rows: MaltaFlightRow[] }>();
+const MALTA_TTL_MS = 60_000;
+
+async function fetchMaltaBoard(kind: "arrivals" | "departures"): Promise<MaltaFlightRow[]> {
+  const url = `https://maltairport.com/flights/${kind}/`;
+  const cached = maltaCache.get(url);
+  if (cached && Date.now() - cached.at < MALTA_TTL_MS) return cached.rows;
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) throw new Error("FIRECRAWL_API_KEY not configured");
+  const { default: Firecrawl } = await import("@mendable/firecrawl-js");
+  const fc = new Firecrawl({ apiKey });
+  const schema = {
+    type: "object",
+    properties: {
+      rows: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            flight: { type: "string" },
+            airline: { type: "string" },
+            origin: { type: "string" },
+            destination: { type: "string" },
+            scheduled: { type: "string" },
+            estimated: { type: "string" },
+            status: { type: "string" },
+            gate: { type: "string" },
+            terminal: { type: "string" },
+          },
+          required: ["flight"],
+        },
+      },
+    },
+    required: ["rows"],
+  };
+  const prompt =
+    `Extract every flight row from the Malta International Airport ${kind} board. ` +
+    `Return { rows: [...] } where each row has: flight (code like "KM643" or "KM 643"), ` +
+    `airline, ${kind === "arrivals" ? "origin (city or airport)" : "destination (city or airport)"}, ` +
+    `scheduled (HH:MM local), estimated (HH:MM local if shown), status (label shown such as "On time", "Delayed", "Landed", "Cancelled", "Boarding", "Departed"), gate, terminal.`;
+  const result: any = await fc.scrape(url, {
+    onlyMainContent: true,
+    formats: [{ type: "json", schema, prompt } as any],
+  });
+  const json = (result?.json ?? result?.data?.json ?? {}) as { rows?: MaltaFlightRow[] };
+  const rows = Array.isArray(json.rows) ? json.rows : [];
+  maltaCache.set(url, { at: Date.now(), rows });
+  return rows;
+}
+
+function normalizeFlightCode(c: string) {
+  return c.replace(/\s+/g, "").toUpperCase();
+}
+
+function mapMaltaStatus(raw: string | null | undefined) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return "scheduled";
+  if (s.includes("cancel")) return "cancelled";
+  if (s.includes("divert")) return "diverted";
+  if (s.includes("delay")) return "delayed";
+  if (s.includes("land") || s.includes("arrived")) return "landed";
+  if (s.includes("depart") || s.includes("airborne") || s.includes("en route") || s.includes("en-route") || s.includes("board")) return "active";
+  return "scheduled";
+}
+
+function combineDateAndTime(baseIso: string | null, hhmm: string | null | undefined): string | null {
+  if (!hhmm) return null;
+  const m = /(\d{1,2}):(\d{2})/.exec(hhmm.trim());
+  if (!m) return null;
+  const base = baseIso ? new Date(baseIso) : new Date();
+  if (Number.isNaN(base.getTime())) return null;
+  // Board shows local Malta time; keep the pickup date and stamp the HH:MM in UTC.
+  // toLocaleString on the client renders it in the viewer's zone — acceptable
+  // approximation for surfacing scheduled/estimated in the details panel.
+  const d = new Date(Date.UTC(
+    base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(),
+    Number(m[1]), Number(m[2]), 0,
+  ));
+  return d.toISOString();
+}
+
+async function refreshMaltaFlightForJob(
+  supabaseAdmin: any,
+  job: { id: string; from_flight: string | null; to_flight: string | null; pickup_at: string | null },
+) {
+  const code = job.from_flight || job.to_flight;
+  if (!code) return { ok: false as const, reason: "no_code" };
+  const kind: "arrivals" | "departures" = job.from_flight ? "arrivals" : "departures";
+  const rows = await fetchMaltaBoard(kind);
+  const norm = normalizeFlightCode(code);
+  const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
+  if (!row) {
+    await supabaseAdmin.from("jobs").update({
+      flight_status: "unknown",
+      flight_status_note: "Not on Malta Airport board",
+      flight_status_updated_at: new Date().toISOString(),
+    }).eq("id", job.id);
+    return { ok: false as const, reason: "not_found" };
+  }
+  const scheduledIso = combineDateAndTime(job.pickup_at, row.scheduled ?? null);
+  const estimatedIso = combineDateAndTime(job.pickup_at, row.estimated ?? null);
+  let mapped = mapMaltaStatus(row.status);
+  const shownTime = (row.estimated || row.scheduled || "").trim();
+  const pickTime = job.pickup_at ? new Date(job.pickup_at).toISOString().slice(11, 16) : "";
+  if (scheduledIso && job.pickup_at) {
+    const s = new Date(scheduledIso).getTime();
+    const p = new Date(job.pickup_at).getTime();
+    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+      mapped = "time_mismatch";
+    }
+  }
+  let note: string;
+  switch (mapped) {
+    case "cancelled": note = "CANCELLED"; break;
+    case "diverted": note = "DIVERTED"; break;
+    case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
+    case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
+    case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
+    case "active": note = row.status || "In progress"; break;
+    default: note = `On time · ${shownTime || "?"}`; break;
+  }
+  if (row.gate) note += ` · Gate ${row.gate}`;
+  if (row.terminal) note += ` · T${row.terminal}`;
+  await supabaseAdmin.from("jobs").update({
+    flight_status: mapped,
+    flight_status_note: note,
+    flight_status_updated_at: new Date().toISOString(),
+    flight_scheduled_at: scheduledIso,
+    flight_estimated_at: estimatedIso,
+  }).eq("id", job.id);
+  return { ok: true as const, status: mapped, note };
+}
+
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const key = process.env.AVIATIONSTACK_API_KEY;
-    // Look at flights for jobs in the next 48h (or recently past 6h so we can catch "delayed" that already happened).
+    const configured = !!process.env.FIRECRAWL_API_KEY;
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin.from("jobs")
@@ -826,64 +972,34 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .gte("pickup_at", fromIso).lte("pickup_at", toIso);
     if (error) throw new Error(error.message);
-    if (!key) return { checked: 0, updated: 0, configured: false };
-
-    const fmt = (iso: string | null) => {
-      if (!iso) return "";
-      const d = new Date(iso);
-      return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
-    };
-
+    if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
     let updated = 0;
-    for (const j of jobs ?? []) {
-      const code = (j.from_flight || j.to_flight || "").toUpperCase();
-      if (!code) continue;
+    for (const j of jobs) {
       try {
-        const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}&flight_iata=${encodeURIComponent(code)}&limit=1`;
-        const res = await fetch(url);
-        if (!res.ok) continue;
-        const body: any = await res.json();
-        const f = body?.data?.[0];
-        if (!f) continue;
-        const status = String(f.flight_status ?? "").toLowerCase(); // scheduled|active|landed|cancelled|incident|diverted
-        const dep = f.departure ?? {};
-        const arr = f.arrival ?? {};
-        // from_flight = pax arriving before pickup → use arrival; to_flight = drop-off → use departure
-        const side: any = j.from_flight ? arr : dep;
-        const scheduledIso: string | null = side?.scheduled ?? null;
-        const estimatedIso: string | null = side?.estimated ?? side?.actual ?? null;
-        const delayMin = Number(side?.delay ?? dep.delay ?? arr.delay ?? 0) || 0;
-
-        let mismatch = false;
-        if (scheduledIso && j.pickup_at) {
-          const s = new Date(scheduledIso).getTime();
-          const p = new Date(j.pickup_at).getTime();
-          if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) mismatch = true;
-        }
-
-        const newTime = fmt(estimatedIso) || fmt(scheduledIso);
-        const pickTime = fmt(j.pickup_at);
-        const mapped =
-          status === "cancelled" ? "cancelled" :
-          mismatch ? "time_mismatch" :
-          status === "landed" ? "landed" :
-          delayMin >= 15 ? "delayed" : status || "unknown";
-        const note =
-          mapped === "cancelled" ? "CANCELLED" :
-          mapped === "time_mismatch" ? `Flight ${newTime || "?"} vs pickup ${pickTime || "?"}` :
-          mapped === "delayed" ? `New time ${newTime || "?"}${delayMin ? ` (+${delayMin}m)` : ""}` :
-          status;
-        await supabaseAdmin.from("jobs").update({
-          flight_status: mapped,
-          flight_status_note: note,
-          flight_status_updated_at: new Date().toISOString(),
-          flight_scheduled_at: scheduledIso,
-          flight_estimated_at: estimatedIso,
-        }).eq("id", j.id).eq("company_id", c.id);
-        updated++;
+        const r = await refreshMaltaFlightForJob(supabaseAdmin, j as any);
+        if (r.ok) updated++;
       } catch { /* ignore per-flight errors */ }
     }
-    return { checked: jobs?.length ?? 0, updated, configured: true };
+    return { checked: jobs.length, updated, configured };
+  });
+
+export const getMaltaFlightStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, from_flight, to_flight, pickup_at")
+      .eq("id", data.job_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!job) throw new Error("Job not found");
+    if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    try {
+      return await refreshMaltaFlightForJob(supabaseAdmin, job as any);
+    } catch (e: any) {
+      return { ok: false as const, reason: "scrape_failed", error: String(e?.message ?? e) };
+    }
   });
 
 export const listJobPax = createServerFn({ method: "GET" })

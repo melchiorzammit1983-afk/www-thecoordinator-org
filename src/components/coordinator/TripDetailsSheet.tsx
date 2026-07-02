@@ -8,10 +8,11 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus } from "@/lib/coordinator.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw,
 } from "lucide-react";
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
@@ -31,6 +32,7 @@ export type DetailsJob = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
   flight_status: string | null; flight_status_note: string | null;
+  flight_status_updated_at?: string | null;
   flight_scheduled_at: string | null; flight_estimated_at: string | null;
   drivers?: DriverEmbed | null;
   pax?: Pax[];
@@ -77,6 +79,26 @@ export function TripDetailsSheet({
   const flightCode = job.from_flight || job.to_flight;
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
   const paid = job.payment_status === "paid";
+
+  const qc = useQueryClient();
+  const refreshFlightFn = useServerFn(getMaltaFlightStatus);
+  const [refreshingFlight, setRefreshingFlight] = useState(false);
+  const handleRefreshFlight = async () => {
+    if (!job) return;
+    setRefreshingFlight(true);
+    try {
+      const r: any = await refreshFlightFn({ data: { job_id: job.id } });
+      if (r?.ok) toast.success(`Flight: ${r.status}${r.note ? ` — ${r.note}` : ""}`);
+      else if (r?.reason === "not_found") toast.info("Flight not on Malta Airport board");
+      else if (r?.reason === "scrape_failed") toast.error("Could not fetch Malta Airport board");
+      else if (r?.reason === "no_flight") toast.info("No flight code on this trip");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Refresh failed");
+    } finally {
+      setRefreshingFlight(false);
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -199,18 +221,53 @@ export function TripDetailsSheet({
           {/* Flight */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
-              <div className="rounded-md border p-3 space-y-1 text-xs">
-                {job.from_flight && <div>From: <b>✈ {job.from_flight}</b></div>}
-                {job.to_flight && <div>To: <b>✈ {job.to_flight}</b></div>}
-                {job.flight_scheduled_at && (
-                  <div>Scheduled: {new Date(job.flight_scheduled_at).toLocaleString()}</div>
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={handleRefreshFlight}
+                  disabled={refreshingFlight}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${refreshingFlight ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+              <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    {job.from_flight && <div>From: <b>✈ {job.from_flight}</b></div>}
+                    {job.to_flight && <div>To: <b>✈ {job.to_flight}</b></div>}
+                  </div>
+                  <FlightStatusPill status={job.flight_status} />
+                </div>
+                {job.flight_status_note && (
+                  <div className={flightIssue ? "text-destructive font-medium" : "text-muted-foreground"}>
+                    {job.flight_status_note}
+                  </div>
                 )}
-                {job.flight_estimated_at && (
+                {job.flight_scheduled_at && (
+                  <div>Scheduled: {new Date(job.flight_scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                )}
+                {job.flight_estimated_at && job.flight_estimated_at !== job.flight_scheduled_at && (
                   <div>Estimated: <span className={flightIssue ? "text-destructive font-medium" : ""}>
-                    {new Date(job.flight_estimated_at).toLocaleString()}
+                    {new Date(job.flight_estimated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span></div>
                 )}
+                <div className="text-[10px] text-muted-foreground pt-1 border-t flex items-center justify-between">
+                  <span>
+                    {job.flight_status_updated_at
+                      ? `Updated ${new Date(job.flight_status_updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      : "Not checked yet"}
+                  </span>
+                  <a
+                    href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    Malta Airport
+                  </a>
+                </div>
               </div>
             </section>
           )}
@@ -315,4 +372,20 @@ function TripLiveLocation({ driverId }: { driverId: string }) {
       )}
     </section>
   );
+}
+
+function FlightStatusPill({ status }: { status: string | null | undefined }) {
+  const s = status ?? "unknown";
+  const map: Record<string, { label: string; cls: string }> = {
+    scheduled: { label: "On time", cls: "bg-emerald-600 hover:bg-emerald-600 text-white" },
+    active: { label: "In progress", cls: "bg-sky-600 hover:bg-sky-600 text-white" },
+    landed: { label: "Landed", cls: "bg-emerald-700 hover:bg-emerald-700 text-white" },
+    delayed: { label: "Delayed", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    cancelled: { label: "Cancelled", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    diverted: { label: "Diverted", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    time_mismatch: { label: "Time mismatch", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    unknown: { label: "Unknown", cls: "bg-muted text-muted-foreground" },
+  };
+  const m = map[s] ?? map.unknown;
+  return <Badge className={`text-[10px] shrink-0 ${m.cls}`}>{m.label}</Badge>;
 }
