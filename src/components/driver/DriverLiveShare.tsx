@@ -161,10 +161,9 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
       (async () => {
         try {
           const { registerPlugin } = await import("@capacitor/core");
-          const defs = await import("@capacitor-community/background-geolocation");
-          type WatcherOptions = import("@capacitor-community/background-geolocation").WatcherOptions;
-          type LocationT = import("@capacitor-community/background-geolocation").Location;
-          type CallbackError = import("@capacitor-community/background-geolocation").CallbackError;
+          type WatcherOptions = { backgroundMessage?: string; backgroundTitle?: string; requestPermissions?: boolean; stale?: boolean; distanceFilter?: number };
+          type LocationT = { latitude: number; longitude: number; accuracy?: number; bearing?: number | null; speed?: number | null; time?: number };
+          type CallbackError = { code?: string; message?: string };
           type BGPlugin = {
             addWatcher(
               options: WatcherOptions,
@@ -172,8 +171,8 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
             ): Promise<string>;
             removeWatcher(options: { id: string }): Promise<void>;
           };
-          void defs;
           const BackgroundGeolocation = registerPlugin<BGPlugin>("BackgroundGeolocation");
+
           const id = await BackgroundGeolocation.addWatcher(
             {
               backgroundMessage: "Sharing live location with dispatcher",
