@@ -1698,7 +1698,12 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
 export const groupJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ job_ids: z.array(z.string().uuid()).min(2).max(50) }).parse(i),
+    z.object({
+      job_ids: z.array(z.string().uuid()).min(2).max(50),
+      name: z.string().trim().max(80).optional(),
+      note: z.string().trim().max(500).optional(),
+      driver_id: z.string().uuid().nullable().optional(),
+    }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
@@ -1714,16 +1719,27 @@ export const groupJobs = createServerFn({ method: "POST" })
     const gid = existing ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const total = rows.length;
 
+    const patch: Record<string, unknown> = {
+      group_id: gid,
+      grouped_count: total,
+      grouped_at: new Date().toISOString(),
+    };
+    if (data.name !== undefined) patch.group_name = data.name || null;
+    if (data.note !== undefined) patch.group_note = data.note || null;
+    if (data.driver_id !== undefined) {
+      patch.driver_id = data.driver_id;
+      // reset acceptance when driver changes
+      patch.driver_accepted_at = null;
+    }
+
     const { error: uErr } = await supabaseAdmin.from("jobs")
-      .update({
-        group_id: gid,
-        grouped_count: total,
-        grouped_at: new Date().toISOString(),
-      } as never)
+      .update(patch as never)
       .in("id", data.job_ids);
     if (uErr) throw new Error(uErr.message);
     return { ok: true, group_id: gid, count: total };
   });
+
+
 
 export const ungroupJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
