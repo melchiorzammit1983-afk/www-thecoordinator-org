@@ -644,9 +644,10 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
 
 /* ---------------- Chat (Group + Private) ---------------- */
 
-function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity }: {
-  token: string; deviceId: string; driverAssigned: boolean; isGroup: boolean; hasIdentity: boolean;
+function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onChooseName }: {
+  token: string; deviceId: string; driverAssigned: boolean; isGroup: boolean; hasIdentity: boolean; onChooseName: () => void;
 }) {
+
   const listFn = useServerFn(listClientTripMessages);
   const postFn = useServerFn(postClientTripMessage);
   const [thread, setThread] = useState<"group" | "private">(isGroup ? "group" : "private");
