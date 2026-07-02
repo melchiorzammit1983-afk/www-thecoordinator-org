@@ -207,6 +207,43 @@ function CalendarPage() {
     setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
   }, [jobs]);
 
+  // Track prior signals to detect NEW SOS / client-change transitions.
+  const prevSignalsRef = useRef<Record<string, { sos_open: boolean; client_change: boolean }>>({});
+  const firstSignalsRun = useRef(true);
+  useEffect(() => {
+    if (!cardSignals) return;
+    const prev = prevSignalsRef.current;
+    if (firstSignalsRun.current) {
+      // Seed baseline without alerting on already-open items.
+      const seed: typeof prev = {};
+      for (const [id, s] of Object.entries(cardSignals)) seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+      prevSignalsRef.current = seed;
+      firstSignalsRun.current = false;
+      return;
+    }
+    for (const [id, s] of Object.entries(cardSignals)) {
+      const p = prev[id] ?? { sos_open: false, client_change: false };
+      if (s.sos_open && !p.sos_open) {
+        try { playAlertBeep(880, 0.35); setTimeout(() => playAlertBeep(660, 0.35), 200); } catch { /* ignore */ }
+        const j = (jobs ?? []).find((x) => x.id === id);
+        toast.error(`SOS from client${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          duration: 10000,
+        });
+        scrollToJob(id);
+      } else if (s.client_change && !p.client_change) {
+        try { playAlertBeep(520, 0.15); } catch { /* ignore */ }
+        const j = (jobs ?? []).find((x) => x.id === id);
+        toast.warning(`Client requested a change${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
+          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          duration: 8000,
+        });
+        scrollToJob(id);
+      }
+      prev[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change };
+    }
+  }, [cardSignals, jobs]);
+
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
