@@ -174,7 +174,7 @@ export function parseTrips(raw: string): ParsedTrip[] {
       date: "", time: "", from_location: "", to_location: "",
       clientcompanyname: "", flightorship: "",
       from_flight: "", to_flight: "",
-      pax: [], errors: [],
+      pax: [], contact_phone: "", errors: [],
     };
     let inNames = false;
     let lastSide: "from" | "to" | null = null;
