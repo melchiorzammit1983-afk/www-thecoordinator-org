@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, RefreshCw, Plus } from "lucide-react";
+import { Copy, RefreshCw, Plus, Trash2 } from "lucide-react";
 
 import {
   listCompanies,
@@ -14,6 +14,7 @@ import {
   regenerateCustomLink,
   setRequireClientCompany,
   createCoordinator,
+  deleteCoordinator,
 } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
