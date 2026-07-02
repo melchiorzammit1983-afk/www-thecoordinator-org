@@ -341,6 +341,7 @@ type CardCtx = {
   expandedGroups: Set<string>;
   onToggleExpandedGroup: (gid: string) => void;
   onEditGroup: (groupId: string, jobs: Job[]) => void;
+  clientPortalEnabled: boolean;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
