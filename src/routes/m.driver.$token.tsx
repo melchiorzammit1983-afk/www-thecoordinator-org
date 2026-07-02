@@ -4,10 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  getDriverManifest, driverAcceptJob, driverApproveDeletion,
+  getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
+
 import { Badge } from "@/components/ui/badge";
 import { LabelChip } from "@/components/coordinator/LabelChip";
 import { Button } from "@/components/ui/button";
@@ -26,8 +27,9 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
-  Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User,
+  Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
 } from "lucide-react";
+
 
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
@@ -224,11 +226,15 @@ function DriverManifest() {
 function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
+  const rejectFn = useServerFn(driverRejectJob);
   const approveDelFn = useServerFn(driverApproveDeletion);
   const statusFn = useServerFn(updateJobStatus);
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
   const unhideFn = useServerFn(unhideJobForDriver);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const acceptMut = useMutation({
@@ -236,6 +242,16 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     onSuccess: () => { toast.success("Trip accepted"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const rejectMut = useMutation({
+    mutationFn: (reason: string) => rejectFn({ data: { token, job_id: job.id, reason } }),
+    onSuccess: () => {
+      toast.success("Trip rejected — coordinator notified");
+      setRejectOpen(false); setRejectReason("");
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const approveDelMut = useMutation({
     mutationFn: () => approveDelFn({ data: { token, job_id: job.id } }),
     onSuccess: () => { toast.success("Deletion approved"); invalidate(); },
@@ -417,9 +433,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
       {/* Actions */}
       <div className="p-3 pt-3 grid grid-cols-2 gap-2">
         {!accepted && !job.deletion_requested_at && (
-          <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
-            {acceptMut.isPending ? "Accepting…" : "Accept trip"}
-          </Button>
+          <>
+            <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
+              {acceptMut.isPending ? "Accepting…" : "Accept trip"}
+            </Button>
+            <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={() => setRejectOpen(true)}>
+              <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Reject
+            </Button>
+          </>
         )}
         {accepted && !job.deletion_requested_at && (
           <>
@@ -432,8 +454,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
                 {nextStatus.label}
               </Button>
             )}
+            {job.status !== "in_progress" && job.status !== "completed" && (
+              <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => setRejectOpen(true)}>
+                <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
+              </Button>
+            )}
           </>
         )}
+
         <Button variant="outline" className="h-10" asChild>
           <a href={mapsUrl} target="_blank" rel="noreferrer">
             <Navigation className="h-4 w-4 mr-1.5" /> Navigate
@@ -471,9 +500,40 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           )}
         </div>
       </div>
+
+      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) setRejectReason(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject this trip?</DialogTitle>
+            <DialogDescription>
+              The trip returns to your coordinator's Unassigned list and they'll get a message with your reason.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Reason (optional but recommended)</Label>
+            <Textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. Vehicle breakdown, already assigned another trip, ran late…" />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {["Vehicle issue","Double-booked","Personal emergency","Too far","Running late"].map((r) => (
+                <button key={r} type="button"
+                  className="text-[11px] rounded-full border px-2 py-0.5 hover:bg-muted"
+                  onClick={() => setRejectReason(r)}>{r}</button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={rejectMut.isPending}
+              onClick={() => rejectMut.mutate(rejectReason)}>
+              {rejectMut.isPending ? "Sending…" : "Reject trip"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }
+
 
 function ProfileDialog({ open, onOpenChange, token, driver }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driver: Driver | null;
