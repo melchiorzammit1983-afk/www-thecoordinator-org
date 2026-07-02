@@ -953,6 +953,7 @@ export type Database = {
           clientcompanyname: string | null
           company_id: string
           contact_phone: string | null
+          coord_approved_at: string | null
           coordinator_last_viewed_at: string | null
           created_at: string
           date: string
@@ -1006,6 +1007,7 @@ export type Database = {
           clientcompanyname?: string | null
           company_id: string
           contact_phone?: string | null
+          coord_approved_at?: string | null
           coordinator_last_viewed_at?: string | null
           created_at?: string
           date: string
@@ -1061,6 +1063,7 @@ export type Database = {
           clientcompanyname?: string | null
           company_id?: string
           contact_phone?: string | null
+          coord_approved_at?: string | null
           coordinator_last_viewed_at?: string | null
           created_at?: string
           date?: string
