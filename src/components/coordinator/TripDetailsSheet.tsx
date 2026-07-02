@@ -82,7 +82,23 @@ export function TripDetailsSheet({
 
   const qc = useQueryClient();
   const refreshFlightFn = useServerFn(getMaltaFlightStatus);
+  const normalizeFn = useServerFn(normalizeJobData);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
+
+  useEffect(() => {
+    if (!open || !job?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r: any = await normalizeFn({ data: { job_id: job.id } });
+        if (!cancelled && r?.changed) {
+          qc.invalidateQueries({ queryKey: ["jobs"] });
+          if (r.phoneMoved) toast.success("Moved phone number from passenger list");
+        }
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, job?.id]);
   const handleRefreshFlight = async () => {
     if (!job) return;
     setRefreshingFlight(true);
