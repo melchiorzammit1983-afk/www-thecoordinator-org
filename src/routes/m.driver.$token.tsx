@@ -360,7 +360,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           {job.clientcompanyname && <Badge variant="secondary" className="text-[10px]">{job.clientcompanyname}</Badge>}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
           <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
-          {job.qr_strict_mode && <Badge className="text-[10px] gap-1"><QrCode className="h-3 w-3" /> QR required</Badge>}
+          
           {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
           {paid
             ? <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">Paid</Badge>
