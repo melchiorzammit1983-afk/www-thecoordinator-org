@@ -105,15 +105,18 @@ function SignInForm() {
       return;
     }
     setLoading(true);
+    const digits = parsed.data.phone.replace(/[^\d]/g, "");
+    const email = `p${digits}@phone.crewchange.local`;
     const { error } = await supabase.auth.signInWithPassword({
-      phone: parsed.data.phone,
+      email,
       password: parsed.data.password,
     });
     setLoading(false);
     if (error) {
-      toast.error(error.message);
+      toast.error("Invalid phone number or password");
       return;
     }
+
     toast.success("Signed in");
     try {
       const identity = await whoAmIFn();
