@@ -242,6 +242,16 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     onSuccess: () => { toast.success("Trip accepted"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const rejectMut = useMutation({
+    mutationFn: (reason: string) => rejectFn({ data: { token, job_id: job.id, reason } }),
+    onSuccess: () => {
+      toast.success("Trip rejected — coordinator notified");
+      setRejectOpen(false); setRejectReason("");
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const approveDelMut = useMutation({
     mutationFn: () => approveDelFn({ data: { token, job_id: job.id } }),
     onSuccess: () => { toast.success("Deletion approved"); invalidate(); },
