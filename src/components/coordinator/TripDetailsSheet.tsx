@@ -303,6 +303,8 @@ export function TripDetailsSheet({
                         )}
                       </button>
                     </li>
+                  );
+                })}
               </ul>
             )}
             <Button variant="outline" size="sm" className="w-full" onClick={onPax}>
