@@ -330,13 +330,13 @@ function Referral({ refLink }: { refLink: string }) {
               <Gift className="h-3.5 w-3.5 text-primary" /> Referral program
             </div>
             <h2 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight">
-              Refer a driver or coordinator. Earn points for every trip they dispatch.
+              Refer a driver or coordinator. Grow the network you dispatch from.
             </h2>
             <ul className="mt-6 space-y-2.5 text-sm">
               {[
-                "50 bonus points when your friend is approved",
-                "1 point every time you pass them a hop",
-                "No cap — the more you build the network, the more you earn",
+                "Priority approval for anyone you introduce",
+                "Direct dispatch chain with your referrals",
+                "No cap — the more partners, the more coverage",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-primary mt-0.5" /> <span>{b}</span>
