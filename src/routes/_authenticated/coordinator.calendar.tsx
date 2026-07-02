@@ -307,8 +307,13 @@ function CalendarPage() {
     if (!s) return false;
     return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new;
   };
-  const visibleJobs = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const isPendingClient = (j: Job) =>
+    !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
+  const visibleAll = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const pendingClientJobs = visibleAll.filter(isPendingClient);
+  const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
+
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
