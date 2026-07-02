@@ -507,10 +507,10 @@ function Field({ label, value, onChange, type = "text", placeholder }: {
 
 function FAQ() {
   const items = [
-    { q: "Is it really free to start?", a: "Yes. You get a starter balance of points to try every feature. Top up only when you need more." },
+    { q: "Is it really free to start?", a: "Yes. Request access, get approved, and start dispatching." },
     { q: "Do my drivers need an account?", a: "No. They open a magic link on WhatsApp, accept the trip, and update status from their phone." },
     { q: "Can I pass a job to another company?", a: "Yes — the multi-hop chain keeps A → B → C → driver visible to everyone in the chain in real time." },
-    { q: "How do referrals get paid out?", a: "You earn points automatically when your referral is approved and every time you dispatch to them." },
+    { q: "How does the referral program work?", a: "Share your referral link. When your contact is approved, they land straight in your partner network." },
   ];
   return (
     <section className="max-w-4xl mx-auto px-6 py-16">
