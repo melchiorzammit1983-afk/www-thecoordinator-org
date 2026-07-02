@@ -550,7 +550,15 @@ export function TripDetailsSheet({
   );
 }
 
-function TripLiveLocation({ driverId }: { driverId: string }) {
+function TripLiveLocation({
+  driverId,
+  sosPoints = [],
+  onAcknowledgeSos,
+}: {
+  driverId: string;
+  sosPoints?: import("./DriverLiveMap").SosPoint[];
+  onAcknowledgeSos?: (id: string) => void;
+}) {
   const fn = useServerFn(listActiveDriverLocations);
   const qc = useQueryClient();
   const { data } = useQuery({
