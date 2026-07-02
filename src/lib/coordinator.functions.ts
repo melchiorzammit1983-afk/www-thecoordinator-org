@@ -273,7 +273,8 @@ export const updateJob = createServerFn({ method: "POST" })
       to_flight: (data.to_flight || "").toUpperCase() || null,
       clientcompanyname: data.clientcompanyname || null,
       qr_strict_mode: data.qr_strict_mode, tracking_enabled: data.tracking_enabled,
-      vehicle: data.vehicle || null, driver_id: data.driver_id || null,
+      vehicle: data.vehicle || null, contact_phone: data.contact_phone || null,
+      driver_id: data.driver_id || null,
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
