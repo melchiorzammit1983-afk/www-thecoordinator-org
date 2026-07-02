@@ -30,6 +30,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "chat",            label: "Trip chat",         description: "Coordinator ↔ driver chat on trips" },
   { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages (any language) into trips using AI" },
   { key: "ai_group_suggestions", label: "AI auto-group suggestions", description: "Suggest groupings of unassigned trips by time & route" },
+  { key: "client_trip_portal", label: "Client trip portal", description: "Per-trip client link with chat, live tracking, share location & rebook" },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
