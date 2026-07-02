@@ -336,7 +336,7 @@ type CardCtx = {
   onOpenDetails: (j: Job) => void;
   onAssign: (j: Job, driverId: string | null) => void;
   drivers: Driver[];
-  unread: Record<string, number>;
+  unread: Record<string, { driver: number; client: number; total: number }>;
   highlightId?: string | null;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
