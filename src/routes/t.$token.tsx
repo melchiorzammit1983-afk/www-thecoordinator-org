@@ -516,8 +516,14 @@ function SosButton({ token, deviceId }: { token: string; deviceId: string }) {
 
 /* ---------------- Identity picker ---------------- */
 
-function IdentityPicker({ token, deviceId, pax, onDone }: {
-  token: string; deviceId: string; pax: any[]; onDone: () => void;
+function IdentityPickerDialog({ open, onOpenChange, token, deviceId, pax, allowSkip, onDone }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  token: string;
+  deviceId: string;
+  pax: any[];
+  allowSkip: boolean;
+  onDone: () => void;
 }) {
   const chooseFn = useServerFn(chooseClientIdentity);
   const mut = useMutation({
@@ -527,22 +533,51 @@ function IdentityPicker({ token, deviceId, pax, onDone }: {
     onError: (e: Error) => toast.error(e.message),
   });
   return (
-    <div className="p-4">
-      <div className="rounded-2xl bg-white border p-4 shadow-sm">
-        <h2 className="font-semibold mb-1">Which passenger are you?</h2>
-        <p className="text-xs text-muted-foreground mb-3">This is remembered on your device.</p>
-        <div className="grid gap-2">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        // Only allow closing when explicitly permitted (already chose or skipped).
+        if (!v && !allowSkip) return;
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-sm"
+        onInteractOutside={(e) => { if (!allowSkip) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (!allowSkip) e.preventDefault(); }}
+      >
+        <DialogHeader>
+          <DialogTitle>Which passenger are you?</DialogTitle>
+          <DialogDescription>
+            Pick your name so the coordinator can message you privately. This is remembered on this device.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 max-h-[55vh] overflow-y-auto py-1">
           {pax.map((p) => (
-            <Button key={p.id} variant="outline" className="justify-start"
-              onClick={() => mut.mutate({ pax_id: p.id, pax_name: p.name })}>
+            <Button
+              key={p.id}
+              variant="outline"
+              className="justify-start"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate({ pax_id: p.id, pax_name: p.name })}
+            >
               {p.name}
             </Button>
           ))}
+          {pax.length === 0 && (
+            <p className="text-sm text-muted-foreground">No passenger names yet — check back soon.</p>
+          )}
         </div>
-      </div>
-    </div>
+        <DialogFooter className="sm:justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            {allowSkip ? "Close" : "Skip for now"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+
 
 /* ---------------- Share location ---------------- */
 
