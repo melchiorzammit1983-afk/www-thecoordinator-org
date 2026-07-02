@@ -1547,7 +1547,7 @@ export const normalizeJobData = createServerFn({ method: "POST" })
     }
 
     if (Object.keys(jobPatch).length) {
-      const { error: ue } = await supabaseAdmin.from("jobs").update(jobPatch).eq("id", data.job_id);
+      const { error: ue } = await supabaseAdmin.from("jobs").update(jobPatch as any).eq("id", data.job_id);
       if (ue) throw new Error(ue.message);
       changed += Object.keys(jobPatch).length;
     }
