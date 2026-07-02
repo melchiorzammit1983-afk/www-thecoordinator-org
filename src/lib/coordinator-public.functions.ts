@@ -463,8 +463,13 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const patch: Record<string, unknown> = { status: data.status };
+    if (data.status === "completed") {
+      patch.grouped_count = null;
+      patch.grouped_at = null;
+    }
     const { error } = await supabaseAdmin.from("jobs")
-      .update({ status: data.status as never }).eq("id", data.job_id);
+      .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
