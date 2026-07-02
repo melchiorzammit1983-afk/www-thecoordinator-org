@@ -1782,3 +1782,89 @@ export const ungroupJobs = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true, cleared: count ?? 0 };
   });
+
+// ---------- Update group metadata (rename / re-note / re-driver) ----------
+export const updateGroupMeta = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      group_id: z.string().uuid(),
+      name: z.string().trim().max(80).nullable().optional(),
+      note: z.string().trim().max(500).nullable().optional(),
+      driver_id: z.string().uuid().nullable().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.group_name = data.name || null;
+    if (data.note !== undefined) patch.group_note = data.note || null;
+    if (data.driver_id !== undefined) {
+      patch.driver_id = data.driver_id;
+      patch.driver_accepted_at = null;
+    }
+    if (Object.keys(patch).length === 0) return { ok: true, updated: 0 };
+    const { error, count } = await supabaseAdmin.from("jobs")
+      .update(patch as never, { count: "exact" })
+      .eq("group_id" as any, data.group_id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, updated: count ?? 0 };
+  });
+
+// ---------- Share entire group as one WhatsApp message / link ----------
+export const shareGroupToDriver = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ group_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: jobs, error } = await supabaseAdmin.from("jobs")
+      .select("id,date,time,pickup_at,from_location,from_flight,to_location,to_flight,vehicle,driver_id,group_name,group_note,drivers(name)")
+      .eq("group_id" as any, data.group_id).eq("company_id", c.id)
+      .order("date", { ascending: true }).order("time", { ascending: true });
+    if (error) throw new Error(error.message);
+    if (!jobs || jobs.length === 0) throw new Error("Group not found");
+    const driverIds = Array.from(new Set(jobs.map((j: any) => j.driver_id).filter(Boolean)));
+    if (driverIds.length === 0) throw new Error("Assign a driver to the group first");
+    if (driverIds.length > 1) throw new Error("Trips in the group have different drivers");
+    const driverId = driverIds[0] as string;
+    const driverName = (jobs[0] as any).drivers?.name ?? null;
+
+    const nowIso = new Date().toISOString();
+    const { data: existing } = await supabaseAdmin.from("magic_links")
+      .select("*").eq("company_id", c.id).eq("kind", "driver").eq("subject_id", driverId)
+      .is("revoked_at", null).gt("expires_at", nowIso)
+      .order("expires_at", { ascending: false }).limit(1).maybeSingle();
+    let link = existing;
+    if (!link) {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const expires_at = new Date(Date.now() + 7 * 24 * 3600_000).toISOString();
+      const { data: row, error: le } = await supabaseAdmin.from("magic_links").insert({
+        company_id: c.id, kind: "driver", subject_id: driverId,
+        subject_label: driverName ? `${driverName} portal` : "Driver portal",
+        token, expires_at, created_by: context.userId,
+      }).select().single();
+      if (le) throw new Error(le.message);
+      link = row;
+    }
+    const ids = jobs.map((j: any) => j.id);
+    const { data: paxRows } = await supabaseAdmin.from("pax").select("job_id").in("job_id", ids);
+    const paxByJob: Record<string, number> = {};
+    for (const p of paxRows ?? []) paxByJob[(p as any).job_id] = (paxByJob[(p as any).job_id] ?? 0) + 1;
+    const totalPax = Object.values(paxByJob).reduce((a, b) => a + b, 0);
+    const groupName = (jobs.find((j: any) => j.group_name) as any)?.group_name ?? null;
+    const groupNote = (jobs.find((j: any) => j.group_note) as any)?.group_note ?? null;
+    return {
+      token: link.token,
+      expires_at: link.expires_at,
+      driver_name: driverName,
+      group_name: groupName,
+      group_note: groupNote,
+      total_pax: totalPax,
+      jobs: jobs.map((j: any) => ({ ...j, pax_count: paxByJob[j.id] ?? 0 })),
+    };
+  });
+
