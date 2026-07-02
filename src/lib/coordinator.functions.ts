@@ -2126,19 +2126,18 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
     // 3) open SOS
     const { data: sos } = await supabaseAdmin.from("client_sos_events")
       .select("job_id").in("job_id", data.job_ids).is("acknowledged_at", null);
-    // 4) pending client modifications on linked bookings
-    const tokens = (jobs ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
-    let bookingByToken: Record<string, string> = {};
-    let modsByBooking = new Set<string>();
-    if (tokens.length) {
-      const { data: bks } = await supabaseAdmin.from("client_bookings")
-        .select("id, magic_token").in("magic_token", tokens);
-      for (const b of (bks ?? []) as any[]) bookingByToken[b.magic_token] = b.id;
-      const bkIds = Object.values(bookingByToken);
-      if (bkIds.length) {
-        const { data: mods } = await supabaseAdmin.from("client_booking_modifications")
-          .select("booking_id").eq("status", "pending").in("booking_id", bkIds);
-        modsByBooking = new Set((mods ?? []).map((m: any) => m.booking_id));
+    // 4) pending client modifications on linked bookings (booking -> job)
+    const { data: bks } = await supabaseAdmin.from("client_bookings")
+      .select("id, job_id").in("job_id", data.job_ids);
+    const bookingToJob: Record<string, string> = {};
+    for (const b of (bks ?? []) as any[]) if (b.job_id) bookingToJob[b.id] = b.job_id;
+    const jobsWithClientChange = new Set<string>();
+    const bkIds = Object.keys(bookingToJob);
+    if (bkIds.length) {
+      const { data: mods } = await supabaseAdmin.from("client_booking_modifications")
+        .select("booking_id").eq("status", "pending").in("booking_id", bkIds);
+      for (const m of (mods ?? []) as any[]) {
+        const jid = bookingToJob[m.booking_id]; if (jid) jobsWithClientChange.add(jid);
       }
     }
 
