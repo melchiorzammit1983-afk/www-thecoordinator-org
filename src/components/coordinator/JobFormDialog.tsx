@@ -134,7 +134,7 @@ function ManualForm({
         from_flight: fromFlight, to_flight: toFlight,
         clientcompanyname: client, contact_phone: phone,
         driver_id: driverId === "__none__" ? null : driverId,
-        qr_strict_mode: qr, tracking_enabled: track,
+        qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
