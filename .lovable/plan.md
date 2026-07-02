@@ -1,22 +1,61 @@
-## Root cause
+## Goal
+Live driver tracking on the coordinator dispatch dashboard using Google Maps.
 
-The `enforce_company_owner_update` trigger blocks any update to `companies.points_balance`, `status`, or `owner_user_id` unless `public.is_admin(auth.uid())` returns true.
+## Constraint (must read)
+The driver portal is a **web app**. Browsers stop JS when the tab is minimized or the phone is locked — no web API bypasses this. So tracking is reliable only while the driver keeps the portal open in the foreground. Mitigations shipping:
+- Screen Wake Lock (`navigator.wakeLock`) keeps the display on.
+- Clear "keep this tab open" banner.
+- Points older than 60s show as "Paused"; > 2 min as "Offline".
 
-All coordinator/admin server functions run through `supabaseAdmin` (service-role key). Inside a service-role request, `auth.uid()` is `NULL`, so `is_admin(NULL)` returns false and the trigger raises `only_admin_can_update_sensitive_company_fields` — even though the caller was already validated as an admin (or an authorized owner) in the server function itself.
+True background tracking (screen off / app minimized) needs a Capacitor native wrapper — same backend will support it later with no changes.
 
-That is why the error shows up on legitimate admin actions like top-ups, status changes, access-end extension, assigning a coordinator (`owner_user_id`), and also whenever coordinator flows indirectly touch a `companies` row.
+## What ships
 
-## Fix (single migration)
+### 1) Driver side — capture (`/m/driver/$token`)
+- New **"Share live location"** toggle at the top of the manifest.
+  - Persists in `localStorage`, auto-resumes on reopen.
+  - Only active when the driver has a trip in `en_route` / `arrived` / `in_progress`.
+- Uses `navigator.geolocation.watchPosition({ enableHighAccuracy: true })`.
+- Requests `navigator.wakeLock.request('screen')` while ON, releases when OFF.
+- Batches points and POSTs to a new public server fn every ~10s or on >25m movement.
+- Queues in `localStorage` when offline; flushes on reconnect.
+- Live status pill: Live / Paused / Offline.
 
-Update `public.enforce_company_owner_update` so it recognizes trusted server contexts:
+### 2) Server — ingest & broadcast
+- **New public server fn** `pushDriverLocation({ token, points[] })` in `src/lib/coordinator-public.functions.ts`. Validates the driver magic link, resolves the driver's currently-active job, inserts into `public.driver_locations`.
+- **DB**: `driver_locations` already exists, is already in `supabase_realtime`, and already has the chain-based coordinator SELECT policy — **no migration needed**.
+- The public write path is protected by the magic-link token (same pattern as the rest of the driver portal).
 
-- Allow the update when `auth.uid() IS NULL` **and** the current Postgres role is `service_role` (our server functions using the service key). Authorization is already enforced in the server function layer (`assertAdmin`, ownership checks).
-- Keep the existing admin bypass for real authenticated admin sessions.
-- Keep the block for regular authenticated non-admin users trying to change `points_balance`, `status`, or `owner_user_id`.
+### 3) Coordinator side — Google Maps view
+Uses the existing Google Maps connector browser key (`VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY`). Maps JS loaded with `loading=async` + `callback` + `channel`. Uses `google.maps.Marker` (no `mapId` / no AdvancedMarkerElement).
 
-No app code changes required — this only relaxes the trigger for the trusted service-role path we already use everywhere.
+- **New component** `src/components/coordinator/DriverLiveMap.tsx`
+  - Loads Google Maps JS once.
+  - Props: `points: { driverId, name, lat, lng, capturedAt, jobId }[]`, `focusDriverId?`.
+  - One marker per driver, colored by freshness (green <30s, amber <2min, grey older). Info window: driver name, trip route, "updated Xs ago".
+  - Auto-fits bounds; when `focusDriverId` set, pans + zooms to that driver.
 
-## Verification
+- **Dispatch board** (`/coordinator/calendar`)
+  - Collapsible **"Live map"** panel above the calendar (open on desktop, collapsed on mobile).
+  - Initial fetch of latest point per driver in the current company chain, then subscribes to `driver_locations` Realtime for incremental updates.
+  - Legend + live count.
 
-- Admin top-up (`topUpPoints`), approve/suspend company (`setCompanyStatus`), extend access (`setAccessEnd`), and assign coordinator (`createCoordinator` → sets `owner_user_id`) should all succeed.
-- A direct update from an authenticated non-admin user attempting to change those sensitive fields must still fail with `only_admin_can_update_sensitive_company_fields` (RLS + trigger both hold).
+- **Trip details sheet** (`TripDetailsSheet.tsx`)
+  - New "Live location" section reusing `DriverLiveMap` filtered to that trip's driver, with `focusDriverId` set.
+  - Last-updated timestamp; Paused/Offline pill when stale.
+
+### 4) Freshness semantics
+- < 30s → green "Live"
+- 30–120s → amber "Paused — app may be minimized"
+- > 2 min → grey "Offline"
+
+## Out of scope
+- Historical route replay / breadcrumb polyline.
+- Geofenced auto status changes.
+- Native background tracking (Capacitor).
+- ETA via Routes API.
+
+## Technical bits
+- Uses existing Google Maps connector browser key — no new secrets, no billing setup.
+- No new npm dependency (raw Maps JS via `<script>` tag, dynamic loader with singleton promise).
+- Reuses existing `driver_locations` table + realtime + policy.
