@@ -184,6 +184,12 @@ export const whoAmI = createServerFn({ method: "GET" })
 
 // ---------- COORDINATOR PROVISIONING ----------
 
+function phoneToEmail(phone: string) {
+  // Deterministic synthetic email so phone sign-in works without an SMS provider.
+  const digits = phone.replace(/[^\d]/g, "");
+  return `p${digits}@phone.crewchange.local`;
+}
+
 export const createCoordinator = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -199,14 +205,14 @@ export const createCoordinator = createServerFn({ method: "POST" })
     const supabaseAdmin = await assertAdmin(context);
 
     const phone = data.phone;
+    const email = phoneToEmail(phone);
 
-    // Find or create the auth user with phone+password, phone pre-confirmed.
     let userId: string | null = null;
     const { data: created, error: cErr } = await supabaseAdmin.auth.admin.createUser({
-      phone,
+      email,
       password: data.password,
-      phone_confirm: true,
-      user_metadata: { must_change_password: true, role: "coordinator" },
+      email_confirm: true,
+      user_metadata: { must_change_password: true, role: "coordinator", phone },
     });
     if (cErr) {
       const msg = cErr.message?.toLowerCase() ?? "";
@@ -216,12 +222,12 @@ export const createCoordinator = createServerFn({ method: "POST" })
           perPage: 200,
         });
         if (lErr) throw new Error(lErr.message);
-        const existing = list.users.find((u) => u.phone === phone.replace(/^\+/, "") || u.phone === phone);
+        const existing = list.users.find((u) => u.email?.toLowerCase() === email);
         if (!existing) throw new Error("User exists but could not be located");
         const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
           password: data.password,
-          phone_confirm: true,
-          user_metadata: { ...(existing.user_metadata ?? {}), must_change_password: true, role: "coordinator" },
+          email_confirm: true,
+          user_metadata: { ...(existing.user_metadata ?? {}), must_change_password: true, role: "coordinator", phone },
         });
         if (uErr) throw new Error(uErr.message);
         userId = existing.id;
@@ -233,7 +239,6 @@ export const createCoordinator = createServerFn({ method: "POST" })
     }
     if (!userId) throw new Error("Could not resolve coordinator user id");
 
-    // Assign as the company's coordinator (owner_user_id) and store phone.
     const { error: aErr } = await supabaseAdmin
       .from("companies")
       .update({ owner_user_id: userId, coordinator_phone: phone })
@@ -242,6 +247,7 @@ export const createCoordinator = createServerFn({ method: "POST" })
 
     return { ok: true, user_id: userId, phone };
   });
+
 
 
 // ---------- DELETE COORDINATOR ACCOUNT ----------
