@@ -2262,3 +2262,34 @@ export const listActiveSosPoints = createServerFn({ method: "GET" })
         job_to: allowed.get(r.job_id)?.to_location ?? null,
       }));
   });
+
+// ---------- CLIENT-SOURCED JOB APPROVAL ----------
+
+export const approveClientJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (error || !job) throw new Error("Trip not found");
+    const { error: uErr } = await supabaseAdmin.from("jobs")
+      .update({ coord_approved_at: new Date().toISOString() } as never)
+      .eq("id", data.job_id);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true };
+  });
+
+export const rejectClientJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (error || !job) throw new Error("Trip not found");
+    await supabaseAdmin.from("jobs").delete().eq("id", data.job_id);
+    return { ok: true };
+  });
