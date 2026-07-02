@@ -1165,14 +1165,18 @@ function TripMenu({
             <Link2 className="h-4 w-4 mr-2" /> Copy link
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Client</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
-          <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => copyClientLink.mutate()} disabled={copyClientLink.isPending}>
-          <Link2 className="h-4 w-4 mr-2" /> Copy client link
-        </DropdownMenuItem>
+        {ctx.clientPortalEnabled && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Client</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
+              <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copyClientLink.mutate()} disabled={copyClientLink.isPending}>
+              <Link2 className="h-4 w-4 mr-2" /> Copy client link
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenSplit}>
           <Split className="h-4 w-4 mr-2" /> Split into vehicles
