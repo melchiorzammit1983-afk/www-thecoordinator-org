@@ -40,6 +40,8 @@ import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Dispatch — Coordinator" }] }),
@@ -86,7 +88,13 @@ function CalendarPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+
+  const toggleSelect = (id: string) => setSelected((s) => {
+    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const clearSelect = () => setSelected(new Set());
 
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
@@ -170,6 +178,7 @@ function CalendarPage() {
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
+    selected, onToggleSelect: toggleSelect,
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
@@ -260,6 +269,17 @@ function CalendarPage() {
             : null
         }
       />
+
+      {selected.size > 0 && (
+        <>
+          <div aria-hidden className="h-16" />
+          <BulkActionBar
+            jobs={(jobs ?? []).filter((j) => selected.has(j.id))}
+            drivers={drivers ?? []}
+            onClear={clearSelect}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -273,6 +293,8 @@ type CardCtx = {
   drivers: Driver[];
   unread: Record<string, number>;
   highlightId?: string | null;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
 };
 
 
@@ -487,13 +509,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
 
+  const isSelected = ctx.selected.has(job.id);
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative rounded-md border-2 pl-3 pr-1 py-2 shadow-sm transition-colors ${tone} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
+
+      {/* Multi-select checkbox */}
+      <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => ctx.onToggleSelect(job.id)}
+          aria-label="Select trip"
+        />
+      </div>
 
       {/* Tap area — opens details sheet */}
       <button
