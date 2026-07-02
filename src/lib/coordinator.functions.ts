@@ -1343,3 +1343,60 @@ export const buildStatement = createServerFn({ method: "POST" })
       truncated,
     };
   });
+
+// ---------- Live driver locations (coordinator) ----------
+
+export const listActiveDriverLocations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ since_minutes: z.number().int().min(1).max(180).optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const sinceIso = new Date(Date.now() - (data.since_minutes ?? 30) * 60_000).toISOString();
+
+    // Find all jobs the caller can see (owner / executor / origin / chain) that
+    // have any driver activity recently. Then pull the latest point per driver.
+    const { data: jobs, error: jobsErr } = await supabaseAdmin.from("jobs")
+      .select("id, driver_id, from_location, to_location, drivers(id,name)")
+      .not("driver_id", "is", null)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
+    if (jobsErr) throw new Error(jobsErr.message);
+    const jobIds = (jobs ?? []).map((j: any) => j.id);
+    if (jobIds.length === 0) return [] as any[];
+
+    const { data: pts, error: ptsErr } = await supabaseAdmin.from("driver_locations")
+      .select("driver_id, job_id, latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
+      .in("job_id", jobIds)
+      .gte("captured_at", sinceIso)
+      .order("captured_at", { ascending: false })
+      .limit(2000);
+    if (ptsErr) throw new Error(ptsErr.message);
+
+    const jobMap = new Map<string, any>();
+    for (const j of jobs ?? []) jobMap.set(j.id, j);
+
+    // Keep latest per driver
+    const latest = new Map<string, any>();
+    for (const p of pts ?? []) {
+      if (!p.job_id) continue;
+      if (!latest.has(p.driver_id)) {
+        const job = jobMap.get(p.job_id);
+        latest.set(p.driver_id, {
+          driver_id: p.driver_id,
+          job_id: p.job_id,
+          driver_name: job?.drivers?.name ?? "Driver",
+          from_location: job?.from_location ?? null,
+          to_location: job?.to_location ?? null,
+          latitude: Number(p.latitude),
+          longitude: Number(p.longitude),
+          accuracy_m: p.accuracy_m ?? null,
+          heading: p.heading ?? null,
+          speed_mps: p.speed_mps ?? null,
+          captured_at: p.captured_at,
+        });
+      }
+    }
+    return Array.from(latest.values());
+  });

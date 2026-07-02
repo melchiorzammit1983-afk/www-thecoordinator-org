@@ -455,3 +455,53 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- Live driver location (public, magic-link protected) ----------
+
+const pointSchema = z.object({
+  latitude: z.number().gte(-90).lte(90),
+  longitude: z.number().gte(-180).lte(180),
+  accuracy_m: z.number().nonnegative().max(100000).nullable().optional(),
+  heading: z.number().nullable().optional(),
+  speed_mps: z.number().nullable().optional(),
+  captured_at: z.string().datetime(),
+});
+
+export const pushDriverLocation = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      points: z.array(pointSchema).min(1).max(50),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link || !link.subject_id) throw new Error("driver_link_required");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Pick the driver's currently-active job, preferring most recent pickup.
+    const { data: activeJobs } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, pickup_at")
+      .eq("driver_id", link.subject_id)
+      .in("status", ["en_route", "arrived", "in_progress"])
+      .order("pickup_at", { ascending: false })
+      .limit(1);
+    const active = activeJobs?.[0];
+    if (!active) return { ok: true, inserted: 0, reason: "no_active_trip" as const };
+
+    const rows = data.points.map((p) => ({
+      driver_id: link.subject_id!,
+      job_id: active.id,
+      company_id: active.company_id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      accuracy_m: p.accuracy_m ?? null,
+      heading: p.heading ?? null,
+      speed_mps: p.speed_mps ?? null,
+      captured_at: p.captured_at,
+    }));
+    const { error } = await supabaseAdmin.from("driver_locations").insert(rows as never);
+    if (error) throw new Error(error.message);
+    return { ok: true, inserted: rows.length, job_id: active.id };
+  });
+

@@ -21,6 +21,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { QrScanner } from "@/components/driver/QrScanner";
+import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
@@ -148,6 +149,10 @@ function DriverManifest() {
       </header>
 
       <main className="max-w-3xl mx-auto p-3 space-y-3 pb-24">
+        <DriverLiveShare
+          token={token}
+          hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
+        />
         {jobs.length === 0 && (
           <div className="text-center py-20">
             <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">

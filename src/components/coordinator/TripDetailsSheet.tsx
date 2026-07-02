@@ -1,11 +1,17 @@
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
+import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
+import { listActiveDriverLocations } from "@/lib/coordinator.functions";
+import { supabase } from "@/integrations/supabase/client";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin,
 } from "lucide-react";
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
@@ -219,6 +225,11 @@ export function TripDetailsSheet({
             {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
           </section>
 
+          {/* Live location */}
+          {job.driver_id && !job.external && (
+            <TripLiveLocation driverId={job.driver_id} />
+          )}
+
           {/* Chain */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Dispatch chain</div>
@@ -249,5 +260,59 @@ export function TripDetailsSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function TripLiveLocation({ driverId }: { driverId: string }) {
+  const fn = useServerFn(listActiveDriverLocations);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["live-locations"],
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    refetchInterval: 30_000,
+  });
+  useEffect(() => {
+    const ch = supabase
+      .channel(`driver-live-${driverId}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "driver_locations", filter: `driver_id=eq.${driverId}` },
+        () => qc.invalidateQueries({ queryKey: ["live-locations"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc, driverId]);
+
+  const points = (data ?? []).filter((p) => p.driver_id === driverId);
+  const p = points[0];
+  const ageSec = p ? Math.max(0, Math.floor((Date.now() - new Date(p.captured_at).getTime()) / 1000)) : null;
+  const state: "live" | "paused" | "offline" | "none" =
+    !p ? "none" : ageSec! < 30 ? "live" : ageSec! < 120 ? "paused" : "offline";
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium inline-flex items-center gap-1">
+          <MapPin className="h-3 w-3" /> Live location
+        </div>
+        {state !== "none" && (
+          <Badge
+            className={`text-[10px] ${
+              state === "live" ? "bg-emerald-600 hover:bg-emerald-600" :
+              state === "paused" ? "bg-amber-500 hover:bg-amber-500" :
+              "bg-muted-foreground/70 hover:bg-muted-foreground/70"
+            }`}
+          >
+            {state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
+            {ageSec != null && ageSec >= 5 && ` · ${ageSec < 60 ? `${ageSec}s` : `${Math.floor(ageSec/60)}m`} ago`}
+          </Badge>
+        )}
+      </div>
+      {state === "none" ? (
+        <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
+          Driver hasn't shared location yet. They can enable it from their manifest.
+        </div>
+      ) : (
+        <DriverLiveMap points={points} focusDriverId={driverId} height={220} />
+      )}
+    </section>
   );
 }
