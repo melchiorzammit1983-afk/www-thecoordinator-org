@@ -99,7 +99,9 @@ export function DriverLiveMap({
   const markersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const sosMarkersRef = useRef<Map<string, { marker: any; info: any }>>(new Map());
   const [err, setErr] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [, force] = useState(0);
+
 
   // Expose the ack callback to inline InfoWindow buttons.
   useEffect(() => {
