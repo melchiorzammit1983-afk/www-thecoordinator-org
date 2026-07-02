@@ -39,14 +39,32 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const link = await resolveToken(data.token, "driver");
     if (!link) return null;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // If this magic link points at a virtual driver (coordinator/partner
+    // provisioning), we can't filter jobs by driver_id — those jobs are
+    // dispatched at the company level. Fall back to company scope.
+    let driverRow: {
+      id: string; name: string; kind: string | null;
+      seats_available: number | null; availability_note: string | null;
+      profile_updated_at: string | null;
+    } | null = null;
+    if (link.subject_id) {
+      const { data: drv } = await supabaseAdmin.from("drivers")
+        .select("id, name, kind, seats_available, availability_note, profile_updated_at")
+        .eq("id", link.subject_id).maybeSingle();
+      driverRow = (drv as typeof driverRow) ?? null;
+    }
+    const isVirtualDriver = driverRow?.kind === "coordinator" || driverRow?.kind === "partner";
+    const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
+
     let q = supabaseAdmin.from("jobs")
       .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .is("driver_hidden_at", null)
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
-    if (link.subject_id) {
-      q = q.eq("driver_id", link.subject_id);
+    if (filterByDriverId) {
+      q = q.eq("driver_id", link.subject_id!);
     } else {
       q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
     }
@@ -56,13 +74,14 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       ...j,
       labels: Array.isArray(j.job_labels) ? j.job_labels.map((x: any) => x.trip_labels).filter(Boolean) : [],
     }));
-    let driver: { id: string; name: string; seats_available: number | null; availability_note: string | null; profile_updated_at: string | null } | null = null;
-    if (link.subject_id) {
-      const { data: drv } = await supabaseAdmin.from("drivers")
-        .select("id, name, seats_available, availability_note, profile_updated_at")
-        .eq("id", link.subject_id).maybeSingle();
-      driver = drv ?? null;
-    }
+    const driver = driverRow
+      ? {
+          id: driverRow.id, name: driverRow.name,
+          seats_available: driverRow.seats_available,
+          availability_note: driverRow.availability_note,
+          profile_updated_at: driverRow.profile_updated_at,
+        }
+      : null;
     // Unread coordinator messages per job
     const jobIds = (jobs ?? []).map((j: { id: string }) => j.id);
     let unread: Record<string, number> = {};
