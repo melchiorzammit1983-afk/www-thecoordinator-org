@@ -168,6 +168,30 @@ export function BulkActionBar({
 
             <Button
               size="sm" variant="outline"
+              disabled={!canUngroup || busy || ungroupMut.isPending}
+              title={
+                groupIds.length === 0
+                  ? "Select grouped cards to ungroup"
+                  : canUngroup
+                  ? "Break these bundles back into individual cards"
+                  : "Driver already accepted — can't ungroup"
+              }
+              onClick={() => {
+                const n = ungroupableGroupIds.length;
+                if (confirm(`Ungroup ${n} bundle${n === 1 ? "" : "s"}? Cards will return to normal.`)) {
+                  ungroupMut.mutate();
+                }
+              }}
+            >
+              {ungroupMut.isPending
+                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                : <Link2Off className="h-4 w-4 mr-1" />}
+              Ungroup
+            </Button>
+
+
+            <Button
+              size="sm" variant="outline"
               disabled={!mergeable || busy}
               title={uniform ? "Merge passengers into the earliest trip (permanent)" : "Trips differ in date/from/to — merge folds them into the earliest one"}
               onClick={() => setOpenMerge(true)}
