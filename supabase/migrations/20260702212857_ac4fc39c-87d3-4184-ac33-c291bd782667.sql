@@ -1,0 +1,1 @@
+UPDATE public.jobs SET coord_approved_at = COALESCE(coord_approved_at, created_at) WHERE coord_approved_at IS NULL;

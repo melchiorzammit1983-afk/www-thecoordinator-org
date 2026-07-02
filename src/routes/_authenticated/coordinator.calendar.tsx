@@ -21,6 +21,8 @@ import {
   getCardSignalsCoord, markJobViewedCoord,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
   listActiveSosPoints, acknowledgeSosCoord, acknowledgeAllSosForJob,
+  approveClientJob, rejectClientJob,
+
 } from "@/lib/coordinator.functions";
 
 
@@ -117,7 +119,11 @@ type Job = {
   group_name?: string | null;
   group_note?: string | null;
   client_confirmed_at?: string | null;
+  source?: string | null;
+  coord_approved_at?: string | null;
+  parent_job_id?: string | null;
 };
+
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -303,8 +309,13 @@ function CalendarPage() {
     if (!s) return false;
     return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new;
   };
-  const visibleJobs = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const isPendingClient = (j: Job) =>
+    !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
+  const visibleAll = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const pendingClientJobs = visibleAll.filter(isPendingClient);
+  const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
+
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
@@ -382,6 +393,10 @@ function CalendarPage() {
 
       {/* Outbound (my trips currently at partners) */}
       <OutboundBoard />
+
+      {/* Client-requested trips awaiting coordinator approval */}
+      <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
+
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
@@ -621,7 +636,77 @@ function OutboundBoard() {
   );
 }
 
+/* ---------- Pending Client Approval ---------- */
+function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
+  const approveFn = useServerFn(approveClientJob);
+  const rejectFn = useServerFn(rejectClientJob);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (jobs.length === 0) return null;
+
+  async function approve(id: string) {
+    setBusy(id);
+    try {
+      await approveFn({ data: { job_id: id } });
+      toast.success("Trip approved — moved to Unassigned");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to approve");
+    } finally { setBusy(null); }
+  }
+  async function reject(id: string) {
+    if (!confirm("Reject this client-requested trip? It will be deleted.")) return;
+    setBusy(id);
+    try {
+      await rejectFn({ data: { job_id: id } });
+      toast.success("Trip rejected");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to reject");
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <section className="rounded-lg border-2 border-amber-400/60 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <Inbox className="h-4 w-4" /> Client requests awaiting approval ({jobs.length})
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {jobs.map((j) => {
+          const paxLine = (j.pax ?? []).map((p) => p.name).filter(Boolean).join(", ");
+          return (
+            <div key={j.id} className="rounded-md border bg-card p-2.5 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium truncate">{j.from_location} → {j.to_location}</div>
+                <Badge variant="outline" className="shrink-0 text-[10px]">
+                  {j.source === "client_followup" ? "Follow-up" : "Client"}
+                </Badge>
+              </div>
+              <div className="text-muted-foreground">
+                {j.date} · {j.time?.slice(0,5)}
+                {(j.pax?.length ?? 0) > 0 && <> · {j.pax!.length} pax</>}
+              </div>
+              {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
+              {j.clientcompanyname && <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>}
+              <div className="flex gap-1.5 pt-1">
+                <Button size="sm" className="flex-1 h-7" disabled={busy === j.id} onClick={() => approve(j.id)}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 h-7" disabled={busy === j.id} onClick={() => reject(j.id)}>
+                  Reject
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------------ Columns ------------------------------ */
+
+
 
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });

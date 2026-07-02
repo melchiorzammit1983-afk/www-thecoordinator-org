@@ -1,0 +1,2 @@
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS coord_approved_at timestamptz;
+CREATE INDEX IF NOT EXISTS jobs_pending_client_approval_idx ON public.jobs (company_id) WHERE coord_approved_at IS NULL AND source LIKE 'client%';
