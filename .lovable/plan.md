@@ -1,35 +1,23 @@
-# AI Trip Extraction (Lovable AI) + Admin Feature Gate
+## Add multi-select to dispatch cards
 
-## Backend
+Add a checkbox to every `TripCard` so coordinators can select multiple trips and act on them in bulk.
 
-**New server function** `extractTripsFromText` in `src/lib/coordinator.functions.ts`:
-- Auth: `requireSupabaseAuth`
-- Input: `{ text: string }`
-- **Feature gate**: calls `has_feature(company_id, 'ai_extraction')` — throws `feature_disabled` if the admin has blocked it for the coordinator's company
-- Calls Lovable AI Gateway via AI SDK using `google/gemini-3-flash-preview` (uses `LOVABLE_API_KEY`, already set)
-- Uses `generateText` + `Output.object` with a flat Zod schema:
-  - `trips[]`: `{ from_location, to_location, pickup_date, pickup_time, flight_code?, contact_phone?, notes?, passengers: string[] }`
-- Multilingual system prompt (Italian, English, etc.); normalizes flight codes uppercase; today's date passed in for relative terms ("domani", "tomorrow")
-- Catches `NoObjectGeneratedError`; surfaces 429/402 gateway errors clearly
+### UI
+- Add a checkbox in the top-left of each `TripCard` (next to the time). Clicking it toggles selection; card gets a highlighted ring when selected. Checkbox click does not open the details sheet.
+- Selection state lives in `coordinator.calendar.tsx` as a `Set<string>` of job IDs (not persisted).
+- When 1+ cards are selected, show a sticky **bulk action bar** at the bottom of the calendar with:
+  - Count ("5 selected") + "Clear"
+  - **Assign to driver…** (opens driver picker, calls existing assign RPC per job)
+  - **Group / merge** (combines selected jobs' passengers into the first job, deletes the rest — only enabled when all selected share same date + from + to; otherwise disabled with tooltip)
+  - **Add label…** (applies a trip label to all)
+  - **Delete** (confirm dialog, calls existing `deleteJob` per job — respects driver-approval rule already in place)
+- "Select all in column" checkbox in each column header (Unassigned / per-driver lanes).
 
-## Admin control
+### Files
+- `src/components/coordinator/TripCard.tsx` — add `selected`, `onToggleSelect` props + checkbox.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — selection state, header select-all, render `BulkActionBar`, wire handlers to existing server functions.
+- `src/components/coordinator/BulkActionBar.tsx` (new) — sticky bar with the actions above, driver picker, label picker, confirm dialogs.
 
-- Register `ai_extraction` as a known feature key in `FeatureEntitlementsDialog.tsx` (existing admin dialog that writes to `company_feature_entitlements`)
-- Default: enabled (matches `has_feature` behavior — returns `true` when no entitlement row exists)
-- Admin can disable per-company; disabled companies get a clear error toast on the button
-
-## Frontend
-
-**`JobFormDialog.tsx` — Bulk paste tab:**
-- Add "✨ Understand with AI" button next to existing "Parse" button
-- Client-side check via new lightweight `getMyFeatures` server fn (or reuse existing entitlements query) to hide/disable the button when the feature is blocked
-- On click: call `extractTripsFromText`, merge results into the existing review list
-- Loading spinner; success/error toast
-
-## Files touched
-- `src/lib/coordinator.functions.ts` — `extractTripsFromText` + `getMyFeatures`
-- `src/components/coordinator/JobFormDialog.tsx` — AI button + gating
-- `src/components/admin/FeatureEntitlementsDialog.tsx` — add `ai_extraction` to feature list
-
-## Cost note
-Uses Lovable AI credits (Gemini Flash ~fractions of a cent per call). Admin can disable per-company to control spend.
+### Notes
+- No schema or server-function changes; bulk actions loop existing single-job RPCs (`assignDriver`, `deleteJob`, label apply, and a small new `mergeJobs` helper client-side that calls `splitPaxToNewJob` in reverse — or simply move pax via existing pax RPC then delete emptied jobs).
+- Drag-and-drop still works; checkbox is a separate hit area.
