@@ -25,6 +25,7 @@ export type BulkJob = {
   to_location: string;
   driver_id: string | null;
   driver_accepted_at: string | null;
+  group_id?: string | null;
   labels?: { id: string; name: string; color: string }[];
   pax?: { id: string }[];
 };
