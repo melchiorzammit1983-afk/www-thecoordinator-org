@@ -75,6 +75,8 @@ type Job = {
   executor_name?: string | null;
   external_driver_name?: string | null;
   payment_status?: string | null;
+  grouped_count?: number | null;
+  grouped_at?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
