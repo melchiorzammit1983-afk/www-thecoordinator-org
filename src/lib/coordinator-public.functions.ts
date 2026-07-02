@@ -253,6 +253,37 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const driverRejectJob = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      reason: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const reason = data.reason?.trim() || "No reason given";
+    // Unassign driver and clear acceptance so it lands back in the coordinator's Unassigned column.
+    const { error } = await supabaseAdmin.from("jobs").update({
+      driver_id: null,
+      driver_accepted_at: null,
+    } as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    // Notify coordinator via trip chat so the alert surfaces on the card.
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `⚠️ Driver rejected this trip. Reason: ${reason}`,
+    } as never);
+    return { ok: true };
+  });
+
+
 export const driverApproveDeletion = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
