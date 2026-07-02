@@ -1380,6 +1380,7 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     // Keep latest per driver
     const latest = new Map<string, any>();
     for (const p of pts ?? []) {
+      if (!p.job_id) continue;
       if (!latest.has(p.driver_id)) {
         const job = jobMap.get(p.job_id);
         latest.set(p.driver_id, {
