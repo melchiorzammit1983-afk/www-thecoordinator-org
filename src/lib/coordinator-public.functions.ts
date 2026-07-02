@@ -59,8 +59,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
-      .is("driver_hidden_at", null)
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
@@ -186,6 +185,18 @@ export const hideJobForDriver = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const { error } = await supabaseAdmin.from("jobs")
       .update({ driver_hidden_at: new Date().toISOString() }).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const unhideJobForDriver = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { error } = await supabaseAdmin.from("jobs")
+      .update({ driver_hidden_at: null }).eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

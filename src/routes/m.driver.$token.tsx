@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   getDriverManifest, driverAcceptJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard,
-  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, getDriverStatement,
+  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
 } from "@/lib/coordinator-public.functions";
 import { Badge } from "@/components/ui/badge";
 import { LabelChip } from "@/components/coordinator/LabelChip";
@@ -61,6 +61,7 @@ type Job = {
   pax?: Pax[];
   unread_messages?: number;
   labels?: { id: string; name: string; color: string }[];
+  driver_hidden_at?: string | null;
 };
 
 type Driver = {
@@ -94,14 +95,20 @@ function DriverManifest() {
     if (data?.driver && !data.driver.profile_updated_at) setProfileOpen(true);
   }, [data?.driver]);
 
-  const jobs = useMemo(() => {
-    if (!data) return [];
-    return [...data.jobs].sort((a, b) => {
+  const [showArchived, setShowArchived] = useState(false);
+  const { activeJobs, archivedJobs } = useMemo(() => {
+    if (!data) return { activeJobs: [] as Job[], archivedJobs: [] as Job[] };
+    const sorted = [...data.jobs].sort((a, b) => {
       const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : Infinity;
       const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : Infinity;
       return ta - tb;
     });
+    return {
+      activeJobs: sorted.filter((j) => !j.driver_hidden_at),
+      archivedJobs: sorted.filter((j) => !!j.driver_hidden_at),
+    };
   }, [data]);
+  const jobs = activeJobs;
 
   if (isLoading) {
     return (
@@ -165,6 +172,25 @@ function DriverManifest() {
         {jobs.map((j) => (
           <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
         ))}
+
+        {archivedJobs.length > 0 && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowArchived((v) => !v)}
+              className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
+            >
+              {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
+            </button>
+            {showArchived && (
+              <div className="space-y-3 mt-3 opacity-75">
+                {archivedJobs.map((j) => (
+                  <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
@@ -187,6 +213,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const statusFn = useServerFn(updateJobStatus);
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
+  const unhideFn = useServerFn(unhideJobForDriver);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const acceptMut = useMutation({
@@ -212,6 +239,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const hideMut = useMutation({
     mutationFn: () => hideFn({ data: { token, job_id: job.id } }),
     onSuccess: () => { toast.success("Removed from your list"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const unhideMut = useMutation({
+    mutationFn: () => unhideFn({ data: { token, job_id: job.id } }),
+    onSuccess: () => { toast.success("Restored"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -403,10 +435,17 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
             {paid ? "Mark pending" : "Mark paid"}
           </Button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-            onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
-            <X className="h-4 w-4 mr-1" /> Hide
-          </Button>
+          {job.driver_hidden_at ? (
+            <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
+              onClick={() => unhideMut.mutate()}>
+              Restore
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
+              onClick={() => { if (confirm("Remove this trip from your list?")) hideMut.mutate(); }}>
+              <X className="h-4 w-4 mr-1" /> Hide
+            </Button>
+          )}
         </div>
       </div>
     </article>
