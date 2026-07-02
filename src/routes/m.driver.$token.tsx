@@ -433,9 +433,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
       {/* Actions */}
       <div className="p-3 pt-3 grid grid-cols-2 gap-2">
         {!accepted && !job.deletion_requested_at && (
-          <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
-            {acceptMut.isPending ? "Accepting…" : "Accept trip"}
-          </Button>
+          <>
+            <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
+              {acceptMut.isPending ? "Accepting…" : "Accept trip"}
+            </Button>
+            <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={() => setRejectOpen(true)}>
+              <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Reject
+            </Button>
+          </>
         )}
         {accepted && !job.deletion_requested_at && (
           <>
@@ -448,8 +454,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
                 {nextStatus.label}
               </Button>
             )}
+            {job.status !== "in_progress" && job.status !== "completed" && (
+              <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => setRejectOpen(true)}>
+                <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
+              </Button>
+            )}
           </>
         )}
+
         <Button variant="outline" className="h-10" asChild>
           <a href={mapsUrl} target="_blank" rel="noreferrer">
             <Navigation className="h-4 w-4 mr-1.5" /> Navigate
