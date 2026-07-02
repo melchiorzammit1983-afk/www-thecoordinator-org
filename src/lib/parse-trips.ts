@@ -240,8 +240,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
         const rawName = cleanName(stripLeadingBullets(line));
         if (rawName) {
           const { cleanName: cn, phone } = extractPhoneFromName(rawName);
-          if (cn) trip.pax.push(cn);
           if (phone && !trip.contact_phone) trip.contact_phone = phone;
+          if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
         }
         continue;
       }
@@ -258,8 +258,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
       if (looksLikeName(line)) {
         const rawName = cleanName(stripLeadingBullets(line));
         const { cleanName: cn, phone } = extractPhoneFromName(rawName);
-        if (cn) trip.pax.push(cn);
         if (phone && !trip.contact_phone) trip.contact_phone = phone;
+        if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
       }
     }
 
