@@ -76,6 +76,7 @@ export type Database = {
       }
       client_booking_modifications: {
         Row: {
+          acknowledged_at: string | null
           booking_id: string
           created_at: string
           id: string
@@ -87,6 +88,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          acknowledged_at?: string | null
           booking_id: string
           created_at?: string
           id?: string
@@ -98,6 +100,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          acknowledged_at?: string | null
           booking_id?: string
           created_at?: string
           id?: string
@@ -122,12 +125,15 @@ export type Database = {
         Row: {
           client_email: string
           company_id: string
+          coordinator_acked_at: string | null
           created_at: string
+          created_via: string | null
           date: string | null
           from_location: string
           id: string
           job_id: string | null
           name: string
+          parent_job_id: string | null
           pickup_at: string | null
           room_number: string | null
           status: Database["public"]["Enums"]["booking_status"]
@@ -139,12 +145,15 @@ export type Database = {
         Insert: {
           client_email: string
           company_id: string
+          coordinator_acked_at?: string | null
           created_at?: string
+          created_via?: string | null
           date?: string | null
           from_location: string
           id?: string
           job_id?: string | null
           name: string
+          parent_job_id?: string | null
           pickup_at?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
@@ -156,12 +165,15 @@ export type Database = {
         Update: {
           client_email?: string
           company_id?: string
+          coordinator_acked_at?: string | null
           created_at?: string
+          created_via?: string | null
           date?: string | null
           from_location?: string
           id?: string
           job_id?: string | null
           name?: string
+          parent_job_id?: string | null
           pickup_at?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
@@ -181,6 +193,13 @@ export type Database = {
           {
             foreignKeyName: "client_bookings_job_id_fkey"
             columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_parent_job_id_fkey"
+            columns: ["parent_job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
             referencedColumns: ["id"]
@@ -934,6 +953,7 @@ export type Database = {
           clientcompanyname: string | null
           company_id: string
           contact_phone: string | null
+          coordinator_last_viewed_at: string | null
           created_at: string
           date: string
           deletion_requested_at: string | null
@@ -986,6 +1006,7 @@ export type Database = {
           clientcompanyname?: string | null
           company_id: string
           contact_phone?: string | null
+          coordinator_last_viewed_at?: string | null
           created_at?: string
           date: string
           deletion_requested_at?: string | null
@@ -1040,6 +1061,7 @@ export type Database = {
           clientcompanyname?: string | null
           company_id?: string
           contact_phone?: string | null
+          coordinator_last_viewed_at?: string | null
           created_at?: string
           date?: string
           deletion_requested_at?: string | null
