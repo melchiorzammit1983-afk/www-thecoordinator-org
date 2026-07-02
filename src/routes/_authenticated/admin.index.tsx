@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, RefreshCw, Plus } from "lucide-react";
+import { Copy, RefreshCw, Plus, Trash2 } from "lucide-react";
 
 import {
   listCompanies,
@@ -14,6 +14,7 @@ import {
   regenerateCustomLink,
   setRequireClientCompany,
   createCoordinator,
+  deleteCoordinator,
 } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,6 +170,7 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
           <TopUpDialog company={c} onDone={invalidate} />
           <AccessDialog company={c} onDone={invalidate} />
           <CoordinatorDialog company={c} onDone={invalidate} />
+          <DeleteCoordinatorDialog company={c} onDone={invalidate} />
         </div>
       </TableCell>
     </TableRow>
@@ -352,6 +354,51 @@ function CoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: (
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteCoordinatorDialog({ company, onDone }: { company: CompanyRow; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [alsoDeleteCompany, setAlsoDeleteCompany] = useState(false);
+  const fn = useServerFn(deleteCoordinator);
+  const mut = useMutation({
+    mutationFn: () => fn({ data: { company_id: company.id, also_delete_company: alsoDeleteCompany } }),
+    onSuccess: (res: { company_deleted: boolean }) => {
+      toast.success(res.company_deleted ? "Company and coordinator deleted" : "Coordinator account deleted");
+      setOpen(false);
+      setAlsoDeleteCompany(false);
+      onDone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete coordinator — {company.name}</DialogTitle>
+          <DialogDescription>
+            Permanently removes the coordinator's login account. They will no longer be able to sign in.
+            The company row is kept unless you also choose to delete it below.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-2 py-2">
+          <Switch id="del-co" checked={alsoDeleteCompany} onCheckedChange={setAlsoDeleteCompany} />
+          <Label htmlFor="del-co" className="text-sm">Also delete the company record</Label>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="destructive" onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? "Deleting…" : "Delete"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
