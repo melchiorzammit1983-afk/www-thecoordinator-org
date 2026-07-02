@@ -119,7 +119,7 @@ function CalendarPage() {
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
     queryKey: ["coord-unread"],
-    queryFn: () => unreadFn() as Promise<Record<string, number>>,
+    queryFn: () => unreadFn() as Promise<Record<string, { driver: number; client: number; total: number }>>,
     refetchInterval: 15_000,
   });
 
