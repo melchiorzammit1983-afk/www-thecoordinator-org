@@ -225,6 +225,11 @@ export function TripDetailsSheet({
             {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
           </section>
 
+          {/* Live location */}
+          {job.driver_id && !job.external && (
+            <TripLiveLocation driverId={job.driver_id} />
+          )}
+
           {/* Chain */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Dispatch chain</div>
