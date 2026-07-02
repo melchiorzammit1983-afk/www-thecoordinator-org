@@ -383,8 +383,8 @@ function CalendarPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
           <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
           {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={jobs ?? []} ctx={cardCtx} />
-            : <WeekGrid drivers={drivers ?? []} jobs={jobs ?? []} days={range.days} ctx={cardCtx} />}
+            ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
+            : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
 
