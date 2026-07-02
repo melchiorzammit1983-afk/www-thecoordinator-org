@@ -128,7 +128,7 @@ export function BulkActionBar({
             <Button
               size="sm" variant="outline"
               disabled={!mergeable || busy}
-              title={mergeable ? "Merge passengers into the earliest trip" : "Selected trips must share date, From and To"}
+              title={uniform ? "Merge passengers into the earliest trip" : "Trips differ in date/from/to — you can still group them"}
               onClick={() => setOpenMerge(true)}
             >
               <Combine className="h-4 w-4 mr-1" /> Group
