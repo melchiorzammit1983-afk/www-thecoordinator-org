@@ -1953,3 +1953,53 @@ export const listClientLocationsCoord = createServerFn({ method: "GET" })
     }
     return latest;
   });
+
+// ============================================================
+// SOS EVENTS (coordinator side)
+// ============================================================
+
+export const listOpenSosCoord = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
+      .from("client_sos_events")
+      .select("id, job_id, pax_name, latitude, longitude, note, created_at, acknowledged_at")
+      .is("acknowledged_at", null)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    if (!data?.length) return [];
+    // filter to jobs visible to this company/chain
+    const jobIds = Array.from(new Set(data.map((r: any) => r.job_id)));
+    const { data: jobs } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .in("id", jobIds);
+    const allowed = new Set(
+      (jobs ?? []).filter((j: any) =>
+        j.company_id === c.id ||
+        j.executor_company_id === c.id ||
+        j.origin_company_id === c.id ||
+        (j.dispatch_chain_company_ids ?? []).includes(c.id),
+      ).map((j: any) => j.id),
+    );
+    return data.filter((r: any) => allowed.has(r.job_id));
+  });
+
+export const acknowledgeSosCoord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ sos_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error: re } = await supabaseAdmin.from("client_sos_events")
+      .select("id, job_id").eq("id", data.sos_id).maybeSingle();
+    if (re) throw new Error(re.message);
+    if (!row) throw new Error("sos_not_found");
+    await assertJobInCompany(context, (row as any).job_id);
+    const { error } = await supabaseAdmin.from("client_sos_events")
+      .update({ acknowledged_at: new Date().toISOString(), acknowledged_by: context.userId } as never)
+      .eq("id", data.sos_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
