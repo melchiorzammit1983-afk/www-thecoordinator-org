@@ -783,6 +783,8 @@ export type Database = {
           flightorship: string | null
           from_flight: string | null
           from_location: string
+          grouped_at: string | null
+          grouped_count: number | null
           id: string
           origin_company_id: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
@@ -825,6 +827,8 @@ export type Database = {
           flightorship?: string | null
           from_flight?: string | null
           from_location: string
+          grouped_at?: string | null
+          grouped_count?: number | null
           id?: string
           origin_company_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
@@ -867,6 +871,8 @@ export type Database = {
           flightorship?: string | null
           from_flight?: string | null
           from_location?: string
+          grouped_at?: string | null
+          grouped_count?: number | null
           id?: string
           origin_company_id?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
