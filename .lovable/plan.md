@@ -1,61 +1,52 @@
-## Goal
-Live driver tracking on the coordinator dispatch dashboard using Google Maps.
 
-## Constraint (must read)
-The driver portal is a **web app**. Browsers stop JS when the tab is minimized or the phone is locked — no web API bypasses this. So tracking is reliable only while the driver keeps the portal open in the foreground. Mitigations shipping:
-- Screen Wake Lock (`navigator.wakeLock`) keeps the display on.
-- Clear "keep this tab open" banner.
-- Points older than 60s show as "Paused"; > 2 min as "Offline".
+## What you'll get
 
-True background tracking (screen off / app minimized) needs a Capacitor native wrapper — same backend will support it later with no changes.
+- **Driver trips fix (shipped now)** — "(me)" and partner virtual drivers now see all trips scoped to their company, not just ones with `driver_id = virtual`. The plain driver flow is unchanged.
+- **Native driver app** — the same web app wrapped with Capacitor for iOS and Android, so you can install it from the App Store / Play Store or side-load it on a phone.
+- **Real background GPS** — when the driver turns on "Share live location", their position keeps streaming to the dispatcher even if the phone is locked, the app is minimized, or they switch to WhatsApp. The web version stays as a fallback for desktop / drivers who don't install the app.
 
-## What ships
+## How it will look on the driver's phone
 
-### 1) Driver side — capture (`/m/driver/$token`)
-- New **"Share live location"** toggle at the top of the manifest.
-  - Persists in `localStorage`, auto-resumes on reopen.
-  - Only active when the driver has a trip in `en_route` / `arrived` / `in_progress`.
-- Uses `navigator.geolocation.watchPosition({ enableHighAccuracy: true })`.
-- Requests `navigator.wakeLock.request('screen')` while ON, releases when OFF.
-- Batches points and POSTs to a new public server fn every ~10s or on >25m movement.
-- Queues in `localStorage` when offline; flushes on reconnect.
-- Live status pill: Live / Paused / Offline.
+- First time they toggle "Share live location", the OS asks for **Location: Always** and **Notifications**.
+- While tracking, a persistent notification shows *"Sharing live location with dispatcher"* (Android requirement) with a **Stop** button. iOS shows the blue location indicator.
+- If they force-quit the app, tracking stops (both OS's require the process to be alive).
 
-### 2) Server — ingest & broadcast
-- **New public server fn** `pushDriverLocation({ token, points[] })` in `src/lib/coordinator-public.functions.ts`. Validates the driver magic link, resolves the driver's currently-active job, inserts into `public.driver_locations`.
-- **DB**: `driver_locations` already exists, is already in `supabase_realtime`, and already has the chain-based coordinator SELECT policy — **no migration needed**.
-- The public write path is protected by the magic-link token (same pattern as the rest of the driver portal).
+## Technical section
 
-### 3) Coordinator side — Google Maps view
-Uses the existing Google Maps connector browser key (`VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY`). Maps JS loaded with `loading=async` + `callback` + `channel`. Uses `google.maps.Marker` (no `mapId` / no AdvancedMarkerElement).
+### Packages
+- `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, `@capacitor/android`
+- `@capacitor-community/background-geolocation` — battle-tested background GPS plugin with iOS + Android support, persistent notification, and JS callback with `{lat, lng, accuracy, speed, bearing, time}`.
+- `@capacitor/preferences` — persist the on/off toggle and the outbound queue across process restarts.
 
-- **New component** `src/components/coordinator/DriverLiveMap.tsx`
-  - Loads Google Maps JS once.
-  - Props: `points: { driverId, name, lat, lng, capturedAt, jobId }[]`, `focusDriverId?`.
-  - One marker per driver, colored by freshness (green <30s, amber <2min, grey older). Info window: driver name, trip route, "updated Xs ago".
-  - Auto-fits bounds; when `focusDriverId` set, pans + zooms to that driver.
+### `capacitor.config.ts`
+- `appId`: `app.lovable.transfersmt`
+- `appName`: Transfers MT
+- `webDir`: `dist`
+- `server.url`: `https://transfersmt.lovable.app` (live-reload against production so no rebuild needed after every code change)
+- `server.cleartext`: false
 
-- **Dispatch board** (`/coordinator/calendar`)
-  - Collapsible **"Live map"** panel above the calendar (open on desktop, collapsed on mobile).
-  - Initial fetch of latest point per driver in the current company chain, then subscribes to `driver_locations` Realtime for incremental updates.
-  - Legend + live count.
+### Driver UI (`src/components/driver/DriverLiveShare.tsx`)
+- Detect runtime: `import { Capacitor } from '@capacitor/core'; Capacitor.isNativePlatform()`.
+- **Native path**: use `BackgroundGeolocation.addWatcher({ backgroundMessage: "Sharing live location with dispatcher", backgroundTitle: "Transfers MT", requestPermissions: true, stale: false, distanceFilter: 25 }, cb)`. Points POST via existing `pushDriverLocation` server fn. Queue survives with `@capacitor/preferences` and flushes when connectivity returns.
+- **Web path**: unchanged (`watchPosition` + Screen Wake Lock).
 
-- **Trip details sheet** (`TripDetailsSheet.tsx`)
-  - New "Live location" section reusing `DriverLiveMap` filtered to that trip's driver, with `focusDriverId` set.
-  - Last-updated timestamp; Paused/Offline pill when stale.
+### Native project files (auto-generated by `npx cap add`)
+- `ios/App/App/Info.plist` additions: `NSLocationAlwaysAndWhenInUseUsageDescription`, `NSLocationWhenInUseUsageDescription`, `UIBackgroundModes` → `location`.
+- `android/app/src/main/AndroidManifest.xml` additions: `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS`.
 
-### 4) Freshness semantics
-- < 30s → green "Live"
-- 30–120s → amber "Paused — app may be minimized"
-- > 2 min → grey "Offline"
+### What Lovable will do vs what you do
+Lovable in this sandbox can install the npm packages, write `capacitor.config.ts`, update the DriverLiveShare component, and commit those changes so they're ready to build. Lovable **cannot** run `npx cap add ios` / `cap add android` or open Xcode / Android Studio inside this environment — those need to run on your Mac/PC to produce the native app.
 
-## Out of scope
-- Historical route replay / breadcrumb polyline.
-- Geofenced auto status changes.
-- Native background tracking (Capacitor).
-- ETA via Routes API.
+I'll give you an exact 3-step checklist to run locally:
+1. `git pull && npm install`
+2. `npx cap add ios && npx cap add android && npx cap sync`
+3. `npx cap open ios` (Xcode → build to your phone) or `npx cap open android` (Android Studio → build).
 
-## Technical bits
-- Uses existing Google Maps connector browser key — no new secrets, no billing setup.
-- No new npm dependency (raw Maps JS via `<script>` tag, dynamic loader with singleton promise).
-- Reuses existing `driver_locations` table + realtime + policy.
+After that, every future code change you make in Lovable auto-appears in the installed app (because of live-reload `server.url`), no rebuild needed until you want to ship to the stores.
+
+### Out of scope for this pass
+- App Store / Play Store submission (you own the developer accounts).
+- Push notifications from dispatcher → driver (separate follow-up).
+- Offline map tiles for the driver.
+
+Reply **approve** and I'll install the packages and wire up the code.
