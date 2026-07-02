@@ -223,8 +223,12 @@ export function parseTrips(raw: string): ParsedTrip[] {
       }
 
       if (inNames) {
-        const name = cleanName(stripLeadingBullets(line));
-        if (name) trip.pax.push(name);
+        const rawName = cleanName(stripLeadingBullets(line));
+        if (rawName) {
+          const { cleanName: cn, phone } = extractPhoneFromName(rawName);
+          if (cn) trip.pax.push(cn);
+          if (phone && !trip.contact_phone) trip.contact_phone = phone;
+        }
         continue;
       }
 
@@ -238,7 +242,10 @@ export function parseTrips(raw: string): ParsedTrip[] {
 
       // Heuristic: line that looks like a person's name (no emoji markers used)
       if (looksLikeName(line)) {
-        trip.pax.push(cleanName(stripLeadingBullets(line)));
+        const rawName = cleanName(stripLeadingBullets(line));
+        const { cleanName: cn, phone } = extractPhoneFromName(rawName);
+        if (cn) trip.pax.push(cn);
+        if (phone && !trip.contact_phone) trip.contact_phone = phone;
       }
     }
 
