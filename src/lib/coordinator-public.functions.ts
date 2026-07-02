@@ -640,6 +640,15 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       identity = id ?? null;
     }
 
+    // open SOS events (unacknowledged) for this trip / siblings
+    const { data: openSos } = await supabaseAdmin
+      .from("client_sos_events")
+      .select("id, created_at, pax_name, latitude, longitude")
+      .in("job_id", ids)
+      .is("acknowledged_at", null)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
     return {
       job: {
         id: job.id, group_id: job.group_id, group_name: job.group_name,
@@ -647,7 +656,15 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
         from_flight: job.from_flight, to_flight: job.to_flight,
         date: job.date, time: job.time, pickup_at: job.pickup_at,
         status: job.status, flight_status: job.flight_status,
+        flight_status_note: (job as any).flight_status_note ?? null,
+        flight_terminal: (job as any).flight_terminal ?? null,
+        flight_gate: (job as any).flight_gate ?? null,
+        flight_baggage_belt: (job as any).flight_baggage_belt ?? null,
+        flight_scheduled_at: (job as any).flight_scheduled_at ?? null,
+        flight_estimated_at: (job as any).flight_estimated_at ?? null,
         driver_id: job.driver_id,
+        pickup_lat: (job as any).pickup_lat ?? null,
+        pickup_lng: (job as any).pickup_lng ?? null,
         client_confirmed_at: (job as any).client_confirmed_at ?? null,
       },
       siblings: siblings ?? [],
@@ -656,6 +673,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       driver,
       driverLocations,
       identity,
+      openSos: openSos ?? [],
     };
   });
 
@@ -681,14 +699,36 @@ export const chooseClientIdentity = createServerFn({ method: "POST" })
 
 export const listClientTripMessages = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
-    z.object({ token: z.string().min(8).max(128) }).parse(i),
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80).optional(),
+      thread_kind: z.enum(["group", "private"]).default("group"),
+    }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const ids = await siblingIds(supabaseAdmin, job);
-    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at")
-      .in("job_id", ids).order("created_at", { ascending: true });
+
+    // resolve identity for private thread scoping
+    let identityId: string | null = null;
+    if (data.device_id) {
+      const { data: id } = await supabaseAdmin.from("client_link_identities")
+        .select("id").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      identityId = (id as any)?.id ?? null;
+    }
+
+    let q = supabaseAdmin.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at, thread_kind, client_identity_id, is_sos")
+      .in("job_id", ids)
+      .order("created_at", { ascending: true });
+
+    if (data.thread_kind === "private") {
+      if (!identityId) return [];
+      q = q.eq("thread_kind", "private").eq("client_identity_id", identityId);
+    } else {
+      q = q.eq("thread_kind", "group");
+    }
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
@@ -699,16 +739,23 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80),
       body: z.string().trim().min(1).max(4000),
+      thread_kind: z.enum(["group", "private"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
-    const label = id?.pax_name ?? "Passenger";
+      .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const label = (id as any)?.pax_name ?? "Passenger";
+    const identityId = (id as any)?.id ?? null;
+    if (data.thread_kind === "private" && !identityId) {
+      throw new Error("choose_your_name_first");
+    }
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
+      thread_kind: data.thread_kind,
+      client_identity_id: data.thread_kind === "private" ? identityId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -830,3 +877,164 @@ export const heartbeatClientPortal = createServerFn({ method: "POST" })
     } as never);
     return { ok: true };
   });
+
+// ============================================================
+// EMERGENCY SOS (client-side)
+// ============================================================
+
+export const triggerClientSOS = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      latitude: z.number().gte(-90).lte(90).nullable().optional(),
+      longitude: z.number().gte(-180).lte(180).nullable().optional(),
+      accuracy_m: z.number().nonnegative().max(1e6).nullable().optional(),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    const { data: id } = await supabaseAdmin.from("client_link_identities")
+      .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+    const paxName = (id as any)?.pax_name ?? "Passenger";
+    const identityId = (id as any)?.id ?? null;
+
+    const { error: se } = await supabaseAdmin.from("client_sos_events").insert({
+      job_id: job.id, token: data.token, device_id: data.device_id,
+      pax_name: paxName,
+      latitude: data.latitude ?? null, longitude: data.longitude ?? null,
+      accuracy_m: data.accuracy_m ?? null,
+      note: data.note ?? null,
+    } as never);
+    if (se) throw new Error(se.message);
+
+    // Also drop an urgent private message so the coordinator sees it in chat
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: job.id, company_id: job.company_id,
+      sender_kind: "client", sender_label: paxName,
+      body: `🚨 SOS from ${paxName}${data.note ? ` — ${data.note}` : ""}` +
+        (data.latitude != null && data.longitude != null
+          ? `  ·  https://www.google.com/maps/search/?api=1&query=${data.latitude},${data.longitude}`
+          : ""),
+      is_sos: true,
+      thread_kind: identityId ? "private" : "group",
+      client_identity_id: identityId,
+    } as never);
+
+    return { ok: true };
+  });
+
+// ============================================================
+// LIVE ETA (Google Distance Matrix, traffic-aware)
+// ============================================================
+
+const etaCache = new Map<string, { at: number; value: any }>();
+const ETA_TTL_MS = 20_000;
+
+export const getTripEta = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128) }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    if (!job.driver_id) return { ok: false as const, reason: "no_driver" as const };
+
+    // latest driver point (within 15 min)
+    const since = new Date(Date.now() - 15 * 60_000).toISOString();
+    const { data: pts } = await supabaseAdmin.from("driver_locations")
+      .select("latitude, longitude, captured_at")
+      .eq("driver_id", job.driver_id)
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: false })
+      .limit(1);
+    const pt = pts?.[0];
+    if (!pt) return { ok: false as const, reason: "no_gps" as const };
+
+    // destination: pickup_lat/lng if present, otherwise geocode from_location
+    let destLat: number | null = (job as any).pickup_lat ?? null;
+    let destLng: number | null = (job as any).pickup_lng ?? null;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return { ok: false as const, reason: "not_configured" as const };
+
+    if (destLat == null || destLng == null) {
+      if (!job.from_location) return { ok: false as const, reason: "no_dest" as const };
+      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
+      const gj: any = await (await fetch(geoUrl)).json();
+      const loc = gj?.results?.[0]?.geometry?.location;
+      if (!loc) return { ok: false as const, reason: "geocode_failed" as const };
+      destLat = loc.lat; destLng = loc.lng;
+    }
+
+    const key = `${pt.latitude},${pt.longitude}|${destLat},${destLng}`;
+    const cached = etaCache.get(key);
+    if (cached && Date.now() - cached.at < ETA_TTL_MS) {
+      return { ok: true as const, cached: true, ...cached.value };
+    }
+
+    const dmUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${pt.latitude},${pt.longitude}&destinations=${destLat},${destLng}&departure_time=now&traffic_model=best_guess&key=${apiKey}`;
+    const dm: any = await (await fetch(dmUrl)).json();
+    const el = dm?.rows?.[0]?.elements?.[0];
+    if (!el || el.status !== "OK") return { ok: false as const, reason: "dm_failed" as const };
+    const value = {
+      seconds: (el.duration_in_traffic ?? el.duration)?.value ?? null,
+      text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+      distance_m: el.distance?.value ?? null,
+      distance_text: el.distance?.text ?? "",
+      driver_at: pt.captured_at,
+    };
+    etaCache.set(key, { at: Date.now(), value });
+    return { ok: true as const, cached: false, ...value };
+  });
+
+// ============================================================
+// PUSH NOTIFICATION SUBSCRIPTIONS (Web Push)
+// ============================================================
+
+export const subscribeClientPush = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      endpoint: z.string().url().max(2000),
+      p256dh: z.string().min(1).max(500),
+      auth: z.string().min(1).max(500),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    // validate token points to a real trip
+    await loadJobByClientToken(data.token);
+    const supabaseAdmin = await getAdminClient();
+    const { error } = await supabaseAdmin.from("client_push_subs").upsert({
+      token: data.token,
+      device_id: data.device_id,
+      endpoint: data.endpoint,
+      p256dh: data.p256dh,
+      auth: data.auth,
+    } as never, { onConflict: "token,device_id,endpoint" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const unsubscribeClientPush = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      device_id: z.string().min(4).max(80),
+      endpoint: z.string().url().max(2000).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const supabaseAdmin = await getAdminClient();
+    let q = supabaseAdmin.from("client_push_subs").delete()
+      .eq("token", data.token).eq("device_id", data.device_id);
+    if (data.endpoint) q = q.eq("endpoint", data.endpoint);
+    const { error } = await q;
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// Expose VAPID public key to the client (if configured).
+export const getPushPublicKey = createServerFn({ method: "GET" }).handler(async () => {
+  return { publicKey: process.env.VAPID_PUBLIC_KEY ?? null };
+});
