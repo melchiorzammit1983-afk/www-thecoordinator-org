@@ -46,6 +46,35 @@ export function BulkActionBar({
 
   const assignFn = useServerFn(assignDriver);
   const deleteFn = useServerFn(deleteJob);
+  const ungroupFn = useServerFn(ungroupJobs);
+
+  // Collect distinct group_ids from selected jobs where NO member has been accepted by driver yet.
+  const groupIds = Array.from(new Set(jobs.map((j) => j.group_id).filter(Boolean) as string[]));
+  const acceptedGroupIds = new Set(
+    jobs.filter((j) => j.group_id && j.driver_accepted_at).map((j) => j.group_id as string),
+  );
+  const ungroupableGroupIds = groupIds.filter((g) => !acceptedGroupIds.has(g));
+  const canUngroup = ungroupableGroupIds.length > 0;
+
+  const ungroupMut = useMutation({
+    mutationFn: async () => {
+      for (const gid of ungroupableGroupIds) {
+        await ungroupFn({ data: { group_id: gid } });
+      }
+      return ungroupableGroupIds.length;
+    },
+    onSuccess: (n) => {
+      const skipped = groupIds.length - n;
+      toast.success(
+        `Ungrouped ${n} bundle${n === 1 ? "" : "s"}` +
+          (skipped > 0 ? ` · ${skipped} skipped (driver already accepted)` : ""),
+      );
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      onClear();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
