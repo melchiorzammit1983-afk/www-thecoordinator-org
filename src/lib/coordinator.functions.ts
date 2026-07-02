@@ -2158,8 +2158,7 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
     }
     for (const j of (jobs ?? []) as any[]) {
       const row = out[j.id]; if (!row) continue;
-      const tok = j.client_link_token as string | null;
-      if (tok && bookingByToken[tok] && modsByBooking.has(bookingByToken[tok])) row.client_change = true;
+      if (jobsWithClientChange.has(j.id)) row.client_change = true;
       // driver status changed since last view?
       const viewed = j.coordinator_last_viewed_at ? new Date(j.coordinator_last_viewed_at).getTime() : 0;
       const updated = j.updated_at ? new Date(j.updated_at).getTime() : 0;
