@@ -205,6 +205,7 @@ const jobInput = z.object({
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
+  contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
 });
