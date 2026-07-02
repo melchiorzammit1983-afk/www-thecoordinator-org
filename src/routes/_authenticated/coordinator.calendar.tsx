@@ -658,6 +658,13 @@ function TripMenu({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const ungroupFn = useServerFn(ungroupJobs);
+  const ungroupMut = useMutation({
+    mutationFn: () => ungroupFn({ data: { job_id: job.id } }) as Promise<{ cleared: number }>,
+    onSuccess: (r) => { toast.success(`Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
     mutationFn: () => shareFn({ data: { job_id: job.id } }) as Promise<any>,
