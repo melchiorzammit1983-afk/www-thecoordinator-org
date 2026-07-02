@@ -113,7 +113,7 @@ function ManualForm({
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
-  const [qr, setQr] = useState(job?.qr_strict_mode ?? false);
+  
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
