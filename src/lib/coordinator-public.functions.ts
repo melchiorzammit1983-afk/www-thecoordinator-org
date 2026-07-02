@@ -59,7 +59,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const filterByDriverId = Boolean(link.subject_id) && !isVirtualDriver;
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
@@ -463,8 +463,13 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const patch: Record<string, unknown> = { status: data.status };
+    if (data.status === "completed") {
+      patch.grouped_count = null;
+      patch.grouped_at = null;
+    }
     const { error } = await supabaseAdmin.from("jobs")
-      .update({ status: data.status as never }).eq("id", data.job_id);
+      .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

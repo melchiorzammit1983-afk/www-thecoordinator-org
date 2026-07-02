@@ -138,7 +138,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -1071,6 +1071,35 @@ export const movePaxToJob = createServerFn({ method: "POST" })
       .in("id", data.pax_ids).eq("job_id", data.source_job_id);
     if (uErr) throw new Error(uErr.message);
     return { ok: true };
+  });
+
+export const setJobGrouped = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      count: z.number().int().min(0).max(500),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, executor_company_id, grouped_count")
+      .eq("id", data.job_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!job || (job.company_id !== c.id && job.executor_company_id !== c.id)) {
+      throw new Error("Job not found");
+    }
+    const existing = (job as any).grouped_count ?? 0;
+    const total = Math.max(existing, 0) + data.count;
+    const patch = total >= 2
+      ? { grouped_count: total, grouped_at: new Date().toISOString() }
+      : { grouped_count: null, grouped_at: null };
+    const { error: uErr } = await supabaseAdmin.from("jobs")
+      .update(patch as never).eq("id", data.job_id);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, grouped_count: total };
   });
 
 // ---------- Trip messages (coordinator side) ----------
