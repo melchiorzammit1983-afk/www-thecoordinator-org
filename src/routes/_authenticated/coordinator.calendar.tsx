@@ -208,8 +208,30 @@ function CalendarPage() {
         </div>
       </header>
 
+      {/* Live map panel (collapsible) */}
+      <section className="rounded-lg border bg-card">
+        <button
+          type="button"
+          onClick={() => setMapOpen((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
+        >
+          {mapOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <span>Live driver map</span>
+          <span className="ml-auto text-xs text-muted-foreground">Real time</span>
+        </button>
+        {mapOpen && (
+          <div className="p-2 pt-0">
+            <DriverMap height={320} onSelectJob={(id) => {
+              const j = (jobs ?? []).find((x) => x.id === id);
+              if (j) setDetailsJob(j);
+            }} />
+          </div>
+        )}
+      </section>
+
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
+
 
 
       {/* Outbound (my trips currently at partners) */}
