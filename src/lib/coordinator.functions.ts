@@ -281,6 +281,53 @@ export const updateJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const listJobPax = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin
+      .from("jobs").select("id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (je || !job) throw new Error("Job not found");
+    const { data: rows, error } = await supabaseAdmin
+      .from("pax").select("id, name, status, boarded_at")
+      .eq("job_id", data.job_id).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const addJobPax = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), name: z.string().trim().min(1).max(200) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: je } = await supabaseAdmin
+      .from("jobs").select("id").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (je || !job) throw new Error("Job not found");
+    const { error } = await supabaseAdmin.from("pax").insert({ job_id: data.job_id, name: data.name });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const removeJobPax = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ pax_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error: pe } = await supabaseAdmin
+      .from("pax").select("id, job_id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+    if (pe || !row) throw new Error("Passenger not found");
+    if ((row as any).jobs?.company_id !== c.id) throw new Error("Forbidden");
+    const { error } = await supabaseAdmin.from("pax").delete().eq("id", data.pax_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const assignDriver = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
