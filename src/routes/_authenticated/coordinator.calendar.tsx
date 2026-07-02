@@ -18,7 +18,7 @@ import {
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, listActiveDriverLocations,
-  ungroupJobs, groupJobs, shareGroupToDriver,
+  ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
 } from "@/lib/coordinator.functions";
 
 import { Button } from "@/components/ui/button";
