@@ -132,7 +132,7 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
-        clientcompanyname: client, vehicle,
+        clientcompanyname: client, contact_phone: phone,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: qr, tracking_enabled: track,
         label_ids: labelIds,
