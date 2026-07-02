@@ -640,6 +640,15 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       identity = id ?? null;
     }
 
+    // open SOS events (unacknowledged) for this trip / siblings
+    const { data: openSos } = await supabaseAdmin
+      .from("client_sos_events")
+      .select("id, created_at, pax_name, latitude, longitude")
+      .in("job_id", ids)
+      .is("acknowledged_at", null)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
     return {
       job: {
         id: job.id, group_id: job.group_id, group_name: job.group_name,
@@ -647,7 +656,15 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
         from_flight: job.from_flight, to_flight: job.to_flight,
         date: job.date, time: job.time, pickup_at: job.pickup_at,
         status: job.status, flight_status: job.flight_status,
+        flight_status_note: (job as any).flight_status_note ?? null,
+        flight_terminal: (job as any).flight_terminal ?? null,
+        flight_gate: (job as any).flight_gate ?? null,
+        flight_baggage_belt: (job as any).flight_baggage_belt ?? null,
+        flight_scheduled_at: (job as any).flight_scheduled_at ?? null,
+        flight_estimated_at: (job as any).flight_estimated_at ?? null,
         driver_id: job.driver_id,
+        pickup_lat: (job as any).pickup_lat ?? null,
+        pickup_lng: (job as any).pickup_lng ?? null,
         client_confirmed_at: (job as any).client_confirmed_at ?? null,
       },
       siblings: siblings ?? [],
@@ -656,6 +673,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       driver,
       driverLocations,
       identity,
+      openSos: openSos ?? [],
     };
   });
 
