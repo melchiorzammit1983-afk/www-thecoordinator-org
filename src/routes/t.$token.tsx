@@ -4,11 +4,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  MapPin, Send, MessageSquare, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus,
+  MapPin, Send, MessageSquare, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus, CheckCircle2,
 } from "lucide-react";
 import {
   getClientTripPortal, chooseClientIdentity, listClientTripMessages,
   postClientTripMessage, pushClientLocation, requestClientFollowUp,
+  confirmClientTrip, heartbeatClientPortal,
 } from "@/lib/coordinator-public.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
