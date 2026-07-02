@@ -17,7 +17,7 @@ export type LivePoint = {
   captured_at: string;
 };
 
-type GMaps = typeof google.maps;
+type GMaps = any;
 
 let mapsLoader: Promise<GMaps> | null = null;
 
