@@ -419,7 +419,7 @@ export function TripDetailsSheet({
         identityId={paxChat?.identityId ?? null}
         threadKind={paxChat?.identityId ? "private" : "group"}
         paxName={paxChat?.name ?? null}
-        title={`${job.from_type} → ${job.to_type}`}
+        title="Passenger chat"
       />
     </Sheet>
   );
