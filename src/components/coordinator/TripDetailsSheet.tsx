@@ -606,7 +606,7 @@ function TripLiveLocation({
           Driver hasn't shared location yet. They can enable it from their manifest.
         </div>
       ) : (
-        <DriverLiveMap points={points} focusDriverId={driverId} height={220} />
+        <DriverLiveMap points={points} sosPoints={sosPoints} focusDriverId={driverId} height={220} onAcknowledgeSos={onAcknowledgeSos} />
       )}
     </section>
   );
