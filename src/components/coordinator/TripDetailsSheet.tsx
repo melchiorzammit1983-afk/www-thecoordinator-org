@@ -373,3 +373,19 @@ function TripLiveLocation({ driverId }: { driverId: string }) {
     </section>
   );
 }
+
+function FlightStatusPill({ status }: { status: string | null | undefined }) {
+  const s = status ?? "unknown";
+  const map: Record<string, { label: string; cls: string }> = {
+    scheduled: { label: "On time", cls: "bg-emerald-600 hover:bg-emerald-600 text-white" },
+    active: { label: "In progress", cls: "bg-sky-600 hover:bg-sky-600 text-white" },
+    landed: { label: "Landed", cls: "bg-emerald-700 hover:bg-emerald-700 text-white" },
+    delayed: { label: "Delayed", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    cancelled: { label: "Cancelled", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    diverted: { label: "Diverted", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    time_mismatch: { label: "Time mismatch", cls: "bg-destructive hover:bg-destructive text-destructive-foreground" },
+    unknown: { label: "Unknown", cls: "bg-muted text-muted-foreground" },
+  };
+  const m = map[s] ?? map.unknown;
+  return <Badge className={`text-[10px] shrink-0 ${m.cls}`}>{m.label}</Badge>;
+}
