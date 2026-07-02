@@ -215,6 +215,7 @@ function CalendarPage() {
     expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
     onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
     clientPortalEnabled,
+    clientPresence: clientPresence ?? {},
   };
 
 
