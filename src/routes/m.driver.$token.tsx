@@ -789,12 +789,8 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
     onError: (e: Error) => toast.error(e.message),
   });
 
-  function handleScan(text: string) {
-    const match = (pax ?? []).find((p) => p.id === text || p.name === text);
-    if (!match) { toast.error("Passenger not on this trip"); return; }
-    if (match.status === "onboard") return;
-    markMut.mutate({ pax_id: match.id, method: "qr" });
-  }
+  // handleScan retained for future re-enable; currently unused.
+
 
   return (
     <Dialog open={!!job} onOpenChange={onOpenChange}>
