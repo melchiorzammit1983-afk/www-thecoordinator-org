@@ -27,8 +27,9 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
-  Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User,
+  Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
 } from "lucide-react";
+
 
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
