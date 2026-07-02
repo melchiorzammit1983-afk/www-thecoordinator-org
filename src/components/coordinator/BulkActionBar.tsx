@@ -41,20 +41,10 @@ export function BulkActionBar({
   const qc = useQueryClient();
   const [openLabels, setOpenLabels] = useState(false);
   const [openMerge, setOpenMerge] = useState(false);
+  const [openGroup, setOpenGroup] = useState(false);
 
   const assignFn = useServerFn(assignDriver);
   const deleteFn = useServerFn(deleteJob);
-  const groupFn = useServerFn(groupJobs);
-
-  const groupMut = useMutation({
-    mutationFn: () => groupFn({ data: { job_ids: jobs.map((j) => j.id) } }) as Promise<{ count: number }>,
-    onSuccess: (r) => {
-      toast.success(`Linked ${r.count} trips as one group`);
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-      onClear();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
