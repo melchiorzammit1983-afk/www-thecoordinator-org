@@ -346,7 +346,19 @@ function CalendarPage() {
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAlertsOnly((v) => !v)}
+            className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
+              alertsOnly
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground hover:text-foreground"
+            }`}
+            title="Show only cards with unread messages, client changes, or SOS"
+          >
+            {alertsOnly ? "● " : ""}Only cards with alerts
+          </button>
           <AutoRefreshToggle jobs={jobs ?? []} />
         </div>
       </header>
