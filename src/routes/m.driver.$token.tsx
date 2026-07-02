@@ -213,6 +213,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const statusFn = useServerFn(updateJobStatus);
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
+  const unhideFn = useServerFn(unhideJobForDriver);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const acceptMut = useMutation({
