@@ -64,6 +64,7 @@ type Job = {
   driver_hidden_at?: string | null;
   grouped_count?: number | null;
   grouped_at?: string | null;
+  group_id?: string | null;
 };
 
 type Driver = {
