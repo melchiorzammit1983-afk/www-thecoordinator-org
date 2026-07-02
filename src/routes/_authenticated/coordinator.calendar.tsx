@@ -190,6 +190,7 @@ function CalendarPage() {
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
     selected, onToggleSelect: toggleSelect,
+    expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
