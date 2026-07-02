@@ -183,4 +183,18 @@
   background: rgb(168,85,247);
   animation: signal-dot-pulse 1.4s ease-in-out infinite;
 }
+.signal-stripe-driver {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: rgb(168,85,247); border-radius: 0 0 4px 4px;
+  animation: signal-dot-pulse 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.signal-unread-badge {
+  position: absolute; top: -6px; left: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 9999px; background: rgb(59,130,246); color: #fff;
+  font-size: 10px; line-height: 16px; font-weight: 700; text-align: center;
+  box-shadow: 0 0 0 2px var(--color-background);
+  pointer-events: none; z-index: 2;
+}
 
