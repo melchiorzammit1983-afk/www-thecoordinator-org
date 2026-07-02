@@ -47,6 +47,24 @@ function ClientTripPortal() {
     refetchInterval: 15_000,
   });
 
+  // Heartbeat presence every 45s while the tab is open
+  const beatFn = useServerFn(heartbeatClientPortal);
+  useEffect(() => {
+    const ping = () => { beatFn({ data: { token, device_id: deviceId } }).catch(() => {}); };
+    ping();
+    const id = window.setInterval(ping, 45_000);
+    const onVis = () => { if (document.visibilityState === "visible") ping(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [beatFn, token, deviceId]);
+
+  const confirmFn = useServerFn(confirmClientTrip);
+  const confirmMut = useMutation({
+    mutationFn: () => confirmFn({ data: { token, device_id: deviceId } }),
+    onSuccess: () => { toast.success("Thanks — coordinator notified"); qc.invalidateQueries({ queryKey: ["client-portal"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const [tab, setTab] = useState<"trip" | "chat" | "rebook">("trip");
 
   if (isLoading) {
