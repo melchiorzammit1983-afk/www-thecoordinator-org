@@ -61,6 +61,7 @@ type Job = {
   pax?: Pax[];
   unread_messages?: number;
   labels?: { id: string; name: string; color: string }[];
+  driver_hidden_at?: string | null;
 };
 
 type Driver = {
