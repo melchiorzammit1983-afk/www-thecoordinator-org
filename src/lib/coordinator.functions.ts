@@ -138,7 +138,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -1698,7 +1698,12 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
 export const groupJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ job_ids: z.array(z.string().uuid()).min(2).max(50) }).parse(i),
+    z.object({
+      job_ids: z.array(z.string().uuid()).min(2).max(50),
+      name: z.string().trim().max(80).optional(),
+      note: z.string().trim().max(500).optional(),
+      driver_id: z.string().uuid().nullable().optional(),
+    }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
@@ -1714,16 +1719,27 @@ export const groupJobs = createServerFn({ method: "POST" })
     const gid = existing ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const total = rows.length;
 
+    const patch: Record<string, unknown> = {
+      group_id: gid,
+      grouped_count: total,
+      grouped_at: new Date().toISOString(),
+    };
+    if (data.name !== undefined) patch.group_name = data.name || null;
+    if (data.note !== undefined) patch.group_note = data.note || null;
+    if (data.driver_id !== undefined) {
+      patch.driver_id = data.driver_id;
+      // reset acceptance when driver changes
+      patch.driver_accepted_at = null;
+    }
+
     const { error: uErr } = await supabaseAdmin.from("jobs")
-      .update({
-        group_id: gid,
-        grouped_count: total,
-        grouped_at: new Date().toISOString(),
-      } as never)
+      .update(patch as never)
       .in("id", data.job_ids);
     if (uErr) throw new Error(uErr.message);
     return { ok: true, group_id: gid, count: total };
   });
+
+
 
 export const ungroupJobs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

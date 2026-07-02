@@ -14,8 +14,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   assignDriver, deleteJob, setJobLabels, movePaxToJob, listLabels, setJobGrouped,
-  groupJobs,
 } from "@/lib/coordinator.functions";
+import { GroupDialog } from "./GroupDialog";
 
 export type BulkJob = {
   id: string;
@@ -41,20 +41,10 @@ export function BulkActionBar({
   const qc = useQueryClient();
   const [openLabels, setOpenLabels] = useState(false);
   const [openMerge, setOpenMerge] = useState(false);
+  const [openGroup, setOpenGroup] = useState(false);
 
   const assignFn = useServerFn(assignDriver);
   const deleteFn = useServerFn(deleteJob);
-  const groupFn = useServerFn(groupJobs);
-
-  const groupMut = useMutation({
-    mutationFn: () => groupFn({ data: { job_ids: jobs.map((j) => j.id) } }) as Promise<{ count: number }>,
-    onSuccess: (r) => {
-      toast.success(`Linked ${r.count} trips as one group`);
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-      onClear();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
@@ -139,9 +129,9 @@ export function BulkActionBar({
 
             <Button
               size="sm" variant="outline"
-              disabled={!mergeable || busy || groupMut.isPending}
+              disabled={!mergeable || busy}
               title="Link cards together as one bundle (reversible). Trip details are kept."
-              onClick={() => groupMut.mutate()}
+              onClick={() => setOpenGroup(true)}
             >
               <Link2 className="h-4 w-4 mr-1" /> Group
             </Button>
@@ -173,6 +163,7 @@ export function BulkActionBar({
 
       <BulkLabelsDialog open={openLabels} onOpenChange={setOpenLabels} jobs={jobs} onDone={onClear} />
       <BulkMergeDialog open={openMerge} onOpenChange={setOpenMerge} jobs={jobs} onDone={onClear} />
+      <GroupDialog open={openGroup} onOpenChange={setOpenGroup} jobs={jobs} drivers={drivers} onDone={onClear} />
     </>
   );
 }

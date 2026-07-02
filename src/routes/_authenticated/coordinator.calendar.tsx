@@ -79,6 +79,8 @@ type Job = {
   grouped_count?: number | null;
   grouped_at?: string | null;
   group_id?: string | null;
+  group_name?: string | null;
+  group_note?: string | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -93,7 +95,12 @@ function CalendarPage() {
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+
+  const toggleExpandedGroup = (gid: string) => setExpandedGroups((s) => {
+    const n = new Set(s); if (n.has(gid)) n.delete(gid); else n.add(gid); return n;
+  });
 
   const toggleSelect = (id: string) => setSelected((s) => {
     const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
@@ -183,6 +190,7 @@ function CalendarPage() {
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
     selected, onToggleSelect: toggleSelect,
+    expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
@@ -299,7 +307,49 @@ type CardCtx = {
   highlightId?: string | null;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
+  expandedGroups: Set<string>;
+  onToggleExpandedGroup: (gid: string) => void;
 };
+
+/* ------------------------------ Grouping helpers ------------------------------ */
+
+type RenderItem =
+  | { kind: "single"; job: Job }
+  | { kind: "group"; group_id: string; jobs: Job[] };
+
+function bucketByGroup(jobs: Job[]): RenderItem[] {
+  const groups = new Map<string, Job[]>();
+  for (const j of jobs) if (j.group_id) {
+    const a = groups.get(j.group_id) ?? []; a.push(j); groups.set(j.group_id, a);
+  }
+  const items: RenderItem[] = [];
+  const seen = new Set<string>();
+  for (const j of jobs) {
+    if (j.group_id) {
+      if (seen.has(j.group_id)) continue;
+      seen.add(j.group_id);
+      const arr = groups.get(j.group_id)!;
+      if (arr.length < 2) items.push({ kind: "single", job: arr[0] });
+      else items.push({
+        kind: "group",
+        group_id: j.group_id,
+        jobs: [...arr].sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""))),
+      });
+    } else {
+      items.push({ kind: "single", job: j });
+    }
+  }
+  return items;
+}
+
+function renderItems(items: RenderItem[], ctx: CardCtx, driverNameOf?: (j: Job) => string | undefined) {
+  return items.map((it) =>
+    it.kind === "single"
+      ? <TripCard key={it.job.id} job={it.job} ctx={ctx} driverName={driverNameOf?.(it.job)} />
+      : <GroupedStackCard key={it.group_id} groupId={it.group_id} jobs={it.jobs} ctx={ctx} driverNameOf={driverNameOf} />,
+  );
+}
+
 
 
 /* ------------------------------ Inbound / Outbound ------------------------------ */
@@ -401,6 +451,7 @@ function OutboundBoard() {
 
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
+  const items = bucketByGroup(jobs);
   return (
     <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
@@ -408,7 +459,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
       </div>
       <div className="space-y-2">
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
-        {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} />)}
+        {renderItems(items, ctx)}
       </div>
     </div>
   );
@@ -431,33 +482,33 @@ function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; c
 
 function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
+  const items = bucketByGroup(jobs);
   return (
     <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[220px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
       <div className="text-sm font-medium truncate">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2 truncate">{driver.vehicle ?? "—"}</div>
       <div className="space-y-2">
-        {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} />)}
+        {renderItems(items, ctx)}
       </div>
     </div>
   );
 }
 
 function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]; days: Date[]; ctx: CardCtx }) {
+  const driverName = (j: Job) => drivers.find((dr) => dr.id === j.driver_id)?.name;
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(7, minmax(180px, 1fr))` }}>
         {days.map((d) => {
           const key = format(d, "yyyy-MM-dd");
           const dayJobs = jobs.filter((j) => j.date === key);
+          const items = bucketByGroup(dayJobs);
           return (
             <div key={key} className="rounded-md border p-2 min-h-[220px]">
               <div className="text-sm font-medium">{format(d, "EEE")}</div>
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
               <div className="space-y-2">
-                {dayJobs.map((j) => (
-                  <TripCard key={j.id} job={j} ctx={ctx}
-                    driverName={drivers.find((dr) => dr.id === j.driver_id)?.name} />
-                ))}
+                {renderItems(items, ctx, driverName)}
               </div>
             </div>
           );
@@ -466,6 +517,146 @@ function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]
     </div>
   );
 }
+
+/* ------------------------------ Grouped stack card ------------------------------ */
+
+function GroupedStackCard({
+  groupId, jobs, ctx, driverNameOf,
+}: {
+  groupId: string;
+  jobs: Job[];
+  ctx: CardCtx;
+  driverNameOf?: (j: Job) => string | undefined;
+}) {
+  const expanded = ctx.expandedGroups.has(groupId);
+  const first = jobs[0];
+  const groupName = jobs.find((j) => j.group_name)?.group_name || null;
+  const groupNote = jobs.find((j) => j.group_note)?.group_note || null;
+
+  const totalPax = jobs.reduce((n, j) => n + (j.pax?.length ?? 0), 0);
+  const anyProblem = jobs.some((j) => {
+    const fi = j.flight_status === "delayed" || j.flight_status === "cancelled" || j.flight_status === "time_mismatch";
+    return fi || !!j.deletion_requested_at;
+  });
+  const allAccepted = jobs.every((j) => !!j.driver_id && !!j.driver_accepted_at);
+  const anyAssigned = jobs.some((j) => !!j.driver_id);
+
+  const tone = anyProblem
+    ? "border-destructive bg-destructive/10"
+    : allAccepted
+    ? "border-emerald-500/70 bg-emerald-500/5"
+    : anyAssigned
+    ? "border-amber-500/70 bg-amber-500/5"
+    : "border-border bg-background";
+
+  const allSelected = jobs.every((j) => ctx.selected.has(j.id));
+  const someSelected = !allSelected && jobs.some((j) => ctx.selected.has(j.id));
+
+  const toggleAll = () => {
+    // If any not selected → select all; else deselect all.
+    const shouldSelect = !allSelected;
+    for (const j of jobs) {
+      const isSel = ctx.selected.has(j.id);
+      if (shouldSelect && !isSel) ctx.onToggleSelect(j.id);
+      if (!shouldSelect && isSel) ctx.onToggleSelect(j.id);
+    }
+  };
+
+  const driverNames = Array.from(
+    new Set(jobs.map((j) => driverNameOf?.(j) ?? j.drivers?.name).filter(Boolean) as string[]),
+  );
+
+  if (expanded) {
+    return (
+      <div className={`rounded-md border-2 p-2 space-y-2 ${tone}`}>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={allSelected ? true : someSelected ? "indeterminate" : false}
+            onCheckedChange={toggleAll}
+            aria-label="Select group"
+          />
+          <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1">
+            <Link2 className="h-3 w-3" />
+            {groupName || "Grouped"} · {jobs.length}
+          </div>
+          <button
+            className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline"
+            onClick={() => ctx.onToggleExpandedGroup(groupId)}
+          >
+            Collapse
+          </button>
+        </div>
+        {groupNote && (
+          <div className="text-[11px] text-muted-foreground italic px-1">{groupNote}</div>
+        )}
+        <div className="space-y-2">
+          {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} driverName={driverNameOf?.(j)} />)}
+        </div>
+      </div>
+    );
+  }
+
+  // Collapsed stack — layered look
+  return (
+    <div className="relative">
+      {/* Fanned back layers */}
+      {jobs.length >= 3 && (
+        <div className={`absolute inset-x-2 -bottom-1.5 h-3 rounded-md border-2 ${tone} opacity-40`} />
+      )}
+      {jobs.length >= 2 && (
+        <div className={`absolute inset-x-1 -bottom-0.5 h-3 rounded-md border-2 ${tone} opacity-70`} />
+      )}
+      <div className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm ${tone}`}>
+        {/* Checkbox */}
+        <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={allSelected ? true : someSelected ? "indeterminate" : false}
+            onCheckedChange={toggleAll}
+            aria-label="Select group"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => ctx.onToggleExpandedGroup(groupId)}
+          className="w-full text-left"
+        >
+          <div className="flex items-center gap-2 text-[11px] text-primary font-semibold uppercase tracking-wide">
+            <Link2 className="h-3 w-3" />
+            <span className="truncate">{groupName || "Grouped"}</span>
+            <Badge variant="secondary" className="ml-auto text-[10px]">{jobs.length} trips · {totalPax} pax</Badge>
+          </div>
+          {driverNames.length > 0 && (
+            <div className="text-[11px] mt-0.5 truncate">
+              <span className="text-muted-foreground">Driver:</span>{" "}
+              <span className="font-medium">{driverNames.join(", ")}</span>
+            </div>
+          )}
+          <div className="mt-1 space-y-0.5">
+            {jobs.slice(0, 4).map((j) => (
+              <div key={j.id} className="flex items-center gap-1.5 text-[12px] min-w-0">
+                <span className="font-semibold w-10 shrink-0">{j.time?.slice(0, 5)}</span>
+                <span className="truncate">
+                  {j.from_location} <span className="text-muted-foreground">→</span> {j.to_location}
+                </span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                  {j.pax?.length ?? 0}p
+                </span>
+              </div>
+            ))}
+            {jobs.length > 4 && (
+              <div className="text-[10px] text-muted-foreground">+ {jobs.length - 4} more…</div>
+            )}
+          </div>
+          {groupNote && (
+            <div className="text-[11px] text-muted-foreground italic mt-1 truncate">{groupNote}</div>
+          )}
+          <div className="text-[10px] text-primary/70 mt-1">Tap to expand</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 /* ------------------------------ Trip card ------------------------------ */
 
