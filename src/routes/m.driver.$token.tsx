@@ -559,6 +559,79 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={lateOpen} onOpenChange={setLateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Report running late</DialogTitle>
+            <DialogDescription>
+              Sends a note to the coordinator (and to the client chat) so everyone can plan around the delay.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">How many minutes late?</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {[5, 10, 15, 20, 30, 45].map((m) => (
+                  <button key={m} type="button"
+                    className={`text-xs rounded-full border px-3 py-1.5 ${lateMinutes === m ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
+                    onClick={() => setLateMinutes(m)}>
+                    +{m} min
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Optional note</Label>
+              <Textarea rows={2} value={lateNote} onChange={(e) => setLateNote(e.target.value)}
+                placeholder="Traffic on the highway, still fuelling up…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLateOpen(false)}>Cancel</Button>
+            <Button disabled={lateMut.isPending} onClick={() => lateMut.mutate()}>
+              {lateMut.isPending ? "Sending…" : `Send "+${lateMinutes} min late"`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve deletion?</DialogTitle>
+            <DialogDescription>
+              The coordinator has requested this trip be removed from your list. Approving cannot be undone from here.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDelOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={approveDelMut.isPending}
+              onClick={() => { approveDelMut.mutate(); setConfirmDelOpen(false); }}>
+              Approve deletion
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmHideOpen} onOpenChange={setConfirmHideOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hide this trip from your list?</DialogTitle>
+            <DialogDescription>
+              You can restore it from the archived section any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmHideOpen(false)}>Cancel</Button>
+            <Button variant="secondary" disabled={hideMut.isPending}
+              onClick={() => { hideMut.mutate(); setConfirmHideOpen(false); }}>
+              <X className="h-4 w-4 mr-1" /> Hide
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </article>
   );
 }
