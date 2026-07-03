@@ -1034,16 +1034,20 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      .select("id, pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const label = (id as any)?.pax_name ?? "Passenger";
     const identityId = (id as any)?.id ?? null;
+    const paxId = (id as any)?.pax_id ?? null;
     let effectiveKind: "group" | "private" | "driver_client" = data.thread_kind;
     if (effectiveKind === "private" && !identityId) effectiveKind = "group";
+    if (effectiveKind === "driver_client" && !identityId && !paxId) effectiveKind = "group";
+    const scoped = effectiveKind === "private" || effectiveKind === "driver_client";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
       thread_kind: effectiveKind,
-      client_identity_id: effectiveKind === "private" ? identityId : null,
+      client_identity_id: scoped ? identityId : null,
+      pax_id: scoped ? paxId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
