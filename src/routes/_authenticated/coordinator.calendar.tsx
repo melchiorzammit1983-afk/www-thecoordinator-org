@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
+import { formatMaltaDateTime } from "@/lib/time";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
@@ -1009,7 +1010,7 @@ function GroupedStackCard({
       lines.push("");
       for (const j of res.jobs) {
         const when = j.pickup_at
-          ? new Date(j.pickup_at).toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+          ? formatMaltaDateTime(j.pickup_at, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
           : `${j.date} ${j.time?.slice(0, 5) ?? ""}`;
         const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
         const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
@@ -1520,7 +1521,7 @@ function TripMenu({
     onSuccess: (res: any) => {
       const url = `${window.location.origin}/m/driver/${res.token}`;
       const when = res.job.pickup_at
-        ? new Date(res.job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        ? formatMaltaDateTime(res.job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
         : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
       const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
       const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
@@ -1562,7 +1563,7 @@ function TripMenu({
     const url = `${window.location.origin}/t/${res.token}`;
     const j = res.job;
     const when = j.pickup_at
-      ? new Date(j.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+      ? formatMaltaDateTime(j.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
       : `${j.date}${j.time ? " " + j.time.slice(0, 5) : ""}`;
     const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
     const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
@@ -1820,7 +1821,7 @@ function DetailsSheetHost({
     onSuccess: (res: any) => {
       const url = `${window.location.origin}/m/driver/${res.token}`;
       const when = res.job.pickup_at
-        ? new Date(res.job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        ? formatMaltaDateTime(res.job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
         : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
       const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
       const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");

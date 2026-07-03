@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { formatMaltaDateTime, formatMaltaTime } from "@/lib/time";
 import {
   getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
@@ -323,10 +324,10 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     : "border-border";
 
   const dateLabel = job.pickup_at
-    ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", day: "2-digit", month: "short" })
+    ? formatMaltaDateTime(job.pickup_at, { weekday: "short", day: "2-digit", month: "short" })
     : job.date;
   const timeLabel = job.pickup_at
-    ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? formatMaltaTime(job.pickup_at)
     : job.time?.slice(0, 5);
 
   const labels = job.labels ?? [];

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { maltaWallTimeToUtcIso } from "./time";
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -555,9 +556,9 @@ export const createRecurringBookings = createServerFn({ method: "POST" })
     for (let i = 0; i < 7; i++) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       if (!data.weekdays.includes(d.getDay())) continue;
-      const [hh, mm] = data.time.split(":").map(Number);
-      const pickup = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm);
-      if (pickup.getTime() <= Date.now()) continue;
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const pickupIso = maltaWallTimeToUtcIso(dateStr, data.time);
+      if (new Date(pickupIso).getTime() <= Date.now()) continue;
       rows.push({
         company_id: link.company_id,
         name: data.name,
@@ -567,8 +568,8 @@ export const createRecurringBookings = createServerFn({ method: "POST" })
         from_location: data.from_location,
         to_location: data.to_location,
         time: `${data.time}:00`,
-        date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
-        pickup_at: pickup.toISOString(),
+        date: dateStr,
+        pickup_at: pickupIso,
         status: "pending",
       });
     }
@@ -1067,9 +1068,8 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
     const { data: id } = await supabaseAdmin.from("client_link_identities")
       .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const paxName = id?.pax_name ?? "Passenger";
-    const [y, mo, d] = data.date.split("-").map(Number);
-    const [hh, mm] = data.time.split(":").map(Number);
-    const pickup_at = new Date(Date.UTC(y, mo - 1, d, hh, mm)).toISOString();
+    const pickup_at = maltaWallTimeToUtcIso(data.date, data.time);
+
 
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { formatMaltaDateTime } from "@/lib/time";
 import {
   MapPin, Send, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus,
   CheckCircle2, Plane, Bell, BellOff, AlertTriangle, WifiOff, Users, Lock,
@@ -166,7 +167,7 @@ function ClientTripPortal() {
           {(job.to_location || "?")}{job.to_flight ? ` · ${job.to_flight}` : ""}
         </div>
         <div className="mt-1 text-sm opacity-90">
-          {job.pickup_at ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+          {job.pickup_at ? formatMaltaDateTime(job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : `${job.date}${job.time ? " · " + job.time.slice(0, 5) : ""}`}
         </div>
         {data.identity?.pax_name ? (

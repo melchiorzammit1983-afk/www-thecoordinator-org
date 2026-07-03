@@ -1,54 +1,115 @@
-## Goal
+## Problem
 
-When a partner splits a dispatched trip into 2+ vehicles, the creator's partner lane must show **one complete card per split child** (pax names, flight info, phone, labels, group, coord approval), each with its own chat and its own client portal link, so the coordinator can talk to the right client/driver for each split.
+Trip time drifts by the Malta UTC offset (+1 or +2h) between the coordinator and the driver/client apps.
 
-## Changes
+Example: coordinator creates a 09:00 trip → driver's card shows 11:00.
 
-### 1. `splitPaxToNewJob` — copy full trip context to each child (`src/lib/coordinator.functions.ts`)
+## Root cause
 
-Beyond what's already copied, when a partner-executor splits a dispatched trip, the new child job also inherits from the parent:
+`makePickupIso` in `src/lib/coordinator.functions.ts` stores the entered wall‑clock time as if it were UTC:
 
-- Flight: `from_flight`, `to_flight`, `flight_status`, `flight_status_note`, `flight_status_updated_at`, `flight_scheduled_at`, `flight_estimated_at`
-- Contact: `contact_phone`
-- Grouping: `group_id`, `group_name`, `group_note`, `grouped_count`, `grouped_at`
-- Approval/source: `coord_approved_at`, `source`
-- Client portal: **mint a fresh `client_link_token`** for the child (per-pax split → each child gets its own link; the moved passengers only see their own split)
-- Labels: copy `job_labels` rows from parent → child
+```ts
+const pickup = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
+```
 
-Non-partner split (owner splitting their own trip) keeps today's behavior plus the same field copy so the split card is complete on the owner side too.
+So 09:00 Malta gets written to the DB as `09:00Z`. The coordinator screens happen to look right because they render the raw `job.time` string, but the driver and client screens render `pickup_at` with `new Date(pickup_at).toLocaleTimeString()`, which converts to the device's local zone — in Malta (UTC+2 summer) that's 11:00.
 
-### 2. Client portal — moved pax follow their split
+The same UTC‑as‑local mistake exists in:
+- `combineDateAndTime` (flight status times) — `coordinator.functions.ts` ~L1020
+- `coordinator-public.functions.ts` public booking create (~L571) and client booking create (~L1072)
 
-- On split, if any moved pax has a `client_link_identities` row bound to the parent job's token, rebind those identities to the new child's token so the client's link resolves to the split they're actually on.
-- Send an updated portal link to the moved pax's client contact (reuse the existing notification code path used when trips are created; if there isn't one for this case, add a lightweight `notify_client_of_split` call).
+The driver/client renderers also never pin the display zone to Malta, so a driver whose phone is on a different timezone would see yet another time even after the storage bug is fixed.
 
-### 3. Chat — separate thread per child, creator can post in all
+## Fix
 
-- No schema change: `trip_messages` is already scoped by `job_id`, so children already have their own thread.
-- Confirm `TripChatDialog` opens for `chain_role === "creator_watching"` split-child cards and that the creator's post permission on `trip_messages` covers `company_id = creator` OR `origin_company_id = creator`. Add the missing policy branch if not.
+Two coordinated changes: store correctly, and always display in Malta time.
 
-### 4. Creator's partner lane rendering (`coordinator.calendar.tsx`)
+### 1. Store `pickup_at` as Malta wall‑clock → correct UTC
 
-- Filter already covers both parent and split children (`chain.includes(partner) || executor === partner`). Verify the split child has `chain_role = "creator_watching"` in `listJobs` (it does, because `executor_company_id ≠ creator`).
-- Ensure the parent card doesn't disappear when all pax have been moved off it — render it as "0 pax · fully split" instead of hiding.
-- Each child card shows: pax list, flight badge, contact phone action, chat button, client link, chain timeline dot for the partner that split it.
+Add a shared helper (DST‑safe, uses `Intl` to derive the Europe/Malta offset for the given date):
 
-### 5. Backfill migration
+```ts
+// src/lib/time.ts
+export function maltaWallTimeToUtcIso(date: string, time: string): string {
+  const [y, mo, d] = date.split("-").map(Number);
+  const [hh, mm, ss = 0] = time.split(":").map(Number);
+  // Naive UTC guess, then adjust by Malta's offset at that instant.
+  const guess = Date.UTC(y, mo - 1, d, hh, mm, ss);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Malta", hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(guess));
+  const get = (t: string) => Number(parts.find(p => p.type === t)!.value);
+  const asMalta = Date.UTC(get("year"), get("month") - 1, get("day"),
+                           get("hour"), get("minute"), get("second"));
+  const offsetMs = asMalta - guess;           // Malta − UTC at that instant
+  return new Date(guess - offsetMs).toISOString();
+}
 
-For every existing job that was created via `splitPaxToNewJob` before this fix (has `parent_job_id`, has `executor_company_id ≠ company_id`), copy the missing fields from parent and mint `client_link_token` if null.
+export const MALTA_TZ = "Europe/Malta";
+export function formatMaltaDateTime(iso: string, opts: Intl.DateTimeFormatOptions) {
+  return new Date(iso).toLocaleString([], { ...opts, timeZone: MALTA_TZ });
+}
+export function formatMaltaTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", timeZone: MALTA_TZ,
+  });
+}
+```
 
-## Technical notes
+Replace every naive `Date.UTC(y, mo-1, d, hh, mm)` pickup construction with `maltaWallTimeToUtcIso`:
 
-- `client_link_token` generation reuses the same helper used when a trip is first created (or `gen_random_uuid()`-style short token — will match existing scheme).
-- `job_labels` copy is a single `INSERT ... SELECT` inside `splitPaxToNewJob` scoped to the source job id.
-- No RLS change needed for the parent-lane visibility; creator already sees the child via `company_id = creator`.
-- The A→B→C statement chain already reflects splits because step 2 of the prior fix writes a `job_dispatch_hops` row per child.
+- `src/lib/coordinator.functions.ts` — `makePickupIso` (L40) and `combineDateAndTime` (L1020, use for flight scheduled/estimated stamps)
+- `src/lib/coordinator-public.functions.ts` — public booking create (~L571) and client booking create (~L1072)
 
-## Out of scope / to confirm later
+### 2. Always render `pickup_at` in Malta time
 
-- Merging split children back into one card — not requested.
-- SMS/email templating for the "your ride was split" notification wording — placeholder text for now; you can rewrite it after seeing it live.
+Swap `new Date(pickup_at).toLocaleTimeString(...)` / `toLocaleString(...)` calls to use `formatMaltaTime` / `formatMaltaDateTime` (or add `timeZone: "Europe/Malta"` inline) in:
 
-## Open question I still need from you
+- `src/routes/m.driver.$token.tsx` — L326, L329
+- `src/routes/m/client/$token.tsx` — any `pickup_at` labels
+- `src/routes/t.$token.tsx` — L169
+- `src/components/coordinator/TripDetailsSheet.tsx` — flight time labels (L526, L530, L536)
+- `src/routes/_authenticated/coordinator.calendar.tsx` — `when` labels at L1011‑1013, L1522‑1524, L1564‑1566, L1822‑1824
 
-Is there a specific way you want the **partner to notify you (creator) when they split** — a toast/inbox banner on your board, or is the split child card silently appearing in the partner lane enough? I'll default to "card appears + subtle 'new split' badge for 30s" unless you say otherwise.
+Coordinator lines that already show raw `job.time?.slice(0,5)` stay as‑is — they're the authoring string and remain correct.
+
+### 3. Backfill existing rows (data migration)
+
+Existing `pickup_at` values are off by the Malta offset. Rebuild them from the authoritative `(date, time)` columns so old trips display the same time on every screen after deploy:
+
+```sql
+UPDATE public.jobs
+SET pickup_at = (
+  ((date::text || ' ' || time::text) AT TIME ZONE 'Europe/Malta')
+)
+WHERE date IS NOT NULL AND time IS NOT NULL;
+
+UPDATE public.client_bookings
+SET pickup_at = (
+  ((date::text || ' ' || time::text) AT TIME ZONE 'Europe/Malta')
+)
+WHERE date IS NOT NULL AND time IS NOT NULL;
+```
+
+(Postgres `AT TIME ZONE 'Europe/Malta'` on a naive timestamp treats the value as Malta local and returns the correct UTC `timestamptz` — DST‑correct.)
+
+## Verification
+
+1. Create a new trip at 09:00. On coordinator, driver portal, and client portal it must read 09:00.
+2. Repeat with a trip in the opposite DST window (e.g. a January date) to confirm winter offset.
+3. Open a historical trip after the backfill: `time` column and displayed pickup should match on all three surfaces.
+4. Set the driver device timezone to UTC and reopen — driver card still shows 09:00 (Malta pin).
+
+## Files changed
+
+- `src/lib/time.ts` (new)
+- `src/lib/coordinator.functions.ts`
+- `src/lib/coordinator-public.functions.ts`
+- `src/routes/m.driver.$token.tsx`
+- `src/routes/m/client/$token.tsx`
+- `src/routes/t.$token.tsx`
+- `src/components/coordinator/TripDetailsSheet.tsx`
+- `src/routes/_authenticated/coordinator.calendar.tsx`
+- One SQL migration for the `pickup_at` backfill
