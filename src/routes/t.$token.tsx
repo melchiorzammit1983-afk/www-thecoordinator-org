@@ -788,3 +788,41 @@ function RebookPanel({ token, deviceId, lastFrom, lastTo }: {
     </div>
   );
 }
+
+function ClientTripMap({ driver, pickup, dropoff }: {
+  driver: { lat: number; lng: number; name: string };
+  pickup: string;
+  dropoff: string;
+}) {
+  // In-app map (embed — no external Google Maps app opens).
+  // Uses the classic embed URL which does not require an API key.
+  const src = `https://maps.google.com/maps?q=${driver.lat},${driver.lng}&z=14&output=embed`;
+  const directionsSrc = `https://maps.google.com/maps?saddr=${encodeURIComponent(pickup)}&daddr=${encodeURIComponent(dropoff)}&output=embed`;
+  const [showRoute, setShowRoute] = useState(false);
+  return (
+    <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 bg-white">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <MapPin className="h-3.5 w-3.5 text-teal-700" /> {driver.name}'s live location
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowRoute((v) => !v)}
+          className="text-xs font-medium text-teal-700 hover:underline"
+        >
+          {showRoute ? "Show driver" : "Show trip route"}
+        </button>
+      </div>
+      <iframe
+        key={showRoute ? "route" : "driver"}
+        title="Trip map"
+        src={showRoute ? directionsSrc : src}
+        className="w-full h-64 border-0"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        allowFullScreen
+      />
+    </div>
+  );
+}
+
