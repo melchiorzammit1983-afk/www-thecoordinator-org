@@ -359,11 +359,23 @@ export function TripDetailsSheet({
               <ul className="rounded-md border divide-y max-h-72 overflow-y-auto">
                 {pax.map((p) => {
                   const act = paxActivity?.[p.id];
-                  const online = act?.last_seen_at && (Date.now() - new Date(act.last_seen_at).getTime()) < 90_000;
+                  const presence = act?.presence ?? "never";
                   const msg = act?.last_message;
                   const isClientMsg = msg?.sender_kind === "client";
                   const isRead = !!msg?.read_by_coordinator_at;
                   const paxSos = sosByPax.get((p.name ?? "").trim().toLowerCase()) ?? [];
+                  const dotClass =
+                    presence === "online" ? "bg-emerald-500 ring-2 ring-emerald-200 animate-pulse"
+                    : presence === "away" ? "bg-amber-400"
+                    : "bg-slate-300";
+                  const dotTitle =
+                    presence === "online" ? "Online now"
+                    : presence === "away" ? (act?.last_seen_at ? `Last seen ${formatRelTime(act.last_seen_at)}` : "Opened before")
+                    : "Hasn't opened the link yet";
+                  const subLabel =
+                    presence === "online" ? "Online now · tap to chat"
+                    : presence === "away" ? `Away · last seen ${act?.last_seen_at ? formatRelTime(act.last_seen_at) : "recently"}`
+                    : "Not opened yet · your message will queue until they open the link";
                   return (
                     <li key={p.id} className="p-0">
                       <button
@@ -374,7 +386,7 @@ export function TripDetailsSheet({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate flex items-center gap-1.5">
-                            {online && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Online now" />}
+                            <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} title={dotTitle} aria-label={dotTitle} />
                             <span className="truncate">{p.name}</span>
                             {paxSos.length > 0 && (
                               <Badge className="h-4 px-1.5 text-[9px] bg-red-600 hover:bg-red-600 animate-pulse gap-1">
@@ -398,8 +410,8 @@ export function TripDetailsSheet({
                           </span>
 
                         </div>
-                        {msg && (
-                          <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3">
+                        {msg ? (
+                          <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground pl-3.5">
                             <span className="shrink-0 mt-0.5">
                               {isClientMsg
                                 ? (isRead
@@ -414,12 +426,8 @@ export function TripDetailsSheet({
                             </span>
                             <span className="shrink-0">{formatRelTime(msg.created_at)}</span>
                           </div>
-                        )}
-                        {!msg && act?.identity_id && (
-                          <div className="text-[10px] text-muted-foreground pl-3">Linked · no messages yet</div>
-                        )}
-                        {!msg && !act?.identity_id && (
-                          <div className="text-[10px] text-muted-foreground pl-3">Tap to message · shared thread until they pick their name</div>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground pl-3.5">{subLabel}</div>
                         )}
                       </button>
                     </li>
