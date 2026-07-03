@@ -969,6 +969,7 @@ export type Database = {
           driver_completed_at: string | null
           driver_hidden_at: string | null
           driver_id: string | null
+          driver_note: string | null
           driver_reported_km: number | null
           driver_started_at: string | null
           executor_company_id: string | null
@@ -1034,6 +1035,7 @@ export type Database = {
           driver_completed_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          driver_note?: string | null
           driver_reported_km?: number | null
           driver_started_at?: string | null
           executor_company_id?: string | null
@@ -1099,6 +1101,7 @@ export type Database = {
           driver_completed_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          driver_note?: string | null
           driver_reported_km?: number | null
           driver_started_at?: string | null
           executor_company_id?: string | null
