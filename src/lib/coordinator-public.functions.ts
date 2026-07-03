@@ -1069,8 +1069,8 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
       .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const paxName = id?.pax_name ?? "Passenger";
     const [y, mo, d] = data.date.split("-").map(Number);
-    const [hh, mm] = data.time.split(":").map(Number);
-    const pickup_at = new Date(Date.UTC(y, mo - 1, d, hh, mm)).toISOString();
+    const pickup_at = maltaWallTimeToUtcIso(data.date, data.time);
+
 
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
