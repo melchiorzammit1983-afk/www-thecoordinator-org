@@ -104,6 +104,8 @@ export function TripDetailsSheet({
     queryFn: () => paxActivityFn({ data: { job_id: job.id } }) as Promise<Record<string, {
       identity_id: string | null;
       last_seen_at: string | null;
+      first_seen_at: string | null;
+      presence: "online" | "away" | "never";
       last_message: { body: string; created_at: string; sender_kind: string; sender_label: string | null; read_by_coordinator_at: string | null } | null;
       unread_count: number;
     }>>,
