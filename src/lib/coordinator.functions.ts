@@ -145,10 +145,9 @@ export const listJobs = createServerFn({ method: "GET" })
     if (data.from) mineQ = mineQ.gte("date", data.from);
     if (data.to) mineQ = mineQ.lte("date", data.to);
 
-    let outQ = supabaseAdmin.from("jobs").select(cols + ", executor:executor_company_id(id,name)")
+    let outQ = supabaseAdmin.from("jobs").select(cols + ", executor:executor_company_id(id,name), origin:origin_company_id(id,name)")
       .contains("dispatch_chain_company_ids", [c.id])
       .neq("company_id", c.id)
-      .not("status", "in", "(completed,cancelled)")
       .order("pickup_at", { ascending: true });
     if (data.from) outQ = outQ.gte("date", data.from);
     if (data.to) outQ = outQ.lte("date", data.to);
@@ -171,21 +170,26 @@ export const listJobs = createServerFn({ method: "GET" })
     const mine = (mineRes.data ?? []).map((r: any) => ({
       ...r,
       external: false,
+      // I created it — am I still executor, or did I hand it off?
+      chain_role: (r.executor_company_id && r.executor_company_id !== c.id) ? "creator_watching" : "executor",
       labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
     }));
     const out = (outRes.data ?? []).map((r: any) => {
       const executorName = r.executor?.name ?? "Partner";
       const realDriver = r.drivers?.name ?? null;
+      const isExecutor = r.executor_company_id === c.id;
       return {
         ...r,
-        external: true,
+        external: !isExecutor,
+        chain_role: isExecutor ? "executor" : "hop_watching",
         executor_name: executorName,
+        origin_name: r.origin?.name ?? null,
         external_driver_name: realDriver,
-        // route into partner's virtual driver lane on my board
-        driver_id: partnerMap[r.executor_company_id ?? ""] ?? null,
-        drivers: realDriver
-          ? { name: `${executorName} → ${realDriver}` }
-          : { name: executorName },
+        // On the watcher board, route through partner lane; when I'm executor, keep real driver.
+        driver_id: isExecutor ? r.driver_id : (partnerMap[r.executor_company_id ?? ""] ?? null),
+        drivers: isExecutor
+          ? r.drivers
+          : (realDriver ? { name: `${executorName} → ${realDriver}` } : { name: executorName }),
         labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
       };
     });
