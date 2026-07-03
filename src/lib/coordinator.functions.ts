@@ -1259,6 +1259,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { company } = await assertJobInCompany(context, data.job_id);
+    await assertFeatureEnabled(company.id, "chat");
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
