@@ -103,9 +103,12 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const clientTabNeedsPax = role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId;
+
   function submit() {
     const body = text.trim();
     if (!body) return;
+    if (clientTabNeedsPax) { toast.error("Pick which passenger you're replying to."); return; }
     postMut.mutate(body);
   }
 
