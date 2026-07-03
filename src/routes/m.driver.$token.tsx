@@ -254,6 +254,19 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
+  const clientLiveFn = useServerFn(getClientLiveLocationDriver);
+
+  const activeForLive = !!job.driver_accepted_at && job.status !== "completed" && !job.deletion_requested_at;
+  const { data: clientLive } = useQuery({
+    queryKey: ["client-live", token, job.id],
+    enabled: activeForLive,
+    refetchInterval: activeForLive ? 8_000 : false,
+    queryFn: () => clientLiveFn({ data: { token, job_id: job.id } }) as Promise<{
+      latitude: number; longitude: number; accuracy_m: number | null;
+      captured_at: string; pax_name: string | null; mode: string;
+    } | null>,
+  });
+  const liveFresh = clientLive && (Date.now() - new Date(clientLive.captured_at).getTime()) < 90_000;
 
   const lateMut = useMutation({
     mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
