@@ -426,13 +426,6 @@ function CalendarPage() {
       {/* Live driver map */}
       <LiveMapPanel />
 
-      {/* Inbound (pending my decision) */}
-      <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
-
-
-      {/* Outbound trips now appear directly in partner lanes below */}
-
-
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
@@ -445,15 +438,6 @@ function CalendarPage() {
             : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
-
-      {dispatchState && (
-        <DispatchDialog
-          open={!!dispatchState}
-          onOpenChange={(v) => { if (!v) setDispatchState(null); }}
-          job={dispatchState.job}
-          preselectedPartnerId={dispatchState.partnerId}
-        />
-      )}
 
       <JobFormDialog open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []} onSaved={() => refetch()} />
       <JobFormDialog
