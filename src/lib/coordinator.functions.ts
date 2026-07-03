@@ -1534,12 +1534,14 @@ export const getClientPresenceCoord = createServerFn({ method: "GET" })
 
 export const listPaxActivityCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().min(1) }).parse(i))
   .handler(async ({ data, context }) => {
-    try { await assertJobInCompany(context, data.job_id); } catch { return {}; }
+    const jobId = String(data.job_id).split("::")[0];
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) return {};
+    try { await assertJobInCompany(context, jobId); } catch { return {}; }
 
     const supabaseAdmin = await getAdminClient();
-    const jobIds = await siblingGroupJobIds(supabaseAdmin, data.job_id);
+    const jobIds = await siblingGroupJobIds(supabaseAdmin, jobId);
 
     const [{ data: paxRows }, { data: jobsRows }, { data: msgRows }] = await Promise.all([
       supabaseAdmin.from("pax").select("id, name, job_id").in("job_id", jobIds),
@@ -2521,17 +2523,19 @@ export const listSosForJob = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
     z.object({
-      job_id: z.string().uuid(),
+      job_id: z.string().min(1),
       include_ack: z.boolean().optional().default(false),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
-    await assertJobInCompany(context, data.job_id);
+    const jobId = String(data.job_id).split("::")[0];
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) return [];
+    try { await assertJobInCompany(context, jobId); } catch { return []; }
     const supabaseAdmin = await getAdminClient();
     let q = supabaseAdmin
       .from("client_sos_events")
       .select("id, job_id, pax_name, latitude, longitude, note, created_at, acknowledged_at, acknowledged_by")
-      .eq("job_id", data.job_id)
+      .eq("job_id", jobId)
       .order("created_at", { ascending: false })
       .limit(100);
     if (!data.include_ack) q = q.is("acknowledged_at", null);
