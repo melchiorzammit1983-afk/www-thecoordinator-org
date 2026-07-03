@@ -1128,10 +1128,15 @@ export const heartbeatClientPortal = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const supabaseAdmin = await getAdminClient();
+    const nowIso = new Date().toISOString();
+    // Preserve first_seen_at if row exists; set it on first heartbeat.
+    const { data: existing } = await supabaseAdmin.from("client_link_identities")
+      .select("first_seen_at").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     await supabaseAdmin.from("client_link_identities").upsert({
       token: data.token,
       device_id: data.device_id,
-      last_seen_at: new Date().toISOString(),
+      last_seen_at: nowIso,
+      first_seen_at: (existing as any)?.first_seen_at ?? nowIso,
     } as never);
     return { ok: true };
   });
