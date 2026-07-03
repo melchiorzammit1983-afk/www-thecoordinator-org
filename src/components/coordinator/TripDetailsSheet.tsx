@@ -640,6 +640,44 @@ export function TripDetailsSheet({
   );
 }
 
+function PaxLinkButton({ jobId, paxId, paxName }: { jobId: string; paxId: string; paxName: string }) {
+  const linkFn = useServerFn(getClientTripLink);
+  const [busy, setBusy] = useState(false);
+  const onClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res: any = await linkFn({ data: { job_id: jobId } });
+      const url = `${window.location.origin}/t/${res.token}?pax=${paxId}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success(`Link for ${paxName} copied`);
+      } catch {
+        toast.error("Copy failed — " + url);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not create link");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as React.MouseEvent); }}
+      title={`Copy personal link for ${paxName}`}
+      aria-label={`Copy personal link for ${paxName}`}
+      className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary cursor-pointer"
+    >
+      <Link2 className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
 function TripLiveLocation({
   driverId,
   sosPoints = [],
