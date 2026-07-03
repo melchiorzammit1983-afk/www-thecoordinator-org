@@ -28,6 +28,7 @@ const INSTRUCTIONS: string[][] = [
   ["4. Contact Number: include country code with + (e.g. +35699123456)."],
   ["5. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
   ["6. Quantity: number of passengers."],
+  ["7. Keep the Contact Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
   [""],
   ["When done, select your filled rows (including the header) and copy them."],
   ["Paste into the coordinator app under Add trip → Paste bulk."],
