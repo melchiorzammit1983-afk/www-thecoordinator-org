@@ -169,25 +169,25 @@ export function TripDetailsSheet({
   const holdRef = useRef<{ start: number | null; raf: number | null }>({ start: null, raf: null });
   const startHold = () => {
     if (!flightIssue || !newTime || rescheduleMut.isPending) return;
-    holdRef.start = performance.now();
+    holdRef.current.start = performance.now();
     const tick = () => {
-      if (holdRef.start == null) return;
-      const p = Math.min(1, (performance.now() - holdRef.start) / 1000);
+      if (holdRef.current.start == null) return;
+      const p = Math.min(1, (performance.now() - holdRef.current.start) / 1000);
       setHoldPct(p);
       if (p >= 1) {
-        holdRef.start = null;
+        holdRef.current.start = null;
         setHoldPct(0);
         rescheduleMut.mutate();
       } else {
-        holdRef.raf = requestAnimationFrame(tick);
+        holdRef.current.raf = requestAnimationFrame(tick);
       }
     };
-    holdRef.raf = requestAnimationFrame(tick);
+    holdRef.current.raf = requestAnimationFrame(tick);
   };
   const cancelHold = () => {
-    holdRef.start = null;
-    if (holdRef.raf != null) cancelAnimationFrame(holdRef.raf);
-    holdRef.raf = null;
+    holdRef.current.start = null;
+    if (holdRef.current.raf != null) cancelAnimationFrame(holdRef.current.raf);
+    holdRef.current.raf = null;
     setHoldPct(0);
   };
 
