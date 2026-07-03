@@ -556,9 +556,9 @@ export const createRecurringBookings = createServerFn({ method: "POST" })
     for (let i = 0; i < 7; i++) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       if (!data.weekdays.includes(d.getDay())) continue;
-      const [hh, mm] = data.time.split(":").map(Number);
-      const pickup = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm);
-      if (pickup.getTime() <= Date.now()) continue;
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const pickupIso = maltaWallTimeToUtcIso(dateStr, data.time);
+      if (new Date(pickupIso).getTime() <= Date.now()) continue;
       rows.push({
         company_id: link.company_id,
         name: data.name,
@@ -568,8 +568,8 @@ export const createRecurringBookings = createServerFn({ method: "POST" })
         from_location: data.from_location,
         to_location: data.to_location,
         time: `${data.time}:00`,
-        date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
-        pickup_at: pickup.toISOString(),
+        date: dateStr,
+        pickup_at: pickupIso,
         status: "pending",
       });
     }
