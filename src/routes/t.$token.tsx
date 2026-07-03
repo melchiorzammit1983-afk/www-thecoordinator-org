@@ -192,7 +192,7 @@ function ClientTripPortal() {
         {data.identity?.pax_name ? (
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
             <span>Signed in as <b>{data.identity.pax_name}</b></span>
-            {uniquePax.length > 1 && (
+            {uniquePax.length > 1 && !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax")) && (
               <button onClick={() => setPickerOpen(true)} className="underline underline-offset-2 opacity-90 hover:opacity-100">
                 Change
               </button>
