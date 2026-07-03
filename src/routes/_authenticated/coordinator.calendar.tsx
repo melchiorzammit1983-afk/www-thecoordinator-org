@@ -887,9 +887,17 @@ function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; c
 function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string; partnerName: string; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `partner:${partnerId}` });
   const items = bucketByGroup(jobs);
+  const color = partnerColor(partnerId);
   return (
-    <div ref={setNodeRef} className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "ring-2 ring-amber-500 bg-amber-100/60" : ""}`}>
-      <div className="text-sm font-medium truncate flex items-center gap-1"><PlaneTakeoff className="h-3.5 w-3.5 text-amber-600" /> Partner · {partnerName}</div>
+    <div
+      ref={setNodeRef}
+      style={{ borderColor: color, boxShadow: isOver ? `inset 0 0 0 2px ${color}` : undefined }}
+      className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "bg-amber-100/60" : ""}`}
+    >
+      <div className="text-sm font-medium truncate flex items-center gap-1">
+        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <PlaneTakeoff className="h-3.5 w-3.5" style={{ color }} /> Partner · {partnerName}
+      </div>
       <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
       <div className="space-y-2">
         {jobs.length === 0
@@ -899,6 +907,7 @@ function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string;
     </div>
   );
 }
+
 
 function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
