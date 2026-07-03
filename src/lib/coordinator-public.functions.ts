@@ -234,6 +234,10 @@ export const driverFinalizeTrip = createServerFn({ method: "POST" })
     if (data.driver_reported_km !== undefined) {
       patch.driver_reported_km = data.driver_reported_km;
     }
+    if (data.note !== undefined) {
+      patch.driver_note = data.note ?? null;
+    }
+
 
     const { error } = await supabaseAdmin.from("jobs")
       .update(patch as never).eq("id", data.job_id);
