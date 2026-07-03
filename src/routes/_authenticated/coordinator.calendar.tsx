@@ -1643,18 +1643,23 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   );
 }
 
-function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
+function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job; preselectedPartnerId?: string }) {
   const [partnerId, setPartnerId] = useState<string>("");
   const [note, setNote] = useState("");
   const qc = useQueryClient();
   const listConn = useServerFn(listConnections);
   const dispatchFn = useServerFn(dispatchJobToPartner);
   const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
+  useEffect(() => {
+    if (open && preselectedPartnerId) setPartnerId(preselectedPartnerId);
+    if (!open) { setPartnerId(""); setNote(""); }
+  }, [open, preselectedPartnerId]);
   const mut = useMutation({
     mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
-    onSuccess: () => { toast.success("Dispatched"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
+    onSuccess: () => { toast.success("Sent to partner"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
     onError: (e: any) => toast.error(e.message),
   });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
