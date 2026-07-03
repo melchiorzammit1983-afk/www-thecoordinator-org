@@ -222,7 +222,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const from = get("from");
     const to = get("to");
     const name = get("name");
-    const phone = normalizePhone(get("phone"));
+    const phone = normalizePhone(expandScientific(get("phone")));
     const type = get("type");
     const qtyRaw = get("qty");
     const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
