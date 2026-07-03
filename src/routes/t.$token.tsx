@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { cn } from "@/lib/utils";
+import { linkify } from "@/lib/linkify";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
 
 
@@ -744,7 +745,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
                         mine || m.is_sos ? "opacity-70" : "text-muted-foreground")}>
                         {m.sender_label ?? m.sender_kind} · {new Date(m.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })}
                       </div>
-                      <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                      <div className="whitespace-pre-wrap break-words">{linkify(m.body)}</div>
                     </div>
                   </div>
                 );

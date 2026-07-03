@@ -9,6 +9,7 @@ import {
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
   driverReportLate,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
+  getClientLiveLocationDriver,
 } from "@/lib/coordinator-public.functions";
 
 
@@ -28,6 +29,7 @@ import {
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 
 import {
@@ -252,6 +254,19 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
+  const clientLiveFn = useServerFn(getClientLiveLocationDriver);
+
+  const activeForLive = !!job.driver_accepted_at && job.status !== "completed" && !job.deletion_requested_at;
+  const { data: clientLive } = useQuery({
+    queryKey: ["client-live", token, job.id],
+    enabled: activeForLive,
+    refetchInterval: activeForLive ? 8_000 : false,
+    queryFn: () => clientLiveFn({ data: { token, job_id: job.id } }) as Promise<{
+      latitude: number; longitude: number; accuracy_m: number | null;
+      captured_at: string; pax_name: string | null; mode: string;
+    } | null>,
+  });
+  const liveFresh = clientLive && (Date.now() - new Date(clientLive.captured_at).getTime()) < 90_000;
 
   const lateMut = useMutation({
     mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
@@ -458,6 +473,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           </div>
         )}
       </div>
+
+      {liveFresh && clientLive && (
+        <ClientLiveMiniMap
+          lat={clientLive.latitude}
+          lng={clientLive.longitude}
+          paxName={clientLive.pax_name}
+          capturedAt={clientLive.captured_at}
+        />
+      )}
 
       {/* Actions */}
       <div className="p-3 pt-3 grid grid-cols-2 gap-2">
