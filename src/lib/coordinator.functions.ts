@@ -1852,16 +1852,8 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     // Feature gate — admin can disable per company
     const { data: co } = await supabaseAdmin
       .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
-    if (co) {
-      const { data: ent } = await supabaseAdmin
-        .from("company_feature_entitlements")
-        .select("enabled, expires_at")
-        .eq("company_id", co.id).eq("feature", "ai_extraction").maybeSingle();
-      if (ent) {
-        const expired = ent.expires_at ? new Date(ent.expires_at).getTime() <= Date.now() : false;
-        if (!ent.enabled || expired) throw new Error("AI extraction is disabled for your company");
-      }
-    }
+    if (co) await assertFeatureEnabled(co.id, "ai_extraction");
+
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("AI is not configured");
