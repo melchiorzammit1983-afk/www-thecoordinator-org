@@ -1435,16 +1435,19 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
     const tokens = (jobsRows ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
     const { data: idents } = tokens.length
       ? await supabaseAdmin.from("client_link_identities")
-          .select("id, token, pax_id, pax_name, last_seen_at").in("token", tokens)
+          .select("id, token, pax_id, pax_name, last_seen_at, first_seen_at").in("token", tokens)
       : { data: [] as any[] };
 
     const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-    type Ident = { id: string; pax_id: string | null; pax_name: string | null; last_seen_at: string | null };
+    type Ident = { id: string; pax_id: string | null; pax_name: string | null; last_seen_at: string | null; first_seen_at: string | null };
     const identsArr = (idents ?? []) as Ident[];
 
+    const now = Date.now();
     const out: Record<string, {
       identity_id: string | null;
       last_seen_at: string | null;
+      first_seen_at: string | null;
+      presence: "online" | "away" | "never";
       last_message: { body: string; created_at: string; sender_kind: string; sender_label: string | null; read_by_coordinator_at: string | null } | null;
       unread_count: number;
     }> = {};
@@ -1456,17 +1459,33 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
 
       let msgs = (msgRows ?? []).filter((m: any) => m.sender_kind !== "coordinator");
       if (ident) {
-        msgs = msgs.filter((m: any) => m.client_identity_id === ident.id || (m.thread_kind === "group" && m.client_identity_id === null));
+        msgs = msgs.filter((m: any) =>
+          m.client_identity_id === ident.id ||
+          m.pax_id === p.id ||
+          (m.thread_kind === "group" && m.client_identity_id === null && !m.pax_id)
+        );
       } else {
-        // no identity yet — only surface group messages that could be from anyone
-        msgs = msgs.filter((m: any) => m.sender_kind === "client" && m.thread_kind === "group");
+        // Include queued coordinator messages tied to this pax slot + group client messages
+        msgs = (msgRows ?? []).filter((m: any) =>
+          m.pax_id === p.id ||
+          (m.sender_kind === "client" && m.thread_kind === "group")
+        );
       }
       const last = msgs.length ? msgs[msgs.length - 1] : null;
       const unread = msgs.filter((m: any) => m.sender_kind === "client" && !m.read_by_coordinator_at).length;
 
+      const lastSeen = ident?.last_seen_at ?? null;
+      const firstSeen = ident?.first_seen_at ?? null;
+      const presence: "online" | "away" | "never" =
+        lastSeen && (now - new Date(lastSeen).getTime()) < 60_000 ? "online"
+        : (lastSeen || firstSeen) ? "away"
+        : "never";
+
       out[p.id] = {
         identity_id: ident?.id ?? null,
-        last_seen_at: ident?.last_seen_at ?? null,
+        last_seen_at: lastSeen,
+        first_seen_at: firstSeen,
+        presence,
         last_message: last ? {
           body: last.body, created_at: last.created_at,
           sender_kind: last.sender_kind, sender_label: last.sender_label,
