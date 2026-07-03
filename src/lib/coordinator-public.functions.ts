@@ -937,13 +937,24 @@ export const chooseClientIdentity = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await loadJobByClientToken(data.token);
-    const { error } = await supabaseAdmin.from("client_link_identities").upsert({
+    const nowIso = new Date().toISOString();
+    const { data: upserted, error } = await supabaseAdmin.from("client_link_identities").upsert({
       token: data.token, device_id: data.device_id,
       pax_id: data.pax_id, pax_name: data.pax_name,
-      chosen_at: new Date().toISOString(),
-    } as never);
+      chosen_at: nowIso,
+      last_seen_at: nowIso,
+    } as never).select("id").single();
     if (error) throw new Error(error.message);
-    return { ok: true };
+    const identityId = (upserted as any)?.id ?? null;
+    // Attach any coordinator messages that were queued to this pax slot before
+    // the passenger picked their name, so the private thread continues seamlessly.
+    if (identityId && data.pax_id) {
+      await supabaseAdmin.from("trip_messages")
+        .update({ client_identity_id: identityId })
+        .eq("pax_id", data.pax_id)
+        .is("client_identity_id", null);
+    }
+    return { ok: true, identity_id: identityId };
   });
 
 export const listClientTripMessages = createServerFn({ method: "GET" })
