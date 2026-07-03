@@ -99,6 +99,8 @@ export function TripDetailsSheet({
   const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
 
+  const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
     queryFn: () => paxActivityFn({ data: { job_id: job.id } }) as Promise<Record<string, {
@@ -109,8 +111,8 @@ export function TripDetailsSheet({
       last_message: { body: string; created_at: string; sender_kind: string; sender_label: string | null; read_by_coordinator_at: string | null } | null;
       unread_count: number;
     }>>,
-    enabled: open,
-    refetchInterval: open ? 20_000 : false,
+    enabled: open && isRealJobId,
+    refetchInterval: open && isRealJobId ? 20_000 : false,
   });
 
   const sosListFn = useServerFn(listSosForJob);
@@ -123,8 +125,8 @@ export function TripDetailsSheet({
       latitude: number | null; longitude: number | null; note: string | null; created_at: string;
     }>>,
 
-    enabled: open,
-    refetchInterval: open ? 15_000 : false,
+    enabled: open && isRealJobId,
+    refetchInterval: open && isRealJobId ? 15_000 : false,
   });
   const openSos = sosRows ?? [];
   const sosByPax = new Map<string, typeof openSos>();
