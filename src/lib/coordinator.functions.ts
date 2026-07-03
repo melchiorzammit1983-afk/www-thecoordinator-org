@@ -1620,6 +1620,16 @@ export const buildStatement = createServerFn({ method: "POST" })
         driver_accepted_at: j.driver_accepted_at,
         deletion_requested_at: j.deletion_requested_at,
         created_at: j.created_at,
+        price_amount: j.price_amount != null ? Number(j.price_amount) : null,
+        price_currency: j.price_currency ?? "",
+        payment_method: j.payment_method ?? "",
+        price_display: j.price_amount != null
+          ? `${Number(j.price_amount).toFixed(2)} ${j.price_currency ?? ""}`.trim()
+          : "",
+        price_set_by: j.price_set_by ?? "",
+        driver_actual_minutes: j.driver_actual_minutes ?? null,
+        driver_reported_km: j.driver_reported_km != null ? Number(j.driver_reported_km) : null,
+
         
         hops: hops.map((h: any) => ({
           index: h.hop_index,
