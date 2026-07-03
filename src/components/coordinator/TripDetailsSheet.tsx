@@ -643,7 +643,7 @@ export function TripDetailsSheet({
 function PaxLinkButton({ jobId, paxId, paxName }: { jobId: string; paxId: string; paxName: string }) {
   const linkFn = useServerFn(getClientTripLink);
   const [busy, setBusy] = useState(false);
-  const onClick = async (e: React.MouseEvent) => {
+  const onClick = async (e: ReactMouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (busy) return;
@@ -668,7 +668,7 @@ function PaxLinkButton({ jobId, paxId, paxName }: { jobId: string; paxId: string
       role="button"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as React.MouseEvent); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as ReactMouseEvent); }}
       title={`Copy personal link for ${paxName}`}
       aria-label={`Copy personal link for ${paxName}`}
       className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary cursor-pointer"
