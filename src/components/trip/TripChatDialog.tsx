@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { listTripMessages, postTripMessage } from "@/lib/coordinator-public.functions";
 import { listTripMessagesCoord, postTripMessageCoord } from "@/lib/coordinator.functions";
+import { linkify } from "@/lib/linkify";
 
 type Msg = {
   id: string;
