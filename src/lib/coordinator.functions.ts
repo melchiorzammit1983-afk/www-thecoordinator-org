@@ -1140,7 +1140,7 @@ export const getTripPricing = createServerFn({ method: "GET" })
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const { data: row, error } = await supabaseAdmin.from("jobs")
-      .select("id, price_amount, price_currency, payment_method, payment_status, price_set_by, price_set_at, driver_started_at, driver_completed_at, driver_actual_minutes, driver_reported_km")
+      .select("id, price_amount, price_currency, payment_method, payment_status, price_set_by, price_set_at, driver_started_at, driver_completed_at, driver_actual_minutes, driver_reported_km, driver_note")
       .eq("id", data.job_id).maybeSingle();
     if (error) throw new Error(error.message);
     return row ?? null;
