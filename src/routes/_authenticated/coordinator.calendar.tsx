@@ -1220,31 +1220,15 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
-              {job.chain_role === "creator_watching" && (
-                <Badge variant="outline" className="text-[10px] border-amber-500/60 text-amber-700 dark:text-amber-400">
-                  Watching · handed to {job.executor_name ?? "partner"}
-                </Badge>
-              )}
-              {job.chain_role === "hop_watching" && job.external && (
-                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
-                </Badge>
-              )}
-              {job.external && !job.chain_role && (
-                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
-                </Badge>
-              )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
             {job.chain_names && job.chain_names.length >= 2 && (
               <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
                 {job.chain_names.map((name, i) => {
                   const isLast = i === (job.chain_names!.length - 1);
-                  const dotColor = i === 0 ? "hsl(var(--muted-foreground))" : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
                   return (
                     <span key={`${i}-${name}`} className="inline-flex items-center gap-1">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground" />
                       <span className={isLast ? "font-medium text-foreground" : ""}>{name}</span>
                       {!isLast && <ChevronRight className="h-3 w-3 opacity-60" />}
                     </span>
