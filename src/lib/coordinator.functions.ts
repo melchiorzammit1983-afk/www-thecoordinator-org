@@ -1489,6 +1489,8 @@ export const buildStatement = createServerFn({ method: "POST" })
         flightorship, from_flight, to_flight, flight_status, flight_status_note,
         clientcompanyname, vehicle, driver_id, driver_accepted_at, deletion_requested_at,
         created_at, updated_at, dispatch_status,
+        price_amount, price_currency, payment_method, price_set_by, price_set_at,
+        driver_actual_minutes, driver_reported_km, driver_started_at, driver_completed_at,
         drivers(id,name,phone,vehicle),
         pax(id,name,status,boarded_at),
         job_labels(trip_labels(id,name,color)),
@@ -1496,6 +1498,7 @@ export const buildStatement = createServerFn({ method: "POST" })
       `)
       .order("pickup_at", { ascending: true })
       .limit(HARD_CAP + 1);
+
 
     // Company scope filter
     if (data.company_scope === "own") {
