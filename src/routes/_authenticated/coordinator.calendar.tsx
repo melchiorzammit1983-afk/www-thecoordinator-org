@@ -124,7 +124,12 @@ type Job = {
   source?: string | null;
   coord_approved_at?: string | null;
   parent_job_id?: string | null;
+  chain_names?: string[];
+  dispatch_status?: string | null;
+  dispatch_chain_company_ids?: string[] | null;
+  executor_company_id?: string | null;
 };
+
 
 
 type Driver = { id: string; name: string; vehicle: string | null };
