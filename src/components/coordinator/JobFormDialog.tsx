@@ -358,22 +358,40 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <Label>Paste trips</Label>
-          {aiEnabled && (
-            <Button
-              type="button" size="sm" variant="outline"
-              disabled={aiMut.isPending || raw.trim().length < 3}
-              onClick={() => aiMut.mutate()}
-              className="h-7"
-            >
-              <Sparkles className="h-3 w-3 mr-1" />
-              {aiMut.isPending ? "Understanding…" : "Understand with AI"}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" size="sm" variant="outline" className="h-7">
+                  <FileDown className="h-3 w-3 mr-1" />
+                  Template
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadExcelTemplate()}>
+                  Microsoft Excel (.xlsx)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadGoogleSheetsTemplate()}>
+                  Google Sheets (.csv)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {aiEnabled && (
+              <Button
+                type="button" size="sm" variant="outline"
+                disabled={aiMut.isPending || raw.trim().length < 3}
+                onClick={() => aiMut.mutate()}
+                className="h-7"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                {aiMut.isPending ? "Understanding…" : "Understand with AI"}
+              </Button>
+            )}
+          </div>
         </div>
         <Textarea
           rows={10} value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          placeholder={"📅Wed 01 Jul 2026⏰11:00\n👤Names\n*🔁 ELMER CLEMENTE AGUINALDO\n•🔁 NIXON KALATHILAPARAMBIL VINCENT\n🏢 rosetti\n📍 From: cerviola\n📍 To: Airport\n\n— or plain text / email / WhatsApp in any language —"}
+          placeholder={"Paste rows copied from your Excel or Google Sheet (with the template headers),\nor a WhatsApp/email message in any language.\n\nExample sheet paste:\nPickup Date\tPickup Time\tPickup Address\tDelivery Address\tCustomer Name\tContact Number\tTransport Type\tQuantity"}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
