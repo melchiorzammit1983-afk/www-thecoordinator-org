@@ -461,6 +461,7 @@ export function TripDetailsSheet({
                                 {p.status ?? "pending"}
                               </span>
                             )}
+                            <PaxLinkButton jobId={job.id} paxId={p.id} paxName={p.name} />
                             <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
                           </span>
 
