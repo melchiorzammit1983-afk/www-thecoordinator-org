@@ -27,11 +27,12 @@ type Props = {
   role: "driver" | "coordinator";
   token?: string; // required for driver
   identityId?: string | null;
+  paxId?: string | null;
   threadKind?: "all" | "private" | "group";
   paxName?: string | null;
 };
 
-export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, identityId, threadKind, paxName }: Props) {
+export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, identityId, paxId, threadKind, paxName }: Props) {
   const qc = useQueryClient();
   const listDrv = useServerFn(listTripMessages);
   const postDrv = useServerFn(postTripMessage);
