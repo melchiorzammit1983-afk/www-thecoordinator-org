@@ -1282,6 +1282,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({
     job_id: z.string().uuid(),
     identity_id: z.string().uuid().nullish(),
+    pax_id: z.string().uuid().nullish(),
     thread_kind: z.enum(["all", "private", "group"]).optional().default("all"),
   }).parse(i))
   .handler(async ({ data, context }) => {
@@ -1289,21 +1290,31 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     let filtered = (rows ?? []) as any[];
-    if (data.thread_kind === "private" && data.identity_id) {
+
+    // If a pax_id was provided but no identity_id, look up the identity tied to that pax.
+    let effectiveIdentityId: string | null = data.identity_id ?? null;
+    if (data.pax_id && !effectiveIdentityId) {
+      const { data: ident } = await supabaseAdmin
+        .from("client_link_identities")
+        .select("id").eq("pax_id", data.pax_id).order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+      effectiveIdentityId = (ident as any)?.id ?? null;
+    }
+
+    if (data.thread_kind === "private" && (effectiveIdentityId || data.pax_id)) {
       filtered = filtered.filter((r) =>
         r.sender_kind === "driver" ||
-        r.client_identity_id === data.identity_id ||
-        (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id)
+        (effectiveIdentityId && r.client_identity_id === effectiveIdentityId) ||
+        (data.pax_id && r.pax_id === data.pax_id) ||
+        (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id && !r.pax_id)
       );
     } else if (data.thread_kind === "group") {
       filtered = filtered.filter((r) =>
         r.sender_kind === "driver" ||
-        r.thread_kind === "group" ||
-        r.thread_kind == null
+        ((r.thread_kind === "group" || r.thread_kind == null) && !r.pax_id)
       );
     }
     const unreadIds = filtered.filter((r) =>
@@ -1324,6 +1335,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
       job_id: z.string().uuid(),
       body: z.string().trim().min(1).max(4000),
       identity_id: z.string().uuid().nullish(),
+      pax_id: z.string().uuid().nullish(),
       thread_kind: z.enum(["group", "private"]).optional().default("group"),
     }).parse(i),
   )
@@ -1333,7 +1345,18 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
-    const isPrivate = data.thread_kind === "private" && !!data.identity_id;
+
+    // Resolve identity from pax_id if not provided (so once a passenger picks
+    // their name the private thread continues seamlessly).
+    let identityId: string | null = data.identity_id ?? null;
+    if (data.pax_id && !identityId) {
+      const { data: ident } = await supabaseAdmin
+        .from("client_link_identities")
+        .select("id").eq("pax_id", data.pax_id).order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+      identityId = (ident as any)?.id ?? null;
+    }
+
+    const isPrivate = data.thread_kind === "private" && (!!identityId || !!data.pax_id);
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: company.id,
@@ -1341,7 +1364,8 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
       sender_label: label,
       body: data.body,
       thread_kind: isPrivate ? "private" : "group",
-      client_identity_id: isPrivate ? data.identity_id : null,
+      client_identity_id: isPrivate ? identityId : null,
+      pax_id: isPrivate ? (data.pax_id ?? null) : null,
     } as any);
     if (error) throw new Error(error.message);
     return { ok: true };
