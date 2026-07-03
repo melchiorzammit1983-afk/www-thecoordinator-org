@@ -6,14 +6,10 @@ import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSenso
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import {
-  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
+  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight,
   Pencil, Sparkles,
 } from "lucide-react";
-import {
-  listConnections, dispatchJobToPartner, recallPartnerDispatch,
-  listIncomingDispatches, listOutboundDispatches, respondToDispatch,
-} from "@/lib/collab.functions";
 
 
 import {
