@@ -474,10 +474,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             </Button>
             {nextStatus && (
               <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
-                onClick={() => statusMut.mutate(nextStatus.value)}>
+                onClick={() => {
+                  if (nextStatus.value === "completed") setSummaryOpen(true);
+                  else statusMut.mutate(nextStatus.value);
+                }}>
                 {nextStatus.label}
               </Button>
             )}
+
             {job.status !== "completed" && (
               <Button variant="outline" className="h-10"
                 onClick={() => setLateOpen(true)}>
