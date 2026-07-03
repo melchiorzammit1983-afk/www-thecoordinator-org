@@ -38,7 +38,7 @@ async function assertFeatureEnabled(companyId: string, feature: string) {
   }
 }
 
-import { maltaWallTimeToUtcIso } from "./time";
+
 
 function makePickupIso(date: string, time: string) {
   try {
