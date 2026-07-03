@@ -474,6 +474,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         )}
       </div>
 
+      {liveFresh && clientLive && (
+        <ClientLiveMiniMap
+          lat={clientLive.latitude}
+          lng={clientLive.longitude}
+          paxName={clientLive.pax_name}
+          capturedAt={clientLive.captured_at}
+        />
+      )}
+
       {/* Actions */}
       <div className="p-3 pt-3 grid grid-cols-2 gap-2">
         {!accepted && !job.deletion_requested_at && (
