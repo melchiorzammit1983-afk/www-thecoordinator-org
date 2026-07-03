@@ -250,6 +250,51 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const recallPartnerDispatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, dispatch_chain_company_ids, dispatch_status")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job) throw new Error("Trip not found");
+    if (job.company_id !== c.id) throw new Error("Only the trip creator can recall a hand-off");
+
+    const { data: hops, error: hopReadError } = await supabaseAdmin
+      .from("job_dispatch_hops")
+      .select("id, hop_index, from_company_id, to_company_id, status")
+      .eq("job_id", data.job_id)
+      .order("hop_index", { ascending: false })
+      .limit(1);
+    if (hopReadError) throw new Error(hopReadError.message);
+    const latest = hops?.[0];
+    if (!latest) throw new Error("No hand-off to recall");
+    if (latest.status !== "pending") throw new Error("Only pending hand-offs can be recalled");
+
+    const { error: delError } = await supabaseAdmin
+      .from("job_dispatch_hops").delete().eq("id", latest.id);
+    if (delError) throw new Error(delError.message);
+
+    const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
+    const nextChain = chain.filter((id) => id !== latest.to_company_id);
+    const { error: updateError } = await supabaseAdmin.from("jobs").update({
+      executor_company_id: latest.from_company_id,
+      dispatch_status: nextChain.length > 1 ? "accepted" : null,
+      dispatch_decided_at: new Date().toISOString(),
+      dispatch_chain_company_ids: nextChain.length ? nextChain : [job.company_id],
+    }).eq("id", data.job_id);
+    if (updateError) throw new Error(updateError.message);
+    return { ok: true };
+  });
+
+
 export const listIncomingDispatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
