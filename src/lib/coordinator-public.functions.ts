@@ -606,14 +606,22 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
+    // First "on the way" transition starts the trip timer.
+    if (data.status === "en_route" && !(job as any).driver_started_at) {
+      patch.driver_started_at = new Date().toISOString();
+    }
     if (data.status === "completed") {
       // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
       patch.grouped_at = null;
+      if (!(job as any).driver_completed_at) {
+        patch.driver_completed_at = new Date().toISOString();
+      }
     }
     const { error } = await supabaseAdmin.from("jobs")
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+
 
     // Reversible-group auto-dissolve: if this trip belonged to a group and all
     // sibling trips are now completed/cancelled, clear group_id on all members.
