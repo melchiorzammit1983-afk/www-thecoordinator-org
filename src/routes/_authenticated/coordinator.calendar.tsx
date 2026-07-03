@@ -428,8 +428,8 @@ function CalendarPage() {
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
 
 
-      {/* Outbound (my trips currently at partners) */}
-      <OutboundBoard />
+      {/* Outbound trips now appear directly in partner lanes below */}
+
 
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
