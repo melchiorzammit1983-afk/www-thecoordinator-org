@@ -209,7 +209,7 @@ function CalendarPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  // Live refresh on partner/chain updates
+  // Live refresh on job updates
   useEffect(() => {
     const ch = supabase
       .channel("dispatch-live")
