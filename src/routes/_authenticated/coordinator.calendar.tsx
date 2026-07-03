@@ -6,14 +6,10 @@ import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSenso
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import {
-  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
-  Pencil, Sparkles,
+  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox,
+  Pencil, Sparkles, Link2, Unlink,
 } from "lucide-react";
-import {
-  listConnections, dispatchJobToPartner, recallPartnerDispatch,
-  listIncomingDispatches, listOutboundDispatches, respondToDispatch,
-} from "@/lib/collab.functions";
 
 
 import {
@@ -43,7 +39,6 @@ import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
-import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
@@ -214,7 +209,7 @@ function CalendarPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  // Live refresh on partner/chain updates
+  // Live refresh on job updates
   useEffect(() => {
     const ch = supabase
       .channel("dispatch-live")
@@ -298,32 +293,10 @@ function CalendarPage() {
     }
   }, [cardSignals, jobs]);
 
-  const [dispatchState, setDispatchState] = useState<{ job: Job; partnerId?: string } | null>(null);
-
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
-
-    // Drop on partner lane → open dispatch dialog prefilled
-    if (dropId.startsWith("partner:")) {
-      const partnerCompanyId = dropId.slice(8);
-      const findJob = (id: string) => (jobs ?? []).find((j) => j.id === id) ?? null;
-      if (rawId.startsWith("group:")) {
-        const gid = rawId.slice(6);
-        const first = (jobs ?? []).find((j) => j.group_id === gid);
-        if (first) setDispatchState({ job: first, partnerId: partnerCompanyId });
-      } else {
-        const j = findJob(rawId);
-        if (j) {
-          // Ignore synthetic hop cards (already handed off)
-          if ((j as any)._origin_job_id) return;
-          if (j.external) { toast.error("This trip is already at a partner"); return; }
-          setDispatchState({ job: j, partnerId: partnerCompanyId });
-        }
-      }
-      return;
-    }
 
     const driverId = dropId === "unassigned" ? null : dropId.startsWith("driver:") ? dropId.slice(7) : undefined;
     if (driverId === undefined) return;
@@ -336,6 +309,7 @@ function CalendarPage() {
       assignMut.mutate({ job_id: rawId, driver_id: driverId });
     }
   }
+
 
 
   const markViewedFn = useServerFn(markJobViewedCoord);
@@ -430,13 +404,6 @@ function CalendarPage() {
       {/* Live driver map */}
       <LiveMapPanel />
 
-      {/* Inbound (pending my decision) */}
-      <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
-
-
-      {/* Outbound trips now appear directly in partner lanes below */}
-
-
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
@@ -449,15 +416,6 @@ function CalendarPage() {
             : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
-
-      {dispatchState && (
-        <DispatchDialog
-          open={!!dispatchState}
-          onOpenChange={(v) => { if (!v) setDispatchState(null); }}
-          job={dispatchState.job}
-          preselectedPartnerId={dispatchState.partnerId}
-        />
-      )}
 
       <JobFormDialog open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []} onSaved={() => refetch()} />
       <JobFormDialog
@@ -593,101 +551,6 @@ function renderItems(items: RenderItem[], ctx: CardCtx, driverNameOf?: (j: Job) 
 }
 
 
-
-/* ------------------------------ Inbound / Outbound ------------------------------ */
-
-function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { id: string; date: string | null }) => void }) {
-  const listIn = useServerFn(listIncomingDispatches);
-  const respond = useServerFn(respondToDispatch);
-  const qc = useQueryClient();
-  const [open, setOpen] = useState(true);
-  const q = useQuery({ queryKey: ["collab", "incoming"], queryFn: () => listIn(), refetchInterval: 20_000 });
-  const respondMut = useMutation({
-    mutationFn: async (v: { job_id: string; decision: "accepted" | "rejected" }) =>
-      (await respond({ data: v })) as { ok: boolean; id: string; date: string | null; decision: string },
-    onSuccess: (res) => {
-      toast.success("Done");
-      qc.invalidateQueries({ queryKey: ["collab"] });
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-      if (res?.decision === "accepted" && onAccepted) onAccepted({ id: res.id, date: res.date });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const items: any[] = q.data ?? [];
-  if (items.length === 0) return null;
-  return (
-    <section className="rounded-lg border bg-card">
-      <button
-        type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <Inbox className="h-4 w-4 text-primary" />
-        <span>Inbound — pending your decision</span>
-        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
-      </button>
-      {open && (
-        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((j: any) => (
-            <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                <Badge variant="outline">from {j.origin?.name ?? "partner"}</Badge>
-                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
-                <span className="ml-auto text-muted-foreground">{(j.pax ?? []).length} pax</span>
-              </div>
-              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
-              {j.dispatch_note && <div className="text-xs text-muted-foreground">"{j.dispatch_note}"</div>}
-              <ChainTimeline jobId={j.id} />
-              <div className="flex gap-2 pt-1">
-                <Button size="sm" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}>Accept</Button>
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}>Reject</Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function OutboundBoard() {
-  const listOut = useServerFn(listOutboundDispatches);
-  const [open, setOpen] = useState(false);
-  const q = useQuery({ queryKey: ["collab", "outbound"], queryFn: () => listOut(), refetchInterval: 20_000 });
-  const items: any[] = q.data ?? [];
-  if (items.length === 0) return null;
-  return (
-    <section className="rounded-lg border bg-card">
-      <button
-        type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <PlaneTakeoff className="h-4 w-4 text-primary" />
-        <span>Outbound — trips at partners (live)</span>
-        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
-      </button>
-      {open && (
-        <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((j: any) => (
-            <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                <Badge variant="outline">at {j.executor?.name ?? "partner"}</Badge>
-                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
-                <Badge variant={j.dispatch_status === "accepted" ? "default" : j.dispatch_status === "rejected" ? "destructive" : "secondary"}>{j.dispatch_status}</Badge>
-                {j.drivers?.name && <Badge variant="secondary">👤 {j.drivers.name}</Badge>}
-                <span className="ml-auto text-muted-foreground">{j.status}</span>
-              </div>
-              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
-              <ChainTimeline jobId={j.id} />
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
 
 /* ---------- Pending Client Approval ---------- */
 function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
@@ -844,14 +707,6 @@ function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
   return out;
 }
 
-function partnerColor(id: string | null | undefined): string {
-  if (!id) return "hsl(38 92% 50%)";
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 78% 48%)`;
-}
-
-
 function minutesBetween(a: string, b: string): number {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
@@ -860,49 +715,15 @@ function minutesBetween(a: string, b: string): number {
 
 
 function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
-  const listConn = useServerFn(listConnections);
-  const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), refetchInterval: 30_000 });
-  const partners = (conns.data ?? []).filter((c: any) => c.status === "active");
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3 sm:auto-cols-[minmax(240px,1fr)] sm:grid-flow-col">
-        {partners.map((c: any) => {
-          const laneJobs = jobs.filter((j) => {
-            const chain: string[] = Array.isArray((j as any).dispatch_chain_company_ids) ? (j as any).dispatch_chain_company_ids : [];
-            return chain.includes(c.other.id) || (j as any).executor_company_id === c.other.id;
-          });
-          return <PartnerLane key={c.other.id} partnerId={c.other.id} partnerName={c.other.name} jobs={laneJobs} ctx={ctx} />;
-        })}
-        {drivers.length === 0 && partners.length === 0 && (
-          <div className="text-sm text-muted-foreground p-8 text-center">Add drivers or partners to see lanes.</div>
+        {drivers.length === 0 && (
+          <div className="text-sm text-muted-foreground p-8 text-center">Add drivers to see lanes.</div>
         )}
         {drivers.map((d) => (
           <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id && !(j as any)._origin_job_id)} ctx={ctx} />
         ))}
-      </div>
-    </div>
-  );
-}
-
-function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string; partnerName: string; jobs: Job[]; ctx: CardCtx }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `partner:${partnerId}` });
-  const items = bucketByGroup(jobs);
-  const color = partnerColor(partnerId);
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ borderColor: color, boxShadow: isOver ? `inset 0 0 0 2px ${color}` : undefined }}
-      className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "bg-amber-100/60" : ""}`}
-    >
-      <div className="text-sm font-medium truncate flex items-center gap-1">
-        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-        <PlaneTakeoff className="h-3.5 w-3.5" style={{ color }} /> Partner · {partnerName}
-      </div>
-      <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
-      <div className="space-y-2">
-        {jobs.length === 0
-          ? <div className="text-xs text-muted-foreground text-center py-6">No trips at this partner</div>
-          : renderItems(items, ctx)}
       </div>
     </div>
   );
@@ -1202,7 +1023,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
-  const [openDispatch, setOpenDispatch] = useState(false);
 
   const paxCount = job.pax?.length ?? 0;
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
@@ -1221,30 +1041,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const rejected = !!(sig as any)?.rejected;
 
 
-  // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
-  const partnerPending = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "pending";
-  const partnerRejected = job.dispatch_status === "rejected";
-  const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
-
-  // Color priority: red > blue(unread) > partner state > driver-accepted > driver-pending > default
-  const tone = problem || partnerRejected
+  // Color priority: red > blue(unread) > driver-accepted > driver-pending > default
+  const tone = problem
     ? "border-destructive bg-destructive/10"
     : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
-    : partnerPending
-    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
-    : partnerAccepted
-    ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedPending
     ? "border-amber-500/70 bg-amber-500/5"
     : "border-border bg-background";
-
-  // Colored left rim shows which partner currently holds the trip (creator's-eye view).
-  const rimColor = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.executor_company_id
-    ? partnerColor(job.executor_company_id)
-    : null;
 
 
   const delayed = flightIssue;
@@ -1278,7 +1084,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const style: React.CSSProperties = {
     ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
     ...(gStripe ?? {}),
-    ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
   };
 
   return (
@@ -1407,31 +1212,15 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
-              {job.chain_role === "creator_watching" && (
-                <Badge variant="outline" className="text-[10px] border-amber-500/60 text-amber-700 dark:text-amber-400">
-                  Watching · handed to {job.executor_name ?? "partner"}
-                </Badge>
-              )}
-              {job.chain_role === "hop_watching" && job.external && (
-                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
-                </Badge>
-              )}
-              {job.external && !job.chain_role && (
-                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
-                </Badge>
-              )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
             {job.chain_names && job.chain_names.length >= 2 && (
               <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
                 {job.chain_names.map((name, i) => {
                   const isLast = i === (job.chain_names!.length - 1);
-                  const dotColor = i === 0 ? "hsl(var(--muted-foreground))" : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
                   return (
                     <span key={`${i}-${name}`} className="inline-flex items-center gap-1">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground" />
                       <span className={isLast ? "font-medium text-foreground" : ""}>{name}</span>
                       {!isLast && <ChevronRight className="h-3 w-3 opacity-60" />}
                     </span>
@@ -1457,23 +1246,21 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
           job={job} ctx={ctx}
           onOpenSplit={() => setOpenSplit(true)}
           onOpenClone={() => setOpenClone(true)}
-          onOpenDispatch={() => setOpenDispatch(true)}
           driverName={shownDriver ?? undefined}
         />
       </div>
 
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
       <SplitDialog open={openSplit} onOpenChange={setOpenSplit} job={job} />
-      <DispatchDialog open={openDispatch} onOpenChange={setOpenDispatch} job={job} />
     </div>
   );
 }
 
 function TripMenu({
-  job, ctx, onOpenSplit, onOpenClone, onOpenDispatch, driverName,
+  job, ctx, onOpenSplit, onOpenClone, driverName,
 }: {
   job: Job; ctx: CardCtx;
-  onOpenSplit: () => void; onOpenClone: () => void; onOpenDispatch: () => void;
+  onOpenSplit: () => void; onOpenClone: () => void;
   driverName?: string;
 }) {
   const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
@@ -1501,15 +1288,6 @@ function TripMenu({
     onSuccess: (r) => { toast.success(`Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["jobs"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
-
-  const recallFn = useServerFn(recallPartnerDispatch);
-  const recallMut = useMutation({
-    mutationFn: () => recallFn({ data: { job_id: (job as any)._origin_job_id ?? job.id } }),
-    onSuccess: () => { toast.success("Hand-off recalled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const canRecall = job.chain_role === "creator_watching" && job.dispatch_status === "pending";
-
 
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
@@ -1655,18 +1433,6 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenClone}>
           <Copy className="h-4 w-4 mr-2" /> Clone…
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onOpenDispatch}>
-          <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
-        </DropdownMenuItem>
-        {canRecall && (
-          <DropdownMenuItem
-            onClick={() => { if (confirm("Recall this hand-off before the partner accepts?")) recallMut.mutate(); }}
-            disabled={recallMut.isPending}
-            className="text-amber-600"
-          >
-            <Unlink className="h-4 w-4 mr-2" /> Recall hand-off
-          </DropdownMenuItem>
-        )}
 
         {job.group_id && (
           <DropdownMenuItem onClick={() => ungroupMut.mutate()} disabled={ungroupMut.isPending}>
@@ -1748,52 +1514,6 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
           </div>
         </div>
         <DialogFooter><Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending?"Splitting…":"Split"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job; preselectedPartnerId?: string }) {
-  const [partnerId, setPartnerId] = useState<string>("");
-  const [note, setNote] = useState("");
-  const qc = useQueryClient();
-  const listConn = useServerFn(listConnections);
-  const dispatchFn = useServerFn(dispatchJobToPartner);
-  const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
-  useEffect(() => {
-    if (open && preselectedPartnerId) setPartnerId(preselectedPartnerId);
-    if (!open) { setPartnerId(""); setNote(""); }
-  }, [open, preselectedPartnerId]);
-  const mut = useMutation({
-    mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
-    onSuccess: () => { toast.success("Sent to partner"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Dispatch to partner</DialogTitle>
-          <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription></DialogHeader>
-        <div className="space-y-3">
-          {(conns.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>}
-          <div className="space-y-1">
-            {(conns.data ?? []).filter((c: any) => c.status === "active").map((c: any) => (
-              <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
-                <input type="radio" name="partner" checked={partnerId === c.other.id} onChange={() => setPartnerId(c.other.id)} />
-                <span className="font-medium">{c.other?.name}</span>
-                <Badge variant="outline" className="ml-auto">{c.mode}</Badge>
-              </label>
-            ))}
-          </div>
-          <div>
-            <Label>Note (optional)</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>Dispatch</Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
