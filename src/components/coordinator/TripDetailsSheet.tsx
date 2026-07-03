@@ -224,6 +224,11 @@ export function TripDetailsSheet({
             </div>
           </div>
 
+          {/* Pricing (coordinator-only) */}
+          <TripPricingPanel jobId={job.id} />
+
+
+
           {/* Alerts */}
           {(flightIssue || job.deletion_requested_at) && (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
