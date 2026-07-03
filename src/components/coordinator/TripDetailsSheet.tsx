@@ -166,10 +166,7 @@ export function TripDetailsSheet({
     onError: (e: Error) => toast.error(e.message),
   });
   const [holdPct, setHoldPct] = useState(0);
-  const holdRef = (() => {
-    const state = useState<{ start: number | null; raf: number | null }>({ start: null, raf: null })[0];
-    return state;
-  })();
+  const holdRef = useRef<{ start: number | null; raf: number | null }>({ start: null, raf: null });
   const startHold = () => {
     if (!flightIssue || !newTime || rescheduleMut.isPending) return;
     holdRef.start = performance.now();
