@@ -965,8 +965,12 @@ export type Database = {
           dispatch_status: Database["public"]["Enums"]["dispatch_status"] | null
           dispatched_at: string | null
           driver_accepted_at: string | null
+          driver_actual_minutes: number | null
+          driver_completed_at: string | null
           driver_hidden_at: string | null
           driver_id: string | null
+          driver_reported_km: number | null
+          driver_started_at: string | null
           executor_company_id: string | null
           flight_baggage_belt: string | null
           flight_estimated_at: string | null
@@ -987,9 +991,14 @@ export type Database = {
           id: string
           origin_company_id: string | null
           parent_job_id: string | null
+          payment_method: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
           points_charged: Json
+          price_amount: number | null
+          price_currency: string | null
+          price_set_at: string | null
+          price_set_by: string | null
           qr_strict_mode: boolean
           self_assigned_user_id: string | null
           source: string
@@ -1021,8 +1030,12 @@ export type Database = {
             | null
           dispatched_at?: string | null
           driver_accepted_at?: string | null
+          driver_actual_minutes?: number | null
+          driver_completed_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          driver_reported_km?: number | null
+          driver_started_at?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
           flight_estimated_at?: string | null
@@ -1043,9 +1056,14 @@ export type Database = {
           id?: string
           origin_company_id?: string | null
           parent_job_id?: string | null
+          payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
+          price_amount?: number | null
+          price_currency?: string | null
+          price_set_at?: string | null
+          price_set_by?: string | null
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
           source?: string
@@ -1077,8 +1095,12 @@ export type Database = {
             | null
           dispatched_at?: string | null
           driver_accepted_at?: string | null
+          driver_actual_minutes?: number | null
+          driver_completed_at?: string | null
           driver_hidden_at?: string | null
           driver_id?: string | null
+          driver_reported_km?: number | null
+          driver_started_at?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
           flight_estimated_at?: string | null
@@ -1099,9 +1121,14 @@ export type Database = {
           id?: string
           origin_company_id?: string | null
           parent_job_id?: string | null
+          payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           points_charged?: Json
+          price_amount?: number | null
+          price_currency?: string | null
+          price_set_at?: string | null
+          price_set_by?: string | null
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
           source?: string
