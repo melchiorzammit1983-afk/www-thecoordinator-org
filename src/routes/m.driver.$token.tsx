@@ -25,8 +25,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
+import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripProgress } from "@/components/coordinator/TripProgress";
+
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
@@ -241,9 +243,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const [confirmDelOpen, setConfirmDelOpen] = useState(false);
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
+
   const lateMut = useMutation({
     mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
     onSuccess: () => {
@@ -470,10 +474,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             </Button>
             {nextStatus && (
               <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
-                onClick={() => statusMut.mutate(nextStatus.value)}>
+                onClick={() => {
+                  if (nextStatus.value === "completed") setSummaryOpen(true);
+                  else statusMut.mutate(nextStatus.value);
+                }}>
                 {nextStatus.label}
               </Button>
             )}
+
             {job.status !== "completed" && (
               <Button variant="outline" className="h-10"
                 onClick={() => setLateOpen(true)}>
@@ -632,8 +640,23 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </DialogContent>
       </Dialog>
 
+      <TripSummaryDialog
+        open={summaryOpen}
+        onOpenChange={setSummaryOpen}
+        token={token}
+        job={summaryOpen ? {
+          id: job.id,
+          from_location: job.from_location,
+          to_location: job.to_location,
+          pickup_at: job.pickup_at,
+          date: job.date,
+          time: job.time,
+        } : null}
+      />
+
     </article>
   );
+
 }
 
 

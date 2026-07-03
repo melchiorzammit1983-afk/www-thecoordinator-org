@@ -1,38 +1,60 @@
-## Driver Dashboard — 5 upgrades
+## Post-trip pricing & payment tracking
 
-### 1. Coordinator alert when a driver rejects
-- Extend `getCardSignalsCoord` to detect the "⚠️ Driver rejected" trip_message and surface a new `rejected` signal.
-- On `coordinator.calendar.tsx`, subscribe to new trip_messages; when a driver-rejection message arrives play a short amber tone and fire a persistent `toast.warning` with an "Open" action that scrolls to the trip.
-- Add an amber corner pulse on `TripCard` (distinct from red SOS / yellow client-change / blue unread).
+When a driver marks a trip **Completed**, a summary dialog pops up with the trip stats, a price input, currency, and two payment buttons. The price is stored on the job, visible only to coordinators in the dispatch chain (never to clients or drivers of other companies), and surfaces on the statement export as two new columns.
 
-### 2. Replace `confirm()` prompts with a Dialog
-- Convert the "Approve deletion?" and "Remove this trip from your list?" `window.confirm` calls in `m.driver.$token.tsx` to shadcn `Dialog`s matching the reject-dialog style. Keeps mobile UX consistent (some in-app browsers suppress native confirms).
+### 1. Driver post-trip dialog (`m.driver.$token.tsx`)
 
-### 3. Manual "Share my location now" toggle
-- Update `DriverLiveShare` so the driver can force-start GPS even without an active trip status. Persist the manual override in localStorage so it survives reloads until the driver turns it off or a trip completes.
-- Show a clear status pill: "Sharing live" (green pulse) vs "Not sharing" with a big toggle button.
+When the driver taps **Completed**, open `TripSummaryDialog` instead of just flipping status. Contents:
 
-### 4. One-tap "Running late" quick action
-- Add server fn `driverReportLate({ token, job_id, minutes, note? })` that:
-  - Posts to `trip_messages` as `driver` ("🕒 Running ~{n} min late — {note}") so it reaches the coordinator chat.
-  - Also writes a row to `driver_status_updates` (existing table) so it appears on the coordinator's card status stripe and in the client portal live view.
-- UI: a "🕒 Running late" button on each accepted trip that opens a small sheet with 5 / 10 / 15 / 30 / 45 / custom-min chips + optional note.
+- **Trip summary (read-only)**: from → to, pickup time, actual start (first "en_route" status), actual end (now), total duration, passenger count, no-show count, "Ran late by X min" if reported.
+- **Price** number input (2 decimals) + **currency** select (EUR default, USD, GBP — small list, coordinator can extend later).
+- Optional **note** field (e.g. "waited 20 min", "extra stop").
+- Two big buttons: **💵 Paid by client** and **🧾 Invoice to company**.
+- Cancel = keeps status but doesn't finalize price (driver can reopen from the finished-trip strip).
 
-### 5. Mark passenger as "no-show"
-- Add `no_show` value handling in `markPaxOnboard` (or a new `markPaxNoShow({ token, job_id, pax_id })` server fn) that updates `pax.status = 'no_show'` and logs a trip_message so the coordinator sees who didn't turn up.
-- In `TripExecutionDialog` (driver boarding sheet): add a secondary "No-show" button next to each pending passenger. Show a red "No-show" badge for that state and exclude no-shows from the "all onboard — ready to go" green banner (i.e. onboard + no_show counts as "cleared").
-- On the coordinator side, `TripDetailsSheet` already lists pax — surface the no_show badge there and expose it in the CSV statement columns.
+Submitting calls a new server fn `driverFinalizeTrip({ token, job_id, price_amount, price_currency, payment_method, note })` which sets `status='completed'`, writes the price fields, and logs a `trip_messages` entry (`"✅ Trip finalized — €45.00 · Invoice to company"`) so the coordinator sees it in chat.
 
-### Technical notes
-- No new tables needed; reusing `trip_messages`, `driver_status_updates`, and the existing `pax.status` field (add `'no_show'` as an accepted value in the client & validators — DB column is text, no enum migration required; will verify during build).
-- Realtime: subscribe to `trip_messages` (already used elsewhere) to drive #1's toast/sound.
-- All changes are additive; no existing flows change behaviour.
+### 2. Coordinator override
 
-### Files touched
-- `src/lib/coordinator-public.functions.ts` — `driverReportLate`, `markPaxNoShow` (+ signal for rejection already covered by existing message text).
-- `src/lib/coordinator.functions.ts` — extend `getCardSignalsCoord` with `rejected` flag.
-- `src/routes/m.driver.$token.tsx` — dialogs, late sheet, no-show button, share-location toggle wiring.
-- `src/components/driver/DriverLiveShare.tsx` — manual override.
-- `src/components/coordinator/TripCard.tsx` — amber "rejected" pulse.
-- `src/components/coordinator/TripDetailsSheet.tsx` — no-show badge.
-- `src/routes/coordinator.calendar.tsx` — rejection toast + sound.
+- In `TripDetailsSheet.tsx`, add a **Price & payment** row showing amount + method with an ✏️ edit button.
+- Opens a small inline editor calling `coordinatorSetTripPrice({ job_id, price_amount, price_currency, payment_method, note })`.
+- Any coordinator in `dispatch_chain_company_ids` can view; only the originating coordinator (`company_id`) OR the current executor can edit. Server enforces this.
+
+### 3. Statement export (`coordinator.statements.tsx`)
+
+Add two new columns to the Excel export:
+- **Payment** — "Cash" / "Invoice" / blank
+- **Amount** — e.g. "€45.00", blank if not set
+
+Add two filter chips at the top: "Cash only", "Invoiced only". Add a totals row at the bottom of the sheet: total cash, total invoiced, grand total per currency.
+
+### 4. Bulletproof visibility (the important part)
+
+Price fields are **NEVER** returned to:
+- Clients (any `/t/$token`, `/c/$token`, `/m/client/$token` route)
+- Drivers of other companies (magic-link driver portal only sees their own trips; price is hidden from the driver UI once submitted — the driver enters it and moves on, they don't need to re-see it)
+- Public/anon endpoints
+
+Enforcement layers (defense in depth):
+
+1. **DB columns** on `jobs`: `price_amount numeric(10,2)`, `price_currency text`, `payment_method text` (check in `('cash','invoice')`), `price_set_by uuid`, `price_set_at timestamptz`, `price_note text`.
+2. **RLS**: no policy changes needed for reads (existing chain-scoped SELECT already covers coordinators). Writes go only through the two SECURITY DEFINER RPCs above — no direct `UPDATE` on price columns from anon/authenticated. Add a trigger `enforce_price_columns_via_rpc` that raises if `price_*` changes and `current_setting('app.price_rpc', true) IS DISTINCT FROM 'on'`; the RPCs set it before updating.
+3. **Server functions**: every client-facing fn (`getClientTrip`, `getClientTripStatus`, `listPaxActivityClient`, `getDriverJobs` for the driver token) explicitly **projects columns** — price fields are omitted from the SELECT list, not just filtered client-side. Add a code comment + a unit-style assertion in each fn to prevent regressions.
+4. **Trip chat**: the "✅ Trip finalized — €45" message is written to a **coordinator-only** thread (kind `coord`), not the client-visible group thread, so clients never see the amount even in chat history.
+5. **AutoRefresh sweep** and any realtime payloads: filter published columns via the same projection.
+
+### 5. Files touched
+
+- Migration: add price columns, trigger, and two SECURITY DEFINER RPCs.
+- `src/lib/coordinator.functions.ts` — `coordinatorSetTripPrice`, projection audit on any client-facing readers that live here.
+- `src/lib/coordinator-public.functions.ts` — `driverFinalizeTrip`; strip price fields from every anon/token reader.
+- `src/routes/m.driver.$token.tsx` — new `TripSummaryDialog`, wire "Completed" through it.
+- `src/components/coordinator/TripDetailsSheet.tsx` — Price & payment row + inline editor.
+- `src/routes/_authenticated/coordinator.statements.tsx` — new columns, filters, totals.
+- `src/lib/features.ts` — optional `trip_pricing` feature flag so admin can disable the whole module per company.
+
+### Open follow-ups (ask before build if you want changes)
+
+- Currency list: EUR/USD/GBP enough, or should coordinators define their own set per company?
+- Should the price be **required** to mark a trip completed, or optional (driver can skip and set later)?
+- Should "Invoice to company" auto-generate a monthly invoice PDF, or just tag the row for the statement export?

@@ -8,13 +8,13 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt,
 } from "lucide-react";
 
 
@@ -223,6 +223,11 @@ export function TripDetailsSheet({
               {stageIdx >= 0 ? TRIP_STAGES[stageIdx].label : "Not started"}
             </div>
           </div>
+
+          {/* Pricing (coordinator-only) */}
+          <TripPricingPanel jobId={job.id} />
+
+
 
           {/* Alerts */}
           {(flightIssue || job.deletion_requested_at) && (
@@ -632,4 +637,137 @@ function FlightStatusPill({ status }: { status: string | null | undefined }) {
   };
   const m = map[s] ?? map.unknown;
   return <Badge className={`text-[10px] shrink-0 ${m.cls}`}>{m.label}</Badge>;
+}
+
+function TripPricingPanel({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
+  const getFn = useServerFn(getTripPricing);
+  const setFn = useServerFn(coordinatorSetTripPrice);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["trip-pricing", jobId],
+    queryFn: () => getFn({ data: { job_id: jobId } }) as Promise<{
+      price_amount: number | null;
+      price_currency: string | null;
+      payment_method: "cash" | "invoice" | null;
+      payment_status: string | null;
+      price_set_by: string | null;
+      price_set_at: string | null;
+      driver_started_at: string | null;
+      driver_completed_at: string | null;
+      driver_reported_km: number | null;
+      driver_note: string | null;
+    }>,
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [amt, setAmt] = useState("");
+  const [ccy, setCcy] = useState("EUR");
+  const [method, setMethod] = useState<"cash" | "invoice" | "">("");
+
+  useEffect(() => {
+    if (!data) return;
+    setAmt(data.price_amount != null ? String(data.price_amount) : "");
+    setCcy(data.price_currency || "EUR");
+    setMethod((data.payment_method as "cash" | "invoice" | null) ?? "");
+  }, [data]);
+
+  const mut = useMutation({
+    mutationFn: () => setFn({
+      data: {
+        job_id: jobId,
+        price_amount: amt.trim() === "" ? null : Number(amt.replace(",", ".")),
+        price_currency: ccy,
+        payment_method: method === "" ? null : method,
+      },
+    }) as Promise<{ ok: true }>,
+    onSuccess: () => {
+      toast.success("Pricing updated");
+      qc.invalidateQueries({ queryKey: ["trip-pricing", jobId] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      setEditing(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const durationMin = (() => {
+    if (!data?.driver_started_at || !data?.driver_completed_at) return null;
+    const a = new Date(data.driver_started_at).getTime();
+    const b = new Date(data.driver_completed_at).getTime();
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+    return Math.round((b - a) / 60_000);
+  })();
+
+  return (
+    <section className="rounded-md border p-3 space-y-2 bg-amber-50/40 dark:bg-amber-950/10 border-amber-500/30">
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-800 dark:text-amber-300">
+          <Lock className="h-3 w-3" /> Pricing · coordinator only
+        </div>
+        {!editing && (
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+          </Button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="text-xs text-muted-foreground">Loading…</div>
+      ) : editing ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="number" min={0} step="0.01" placeholder="0.00"
+              value={amt} onChange={(e) => setAmt(e.target.value)}
+              className="flex-1 h-9 rounded-md border bg-background px-2 text-sm"
+            />
+            <select value={ccy} onChange={(e) => setCcy(e.target.value)}
+              className="h-9 rounded-md border bg-background px-2 text-sm">
+              {["EUR", "USD", "GBP"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setMethod("cash")}
+              className={`rounded-md border p-2 text-left text-xs transition ${method === "cash" ? "border-emerald-500 bg-emerald-500/10" : "hover:bg-muted"}`}>
+              <div className="inline-flex items-center gap-1.5 font-medium"><Wallet className="h-3.5 w-3.5" /> Paid on spot</div>
+            </button>
+            <button type="button" onClick={() => setMethod("invoice")}
+              className={`rounded-md border p-2 text-left text-xs transition ${method === "invoice" ? "border-primary bg-primary/10" : "hover:bg-muted"}`}>
+              <div className="inline-flex items-center gap-1.5 font-medium"><FileText className="h-3.5 w-3.5" /> Invoice</div>
+            </button>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button size="sm" className="h-8 ml-auto" disabled={mut.isPending} onClick={() => mut.mutate()}>
+              {mut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="col-span-2 flex items-center gap-2">
+            <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-semibold text-sm">
+              {data?.price_amount != null ? `${data.price_currency ?? "EUR"} ${Number(data.price_amount).toFixed(2)}` : "— not priced"}
+            </span>
+            {data?.payment_method === "cash" && (
+              <Badge variant="outline" className="ml-auto border-emerald-500/60 text-emerald-700 dark:text-emerald-400 text-[10px]">
+                <Wallet className="h-3 w-3 mr-1" /> Paid on spot
+              </Badge>
+            )}
+            {data?.payment_method === "invoice" && (
+              <Badge variant="outline" className="ml-auto border-primary/60 text-primary text-[10px]">
+                <FileText className="h-3 w-3 mr-1" /> Invoice
+              </Badge>
+            )}
+          </div>
+          <div className="text-muted-foreground">Duration <span className="text-foreground font-medium ml-1">{durationMin != null ? `${durationMin} min` : "—"}</span></div>
+          <div className="text-muted-foreground">Distance <span className="text-foreground font-medium ml-1">{data?.driver_reported_km != null ? `${data.driver_reported_km} km` : "—"}</span></div>
+          {data?.driver_note && (
+            <div className="col-span-2 rounded bg-muted/60 p-2 text-[11px] italic">"{data.driver_note}"</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }

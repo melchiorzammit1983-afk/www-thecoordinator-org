@@ -1123,6 +1123,59 @@ async function assertJobInCompany(ctx: Ctx, jobId: string) {
   return { company: c };
 }
 
+// ---------- Trip pricing (coordinator only) ----------
+// Reads and writes the sensitive price/payment fields on jobs. Access is
+// bulletproofed by:
+//   1. `requireSupabaseAuth` — must be a signed-in coordinator/admin.
+//   2. `assertJobInCompany` — job must be owned by, dispatched to, or in the
+//      dispatch chain of the caller's company. Every coordinator in the chain
+//      can therefore see the price, per product requirement.
+//   3. Explicit column projection — we never send price data to driver/client
+//      endpoints (`getDriverManifest`, `getDriverStatement`, `getClientTripPortal`
+//      all list explicit columns; grep for those to verify).
+export const getTripPricing = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error } = await supabaseAdmin.from("jobs")
+      .select("id, price_amount, price_currency, payment_method, payment_status, price_set_by, price_set_at, driver_started_at, driver_completed_at, driver_actual_minutes, driver_reported_km, driver_note")
+      .eq("id", data.job_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    return row ?? null;
+  });
+
+export const coordinatorSetTripPrice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({
+    job_id: z.string().uuid(),
+    price_amount: z.number().nonnegative().max(1_000_000).nullable(),
+    price_currency: z.string().trim().min(3).max(4).optional(),
+    payment_method: z.enum(["cash", "invoice"]).nullable().optional(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const patch: Record<string, unknown> = {
+      price_amount: data.price_amount,
+      price_currency: (data.price_currency ?? "EUR").toUpperCase(),
+      price_set_by: "coordinator",
+      price_set_at: new Date().toISOString(),
+    };
+    if (data.payment_method !== undefined) {
+      patch.payment_method = data.payment_method;
+      if (data.payment_method === "cash") patch.payment_status = "paid";
+      if (data.payment_method === "invoice") patch.payment_status = "pending";
+    }
+    const { error } = await supabaseAdmin.from("jobs")
+      .update(patch as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+
+
 async function siblingGroupJobIds(supabaseAdmin: Awaited<ReturnType<typeof getAdminClient>>, jobId: string): Promise<string[]> {
   const { data: row } = await supabaseAdmin.from("jobs")
     .select("group_id" as any).eq("id", jobId).maybeSingle();
@@ -1436,6 +1489,8 @@ export const buildStatement = createServerFn({ method: "POST" })
         flightorship, from_flight, to_flight, flight_status, flight_status_note,
         clientcompanyname, vehicle, driver_id, driver_accepted_at, deletion_requested_at,
         created_at, updated_at, dispatch_status,
+        price_amount, price_currency, payment_method, price_set_by, price_set_at,
+        driver_actual_minutes, driver_reported_km, driver_started_at, driver_completed_at,
         drivers(id,name,phone,vehicle),
         pax(id,name,status,boarded_at),
         job_labels(trip_labels(id,name,color)),
@@ -1443,6 +1498,7 @@ export const buildStatement = createServerFn({ method: "POST" })
       `)
       .order("pickup_at", { ascending: true })
       .limit(HARD_CAP + 1);
+
 
     // Company scope filter
     if (data.company_scope === "own") {
@@ -1564,6 +1620,16 @@ export const buildStatement = createServerFn({ method: "POST" })
         driver_accepted_at: j.driver_accepted_at,
         deletion_requested_at: j.deletion_requested_at,
         created_at: j.created_at,
+        price_amount: j.price_amount != null ? Number(j.price_amount) : null,
+        price_currency: j.price_currency ?? "",
+        payment_method: j.payment_method ?? "",
+        price_display: j.price_amount != null
+          ? `${Number(j.price_amount).toFixed(2)} ${j.price_currency ?? ""}`.trim()
+          : "",
+        price_set_by: j.price_set_by ?? "",
+        driver_actual_minutes: j.driver_actual_minutes ?? null,
+        driver_reported_km: j.driver_reported_km != null ? Number(j.driver_reported_km) : null,
+
         
         hops: hops.map((h: any) => ({
           index: h.hop_index,

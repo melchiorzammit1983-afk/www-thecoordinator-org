@@ -184,6 +184,116 @@ export const setJobPaymentStatus = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Driver-side "trip finished" summary. Records final price, currency, payment
+// method, distance and duration. Sets status=completed. Price info is stored
+// on jobs and is ONLY exposed via coordinator server functions — driver &
+// client endpoints use explicit column projections that omit these fields.
+export const driverFinalizeTrip = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      price_amount: z.number().nonnegative().max(1_000_000).nullable().optional(),
+      price_currency: z.string().trim().min(3).max(4).optional(),
+      payment_method: z.enum(["cash", "invoice"]).nullable().optional(),
+      driver_reported_km: z.number().nonnegative().max(100_000).nullable().optional(),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const now = new Date();
+    const startedAt = (job as any).driver_started_at
+      ?? (job as any).pickup_at
+      ?? (job as any).created_at
+      ?? now.toISOString();
+    const startedMs = new Date(startedAt).getTime();
+    const durMin = Number.isFinite(startedMs)
+      ? Math.max(0, Math.round((now.getTime() - startedMs) / 60000))
+      : null;
+
+    const patch: Record<string, unknown> = {
+      status: "completed",
+      driver_completed_at: now.toISOString(),
+      driver_actual_minutes: durMin,
+      grouped_count: null,
+      grouped_at: null,
+    };
+    if (data.price_amount !== undefined) {
+      patch.price_amount = data.price_amount;
+      patch.price_currency = (data.price_currency ?? "EUR").toUpperCase();
+      patch.price_set_by = "driver";
+      patch.price_set_at = now.toISOString();
+    }
+    if (data.payment_method !== undefined && data.payment_method !== null) {
+      patch.payment_method = data.payment_method;
+      // "cash" = paid on the spot by the client → mark payment as paid.
+      // "invoice" = billed to the trip creator → keep payment pending until settled.
+      patch.payment_status = data.payment_method === "cash" ? "paid" : "pending";
+    }
+    if (data.driver_reported_km !== undefined) {
+      patch.driver_reported_km = data.driver_reported_km;
+    }
+    if (data.note !== undefined) {
+      patch.driver_note = data.note ?? null;
+    }
+
+
+    const { error } = await supabaseAdmin.from("jobs")
+      .update(patch as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+
+    // Log a short chat note so the coordinator sees the summary in-thread.
+    // The chat body does NOT include the price — only the coordinator UI shows
+    // the amount, sourced directly from jobs and gated by dispatch-chain RLS.
+    const parts: string[] = ["✅ Trip completed"];
+    if (durMin != null) parts.push(`~${durMin} min`);
+    if (data.driver_reported_km) parts.push(`${data.driver_reported_km} km`);
+    if (data.payment_method) parts.push(data.payment_method === "cash" ? "paid by client" : "invoice to company");
+    if (data.note) parts.push(`— ${data.note}`);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: parts.join(" · "),
+    } as never);
+
+    // Auto-dissolve group if all siblings done (same logic as updateJobStatus).
+    const gid = (job as any).group_id as string | null | undefined;
+    if (gid) {
+      const { data: siblings } = await supabaseAdmin.from("jobs")
+        .select("id, status").eq("group_id" as any, gid);
+      const allDone = (siblings ?? []).every((s: any) =>
+        s.id === data.job_id || s.status === "completed" || s.status === "cancelled");
+      if (allDone) {
+        await supabaseAdmin.from("jobs")
+          .update({ group_id: null, grouped_count: null, grouped_at: null } as never)
+          .eq("group_id" as any, gid);
+      }
+    }
+
+    return { ok: true, driver_actual_minutes: durMin };
+  });
+
+// Read a specific set of numbers the driver needs to fill in the summary
+// dialog. Excludes price/payment_method — the driver enters these fresh.
+export const getDriverTripSummaryPrefill = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job } = await loadDriverJob(data.token, data.job_id);
+    const j: any = job;
+    return {
+      pickup_at: j.pickup_at as string | null,
+      driver_started_at: j.driver_started_at as string | null,
+      created_at: j.created_at as string | null,
+      from_location: j.from_location as string,
+      to_location: j.to_location as string,
+    };
+  });
+
 export const hideJobForDriver = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
@@ -500,14 +610,22 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
+    // First "on the way" transition starts the trip timer.
+    if (data.status === "en_route" && !(job as any).driver_started_at) {
+      patch.driver_started_at = new Date().toISOString();
+    }
     if (data.status === "completed") {
       // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
       patch.grouped_at = null;
+      if (!(job as any).driver_completed_at) {
+        patch.driver_completed_at = new Date().toISOString();
+      }
     }
     const { error } = await supabaseAdmin.from("jobs")
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+
 
     // Reversible-group auto-dissolve: if this trip belonged to a group and all
     // sibling trips are now completed/cancelled, clear group_id on all members.

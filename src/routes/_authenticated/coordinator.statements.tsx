@@ -36,6 +36,9 @@ type Row = {
   chain: string; chain_hops: number; dispatch_status: string;
   driver_accepted_at: string | null; deletion_requested_at: string | null;
   created_at: string;
+  price_amount: number | null; price_currency: string; payment_method: string;
+  price_display: string; price_set_by: string;
+  driver_actual_minutes: number | null; driver_reported_km: number | null;
   hops: { index: number; from: string; to: string; status: string; decided_at: string | null; note: string }[];
   pax_rows: { id: string; name: string; status: string; boarded_at: string | null }[];
 };
@@ -50,7 +53,12 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "date", label: "Date", group: "Trip" },
   { key: "time", label: "Time", group: "Trip" },
   { key: "status", label: "Status", group: "Trip" },
-  { key: "payment_status", label: "Payment", group: "Trip" },
+  { key: "payment_status", label: "Payment status", group: "Trip" },
+  { key: "payment_method", label: "Payment method", group: "Trip" },
+  { key: "price_display", label: "Amount", group: "Trip" },
+  { key: "price_amount", label: "Amount (number)", group: "Trip" },
+  { key: "price_currency", label: "Currency", group: "Trip" },
+  { key: "price_set_by", label: "Price set by", group: "Trip" },
   { key: "labels", label: "Labels", group: "Trip" },
   { key: "client", label: "Client company", group: "Trip" },
   { key: "created_at", label: "Created", group: "Trip" },
@@ -65,6 +73,8 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "pax_count", label: "Pax count", group: "People" },
   { key: "pax_names", label: "Passenger names", group: "People" },
   { key: "pax_boarded", label: "Boarded", group: "People" },
+  { key: "driver_actual_minutes", label: "Duration (min)", group: "People" },
+  { key: "driver_reported_km", label: "Distance (km)", group: "People" },
   { key: "company_name", label: "Owner company", group: "Chain" },
   { key: "origin_company", label: "Origin", group: "Chain" },
   { key: "executor_company", label: "Executor", group: "Chain" },
@@ -75,8 +85,9 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "deletion_requested_at", label: "Deletion requested", group: "Ops" },
   
 ];
-const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_status"];
-const STORAGE_KEY = "statement:columns:v2";
+const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_method", "price_display"];
+const STORAGE_KEY = "statement:columns:v3";
+
 
 const STATUSES = ["pending", "assigned", "accepted", "en_route", "arrived", "in_progress", "completed", "cancelled"];
 const PAYMENT_STATUSES = ["pending", "paid"];
