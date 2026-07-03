@@ -210,6 +210,8 @@ export type Database = {
         Row: {
           chosen_at: string
           device_id: string
+          first_seen_at: string | null
+          id: string
           last_seen_at: string | null
           pax_id: string | null
           pax_name: string | null
@@ -218,6 +220,8 @@ export type Database = {
         Insert: {
           chosen_at?: string
           device_id: string
+          first_seen_at?: string | null
+          id?: string
           last_seen_at?: string | null
           pax_id?: string | null
           pax_name?: string | null
@@ -226,6 +230,8 @@ export type Database = {
         Update: {
           chosen_at?: string
           device_id?: string
+          first_seen_at?: string | null
+          id?: string
           last_seen_at?: string | null
           pax_id?: string | null
           pax_name?: string | null
@@ -1427,6 +1433,7 @@ export type Database = {
           id: string
           is_sos: boolean
           job_id: string
+          pax_id: string | null
           read_by_coordinator_at: string | null
           read_by_driver_at: string | null
           sender_kind: string
@@ -1443,6 +1450,7 @@ export type Database = {
           id?: string
           is_sos?: boolean
           job_id: string
+          pax_id?: string | null
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
           sender_kind: string
@@ -1459,6 +1467,7 @@ export type Database = {
           id?: string
           is_sos?: boolean
           job_id?: string
+          pax_id?: string | null
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
           sender_kind?: string
@@ -1480,6 +1489,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_messages_pax_id_fkey"
+            columns: ["pax_id"]
+            isOneToOne: false
+            referencedRelation: "pax"
             referencedColumns: ["id"]
           },
         ]
