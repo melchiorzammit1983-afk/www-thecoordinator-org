@@ -99,6 +99,7 @@ export function TripDetailsSheet({
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
+  const [driverChatOpen, setDriverChatOpen] = useState(false);
 
   const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
 
@@ -597,6 +598,11 @@ export function TripDetailsSheet({
             <Button variant="outline" onClick={onChat}>
               <MessagesSquare className="h-4 w-4 mr-2" /> Chat
             </Button>
+            {job.driver_id && (
+              <Button variant="outline" onClick={() => setDriverChatOpen(true)}>
+                <MessagesSquare className="h-4 w-4 mr-2 text-primary" /> Driver (private)
+              </Button>
+            )}
             {job.driver_id && !job.external && (
               <>
                 <Button variant="outline" onClick={onShare}>
@@ -620,6 +626,14 @@ export function TripDetailsSheet({
         threadKind={paxChat ? "private" : "group"}
         paxName={paxChat?.name ?? null}
         title="Passenger chat"
+      />
+      <TripChatDialog
+        open={driverChatOpen}
+        onOpenChange={setDriverChatOpen}
+        jobId={driverChatOpen ? job.id : null}
+        role="coordinator"
+        threadKind="driver"
+        title="Private with driver"
       />
     </Sheet>
   );

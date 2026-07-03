@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Send } from "lucide-react";
+import { Send, Users, User, Headphones } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { listTripMessages, postTripMessage } from "@/lib/coordinator-public.functions";
 import { listTripMessagesCoord, postTripMessageCoord } from "@/lib/coordinator.functions";
 
@@ -28,9 +29,11 @@ type Props = {
   token?: string; // required for driver
   identityId?: string | null;
   paxId?: string | null;
-  threadKind?: "all" | "private" | "group";
+  threadKind?: "all" | "private" | "group" | "driver";
   paxName?: string | null;
 };
+
+type DriverTab = "group" | "driver_client" | "driver_coord";
 
 export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, identityId, paxId, threadKind, paxName }: Props) {
   const qc = useQueryClient();
@@ -40,17 +43,18 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
   const postCoord = useServerFn(postTripMessageCoord);
   const [text, setText] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [driverTab, setDriverTab] = useState<DriverTab>("group");
 
-  const effectiveThread: "all" | "private" | "group" =
+  const effectiveThread: "all" | "private" | "group" | "driver" =
     role === "coordinator" ? (threadKind ?? ((identityId || paxId) ? "private" : "all")) : "all";
 
-  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread];
+  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread, driverTab];
   const { data: messages } = useQuery({
     queryKey,
     enabled: !!open && !!jobId,
     refetchInterval: open ? 10_000 : false,
     queryFn: () => role === "driver"
-      ? listDrv({ data: { token: token!, job_id: jobId! } }) as Promise<Msg[]>
+      ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab } }) as Promise<Msg[]>
       : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, pax_id: paxId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
   });
 
@@ -61,13 +65,15 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
 
   const postMut = useMutation({
     mutationFn: (body: string) => role === "driver"
-      ? postDrv({ data: { token: token!, job_id: jobId!, body } })
-      : postCoord({ data: {
-          job_id: jobId!, body,
-          identity_id: effectiveThread === "private" ? (identityId ?? null) : null,
-          pax_id: effectiveThread === "private" ? (paxId ?? null) : null,
-          thread_kind: effectiveThread === "private" ? "private" : "group",
-        } }),
+      ? postDrv({ data: { token: token!, job_id: jobId!, body, thread_kind: driverTab } })
+      : effectiveThread === "driver"
+        ? postCoord({ data: { job_id: jobId!, body, thread_kind: "driver" } })
+        : postCoord({ data: {
+            job_id: jobId!, body,
+            identity_id: effectiveThread === "private" ? (identityId ?? null) : null,
+            pax_id: effectiveThread === "private" ? (paxId ?? null) : null,
+            thread_kind: effectiveThread === "private" ? "private" : "group",
+          } }),
     onSuccess: () => {
       setText("");
       qc.invalidateQueries({ queryKey });
@@ -84,20 +90,59 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     postMut.mutate(body);
   }
 
+  const headerSubtitle = role === "driver"
+    ? (driverTab === "driver_client"
+        ? "Private with the client — coordinator does not see this."
+        : driverTab === "driver_coord"
+          ? "Private with the coordinator — client does not see this."
+          : (title ?? "Group thread — everyone on this trip sees this."))
+    : effectiveThread === "driver"
+      ? "Private with the driver — client does not see this."
+      : paxName
+        ? (identityId ? "Private thread · only this passenger sees your replies" : "Passenger hasn't picked their name yet — showing group thread")
+        : (title ?? "Messages for this trip");
+
+  const headerTitle = role === "coordinator" && effectiveThread === "driver"
+    ? "Driver chat"
+    : paxName ? `Chat with ${paxName}` : "Trip chat";
+
+  const placeholder = role === "driver"
+    ? (driverTab === "driver_client" ? "Message the client privately…"
+      : driverTab === "driver_coord" ? "Message the coordinator privately…"
+      : "Message the group…")
+    : effectiveThread === "driver" ? "Message the driver privately…"
+    : "Type a message…";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-4 py-3 border-b">
-          <DialogTitle className="text-base">
-            {paxName ? `Chat with ${paxName}` : "Trip chat"}
-          </DialogTitle>
-          <DialogDescription className="text-xs truncate">
-            {paxName
-              ? (identityId ? "Private thread · only this passenger sees your replies" : "Passenger hasn't picked their name yet — showing group thread")
-              : (title ?? "Messages for this trip")}
-          </DialogDescription>
+          <DialogTitle className="text-base">{headerTitle}</DialogTitle>
+          <DialogDescription className="text-xs truncate">{headerSubtitle}</DialogDescription>
         </DialogHeader>
+
+        {role === "driver" && (
+          <div className="grid grid-cols-3 gap-1 rounded-none bg-muted/40 p-1 border-b">
+            {([
+              { id: "group", label: "Group", Icon: Users },
+              { id: "driver_client", label: "Client", Icon: User },
+              { id: "driver_coord", label: "Coordinator", Icon: Headphones },
+            ] as { id: DriverTab; label: string; Icon: typeof Users }[]).map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setDriverTab(id)}
+                className={cn(
+                  "rounded-md py-1.5 text-xs font-medium flex items-center justify-center gap-1.5",
+                  driverTab === id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div ref={scrollRef} className="max-h-[55vh] min-h-[240px] overflow-y-auto px-3 py-3 space-y-2 bg-muted/30">
           {(messages ?? []).length === 0 && (
             <p className="text-center text-xs text-muted-foreground py-8">No messages yet. Start the conversation.</p>
@@ -123,7 +168,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
             }}
-            placeholder="Type a message…"
+            placeholder={placeholder}
             rows={2}
             className="resize-none"
           />

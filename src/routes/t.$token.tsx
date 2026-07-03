@@ -649,7 +649,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
 
   const listFn = useServerFn(listClientTripMessages);
   const postFn = useServerFn(postClientTripMessage);
-  const [thread, setThread] = useState<"group" | "private">("private");
+  const [thread, setThread] = useState<"group" | "private" | "driver_client">("private");
   const [text, setText] = useState("");
   const qc = useQueryClient();
   const key = ["client-chat", token, thread, deviceId];
@@ -671,10 +671,11 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
   });
 
   const privateBlocked = thread === "private" && !hasIdentity;
+  const driverBlocked = thread === "driver_client" && !driverAssigned;
 
   return (
     <div className="p-4">
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 mb-3">
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 mb-3">
         <button
           className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
             thread === "private" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
@@ -684,27 +685,46 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
         </button>
         <button
           className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
+            thread === "driver_client" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
+          onClick={() => setThread("driver_client")}
+          disabled={!driverAssigned}
+          title={driverAssigned ? undefined : "Driver not assigned yet"}
+        >
+          <Lock className="h-3.5 w-3.5" /> Driver
+        </button>
+        <button
+          className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
             thread === "group" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
           onClick={() => setThread("group")}
         >
-          <Users className="h-3.5 w-3.5" /> {driverAssigned ? "Driver" : "Group"}
+          <Users className="h-3.5 w-3.5" /> Group
         </button>
       </div>
 
       <div className="rounded-2xl bg-white border shadow-sm overflow-hidden flex flex-col h-[65vh]">
         <div className={cn("border-b text-xs px-3 py-2",
-          thread === "group" ? "bg-sky-50 text-sky-800" : "bg-purple-50 text-purple-800")}>
+          thread === "group" ? "bg-sky-50 text-sky-800"
+          : thread === "driver_client" ? "bg-emerald-50 text-emerald-800"
+          : "bg-purple-50 text-purple-800")}>
           {thread === "group"
-            ? (driverAssigned ? "Chat with your driver and everyone on this trip." : "Group chat — visible to everyone on this trip. Driver joins when assigned.")
-            : "Private chat with the coordinator — only you two can see this."}
+            ? (driverAssigned ? "Group chat — you, your driver, and the coordinator." : "Group chat — visible to everyone on this trip. Driver joins when assigned.")
+            : thread === "driver_client"
+              ? "Private with your driver — the coordinator does not see this."
+              : "Private chat with the coordinator — only you two can see this."}
         </div>
+
 
         {privateBlocked ? (
           <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground gap-3">
             <p>Choose your name first to start a private chat.</p>
             <Button size="sm" onClick={onChooseName}>Choose my name</Button>
           </div>
+        ) : driverBlocked ? (
+          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground gap-3">
+            <p>Your driver hasn't been assigned yet. This chat opens as soon as they're on the trip.</p>
+          </div>
         ) : (
+
 
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
@@ -732,7 +752,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
             </div>
             <div className="border-t p-2 flex gap-2 items-end bg-white">
               <Textarea value={text} onChange={(e) => setText(e.target.value)}
-                placeholder={thread === "private" ? "Message the coordinator privately…" : "Message the group…"} rows={2} className="resize-none"
+                placeholder={thread === "private" ? "Message the coordinator privately…" : thread === "driver_client" ? "Message the driver privately…" : "Message the group…"} rows={2} className="resize-none"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (text.trim()) mut.mutate(text.trim()); } }}
               />
               <Button size="icon" onClick={() => text.trim() && mut.mutate(text.trim())} disabled={mut.isPending || !text.trim()}>

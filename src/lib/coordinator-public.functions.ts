@@ -108,7 +108,11 @@ export const getDriverManifest = createServerFn({ method: "GET" })
 
 export const listTripMessages = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
-    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      thread_kind: z.enum(["group", "driver_client", "driver_coord"]).optional().default("group"),
+    }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
@@ -119,11 +123,20 @@ export const listTripMessages = createServerFn({ method: "GET" })
       const sibIds = (sibs ?? []).map((s: any) => s.id as string);
       if (sibIds.length) ids = sibIds;
     }
-    const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at")
+    let q = supabaseAdmin.from("trip_messages")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at, thread_kind")
       .in("job_id", ids).order("created_at", { ascending: true });
+    if (data.thread_kind === "driver_client") {
+      q = q.eq("thread_kind", "driver_client");
+    } else if (data.thread_kind === "driver_coord") {
+      q = q.eq("thread_kind", "driver_coord");
+    } else {
+      // group: legacy null + explicit group; exclude the two private side-channels
+      q = q.or("thread_kind.is.null,thread_kind.eq.group");
+    }
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    const unreadIds = (rows ?? []).filter((r) => r.sender_kind === "coordinator" && !r.read_by_driver_at).map((r) => r.id);
+    const unreadIds = (rows ?? []).filter((r) => r.sender_kind !== "driver" && !r.read_by_driver_at).map((r) => r.id);
     if (unreadIds.length) {
       await supabaseAdmin.from("trip_messages")
         .update({ read_by_driver_at: new Date().toISOString() } as never)
@@ -139,6 +152,7 @@ export const postTripMessage = createServerFn({ method: "POST" })
       token: z.string().min(8).max(128),
       job_id: z.string().uuid(),
       body: z.string().trim().min(1).max(4000),
+      thread_kind: z.enum(["group", "driver_client", "driver_coord"]).optional().default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -149,10 +163,12 @@ export const postTripMessage = createServerFn({ method: "POST" })
       sender_kind: "driver",
       sender_label: link.subject_label ?? "Driver",
       body: data.body,
+      thread_kind: data.thread_kind,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const updateDriverProfile = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
@@ -963,7 +979,7 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
     z.object({
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80).optional(),
-      thread_kind: z.enum(["group", "private"]).default("group"),
+      thread_kind: z.enum(["group", "private", "driver_client"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -987,11 +1003,12 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
 
     if (data.thread_kind === "private") {
       if (!identityId && !paxId) return [];
-      // OR: identity matches OR queued for our pax slot
       const orParts: string[] = [];
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "private").or(orParts.join(","));
+    } else if (data.thread_kind === "driver_client") {
+      q = q.eq("thread_kind", "driver_client");
     } else {
       q = q.eq("thread_kind", "group");
     }
@@ -1006,7 +1023,7 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80),
       body: z.string().trim().min(1).max(4000),
-      thread_kind: z.enum(["group", "private"]).default("group"),
+      thread_kind: z.enum(["group", "private", "driver_client"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -1015,7 +1032,8 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const label = (id as any)?.pax_name ?? "Passenger";
     const identityId = (id as any)?.id ?? null;
-    const effectiveKind = data.thread_kind === "private" && !identityId ? "group" : data.thread_kind;
+    let effectiveKind: "group" | "private" | "driver_client" = data.thread_kind;
+    if (effectiveKind === "private" && !identityId) effectiveKind = "group";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
@@ -1025,6 +1043,7 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const pushClientLocation = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
