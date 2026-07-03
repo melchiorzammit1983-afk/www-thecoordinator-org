@@ -805,6 +805,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => bulkTripInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    await assertFeatureEnabled(c.id, "bulk_paste");
     const supabaseAdmin = await getAdminClient();
     const created: string[] = [];
     for (const t of data.trips) {
