@@ -1008,7 +1008,12 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "private").or(orParts.join(","));
     } else if (data.thread_kind === "driver_client") {
-      q = q.eq("thread_kind", "driver_client");
+      // Per-passenger privacy: only show driver↔this-client messages.
+      if (!identityId && !paxId) return [];
+      const orParts: string[] = [];
+      if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
+      if (paxId) orParts.push(`pax_id.eq.${paxId}`);
+      q = q.eq("thread_kind", "driver_client").or(orParts.join(","));
     } else {
       q = q.eq("thread_kind", "group");
     }
