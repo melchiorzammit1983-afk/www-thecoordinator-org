@@ -243,9 +243,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const [confirmDelOpen, setConfirmDelOpen] = useState(false);
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
+
   const lateMut = useMutation({
     mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
     onSuccess: () => {
