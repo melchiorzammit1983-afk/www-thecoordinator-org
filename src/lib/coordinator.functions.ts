@@ -2523,12 +2523,14 @@ export const listSosForJob = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
     z.object({
-      job_id: z.string().uuid(),
+      job_id: z.string().min(1),
       include_ack: z.boolean().optional().default(false),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
-    await assertJobInCompany(context, data.job_id);
+    const jobId = String(data.job_id).split("::")[0];
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) return [];
+    try { await assertJobInCompany(context, jobId); } catch { return []; }
     const supabaseAdmin = await getAdminClient();
     let q = supabaseAdmin
       .from("client_sos_events")
