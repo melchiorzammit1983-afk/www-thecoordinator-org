@@ -84,7 +84,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
 
   const postMut = useMutation({
     mutationFn: (body: string) => role === "driver"
-      ? postDrv({ data: { token: token!, job_id: jobId!, body, thread_kind: driverTab } })
+      ? postDrv({ data: { token: token!, job_id: jobId!, body, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } })
       : effectiveThread === "driver"
         ? postCoord({ data: { job_id: jobId!, body, thread_kind: "driver" } })
         : postCoord({ data: {
