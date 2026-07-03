@@ -719,7 +719,12 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
             <p>Choose your name first to start a private chat.</p>
             <Button size="sm" onClick={onChooseName}>Choose my name</Button>
           </div>
+        ) : driverBlocked ? (
+          <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted-foreground gap-3">
+            <p>Your driver hasn't been assigned yet. This chat opens as soon as they're on the trip.</p>
+          </div>
         ) : (
+
 
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
