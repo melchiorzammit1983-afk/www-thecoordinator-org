@@ -669,20 +669,30 @@ function ProfileDialog({ open, onOpenChange, token, driver }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driver: Driver | null;
 }) {
   const [name, setName] = useState(driver?.name ?? "");
+  const [phone, setPhone] = useState(driver?.phone ?? "");
+  const [car, setCar] = useState(driver?.car_make_model ?? "");
+  const [plate, setPlate] = useState(driver?.plate ?? "");
   const [seats, setSeats] = useState<string>(driver?.seats_available != null ? String(driver.seats_available) : "");
   const [note, setNote] = useState(driver?.availability_note ?? "");
   useEffect(() => {
     setName(driver?.name ?? "");
+    setPhone(driver?.phone ?? "");
+    setCar(driver?.car_make_model ?? "");
+    setPlate(driver?.plate ?? "");
     setSeats(driver?.seats_available != null ? String(driver.seats_available) : "");
     setNote(driver?.availability_note ?? "");
   }, [driver, open]);
 
+  const mustOnboard = !!driver && !driver.onboarded_at;
   const qc = useQueryClient();
   const fn = useServerFn(updateDriverProfile);
   const mut = useMutation({
     mutationFn: () => fn({ data: {
       token,
       name: name.trim() || undefined,
+      phone: phone.trim() || undefined,
+      car_make_model: car.trim() === "" ? null : car.trim(),
+      plate: plate.trim() === "" ? null : plate.trim(),
       seats_available: seats.trim() === "" ? null : Number(seats),
       availability_note: note.trim() === "" ? null : note.trim(),
     }}),
@@ -690,27 +700,41 @@ function ProfileDialog({ open, onOpenChange, token, driver }: {
     onError: (e: Error) => toast.error(e.message === "driver_link_required" ? "Ask your coordinator for a personal link." : e.message),
   });
 
+  const canSave = name.trim().length > 0 && phone.trim().length > 0
+    && (!mustOnboard || (car.trim().length > 0 && plate.trim().length > 0 && seats.trim().length > 0));
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(v) => { if (!mustOnboard) onOpenChange(v); }}>
+      <DialogContent onEscapeKeyDown={(e) => mustOnboard && e.preventDefault()} onPointerDownOutside={(e) => mustOnboard && e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>Your profile</DialogTitle>
-          <DialogDescription>Coordinators see this on their dispatch board.</DialogDescription>
+          <DialogTitle>{mustOnboard ? "Welcome — finish setup" : "Your profile"}</DialogTitle>
+          <DialogDescription>
+            {mustOnboard
+              ? "A coordinator assigned you a trip. Please complete your profile before you can start."
+              : "Coordinators see this on their dispatch board."}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Full name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Phone number *</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Car {mustOnboard && "*"}</Label><Input value={car} onChange={(e) => setCar(e.target.value)} placeholder="Toyota Prius" /></div>
+            <div className="space-y-1.5"><Label>Plate {mustOnboard && "*"}</Label><Input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="ABC 123" /></div>
+          </div>
           <div className="space-y-1.5">
-            <Label>Seats available</Label>
+            <Label>Seats available {mustOnboard && "*"}</Label>
             <Input type="number" min={0} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="e.g. 4" />
           </div>
           <div className="space-y-1.5">
             <Label>Availability</Label>
-            <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
+            <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="e.g. Mon–Fri 06:00–18:00. Off Sundays." />
           </div>
         </div>
         <DialogFooter>
-          <Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending ? "Saving…" : "Save"}</Button>
+          <Button disabled={mut.isPending || !canSave} onClick={() => mut.mutate()}>
+            {mut.isPending ? "Saving…" : mustOnboard ? "Complete setup" : "Save"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
