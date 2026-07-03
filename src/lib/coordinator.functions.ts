@@ -1570,7 +1570,9 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
       supabaseAdmin.from("jobs").select("id, client_link_token").in("id", jobIds),
       supabaseAdmin.from("trip_messages")
         .select("id, job_id, client_identity_id, pax_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
-        .in("job_id", jobIds).order("created_at", { ascending: true }),
+        .in("job_id", jobIds)
+        .not("thread_kind", "in", "(driver_client,driver_coord)")
+        .order("created_at", { ascending: true }),
     ]);
 
     const tokens = (jobsRows ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
