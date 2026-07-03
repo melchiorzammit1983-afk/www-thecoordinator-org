@@ -270,14 +270,30 @@ export function TripDetailsSheet({
           {(flightIssue || job.deletion_requested_at) && (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
               {flightIssue && (
-                <div className="flex items-start gap-2">
-                  <CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
-                  <span>
+                <div
+                  className="relative flex items-start gap-2 rounded-sm select-none cursor-pointer overflow-hidden"
+                  onPointerDown={startHold}
+                  onPointerUp={cancelHold}
+                  onPointerLeave={cancelHold}
+                  onPointerCancel={cancelHold}
+                  title={newTime ? "Hold 1s to reschedule pickup to flight time" : undefined}
+                >
+                  {holdPct > 0 && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-destructive/25 transition-[width] duration-75"
+                      style={{ width: `${Math.round(holdPct * 100)}%` }}
+                    />
+                  )}
+                  <CircleAlert className="h-4 w-4 mt-0.5 shrink-0 relative" />
+                  <span className="relative">
                     <b>✈ {flightCode}</b>{" "}
                     {job.flight_status === "cancelled" ? "CANCELLED" :
                       job.flight_status === "time_mismatch"
                         ? (job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH"))
                         : (job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED"))}
+                    {newTime && (
+                      <span className="ml-1 opacity-70">· hold 1s to move pickup to {newTime}</span>
+                    )}
                   </span>
                 </div>
               )}
