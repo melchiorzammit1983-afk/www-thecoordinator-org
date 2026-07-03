@@ -1,64 +1,46 @@
-# Separate driver chats: driver↔client and driver↔coordinator
+# Client location → chat link + live map in driver card
 
-Today the driver app has a single trip chat where the coordinator, driver, and client all see every message. This adds two private side-channels so the driver can talk to the client without the coordinator seeing, and to the coordinator without the client seeing.
+Today the client's "Send my pin" and "Share live" buttons only write rows into `client_locations`; the driver never actually sees them. Wire both flows into the driver app:
 
-## Behavior
+- **Send my pin** posts a chat message in the driver↔client thread with a Google Maps deep-link. Tapping the link opens Google Maps navigation to that spot.
+- **Share live** streams updates; the driver's job card shows an embedded Google Map with a marker moving with the client, as long as fresh live points are arriving.
 
-Driver app trip chat becomes a 3-tab thread selector:
-- **Group** — everyone (existing behavior, unchanged)
-- **Client** — driver ↔ client only. Coordinator does not see it.
-- **Coordinator** — driver ↔ coordinator only. Client does not see it.
+## Server changes
 
-Coordinator's trip chat gets an extra tab: **Driver** (the driver↔coordinator private thread). The existing Group and per-passenger Private tabs stay unchanged. Coordinator never sees driver↔client messages.
+`src/lib/coordinator-public.functions.ts`
+- `pushClientLocation` (called by the client portal for both modes) — when `mode === "pin"`, also insert into `trip_messages`:
+  - `sender_kind: "client"`, `sender_label: pax_name ?? "Passenger"`
+  - `thread_kind: "driver_client"` when an identity exists, else `"group"` (so unnamed passengers still surface it)
+  - `body`: `📍 <PaxName> shared their location — https://www.google.com/maps/search/?api=1&query=LAT,LNG` (URL-safe, six-decimal lat/lng)
+- New `getClientLiveLocationDriver` server fn (driver token):
+  - input: `{ token, job_id }`
+  - resolves via existing `loadDriverJob`, then returns the latest row from `client_locations` for that job (and its siblings when part of a group) where `mode = 'live'` and `captured_at >= now() - interval '3 minutes'`
+  - shape: `{ latitude, longitude, accuracy_m, captured_at, pax_name } | null`
 
-Client's chat (t.$token.tsx) gets an extra tab: **Driver** (the driver↔client private thread). Client never sees driver↔coordinator messages.
+No schema/migration needed — `trip_messages` already accepts `driver_client`, `client_locations` already exists.
 
-Send/receive rules are enforced server-side, not just hidden in UI.
+## Driver UI
 
-## Data model
+`src/routes/m.driver.$token.tsx` (inside `JobCard`)
+- Add a `useQuery` for `getClientLiveLocationDriver` with `refetchInterval: 8000`, enabled only for jobs whose status is one of `accepted | en_route | arrived | in_progress` (matches other live-share gating).
+- When the query returns a row and `Date.now() - captured_at < 90s`, render a new compact component `ClientLiveMiniMap` inside the card, above the action grid:
+  - Small header row: green pulsing dot + `"Live location — <PaxName> · <ageLabel>"`
+  - ~180px tall rounded map card with a single marker at the client's coords
+  - Button: "Open in Google Maps" → `https://www.google.com/maps/search/?api=1&query=LAT,LNG` (target `_blank`)
+- Hide the mini-map when the row is missing or stale (`>= 90s`).
 
-Extend the `trip_messages.thread_kind` check constraint to allow two new values in addition to today's `group` / `private`:
-- `driver_client` — driver ↔ client private
-- `driver_coord` — driver ↔ coordinator private
+`src/components/trip/ClientLiveMiniMap.tsx` (new)
+- Reuses the Maps JS loader pattern currently in `DriverLiveMap.tsx`. Extract it into `src/lib/googleMaps.ts` and import from both places so we don't inject two script tags.
+- Renders a `google.maps.Map` (no `mapId`, no `AdvancedMarkerElement`) with a single `google.maps.Marker` for the client. On subsequent updates it repositions the marker and recenters the map smoothly (`panTo`) instead of rebuilding.
+- Handles `missing_browser_key` and `gmaps_load_failed` by falling back to a plain "Open in Google Maps" button.
 
-No new columns, no new tables. `sender_kind` stays `driver | coordinator | client`. `read_by_driver_at` / `read_by_coordinator_at` are reused; client reads are already tracked per-identity elsewhere.
+## Chat rendering
 
-## Server functions
+The existing driver `TripChatDialog` renders `body` as plain text with `whitespace-pre-wrap`. Tapping "https://..." currently does nothing. Small enhancement so the pin message is actually tappable:
+- In `src/components/trip/TripChatDialog.tsx`, replace the raw body `<div>` with a helper that splits on URLs (`/(https?:\/\/[^\s]+)/g`) and renders each match as `<a target="_blank" rel="noreferrer" className="underline">`. Non-URL text stays as-is.
+- Same treatment on the client's chat panel in `t.$token.tsx` so the client also sees clickable links.
 
-`src/lib/coordinator-public.functions.ts` (driver token endpoints):
-- `listTripMessages` / `postTripMessage` accept `thread_kind: 'group' | 'driver_client' | 'driver_coord'` (default `group` to stay backward-compatible). Post writes that literal value.
+## Out of scope
 
-`src/lib/coordinator.functions.ts` (coordinator):
-- `listTripMessagesCoord` accepts a new `thread_kind` value `driver` that filters to `thread_kind = 'driver_coord'`. Existing `all` filter is updated to **exclude** `driver_client` so coordinator never sees driver↔client.
-- `postTripMessageCoord` accepts `thread_kind: 'driver_coord'` and writes it (sender_kind `coordinator`).
-- Coordinator unread badge query excludes `driver_client`.
-
-`src/lib/coordinator-public.functions.ts` (client token endpoints in t.$token flow):
-- `listClientTripMessages` / `postClientTripMessage` accept `thread_kind: 'group' | 'private' | 'driver_client'`. Client list queries always exclude `driver_coord`.
-
-## UI
-
-`src/components/trip/TripChatDialog.tsx`:
-- Add a small segmented control at the top when `role === 'driver'`: Group / Client / Coordinator. Selected value is passed as `thread_kind` to list/post.
-- When `role === 'coordinator'` and a new `threadKind === 'driver'` is passed, dialog talks to the driver↔coord thread; empty state text updated.
-
-`src/routes/m.driver.$token.tsx`:
-- Wire the new 3-tab selector through TripChatDialog. Default tab: Group.
-
-`src/components/coordinator/TripDetailsSheet.tsx` (and coordinator.calendar chat entry points):
-- Add a "Driver" tab alongside existing Group/passenger-private tabs. Only visible when the trip has an assigned driver.
-
-`src/routes/t.$token.tsx`:
-- Add a third pill "Driver" next to Private/Group. Uses `thread_kind: 'driver_client'`. Disabled with a hint if no driver assigned yet.
-
-## Migration
-
-```sql
-ALTER TABLE public.trip_messages
-  DROP CONSTRAINT IF EXISTS trip_messages_thread_kind_check;
-ALTER TABLE public.trip_messages
-  ADD CONSTRAINT trip_messages_thread_kind_check
-  CHECK (thread_kind = ANY (ARRAY['group','private','driver_client','driver_coord']));
-```
-
-No RLS changes required — existing policies scope by `job_id` / company / driver token; the new values ride the same rows. Visibility per role is enforced in the server function filters above.
+- No changes to the coordinator's live-driver map, SOS flow, or `client_locations` retention.
+- No push notifications when the pin lands — the driver relies on the chat unread badge that already exists.
