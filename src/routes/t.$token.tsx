@@ -648,7 +648,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
 
   const listFn = useServerFn(listClientTripMessages);
   const postFn = useServerFn(postClientTripMessage);
-  const [thread, setThread] = useState<"group" | "private">(isGroup ? "group" : "private");
+  const [thread, setThread] = useState<"group" | "private">("private");
   const [text, setText] = useState("");
   const qc = useQueryClient();
   const key = ["client-chat", token, thread, deviceId];
