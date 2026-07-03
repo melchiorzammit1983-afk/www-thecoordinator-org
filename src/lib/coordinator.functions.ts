@@ -1017,14 +1017,20 @@ function combineDateAndTime(baseIso: string | null, hhmm: string | null | undefi
   if (!m) return null;
   const base = baseIso ? new Date(baseIso) : new Date();
   if (Number.isNaN(base.getTime())) return null;
-  // Board shows local Malta time; keep the pickup date and stamp the HH:MM in UTC.
-  // toLocaleString on the client renders it in the viewer's zone — acceptable
-  // approximation for surfacing scheduled/estimated in the details panel.
-  const d = new Date(Date.UTC(
-    base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(),
-    Number(m[1]), Number(m[2]), 0,
-  ));
-  return d.toISOString();
+  // Board shows Malta local time — anchor to the pickup's Malta calendar date
+  // and combine with the HH:MM as Malta wall-clock, then store as UTC ISO.
+  const maltaParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Malta", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(base);
+  const get = (t: string) => maltaParts.find((p) => p.type === t)!.value;
+  const dateStr = `${get("year")}-${get("month")}-${get("day")}`;
+  const hh = String(Number(m[1])).padStart(2, "0");
+  const mm = String(Number(m[2])).padStart(2, "0");
+  try {
+    return maltaWallTimeToUtcIso(dateStr, `${hh}:${mm}`);
+  } catch {
+    return null;
+  }
 }
 
 async function refreshMaltaFlightForJob(
