@@ -99,6 +99,7 @@ export function TripDetailsSheet({
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
+  const [driverChatOpen, setDriverChatOpen] = useState(false);
 
   const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
 
