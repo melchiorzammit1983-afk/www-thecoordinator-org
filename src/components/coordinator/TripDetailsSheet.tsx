@@ -524,17 +524,17 @@ export function TripDetailsSheet({
                   </div>
                 )}
                 {job.flight_scheduled_at && (
-                  <div>Scheduled: {new Date(job.flight_scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                  <div>Scheduled: {formatMaltaTime(job.flight_scheduled_at)}</div>
                 )}
                 {job.flight_estimated_at && job.flight_estimated_at !== job.flight_scheduled_at && (
                   <div>Estimated: <span className={flightIssue ? "text-destructive font-medium" : ""}>
-                    {new Date(job.flight_estimated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatMaltaTime(job.flight_estimated_at)}
                   </span></div>
                 )}
                 <div className="text-[10px] text-muted-foreground pt-1 border-t flex items-center justify-between">
                   <span>
                     {job.flight_status_updated_at
-                      ? `Updated ${new Date(job.flight_status_updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      ? `Updated ${formatMaltaTime(job.flight_status_updated_at)}`
                       : "Not checked yet"}
                   </span>
                   <a
