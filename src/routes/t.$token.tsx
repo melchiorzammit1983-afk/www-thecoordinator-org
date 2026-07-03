@@ -745,7 +745,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
                         mine || m.is_sos ? "opacity-70" : "text-muted-foreground")}>
                         {m.sender_label ?? m.sender_kind} · {new Date(m.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })}
                       </div>
-                      <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                      <div className="whitespace-pre-wrap break-words">{linkify(m.body)}</div>
                     </div>
                   </div>
                 );
