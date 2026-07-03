@@ -14,7 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt,
 } from "lucide-react";
 
 
