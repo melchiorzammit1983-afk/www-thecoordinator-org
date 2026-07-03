@@ -1,106 +1,58 @@
-
 ## Goal
-Make the multi-coordinator chain bulletproof: both sides always see the trip, chains are strictly enforced, all chat threads are secure and simple, drivers must be registered to receive jobs, and the client sees the driver on an embedded live map (no Google Maps app hop).
 
----
+Make the creator (Coordinator A) always see every partner-forwarded trip on their own dispatch board — one card per partner lane, hop by hop — from the moment it's dispatched, through acceptance, driving, and completion. Dragging a card onto a partner lane opens a confirm dialog and dispatches it.
 
-## 1. Chain-aware trip visibility (both sides always see it)
+## What changes for the user
 
-**Server (`src/lib/coordinator.functions.ts`, `collab.functions.ts`)**
-- `listJobsForCompany` (and the calendar query) now returns any job where the company is in `dispatch_chain_company_ids` — not just `company_id` / `executor_company_id`. Each row gets a computed `chain_role`: `origin | intermediate | executor`.
-- After a dispatch is accepted, the trip STAYS on Coordinator A's board (previously it disappeared). It now shows on both A and B with a shared status badge (`Assigned to {B}`, `Accepted`, `In progress`, etc.), driven by the executor's live state.
+1. **Partner lanes on the dispatch board.** Next to driver lanes, each active connected partner gets its own lane (day and week view). Empty lanes still show so trips can be dropped there.
+2. **Drag a trip onto a partner lane → confirm dialog opens** (partner prefilled, optional note) → Dispatch. Card immediately re-renders in that partner's lane with a "Sent · pending" badge and a partner-color left rim so it visually reads as "handed off".
+3. **Card stays on the creator's board forever.** After the partner accepts, the badge flips to "Accepted · at {Partner}". If the partner assigns a driver, the driver name appears on the same card. If the partner forwards to another partner C, a **second card** appears in C's lane on A's board (one card per hop). Cards for hops A doesn't own are read-only for A (no drag, no edit) but keep full chat + chain timeline + live status.
+4. **Statement already carries chain trips** — we verify every hop is included and labeled with the executor company + driver, so the client-facing invoice from A always reflects the full A→B→C→driver chain.
+5. **Outbound collapsed section is removed** — its purpose is now served by the always-visible partner lanes.
 
-**Calendar (`coordinator.calendar.tsx`, `TripCard.tsx`)**
-- Origin/intermediate rows render read-only badge + "View chain" action (no drag, no direct status edit) — actions belong to the current executor.
-- Executor row is fully interactive.
-- Shared status badge color mirrors executor state so both sides see the same signal in real time (already wired via Supabase Realtime on `jobs` + `job_dispatch_hops`).
+## Technical plan
 
-**Chain view / details**
-- Clicking a trip anywhere in the chain opens `TripDetailsSheet` with the existing `ChainTimeline` prominently on top: origin → each hop → current executor → driver, with per-hop status, timestamps, and who did what. Everyone sees their own role highlighted.
+### Data / server
 
----
+- `listJobs` (coordinator): broaden filter to include jobs where `company_of(me)` is in `dispatch_chain_company_ids` OR equals `origin_company_id` (not only `company_id`/`executor_company_id`). Add derived fields per row:
+  - `chain_role`: `"creator" | "executor" | "chain_viewer"`
+  - `current_partner`: `{ id, name } | null` (the current `executor_company_id` if it's not me)
+  - `hop_index`: which hop this card represents on my board
+- New server fn `listPartnerLanes()` returning `[{ id, name, color_hint }]` from active `coordinator_connections` for the current company. Cached 60s.
+- New server fn `getChainCardsForCreator(job_id)`: returns one row per hop where `from_company_id = me`, each mapped to a lane (target partner). Used to render one card per partner lane for the creator.
+- Realtime: subscribe to `job_dispatch_hops` and `jobs` changes for any job in my chain, so cards update instantly across all hops without polling.
 
-## 2. Bulletproof dispatch rules
+### Frontend (`coordinator.calendar.tsx`)
 
-Enforced in `dispatch_job_forward` RPC (already SECURITY DEFINER) + a new precondition:
+- Extend `DriverLanes` → `DispatchLanes` that renders **Driver lanes + Partner lanes** in the same horizontal scroll grid. Partner lanes use `useDroppable({ id: "partner:{companyId}" })`.
+- `onDragEnd`: when `dropId` starts with `partner:`, open the existing `DispatchToPartnerDialog` prefilled with that partner and the job id — do not dispatch on drop.
+- New card variant `PartnerHopCard` (reuses `TripCard` styling) with:
+  - Left rim colored per partner (deterministic hash → HSL).
+  - Status badge: `Sent · pending` / `Accepted` / `Rejected` (falls back off the lane on reject) / `In progress` / `Completed`.
+  - Assigned driver name once the executor sets one (from live `jobs` row).
+  - Buttons: **Open chat**, **Chain timeline**, **Details** (read-only for `chain_viewer` role).
+- Chain expansion: for hop `A→B→C→driver`, the creator sees a card in B's lane AND a card in C's lane (one per hop), each showing its own hop status. Click either card → same `TripDetailsSheet` with `ChainTimeline` highlighted at that hop.
+- Remove the collapsed `OutboundBoard` (superseded). Keep `InboundBoard` for partners receiving trips.
 
-- Target company MUST be an `active` `coordinator_connections` partner of the current executor. Reject `not_a_partner` otherwise.
-- Keep existing cycle detection and "only current executor can dispatch" checks.
-- Driver assignment guard: `enforce_driver_assign_by_executor` already restricts driver changes to the current executor. Extend it so:
-  - If the driver being assigned does NOT belong to the executor's company, mark the job `driver_external = true` and require the driver to have completed onboarding (see §4). No silent assignments to strangers.
+### Access + safety
 
----
+- `TripDetailsSheet` and `TripChatDialog` already permit access for any company in the chain (`assertJobInCompany`). No policy changes needed; verify RLS on `jobs` still allows SELECT when `company_of(me) = ANY(dispatch_chain_company_ids)` (helper `job_in_my_chain` exists — add it to the jobs SELECT policy if not already used).
+- Drop-to-partner is disabled if no active connection exists with that company (server-side `dispatch_job_forward` already enforces `not_a_partner`; UI just won't render a lane).
 
-## 3. Chats — secure, simple, no clutter
+### Statements
 
-Extend `trip_messages` with a `thread` enum: `chain | coord_driver | coord_client | driver_client`.
+- `buildStatement`: confirm rows are emitted per hop when the coordinator is `creator` (they should see A→B and B→C hops, executor names, drivers, and payment method), and only price when they're in the chain. Add a "Chain" column: `A → B → C → Driver Name`.
 
-Threads per trip:
-- **Chain group** — all coordinators in `dispatch_chain_company_ids` + the current driver. Ops coordination.
-- **Coordinator ↔ Driver (per hop)** — each coordinator has a private 1:1 thread with the assigned driver. RLS: `thread='coord_driver' AND (company_id = my_company OR i_am_the_driver)`.
-- **Coordinator ↔ Client** — only the trip's ORIGIN coordinator can see/post. RLS scoped to `origin_company_id`.
-- **Driver ↔ Client** — only current driver and client identity (via `client_link_identities`). No coordinator visibility.
+### Realtime + invalidations
 
-UI: single `TripChatDialog` with tabs; only tabs the viewer is allowed in are shown. Blue-dot unread indicator per tab, already-existing pattern.
+- One `supabase.channel("chain-live")` subscribed to `jobs` and `job_dispatch_hops` filtered by `dispatch_chain_company_ids @> {me}`; invalidates `["jobs"]` and `["chain-cards", jobId]` on change.
 
-RLS updates in the migration:
-- Rewrite `trip_messages` SELECT/INSERT policies to key off `thread` + role checks (`company_of(auth.uid()) = ANY(dispatch_chain_company_ids)`, `job.origin_company_id`, `job.driver_id`, magic-link identity for client/driver public routes).
+## Out of scope
 
----
+- Redesigning the driver lane card visuals.
+- Changing how partners themselves see the trip (their existing Inbound + own lanes stay).
+- Payment/pricing rules (already implemented last turn).
 
-## 4. Driver onboarding (mandatory when assigned outside their company)
+## Ask after build
 
-- New table `driver_profiles` (or extend `drivers`): `full_name`, `phone`, `car_make_model`, `plate`, `seats_available`, `onboarded_at`.
-- On first open of `/m.driver.$token`, if `onboarded_at IS NULL`, show a blocking `DriverOnboardingDialog` — cannot dismiss, cannot see trips until saved.
-- Coordinators can only assign an external driver if that driver has `onboarded_at`. Otherwise the assign action shows "Waiting for driver to complete profile" and holds the trip in `pending_driver_onboarding`.
-- Driver's own company keeps current behavior (no forced re-onboarding).
-
----
-
-## 5. Statements always include the full chain
-
-`buildStatement` (`coordinator.functions.ts`):
-- Query jobs where viewer's company is in `dispatch_chain_company_ids`.
-- New optional columns: `origin_company`, `chain (A → B → C)`, `executor_company`, `driver_company`, `viewer_role_in_chain`, plus existing pricing/payment/duration/distance.
-- Filter row already covers company/driver/name/flight; add `chain_role` and `payment_method` filters (payment_method already added last turn).
-
----
-
-## 6. In-app client live map (replace Google Maps hop)
-
-Client trip route `/t/$token` (and `/m/client/$token`):
-- Replace "Open in Google Maps" with an embedded `<ClientTripMap />` using the existing Google Maps JS loader (browser key already wired).
-- Shows: driver live marker (from `driver_locations` realtime), pickup pin, dropoff pin, polyline route via Routes API through the gateway, live ETA text updated every 30s.
-- Keep a small "Open externally" link as a fallback only.
-
-Also audit other client-side actions on `/t/$token` and `/m/client/$token`: chat send, SOS, status refresh, refresh on background — confirm they all work (quick manual pass + fix anything broken).
-
----
-
-## Technical section
-
-**Migration**
-- `ALTER TABLE public.trip_messages ADD COLUMN thread text NOT NULL DEFAULT 'chain' CHECK (thread IN ('chain','coord_driver','coord_client','driver_client'));`
-- Rewrite `trip_messages` RLS policies per §3.
-- `ALTER TABLE public.drivers ADD COLUMN onboarded_at timestamptz, ADD COLUMN car_make_model text, ADD COLUMN plate text, ADD COLUMN seats_available int;` (phone already exists).
-- `ALTER TABLE public.jobs ADD COLUMN driver_external boolean NOT NULL DEFAULT false;`
-- Update `dispatch_job_forward` to check `coordinator_connections` active partnership.
-- Update `enforce_driver_assign_by_executor` to set `driver_external` and require onboarding.
-- Do not add anon SELECT on `trip_messages`; use SECURITY DEFINER RPCs for magic-link posting/reading like today.
-
-**Server functions**
-- `listJobsForCompany`: broaden filter to `dispatch_chain_company_ids @> ARRAY[my_company]`, add `chain_role`.
-- `postTripMessage(job_id, thread, body)` + `listTripMessages(job_id, thread)` with role checks.
-- `saveDriverProfile(token, {full_name, phone, car, plate, seats})` via magic-link scoped RPC.
-- `computeRouteForClient(job_id, token)` — server fn that calls Routes API via connector gateway using the client's magic-link token to authorize; returns polyline + duration.
-
-**Frontend**
-- `TripCard`: add `chain_role` styling — dashed border + "Watching" chip for non-executor rows.
-- `TripDetailsSheet`: promote `ChainTimeline` to the top; add "Chats" tab with allowed threads only.
-- `DriverOnboardingDialog` new component blocking `/m.driver.$token`.
-- `ClientTripMap` new component on `/t/$token`.
-
-**Out of scope this pass**
-- Payment/pricing UI changes (last turn's work stays as-is).
-- Any AI extraction changes.
-
+Once live I'll ask whether partner lanes should be collapsible per-partner, and whether creator-side cards should show the partner's driver phone + live location by default or behind a click.
