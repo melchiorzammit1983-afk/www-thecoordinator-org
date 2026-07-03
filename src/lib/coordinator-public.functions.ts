@@ -112,6 +112,7 @@ export const listTripMessages = createServerFn({ method: "GET" })
       token: z.string().min(8).max(128),
       job_id: z.string().uuid(),
       thread_kind: z.enum(["group", "driver_client", "driver_coord"]).optional().default("group"),
+      pax_id: z.string().uuid().nullish(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -124,10 +125,19 @@ export const listTripMessages = createServerFn({ method: "GET" })
       if (sibIds.length) ids = sibIds;
     }
     let q = supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at, thread_kind")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_driver_at, thread_kind, client_identity_id, pax_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (data.thread_kind === "driver_client") {
       q = q.eq("thread_kind", "driver_client");
+      if (data.pax_id) {
+        // Scope to just this passenger's private thread with the driver.
+        const { data: idents } = await supabaseAdmin
+          .from("client_link_identities").select("id").eq("pax_id", data.pax_id);
+        const idIds = (idents ?? []).map((r: any) => r.id as string);
+        const orParts: string[] = [`pax_id.eq.${data.pax_id}`];
+        for (const i of idIds) orParts.push(`client_identity_id.eq.${i}`);
+        q = q.or(orParts.join(","));
+      }
     } else if (data.thread_kind === "driver_coord") {
       q = q.eq("thread_kind", "driver_coord");
     } else {
@@ -153,10 +163,21 @@ export const postTripMessage = createServerFn({ method: "POST" })
       job_id: z.string().uuid(),
       body: z.string().trim().min(1).max(4000),
       thread_kind: z.enum(["group", "driver_client", "driver_coord"]).optional().default("group"),
+      pax_id: z.string().uuid().nullish(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
     const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    let clientIdentityId: string | null = null;
+    let paxId: string | null = null;
+    if (data.thread_kind === "driver_client" && data.pax_id) {
+      paxId = data.pax_id;
+      const { data: ident } = await supabaseAdmin
+        .from("client_link_identities")
+        .select("id").eq("pax_id", data.pax_id)
+        .order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+      clientIdentityId = (ident as any)?.id ?? null;
+    }
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: job.company_id,
@@ -164,6 +185,8 @@ export const postTripMessage = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: data.body,
       thread_kind: data.thread_kind,
+      client_identity_id: clientIdentityId,
+      pax_id: paxId,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
