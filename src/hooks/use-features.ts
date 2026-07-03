@@ -12,7 +12,7 @@ export function useFeatures() {
   // Realtime: when the admin toggles any entitlement, invalidate immediately.
   useEffect(() => {
     const channel = supabase
-      .channel("feature-entitlements-self")
+      .channel(`feature-entitlements-self-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "company_feature_entitlements" },
