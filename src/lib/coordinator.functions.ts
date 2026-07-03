@@ -1541,7 +1541,7 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
     try { await assertJobInCompany(context, jobId); } catch { return {}; }
 
     const supabaseAdmin = await getAdminClient();
-    const jobIds = await siblingGroupJobIds(supabaseAdmin, data.job_id);
+    const jobIds = await siblingGroupJobIds(supabaseAdmin, jobId);
 
     const [{ data: paxRows }, { data: jobsRows }, { data: msgRows }] = await Promise.all([
       supabaseAdmin.from("pax").select("id, name, job_id").in("job_id", jobIds),
