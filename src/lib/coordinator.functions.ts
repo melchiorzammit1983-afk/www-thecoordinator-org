@@ -1527,7 +1527,8 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    await assertJobInCompany(context, data.job_id);
+    try { await assertJobInCompany(context, data.job_id); } catch { return {}; }
+
     const supabaseAdmin = await getAdminClient();
     const jobIds = await siblingGroupJobIds(supabaseAdmin, data.job_id);
 
