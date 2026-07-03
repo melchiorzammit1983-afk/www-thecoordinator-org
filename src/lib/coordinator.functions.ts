@@ -2535,7 +2535,7 @@ export const listSosForJob = createServerFn({ method: "GET" })
     let q = supabaseAdmin
       .from("client_sos_events")
       .select("id, job_id, pax_name, latitude, longitude, note, created_at, acknowledged_at, acknowledged_by")
-      .eq("job_id", data.job_id)
+      .eq("job_id", jobId)
       .order("created_at", { ascending: false })
       .limit(100);
     if (!data.include_ack) q = q.is("acknowledged_at", null);
