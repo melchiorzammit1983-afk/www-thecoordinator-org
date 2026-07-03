@@ -297,7 +297,10 @@ function ManualForm({
 function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
-  const parsed = useMemo(() => parseTrips(raw), [raw]);
+  const parsed = useMemo(
+    () => (looksLikeSheetPaste(raw) ? parseSheetPaste(raw) : parseTrips(raw)),
+    [raw],
+  );
   const valid = parsed.filter((t) => t.errors.length === 0);
   const incomplete = parsed.filter((t) => t.errors.length > 0);
   const aiEnabled = useFeature("ai_extraction");
