@@ -85,7 +85,7 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "deletion_requested_at", label: "Deletion requested", group: "Ops" },
   
 ];
-const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_method", "price_display"];
+const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_method", "price_display", "chain"];
 const STORAGE_KEY = "statement:columns:v3";
 
 

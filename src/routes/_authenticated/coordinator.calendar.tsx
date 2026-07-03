@@ -11,9 +11,10 @@ import {
   Pencil, Sparkles,
 } from "lucide-react";
 import {
-  listConnections, dispatchJobToPartner,
+  listConnections, dispatchJobToPartner, recallPartnerDispatch,
   listIncomingDispatches, listOutboundDispatches, respondToDispatch,
 } from "@/lib/collab.functions";
+
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
@@ -124,7 +125,12 @@ type Job = {
   source?: string | null;
   coord_approved_at?: string | null;
   parent_job_id?: string | null;
+  chain_names?: string[];
+  dispatch_status?: string | null;
+  dispatch_chain_company_ids?: string[] | null;
+  executor_company_id?: string | null;
 };
+
 
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -838,6 +844,14 @@ function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
   return out;
 }
 
+function partnerColor(id: string | null | undefined): string {
+  if (!id) return "hsl(38 92% 50%)";
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 78% 48%)`;
+}
+
+
 function minutesBetween(a: string, b: string): number {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
@@ -873,9 +887,17 @@ function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; c
 function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string; partnerName: string; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `partner:${partnerId}` });
   const items = bucketByGroup(jobs);
+  const color = partnerColor(partnerId);
   return (
-    <div ref={setNodeRef} className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "ring-2 ring-amber-500 bg-amber-100/60" : ""}`}>
-      <div className="text-sm font-medium truncate flex items-center gap-1"><PlaneTakeoff className="h-3.5 w-3.5 text-amber-600" /> Partner · {partnerName}</div>
+    <div
+      ref={setNodeRef}
+      style={{ borderColor: color, boxShadow: isOver ? `inset 0 0 0 2px ${color}` : undefined }}
+      className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "bg-amber-100/60" : ""}`}
+    >
+      <div className="text-sm font-medium truncate flex items-center gap-1">
+        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <PlaneTakeoff className="h-3.5 w-3.5" style={{ color }} /> Partner · {partnerName}
+      </div>
       <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
       <div className="space-y-2">
         {jobs.length === 0
@@ -885,6 +907,7 @@ function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string;
     </div>
   );
 }
+
 
 function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
@@ -1198,22 +1221,31 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const rejected = !!(sig as any)?.rejected;
 
 
-  // Color priority: red > blue(unread) > green > amber > default
-  const tone = problem
+  // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
+  const partnerPending = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "pending";
+  const partnerRejected = job.dispatch_status === "rejected";
+  const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
+
+  // Color priority: red > blue(unread) > partner state > driver-accepted > driver-pending > default
+  const tone = problem || partnerRejected
     ? "border-destructive bg-destructive/10"
     : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
+    : partnerPending
+    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+    : partnerAccepted
+    ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedPending
     ? "border-amber-500/70 bg-amber-500/5"
     : "border-border bg-background";
 
-  const gStripe = groupStripeStyle(job.group_id);
-  const style: React.CSSProperties = {
-    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
-    ...(gStripe ?? {}),
-  };
+  // Colored left rim shows which partner currently holds the trip (creator's-eye view).
+  const rimColor = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.executor_company_id
+    ? partnerColor(job.executor_company_id)
+    : null;
+
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
@@ -1242,6 +1274,13 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const totalUnreadSignal = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0);
 
+  const gStripe = groupStripeStyle(job.group_id);
+  const style: React.CSSProperties = {
+    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
+    ...(gStripe ?? {}),
+    ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -1249,6 +1288,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       style={style}
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
+
       <LabelStripe labels={labels} />
 
       {/* Signal overlays */}
@@ -1384,6 +1424,22 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
+            {job.chain_names && job.chain_names.length >= 2 && (
+              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
+                {job.chain_names.map((name, i) => {
+                  const isLast = i === (job.chain_names!.length - 1);
+                  const dotColor = i === 0 ? "hsl(var(--muted-foreground))" : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
+                  return (
+                    <span key={`${i}-${name}`} className="inline-flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                      <span className={isLast ? "font-medium text-foreground" : ""}>{name}</span>
+                      {!isLast && <ChevronRight className="h-3 w-3 opacity-60" />}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
           </div>
         </div>
       </button>
@@ -1445,6 +1501,15 @@ function TripMenu({
     onSuccess: (r) => { toast.success(`Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["jobs"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const recallFn = useServerFn(recallPartnerDispatch);
+  const recallMut = useMutation({
+    mutationFn: () => recallFn({ data: { job_id: (job as any)._origin_job_id ?? job.id } }),
+    onSuccess: () => { toast.success("Hand-off recalled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const canRecall = job.chain_role === "creator_watching" && job.dispatch_status === "pending";
+
 
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
@@ -1593,6 +1658,16 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenDispatch}>
           <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
         </DropdownMenuItem>
+        {canRecall && (
+          <DropdownMenuItem
+            onClick={() => { if (confirm("Recall this hand-off before the partner accepts?")) recallMut.mutate(); }}
+            disabled={recallMut.isPending}
+            className="text-amber-600"
+          >
+            <Unlink className="h-4 w-4 mr-2" /> Recall hand-off
+          </DropdownMenuItem>
+        )}
+
         {job.group_id && (
           <DropdownMenuItem onClick={() => ungroupMut.mutate()} disabled={ungroupMut.isPending}>
             <Unlink className="h-4 w-4 mr-2" /> Ungroup

@@ -212,30 +212,44 @@ export const listJobs = createServerFn({ method: "GET" })
     const combined: any[] = [...mine, ...out];
 
     // ---- Multi-hop expansion: creator sees a card in EVERY partner lane the trip has visited.
-    // For jobs where I'm origin/creator with 2+ hops (A→B→C…), emit a synthetic card per
-    // *earlier* hop so the trip is visible in every partner's lane hop-by-hop.
     const originJobIds = combined
       .filter((r) => r.company_id === c.id && Array.isArray(r.dispatch_chain_company_ids) && r.dispatch_chain_company_ids.length >= 2)
       .map((r) => r.id);
+    const hopsByJob = new Map<string, any[]>();
     if (originJobIds.length) {
       const { data: hops } = await supabaseAdmin.from("job_dispatch_hops")
         .select("job_id, hop_index, from_company_id, to_company_id, status, note, decided_at")
         .in("job_id", originJobIds)
         .order("hop_index", { ascending: true });
-      const hopsByJob = new Map<string, any[]>();
       for (const h of hops ?? []) {
         if (!hopsByJob.has(h.job_id)) hopsByJob.set(h.job_id, []);
         hopsByJob.get(h.job_id)!.push(h);
       }
-      // Look up partner names for any hop target we don't already know
-      const targetIds = new Set<string>();
-      for (const list of hopsByJob.values()) for (const h of list) targetIds.add(h.to_company_id);
-      const nameMap: Record<string, string> = {};
-      if (targetIds.size) {
-        const { data: comps } = await supabaseAdmin.from("companies")
-          .select("id, name").in("id", Array.from(targetIds));
-        for (const co of comps ?? []) nameMap[co.id] = co.name;
-      }
+    }
+
+    // Resolve names for ALL chain company ids across all rows (for breadcrumb) + hop targets.
+    const allCompanyIds = new Set<string>();
+    for (const r of combined) {
+      for (const id of (r.dispatch_chain_company_ids ?? [])) allCompanyIds.add(id);
+      if (r.executor_company_id) allCompanyIds.add(r.executor_company_id);
+    }
+    for (const list of hopsByJob.values()) for (const h of list) allCompanyIds.add(h.to_company_id);
+    allCompanyIds.delete(c.id);
+    const nameMap: Record<string, string> = { [c.id]: c.name };
+    if (allCompanyIds.size) {
+      const { data: comps } = await supabaseAdmin.from("companies")
+        .select("id, name").in("id", Array.from(allCompanyIds));
+      for (const co of comps ?? []) nameMap[co.id] = co.name;
+    }
+
+    // Attach chain_names to every row.
+    for (const r of combined) {
+      const ids: string[] = Array.isArray(r.dispatch_chain_company_ids) ? r.dispatch_chain_company_ids : [];
+      r.chain_names = ids.map((id) => id === c.id ? "You" : (nameMap[id] ?? "Partner"));
+      r.dispatch_status = r.dispatch_status ?? null;
+    }
+
+    if (originJobIds.length) {
       const extras: any[] = [];
       for (const base of combined) {
         if (!originJobIds.includes(base.id)) continue;
@@ -264,6 +278,7 @@ export const listJobs = createServerFn({ method: "GET" })
 
     return combined;
   });
+
 
 
 
