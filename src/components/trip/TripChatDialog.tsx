@@ -46,17 +46,34 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
   const [text, setText] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [driverTab, setDriverTab] = useState<DriverTab>("group");
+  const [driverPaxId, setDriverPaxId] = useState<string | "">("");
+
+  // Driver-side: fetch the pax list so the driver can pick which passenger the
+  // "Client" thread is with. Keeps each passenger's chat private per pax.
+  const listPaxDrv = useServerFn(listJobPaxDriver);
+  const { data: driverPax } = useQuery({
+    queryKey: ["driver-chat-pax", token ?? "", jobId ?? ""],
+    enabled: role === "driver" && !!open && !!jobId && !!token,
+    queryFn: () => listPaxDrv({ data: { token: token!, job_id: jobId! } }) as Promise<{ id: string; name: string }[]>,
+  });
+  const driverPaxList = driverPax ?? [];
+  useEffect(() => {
+    // Auto-pick when there's exactly one passenger; otherwise clear when the tab isn't Client.
+    if (role !== "driver") return;
+    if (driverTab !== "driver_client") { if (driverPaxId) setDriverPaxId(""); return; }
+    if (!driverPaxId && driverPaxList.length === 1) setDriverPaxId(driverPaxList[0].id);
+  }, [role, driverTab, driverPaxList, driverPaxId]);
 
   const effectiveThread: "all" | "private" | "group" | "driver" =
     role === "coordinator" ? (threadKind ?? ((identityId || paxId) ? "private" : "all")) : "all";
 
-  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread, driverTab];
+  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread, driverTab, driverPaxId];
   const { data: messages } = useQuery({
     queryKey,
-    enabled: !!open && !!jobId,
+    enabled: !!open && !!jobId && !(role === "driver" && driverTab === "driver_client" && !driverPaxId),
     refetchInterval: open ? 10_000 : false,
     queryFn: () => role === "driver"
-      ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab } }) as Promise<Msg[]>
+      ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } }) as Promise<Msg[]>
       : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, pax_id: paxId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
   });
 
