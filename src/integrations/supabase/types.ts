@@ -1489,77 +1489,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      charge_feature: {
-        Args: {
-          _company_id: string
-          _feature: Database["public"]["Enums"]["feature_name"]
-          _job_id: string
-          _note: string
-        }
-        Returns: number
-      }
-      company_of: { Args: { _user_id: string }; Returns: string }
-      dispatch_job_forward: {
-        Args: { _job_id: string; _note: string; _to_company: string }
-        Returns: undefined
-      }
-      driver_accept_job: {
-        Args: { _job_id: string; _token: string }
-        Returns: undefined
-      }
-      driver_approve_deletion: {
-        Args: { _job_id: string; _token: string }
-        Returns: undefined
-      }
-      driver_save_profile: {
-        Args: {
-          _car: string
-          _name: string
-          _phone: string
-          _plate: string
-          _seats: number
-          _token: string
-        }
-        Returns: undefined
-      }
-      has_connection_permission: {
-        Args: {
-          _perm: string
-          _target_company: string
-          _viewer_company: string
-        }
-        Returns: boolean
-      }
-      has_feature: {
-        Args: { _company_id: string; _feature: string }
-        Returns: boolean
-      }
-      is_admin: { Args: { _user_id: string }; Returns: boolean }
-      is_company_owner: {
-        Args: { _company_id: string; _user_id: string }
-        Returns: boolean
-      }
-      is_executor_of: {
-        Args: { _job_id: string; _viewer_company: string }
-        Returns: boolean
-      }
-      job_in_my_chain: { Args: { _job_id: string }; Returns: boolean }
-      lookup_magic_link: {
-        Args: { _token: string }
-        Returns: {
-          company_id: string
-          expires_at: string
-          id: string
-          kind: string
-          revoked_at: string
-          subject_id: string
-          subject_label: string
-        }[]
-      }
-      respond_dispatch: {
-        Args: { _decision: string; _job_id: string; _note: string }
-        Returns: undefined
-      }
+      [_ in never]: never
     }
     Enums: {
       booking_status:
