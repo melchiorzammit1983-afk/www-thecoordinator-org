@@ -349,8 +349,9 @@ export const respondToDispatch = createServerFn({ method: "POST" })
     }).eq("id", hop.id);
     if (hopError) throw new Error(hopError.message);
     if (data.decision === "accepted") {
+      // Keep company_id = creator so the trip stays owned by A across the chain.
+      // executor_company_id already points to the accepting partner.
       const { error: updateError } = await supabaseAdmin.from("jobs").update({
-        company_id: c.id,
         dispatch_status: "accepted",
         dispatch_decided_at: decidedAt,
         dispatch_note: data.note ?? null,
