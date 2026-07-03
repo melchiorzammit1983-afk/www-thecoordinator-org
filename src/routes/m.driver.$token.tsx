@@ -111,7 +111,6 @@ function DriverManifest() {
   useEffect(() => {
     if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
   }, [data?.driver]);
-  const mustOnboard = !!data?.driver && !data.driver.onboarded_at;
 
   const [showArchived, setShowArchived] = useState(false);
   const { activeJobs, archivedJobs } = useMemo(() => {
