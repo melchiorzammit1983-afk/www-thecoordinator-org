@@ -640,8 +640,23 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </DialogContent>
       </Dialog>
 
+      <TripSummaryDialog
+        open={summaryOpen}
+        onOpenChange={setSummaryOpen}
+        token={token}
+        job={summaryOpen ? {
+          id: job.id,
+          from_location: job.from_location,
+          to_location: job.to_location,
+          pickup_at: job.pickup_at,
+          date: job.date,
+          time: job.time,
+        } : null}
+      />
+
     </article>
   );
+
 }
 
 
