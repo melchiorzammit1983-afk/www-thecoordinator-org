@@ -39,7 +39,6 @@ import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
-import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
