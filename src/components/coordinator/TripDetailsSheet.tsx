@@ -562,7 +562,8 @@ export function TripDetailsSheet({
         jobId={paxChat ? job.id : null}
         role="coordinator"
         identityId={paxChat?.identityId ?? null}
-        threadKind={paxChat?.identityId ? "private" : "group"}
+        paxId={paxChat?.paxId ?? null}
+        threadKind={paxChat ? "private" : "group"}
         paxName={paxChat?.name ?? null}
         title="Passenger chat"
       />
