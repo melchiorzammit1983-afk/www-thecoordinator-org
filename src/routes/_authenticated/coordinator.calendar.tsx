@@ -1032,7 +1032,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
-  const [openDispatch, setOpenDispatch] = useState(false);
 
   const paxCount = job.pax?.length ?? 0;
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
