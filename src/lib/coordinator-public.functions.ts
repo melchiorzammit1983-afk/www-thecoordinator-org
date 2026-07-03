@@ -979,7 +979,7 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
     z.object({
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80).optional(),
-      thread_kind: z.enum(["group", "private"]).default("group"),
+      thread_kind: z.enum(["group", "private", "driver_client"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -1003,11 +1003,12 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
 
     if (data.thread_kind === "private") {
       if (!identityId && !paxId) return [];
-      // OR: identity matches OR queued for our pax slot
       const orParts: string[] = [];
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "private").or(orParts.join(","));
+    } else if (data.thread_kind === "driver_client") {
+      q = q.eq("thread_kind", "driver_client");
     } else {
       q = q.eq("thread_kind", "group");
     }
@@ -1022,7 +1023,7 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       token: z.string().min(8).max(128),
       device_id: z.string().min(4).max(80),
       body: z.string().trim().min(1).max(4000),
-      thread_kind: z.enum(["group", "private"]).default("group"),
+      thread_kind: z.enum(["group", "private", "driver_client"]).default("group"),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -1031,7 +1032,8 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const label = (id as any)?.pax_name ?? "Passenger";
     const identityId = (id as any)?.id ?? null;
-    const effectiveKind = data.thread_kind === "private" && !identityId ? "group" : data.thread_kind;
+    let effectiveKind: "group" | "private" | "driver_client" = data.thread_kind;
+    if (effectiveKind === "private" && !identityId) effectiveKind = "group";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
@@ -1041,6 +1043,7 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const pushClientLocation = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
