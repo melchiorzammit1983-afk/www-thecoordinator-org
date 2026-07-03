@@ -1534,9 +1534,11 @@ export const getClientPresenceCoord = createServerFn({ method: "GET" })
 
 export const listPaxActivityCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().min(1) }).parse(i))
   .handler(async ({ data, context }) => {
-    try { await assertJobInCompany(context, data.job_id); } catch { return {}; }
+    const jobId = String(data.job_id).split("::")[0];
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) return {};
+    try { await assertJobInCompany(context, jobId); } catch { return {}; }
 
     const supabaseAdmin = await getAdminClient();
     const jobIds = await siblingGroupJobIds(supabaseAdmin, data.job_id);
