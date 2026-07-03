@@ -40,6 +40,16 @@ function buildWorkbook(): XLSX.WorkBook {
   const rows: (string | number)[][] = [SHEET_HEADERS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = SHEET_HEADERS.map((h) => ({ wch: Math.max(14, h.length + 2) }));
+  // Force Contact Number column (F) to Text so long phone numbers don't
+  // become scientific notation ("3.93331E+11") when copied.
+  const phoneColIdx = SHEET_HEADERS.indexOf("Contact Number");
+  if (phoneColIdx >= 0) {
+    for (let r = 0; r <= SAMPLE_ROWS.length; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: phoneColIdx });
+      const cell = ws[addr];
+      if (cell) { cell.t = "s"; cell.z = "@"; cell.v = String(cell.v ?? ""); }
+    }
+  }
   XLSX.utils.book_append_sheet(wb, ws, "Trips");
   const ins = XLSX.utils.aoa_to_sheet(INSTRUCTIONS);
   ins["!cols"] = [{ wch: 80 }];
