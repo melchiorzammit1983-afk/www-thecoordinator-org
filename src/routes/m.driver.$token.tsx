@@ -79,9 +79,13 @@ type Job = {
 
 type Driver = {
   id: string; name: string;
+  phone?: string | null;
   seats_available: number | null;
   availability_note: string | null;
   profile_updated_at: string | null;
+  onboarded_at?: string | null;
+  car_make_model?: string | null;
+  plate?: string | null;
 };
 
 const STATUS_FLOW: Array<{ value: string; label: string }> = [
