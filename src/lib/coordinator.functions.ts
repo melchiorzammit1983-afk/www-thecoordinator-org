@@ -2197,10 +2197,13 @@ export const ungroupJobs = createServerFn({ method: "POST" })
 
     let gid = data.group_id ?? null;
     if (!gid && data.job_id) {
-      const { data: row } = await supabaseAdmin.from("jobs")
+      const { data: row, error: rowError } = await supabaseAdmin.from("jobs")
         .select("group_id, company_id" as any)
         .eq("id", data.job_id).maybeSingle();
-      if (!row || (row as any).company_id !== c.id) throw new Error("Job not found");
+      if (rowError) throw new Error(rowError.message);
+      if (!row || (row as any).company_id !== c.id) {
+        return { ok: true, cleared: 0, missing: true };
+      }
       gid = (row as any).group_id ?? null;
     }
     if (!gid) return { ok: true, cleared: 0 };
