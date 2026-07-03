@@ -1221,22 +1221,31 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const rejected = !!(sig as any)?.rejected;
 
 
-  // Color priority: red > blue(unread) > green > amber > default
-  const tone = problem
+  // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
+  const partnerPending = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "pending";
+  const partnerRejected = job.dispatch_status === "rejected";
+  const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
+
+  // Color priority: red > blue(unread) > partner state > driver-accepted > driver-pending > default
+  const tone = problem || partnerRejected
     ? "border-destructive bg-destructive/10"
     : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
+    : partnerPending
+    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+    : partnerAccepted
+    ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
     : assignedPending
     ? "border-amber-500/70 bg-amber-500/5"
     : "border-border bg-background";
 
-  const gStripe = groupStripeStyle(job.group_id);
-  const style: React.CSSProperties = {
-    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
-    ...(gStripe ?? {}),
-  };
+  // Colored left rim shows which partner currently holds the trip (creator's-eye view).
+  const rimColor = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.executor_company_id
+    ? partnerColor(job.executor_company_id)
+    : null;
+
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
