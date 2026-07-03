@@ -42,16 +42,16 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const effectiveThread: "all" | "private" | "group" =
-    role === "coordinator" ? (threadKind ?? (identityId ? "private" : "all")) : "all";
+    role === "coordinator" ? (threadKind ?? ((identityId || paxId) ? "private" : "all")) : "all";
 
-  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", effectiveThread];
+  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread];
   const { data: messages } = useQuery({
     queryKey,
     enabled: !!open && !!jobId,
     refetchInterval: open ? 10_000 : false,
     queryFn: () => role === "driver"
       ? listDrv({ data: { token: token!, job_id: jobId! } }) as Promise<Msg[]>
-      : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
+      : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, pax_id: paxId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
   });
 
   useEffect(() => {
@@ -65,6 +65,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
       : postCoord({ data: {
           job_id: jobId!, body,
           identity_id: effectiveThread === "private" ? (identityId ?? null) : null,
+          pax_id: effectiveThread === "private" ? (paxId ?? null) : null,
           thread_kind: effectiveThread === "private" ? "private" : "group",
         } }),
     onSuccess: () => {
