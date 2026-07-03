@@ -1424,6 +1424,22 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
+            {job.chain_names && job.chain_names.length >= 2 && (
+              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
+                {job.chain_names.map((name, i) => {
+                  const isLast = i === (job.chain_names!.length - 1);
+                  const dotColor = i === 0 ? "hsl(var(--muted-foreground))" : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
+                  return (
+                    <span key={`${i}-${name}`} className="inline-flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                      <span className={isLast ? "font-medium text-foreground" : ""}>{name}</span>
+                      {!isLast && <ChevronRight className="h-3 w-3 opacity-60" />}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
           </div>
         </div>
       </button>
