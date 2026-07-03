@@ -1395,7 +1395,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     job_id: z.string().uuid(),
     identity_id: z.string().uuid().nullish(),
     pax_id: z.string().uuid().nullish(),
-    thread_kind: z.enum(["all", "private", "group"]).optional().default("all"),
+    thread_kind: z.enum(["all", "private", "group", "driver"]).optional().default("all"),
   }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
@@ -1405,7 +1405,8 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
       .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    let filtered = (rows ?? []) as any[];
+    // Coordinator NEVER sees driver↔client private messages.
+    let filtered = ((rows ?? []) as any[]).filter((r) => r.thread_kind !== "driver_client");
 
     // If a pax_id was provided but no identity_id, look up the identity tied to that pax.
     let effectiveIdentityId: string | null = data.identity_id ?? null;
@@ -1416,18 +1417,24 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
       effectiveIdentityId = (ident as any)?.id ?? null;
     }
 
-    if (data.thread_kind === "private" && (effectiveIdentityId || data.pax_id)) {
+    if (data.thread_kind === "driver") {
+      filtered = filtered.filter((r) => r.thread_kind === "driver_coord");
+    } else if (data.thread_kind === "private" && (effectiveIdentityId || data.pax_id)) {
       filtered = filtered.filter((r) =>
-        r.sender_kind === "driver" ||
         (effectiveIdentityId && r.client_identity_id === effectiveIdentityId) ||
         (data.pax_id && r.pax_id === data.pax_id) ||
         (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id && !r.pax_id)
       );
     } else if (data.thread_kind === "group") {
       filtered = filtered.filter((r) =>
-        r.sender_kind === "driver" ||
-        ((r.thread_kind === "group" || r.thread_kind == null) && !r.pax_id)
+        r.thread_kind !== "driver_coord" && (
+          (r.sender_kind === "driver" && (r.thread_kind === "group" || r.thread_kind == null)) ||
+          ((r.thread_kind === "group" || r.thread_kind == null) && !r.pax_id)
+        )
       );
+    } else {
+      // "all" — hide the driver-only private channel too
+      filtered = filtered.filter((r) => r.thread_kind !== "driver_coord");
     }
     const unreadIds = filtered.filter((r) =>
       (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at).map((r) => r.id);
@@ -1448,7 +1455,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
       body: z.string().trim().min(1).max(4000),
       identity_id: z.string().uuid().nullish(),
       pax_id: z.string().uuid().nullish(),
-      thread_kind: z.enum(["group", "private"]).optional().default("group"),
+      thread_kind: z.enum(["group", "private", "driver"]).optional().default("group"),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -1457,6 +1464,19 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
+
+    if (data.thread_kind === "driver") {
+      const { error } = await supabaseAdmin.from("trip_messages").insert({
+        job_id: data.job_id,
+        company_id: company.id,
+        sender_kind: "coordinator",
+        sender_label: label,
+        body: data.body,
+        thread_kind: "driver_coord",
+      } as any);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
 
     // Resolve identity from pax_id if not provided (so once a passenger picks
     // their name the private thread continues seamlessly).
@@ -1482,6 +1502,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const getUnreadCountsCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
