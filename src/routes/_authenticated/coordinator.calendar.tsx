@@ -1502,6 +1502,15 @@ function TripMenu({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const recallFn = useServerFn(recallPartnerDispatch);
+  const recallMut = useMutation({
+    mutationFn: () => recallFn({ data: { job_id: (job as any)._origin_job_id ?? job.id } }),
+    onSuccess: () => { toast.success("Hand-off recalled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const canRecall = job.chain_role === "creator_watching" && job.dispatch_status === "pending";
+
+
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
     mutationFn: () => shareFn({ data: { job_id: job.id } }) as Promise<any>,
