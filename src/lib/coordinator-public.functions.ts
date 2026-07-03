@@ -1068,7 +1068,7 @@ export const pushClientLocation = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      .select("id, pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const { error } = await supabaseAdmin.from("client_locations").insert({
       token: data.token, job_id: job.id, company_id: job.company_id,
       device_id: data.device_id, pax_id: id?.pax_id ?? null, pax_name: id?.pax_name ?? null,
@@ -1083,7 +1083,8 @@ export const pushClientLocation = createServerFn({ method: "POST" })
       const lng = data.longitude.toFixed(6);
       const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
       const who = id?.pax_name ?? "Passenger";
-      const threadKind = id?.pax_id ? "driver_client" : "group";
+      const scoped = !!(id?.id || id?.pax_id);
+      const threadKind = scoped ? "driver_client" : "group";
       await supabaseAdmin.from("trip_messages").insert({
         job_id: job.id,
         company_id: job.company_id,
@@ -1091,6 +1092,8 @@ export const pushClientLocation = createServerFn({ method: "POST" })
         sender_label: who,
         body: `📍 ${who} shared their location — ${mapsLink}`,
         thread_kind: threadKind,
+        client_identity_id: scoped ? ((id as any)?.id ?? null) : null,
+        pax_id: scoped ? (id?.pax_id ?? null) : null,
       } as never);
     }
     return { ok: true };
