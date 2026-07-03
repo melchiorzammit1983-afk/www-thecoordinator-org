@@ -391,14 +391,15 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
         <Textarea
           rows={10} value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          placeholder={"Paste rows copied from your Excel or Google Sheet (with the template headers),\nor a WhatsApp/email message in any language.\n\nExample sheet paste:\nPickup Date\tPickup Time\tPickup Address\tDelivery Address\tCustomer Name\tContact Number\tTransport Type\tQuantity"}
+          placeholder={"Paste rows copied from your Excel or Google Sheet — headers are optional.\nOr paste a WhatsApp/email message in any language.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
           {aiEnabled
-            ? "Emojis optional. Paste any message (any language) and click ✨ Understand with AI, or use the parser directly."
-            : "Emojis optional. Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
+            ? "You can paste rows straight from the template (headers optional), a WhatsApp/email message, or click ✨ Understand with AI."
+            : "You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
         </p>
+
       </div>
       {parsed.length > 0 && (
         <div className="space-y-2 max-h-64 overflow-auto rounded-md border p-2">

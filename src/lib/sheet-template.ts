@@ -28,6 +28,7 @@ const INSTRUCTIONS: string[][] = [
   ["4. Contact Number: include country code with + (e.g. +35699123456)."],
   ["5. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
   ["6. Quantity: number of passengers."],
+  ["7. Keep the Contact Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
   [""],
   ["When done, select your filled rows (including the header) and copy them."],
   ["Paste into the coordinator app under Add trip → Paste bulk."],
@@ -40,6 +41,16 @@ function buildWorkbook(): XLSX.WorkBook {
   const rows: (string | number)[][] = [SHEET_HEADERS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = SHEET_HEADERS.map((h) => ({ wch: Math.max(14, h.length + 2) }));
+  // Force Contact Number column (F) to Text so long phone numbers don't
+  // become scientific notation ("3.93331E+11") when copied.
+  const phoneColIdx = SHEET_HEADERS.indexOf("Contact Number");
+  if (phoneColIdx >= 0) {
+    for (let r = 0; r <= SAMPLE_ROWS.length; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: phoneColIdx });
+      const cell = ws[addr];
+      if (cell) { cell.t = "s"; cell.z = "@"; cell.v = String(cell.v ?? ""); }
+    }
+  }
   XLSX.utils.book_append_sheet(wb, ws, "Trips");
   const ins = XLSX.utils.aoa_to_sheet(INSTRUCTIONS);
   ins["!cols"] = [{ wch: 80 }];
@@ -178,8 +189,22 @@ export function looksLikeSheetPaste(raw: string): boolean {
   const first = raw.split(/\r?\n/).find((l) => l.trim());
   if (!first) return false;
   if (!/[\t,]/.test(first)) return false;
-  const cells = splitRow(first).map((c) => c.trim().toLowerCase());
-  return cells.some((c) => c in HEADER_ALIASES);
+  const cells = splitRow(first).map((c) => c.trim());
+  const lower = cells.map((c) => c.toLowerCase());
+  if (lower.some((c) => c in HEADER_ALIASES)) return true;
+  // Headerless template rows: at least 5 columns AND first cell parses as a date.
+  if (cells.length >= 5 && normDate(cells[0])) return true;
+  return false;
+}
+
+// Excel/Sheets can store long phone numbers as scientific notation on copy
+// ("3.93331E+11"). Expand that back to a digit string before normalising.
+function expandScientific(v: string): string {
+  const s = v.trim();
+  if (!/^-?\d+(\.\d+)?[eE][+-]?\d+$/.test(s)) return s;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return s;
+  return Math.round(n).toString();
 }
 
 export function parseSheetPaste(raw: string): ParsedTrip[] {
@@ -208,7 +233,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const from = get("from");
     const to = get("to");
     const name = get("name");
-    const phone = normalizePhone(get("phone"));
+    const phone = normalizePhone(expandScientific(get("phone")));
     const type = get("type");
     const qtyRaw = get("qty");
     const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
