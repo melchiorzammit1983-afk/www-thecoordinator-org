@@ -109,8 +109,9 @@ function DriverManifest() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
 
   useEffect(() => {
-    if (data?.driver && !data.driver.profile_updated_at) setProfileOpen(true);
+    if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
   }, [data?.driver]);
+  const mustOnboard = !!data?.driver && !data.driver.onboarded_at;
 
   const [showArchived, setShowArchived] = useState(false);
   const { activeJobs, archivedJobs } = useMemo(() => {
