@@ -1509,8 +1509,16 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    // Include every job this coordinator is party to (owner, executor, origin
+    // creator, or anywhere in the dispatch chain) so the trip creator still
+    // gets notified after the trip is dispatched to another driver/partner.
+    const { data: myJobs } = await supabaseAdmin.from("jobs")
+      .select("id")
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
+    const jobIds = (myJobs ?? []).map((j: any) => j.id as string);
+    if (!jobIds.length) return {};
     const { data, error } = await supabaseAdmin.from("trip_messages")
-      .select("job_id, sender_kind").eq("company_id", c.id).is("read_by_coordinator_at", null)
+      .select("job_id, sender_kind").in("job_id", jobIds).is("read_by_coordinator_at", null)
       .in("sender_kind", ["driver", "client"])
       .not("thread_kind", "eq", "driver_client");
     if (error) throw new Error(error.message);

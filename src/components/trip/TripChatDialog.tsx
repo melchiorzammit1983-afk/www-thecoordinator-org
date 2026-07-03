@@ -9,9 +9,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { listTripMessages, postTripMessage } from "@/lib/coordinator-public.functions";
+import { listTripMessages, postTripMessage, listJobPaxDriver } from "@/lib/coordinator-public.functions";
 import { listTripMessagesCoord, postTripMessageCoord } from "@/lib/coordinator.functions";
 import { linkify } from "@/lib/linkify";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Msg = {
   id: string;
@@ -45,17 +46,34 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
   const [text, setText] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [driverTab, setDriverTab] = useState<DriverTab>("group");
+  const [driverPaxId, setDriverPaxId] = useState<string | "">("");
+
+  // Driver-side: fetch the pax list so the driver can pick which passenger the
+  // "Client" thread is with. Keeps each passenger's chat private per pax.
+  const listPaxDrv = useServerFn(listJobPaxDriver);
+  const { data: driverPax } = useQuery({
+    queryKey: ["driver-chat-pax", token ?? "", jobId ?? ""],
+    enabled: role === "driver" && !!open && !!jobId && !!token,
+    queryFn: () => listPaxDrv({ data: { token: token!, job_id: jobId! } }) as Promise<{ id: string; name: string }[]>,
+  });
+  const driverPaxList = driverPax ?? [];
+  useEffect(() => {
+    // Auto-pick when there's exactly one passenger; otherwise clear when the tab isn't Client.
+    if (role !== "driver") return;
+    if (driverTab !== "driver_client") { if (driverPaxId) setDriverPaxId(""); return; }
+    if (!driverPaxId && driverPaxList.length === 1) setDriverPaxId(driverPaxList[0].id);
+  }, [role, driverTab, driverPaxList, driverPaxId]);
 
   const effectiveThread: "all" | "private" | "group" | "driver" =
     role === "coordinator" ? (threadKind ?? ((identityId || paxId) ? "private" : "all")) : "all";
 
-  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread, driverTab];
+  const queryKey = ["trip-messages", role, jobId, token ?? "", identityId ?? "", paxId ?? "", effectiveThread, driverTab, driverPaxId];
   const { data: messages } = useQuery({
     queryKey,
-    enabled: !!open && !!jobId,
+    enabled: !!open && !!jobId && !(role === "driver" && driverTab === "driver_client" && !driverPaxId),
     refetchInterval: open ? 10_000 : false,
     queryFn: () => role === "driver"
-      ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab } }) as Promise<Msg[]>
+      ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } }) as Promise<Msg[]>
       : listCoord({ data: { job_id: jobId!, identity_id: identityId ?? null, pax_id: paxId ?? null, thread_kind: effectiveThread } }) as Promise<Msg[]>,
   });
 
@@ -66,7 +84,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
 
   const postMut = useMutation({
     mutationFn: (body: string) => role === "driver"
-      ? postDrv({ data: { token: token!, job_id: jobId!, body, thread_kind: driverTab } })
+      ? postDrv({ data: { token: token!, job_id: jobId!, body, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } })
       : effectiveThread === "driver"
         ? postCoord({ data: { job_id: jobId!, body, thread_kind: "driver" } })
         : postCoord({ data: {
@@ -85,9 +103,12 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const clientTabNeedsPax = role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId;
+
   function submit() {
     const body = text.trim();
     if (!body) return;
+    if (clientTabNeedsPax) { toast.error("Pick which passenger you're replying to."); return; }
     postMut.mutate(body);
   }
 
@@ -143,6 +164,24 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
             ))}
           </div>
         )}
+
+        {role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && (
+          <div className="px-3 py-2 border-b bg-background flex items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">Chat with</span>
+            <Select value={driverPaxId} onValueChange={setDriverPaxId}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pick a passenger…" /></SelectTrigger>
+              <SelectContent>
+                {driverPaxList.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId && (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground bg-muted/30">
+            Pick a passenger above to see their private thread.
+          </div>
+        )}
+
 
         <div ref={scrollRef} className="max-h-[55vh] min-h-[240px] overflow-y-auto px-3 py-3 space-y-2 bg-muted/30">
           {(messages ?? []).length === 0 && (
