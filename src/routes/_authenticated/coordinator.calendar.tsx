@@ -247,7 +247,7 @@ function CalendarPage() {
   }, [jobs, flightFn, refetch]);
 
   useEffect(() => {
-    const ids = (jobs ?? []).map((j) => j.id);
+    const ids = Array.from(new Set((jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))));
     setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
   }, [jobs]);
 
@@ -1483,8 +1483,8 @@ function TripMenu({
   const cancelFn = useServerFn(cancelDeletionRequest);
   const delMut = useMutation({
     mutationFn: () => delFn({ data: { job_id: job.id } }),
-    onSuccess: (res: { deleted: boolean; pending: boolean }) => {
-      toast.success(res.pending ? "Deletion requested — awaiting driver approval" : "Deleted");
+    onSuccess: (res: { deleted: boolean; pending: boolean; missing?: boolean }) => {
+      toast.success(res.missing ? "Trip already changed — board refreshed" : res.pending ? "Deletion requested — awaiting driver approval" : "Deleted");
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (e: Error) => toast.error(e.message),

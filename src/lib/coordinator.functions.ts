@@ -512,8 +512,9 @@ export const deleteJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin.from("jobs")
       .select("id, driver_id, driver_accepted_at, deletion_requested_at")
-      .eq("id", data.job_id).eq("company_id", c.id).single();
-    if (error || !job) throw new Error("Job not found");
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!job) return { deleted: false, pending: false, missing: true };
     if (!job.driver_id || !job.driver_accepted_at) {
       const { error: dErr } = await supabaseAdmin.from("jobs")
         .delete().eq("id", data.job_id).eq("company_id", c.id);
@@ -1503,7 +1504,11 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
 
 export const getClientPresenceCoord = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_ids: z.array(z.string().uuid()).max(500) }).parse(i))
+  .inputValidator((i: unknown) => {
+    const parsed = z.object({ job_ids: z.array(z.string()).max(500) }).parse(i);
+    const uuid = z.string().uuid();
+    return { job_ids: Array.from(new Set(parsed.job_ids.filter((id) => uuid.safeParse(id).success))) };
+  })
   .handler(async ({ data, context }) => {
     await resolveCompany(context);
     if (!data.job_ids.length) return {} as Record<string, string>;
@@ -2407,7 +2412,11 @@ export const acknowledgeSosCoord = createServerFn({ method: "POST" })
 // ============================================================
 export const getCardSignalsCoord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ job_ids: z.array(z.string().uuid()).max(800) }).parse(i))
+  .inputValidator((i: unknown) => {
+    const parsed = z.object({ job_ids: z.array(z.string()).max(800) }).parse(i);
+    const uuid = z.string().uuid();
+    return { job_ids: Array.from(new Set(parsed.job_ids.filter((id) => uuid.safeParse(id).success))) };
+  })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();

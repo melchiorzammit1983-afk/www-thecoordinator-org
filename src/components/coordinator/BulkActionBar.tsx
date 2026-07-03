@@ -93,15 +93,17 @@ export function BulkActionBar({
 
   const deleteMut = useMutation({
     mutationFn: async () => {
-      let done = 0, pending = 0;
+      let done = 0, pending = 0, missing = 0;
       for (const j of jobs) {
-        const r = (await deleteFn({ data: { job_id: j.id } })) as { deleted?: boolean; pending?: boolean };
-        if (r?.pending) pending++; else done++;
+        const r = (await deleteFn({ data: { job_id: j.id } })) as { deleted?: boolean; pending?: boolean; missing?: boolean };
+        if (r?.missing) missing++;
+        else if (r?.pending) pending++;
+        else done++;
       }
-      return { done, pending };
+      return { done, pending, missing };
     },
     onSuccess: (r) => {
-      toast.success(`${r.done} deleted${r.pending ? ` · ${r.pending} awaiting driver` : ""}`);
+      toast.success(`${r.done} deleted${r.pending ? ` · ${r.pending} awaiting driver` : ""}${r.missing ? ` · ${r.missing} already changed` : ""}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       onClear();
     },
