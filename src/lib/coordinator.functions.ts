@@ -370,6 +370,35 @@ export const updateJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const rescheduleJobToFlight = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: e1 } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, date, time, flight_scheduled_at, flight_estimated_at")
+      .eq("id", data.id).eq("company_id", c.id).maybeSingle();
+    if (e1 || !job) throw new Error("Job not found");
+    const iso = (job as any).flight_estimated_at || (job as any).flight_scheduled_at;
+    if (!iso) throw new Error("No flight time available yet");
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) throw new Error("Invalid flight time");
+    const date = d.toISOString().slice(0, 10);
+    const time = d.toISOString().slice(11, 16);
+    const pickup_at = makePickupIso(date, time);
+    const { error } = await supabaseAdmin.from("jobs").update({
+      date, time, pickup_at,
+      flight_status: "on_time",
+      flight_status_note: null,
+      flight_status_updated_at: new Date().toISOString(),
+    }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, date, time };
+  });
+
+
 export const addJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
