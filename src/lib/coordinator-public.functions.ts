@@ -1068,7 +1068,6 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
     const { data: id } = await supabaseAdmin.from("client_link_identities")
       .select("pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const paxName = id?.pax_name ?? "Passenger";
-    const [y, mo, d] = data.date.split("-").map(Number);
     const pickup_at = maltaWallTimeToUtcIso(data.date, data.time);
 
 
