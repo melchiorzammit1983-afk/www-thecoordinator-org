@@ -156,7 +156,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
                   <div className={`text-[10px] uppercase tracking-wide mb-0.5 ${mine ? "opacity-70" : "text-muted-foreground"}`}>
                     {m.sender_label ?? m.sender_kind} · {new Date(m.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })}
                   </div>
-                  <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                  <div className="whitespace-pre-wrap break-words">{linkify(m.body)}</div>
                 </div>
               </div>
             );
