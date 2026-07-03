@@ -37,21 +37,14 @@ async function assertFeatureEnabled(companyId: string, feature: string) {
   }
 }
 
+import { maltaWallTimeToUtcIso } from "./time";
+
 function makePickupIso(date: string, time: string) {
-  const normalizedTime = time.length === 5 ? `${time}:00` : time;
-  const [y, mo, d] = date.split("-").map(Number);
-  const [hh, mm, ss] = normalizedTime.split(":").map(Number);
-  const pickup = new Date(Date.UTC(y, mo - 1, d, hh, mm, ss || 0));
-  const valid =
-    !Number.isNaN(pickup.getTime()) &&
-    pickup.getUTCFullYear() === y &&
-    pickup.getUTCMonth() === mo - 1 &&
-    pickup.getUTCDate() === d &&
-    pickup.getUTCHours() === hh &&
-    pickup.getUTCMinutes() === mm &&
-    pickup.getUTCSeconds() === (ss || 0);
-  if (!valid) throw new Error("Invalid pickup date or time");
-  return pickup.toISOString();
+  try {
+    return maltaWallTimeToUtcIso(date, time);
+  } catch {
+    throw new Error("Invalid pickup date or time");
+  }
 }
 
 async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
