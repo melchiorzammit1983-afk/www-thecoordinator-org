@@ -1428,7 +1428,7 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
       supabaseAdmin.from("pax").select("id, name, job_id").in("job_id", jobIds),
       supabaseAdmin.from("jobs").select("id, client_link_token").in("id", jobIds),
       supabaseAdmin.from("trip_messages")
-        .select("id, job_id, client_identity_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
+        .select("id, job_id, client_identity_id, pax_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
         .in("job_id", jobIds).order("created_at", { ascending: true }),
     ]);
 
