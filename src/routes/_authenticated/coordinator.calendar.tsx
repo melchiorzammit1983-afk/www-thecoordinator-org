@@ -1092,7 +1092,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const style: React.CSSProperties = {
     ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
     ...(gStripe ?? {}),
-    ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
   };
 
   return (
