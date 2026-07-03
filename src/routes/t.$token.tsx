@@ -137,10 +137,28 @@ function ClientTripPortal() {
   }, [data.pax]);
   const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
 
+  // Auto-claim identity when the coordinator shared a per-passenger link with ?pax=<uuid>.
+  const chooseFn = useServerFn(chooseClientIdentity);
+  const autoClaimedRef = useRef(false);
+  useEffect(() => {
+    if (autoClaimedRef.current || hasIdentity) return;
+    const params = new URLSearchParams(window.location.search);
+    const paxParam = params.get("pax");
+    if (!paxParam) return;
+    const match = (data.pax ?? []).find((p: any) => p?.id === paxParam);
+    if (!match) return;
+    autoClaimedRef.current = true;
+    chooseFn({ data: { token, device_id: deviceId, pax_id: match.id, pax_name: match.name } })
+      .then(() => qc.invalidateQueries({ queryKey: ["client-portal"] }))
+      .catch(() => { autoClaimedRef.current = false; });
+  }, [hasIdentity, data.pax, chooseFn, token, deviceId, qc]);
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const autoOpenedRef = useRef(false);
   useEffect(() => {
-    if (needsIdentity && !autoOpenedRef.current) {
+    // Skip the picker entirely when a ?pax link is being auto-claimed.
+    const hasPaxParam = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax");
+    if (needsIdentity && !autoOpenedRef.current && !hasPaxParam) {
       autoOpenedRef.current = true;
       setPickerOpen(true);
     }

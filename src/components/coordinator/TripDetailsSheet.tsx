@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { formatMaltaTime } from "@/lib/time";
@@ -9,7 +9,7 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -461,6 +461,7 @@ export function TripDetailsSheet({
                                 {p.status ?? "pending"}
                               </span>
                             )}
+                            <PaxLinkButton jobId={job.id} paxId={p.id} paxName={p.name} />
                             <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
                           </span>
 
@@ -636,6 +637,44 @@ export function TripDetailsSheet({
         title="Private with driver"
       />
     </Sheet>
+  );
+}
+
+function PaxLinkButton({ jobId, paxId, paxName }: { jobId: string; paxId: string; paxName: string }) {
+  const linkFn = useServerFn(getClientTripLink);
+  const [busy, setBusy] = useState(false);
+  const onClick = async (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res: any = await linkFn({ data: { job_id: jobId } });
+      const url = `${window.location.origin}/t/${res.token}?pax=${paxId}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success(`Link for ${paxName} copied`);
+      } catch {
+        toast.error("Copy failed — " + url);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not create link");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as ReactMouseEvent); }}
+      title={`Copy personal link for ${paxName}`}
+      aria-label={`Copy personal link for ${paxName}`}
+      className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary cursor-pointer"
+    >
+      <Link2 className="h-3.5 w-3.5" />
+    </span>
   );
 }
 
