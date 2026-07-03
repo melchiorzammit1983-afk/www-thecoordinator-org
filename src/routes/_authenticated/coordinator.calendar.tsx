@@ -292,10 +292,33 @@ function CalendarPage() {
     }
   }, [cardSignals, jobs]);
 
+  const [dispatchState, setDispatchState] = useState<{ job: Job; partnerId?: string } | null>(null);
+
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
+
+    // Drop on partner lane → open dispatch dialog prefilled
+    if (dropId.startsWith("partner:")) {
+      const partnerCompanyId = dropId.slice(8);
+      const findJob = (id: string) => (jobs ?? []).find((j) => j.id === id) ?? null;
+      if (rawId.startsWith("group:")) {
+        const gid = rawId.slice(6);
+        const first = (jobs ?? []).find((j) => j.group_id === gid);
+        if (first) setDispatchState({ job: first, partnerId: partnerCompanyId });
+      } else {
+        const j = findJob(rawId);
+        if (j) {
+          // Ignore synthetic hop cards (already handed off)
+          if ((j as any)._origin_job_id) return;
+          if (j.external) { toast.error("This trip is already at a partner"); return; }
+          setDispatchState({ job: j, partnerId: partnerCompanyId });
+        }
+      }
+      return;
+    }
+
     const driverId = dropId === "unassigned" ? null : dropId.startsWith("driver:") ? dropId.slice(7) : undefined;
     if (driverId === undefined) return;
     if (rawId.startsWith("group:")) {
@@ -303,9 +326,11 @@ function CalendarPage() {
       const memberIds = (jobs ?? []).filter((j) => j.group_id === gid).map((j) => j.id);
       for (const id of memberIds) assignMut.mutate({ job_id: id, driver_id: driverId });
     } else {
+      if (rawId.includes("::hop-")) return; // synthetic
       assignMut.mutate({ job_id: rawId, driver_id: driverId });
     }
   }
+
 
   const markViewedFn = useServerFn(markJobViewedCoord);
   const handleMarkViewed = (id: string) => {
