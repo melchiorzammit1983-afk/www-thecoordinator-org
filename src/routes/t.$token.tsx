@@ -752,7 +752,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
             </div>
             <div className="border-t p-2 flex gap-2 items-end bg-white">
               <Textarea value={text} onChange={(e) => setText(e.target.value)}
-                placeholder={thread === "private" ? "Message the coordinator privately…" : "Message the group…"} rows={2} className="resize-none"
+                placeholder={thread === "private" ? "Message the coordinator privately…" : thread === "driver_client" ? "Message the driver privately…" : "Message the group…"} rows={2} className="resize-none"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (text.trim()) mut.mutate(text.trim()); } }}
               />
               <Button size="icon" onClick={() => text.trim() && mut.mutate(text.trim())} disabled={mut.isPending || !text.trim()}>
