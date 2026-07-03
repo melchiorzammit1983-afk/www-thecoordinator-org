@@ -1473,18 +1473,6 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenClone}>
           <Copy className="h-4 w-4 mr-2" /> Clone…
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onOpenDispatch}>
-          <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
-        </DropdownMenuItem>
-        {canRecall && (
-          <DropdownMenuItem
-            onClick={() => { if (confirm("Recall this hand-off before the partner accepts?")) recallMut.mutate(); }}
-            disabled={recallMut.isPending}
-            className="text-amber-600"
-          >
-            <Unlink className="h-4 w-4 mr-2" /> Recall hand-off
-          </DropdownMenuItem>
-        )}
 
         {job.group_id && (
           <DropdownMenuItem onClick={() => ungroupMut.mutate()} disabled={ungroupMut.isPending}>
