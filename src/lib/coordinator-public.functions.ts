@@ -969,22 +969,28 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const ids = await siblingIds(supabaseAdmin, job);
 
-    // resolve identity for private thread scoping
+    // resolve identity + pax_id for this device
     let identityId: string | null = null;
+    let paxId: string | null = null;
     if (data.device_id) {
       const { data: id } = await supabaseAdmin.from("client_link_identities")
-        .select("id").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+        .select("id, pax_id").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
       identityId = (id as any)?.id ?? null;
+      paxId = (id as any)?.pax_id ?? null;
     }
 
     let q = supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, thread_kind, client_identity_id, is_sos")
+      .select("id, sender_kind, sender_label, body, created_at, thread_kind, client_identity_id, pax_id, is_sos")
       .in("job_id", ids)
       .order("created_at", { ascending: true });
 
     if (data.thread_kind === "private") {
-      if (!identityId) return [];
-      q = q.eq("thread_kind", "private").eq("client_identity_id", identityId);
+      if (!identityId && !paxId) return [];
+      // OR: identity matches OR queued for our pax slot
+      const orParts: string[] = [];
+      if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
+      if (paxId) orParts.push(`pax_id.eq.${paxId}`);
+      q = q.eq("thread_kind", "private").or(orParts.join(","));
     } else {
       q = q.eq("thread_kind", "group");
     }
