@@ -673,31 +673,29 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
 
   return (
     <div className="p-4">
-      {isGroup && (
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 mb-3">
-          <button
-            className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
-              thread === "group" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
-            onClick={() => setThread("group")}
-          >
-            <Users className="h-3.5 w-3.5" /> Group
-          </button>
-          <button
-            className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
-              thread === "private" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
-            onClick={() => setThread("private")}
-          >
-            <Lock className="h-3.5 w-3.5" /> Private
-          </button>
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 mb-3">
+        <button
+          className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
+            thread === "private" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
+          onClick={() => setThread("private")}
+        >
+          <Lock className="h-3.5 w-3.5" /> Coordinator
+        </button>
+        <button
+          className={cn("rounded-lg py-2 text-xs font-medium flex items-center justify-center gap-1.5",
+            thread === "group" ? "bg-white shadow-sm text-teal-800" : "text-slate-500")}
+          onClick={() => setThread("group")}
+        >
+          <Users className="h-3.5 w-3.5" /> {driverAssigned ? "Driver" : "Group"}
+        </button>
+      </div>
 
       <div className="rounded-2xl bg-white border shadow-sm overflow-hidden flex flex-col h-[65vh]">
         <div className={cn("border-b text-xs px-3 py-2",
           thread === "group" ? "bg-sky-50 text-sky-800" : "bg-purple-50 text-purple-800")}>
           {thread === "group"
-            ? (driverAssigned ? "Group chat — visible to everyone in this trip and the driver." : "Group chat — visible to everyone in this trip. Driver joins when assigned.")
-            : "Private chat — only you and the coordinator can see this."}
+            ? (driverAssigned ? "Chat with your driver and everyone on this trip." : "Group chat — visible to everyone on this trip. Driver joins when assigned.")
+            : "Private chat with the coordinator — only you two can see this."}
         </div>
 
         {privateBlocked ? (
