@@ -45,13 +45,17 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     // that were explicitly assigned to them, not every company job).
     type DriverRow = {
       id: string; name: string; kind: string | null;
+      phone: string | null;
       seats_available: number | null; availability_note: string | null;
       profile_updated_at: string | null;
+      onboarded_at: string | null;
+      car_make_model: string | null;
+      plate: string | null;
     };
     let driverRow: DriverRow | null = null;
     if (link.subject_id) {
       const { data: drv } = await supabaseAdmin.from("drivers")
-        .select("id, name, kind, seats_available, availability_note, profile_updated_at")
+        .select("id, name, kind, phone, seats_available, availability_note, profile_updated_at, onboarded_at, car_make_model, plate")
         .eq("id", link.subject_id).maybeSingle();
       driverRow = (drv as DriverRow | null) ?? null;
     }
@@ -76,9 +80,13 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const driver = driverRow
       ? {
           id: driverRow.id, name: driverRow.name,
+          phone: driverRow.phone,
           seats_available: driverRow.seats_available,
           availability_note: driverRow.availability_note,
           profile_updated_at: driverRow.profile_updated_at,
+          onboarded_at: driverRow.onboarded_at,
+          car_make_model: driverRow.car_make_model,
+          plate: driverRow.plate,
         }
       : null;
     // Unread coordinator messages per job
@@ -150,6 +158,9 @@ export const updateDriverProfile = createServerFn({ method: "POST" })
     z.object({
       token: z.string().min(8).max(128),
       name: z.string().trim().min(1).max(120).optional(),
+      phone: z.string().trim().min(1).max(40).optional(),
+      car_make_model: z.string().trim().max(120).nullable().optional(),
+      plate: z.string().trim().max(40).nullable().optional(),
       seats_available: z.number().int().min(0).max(200).nullable().optional(),
       availability_note: z.string().trim().max(500).nullable().optional(),
     }).parse(i),
@@ -158,8 +169,14 @@ export const updateDriverProfile = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link || !link.subject_id) throw new Error("driver_link_required");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { profile_updated_at: new Date().toISOString() };
+    const patch: Record<string, unknown> = {
+      profile_updated_at: new Date().toISOString(),
+      onboarded_at: new Date().toISOString(), // marks completion of first-time onboarding
+    };
     if (data.name !== undefined) patch.name = data.name;
+    if (data.phone !== undefined) patch.phone = data.phone;
+    if (data.car_make_model !== undefined) patch.car_make_model = data.car_make_model;
+    if (data.plate !== undefined) patch.plate = data.plate;
     if (data.seats_available !== undefined) patch.seats_available = data.seats_available;
     if (data.availability_note !== undefined) patch.availability_note = data.availability_note;
     const { error } = await supabaseAdmin.from("drivers")

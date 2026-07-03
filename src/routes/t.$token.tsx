@@ -252,13 +252,11 @@ function ClientTripPortal() {
             )}
             {driver && <EtaPill token={token} />}
             {data.driverLocations?.[0] && (
-              <a
-                className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-teal-700 text-white py-2.5 text-sm font-medium"
-                href={`https://www.google.com/maps/search/?api=1&query=${data.driverLocations[0].latitude},${data.driverLocations[0].longitude}`}
-                target="_blank" rel="noreferrer"
-              >
-                <MapPin className="h-4 w-4" /> Track driver on Google Maps
-              </a>
+              <ClientTripMap
+                driver={{ lat: data.driverLocations[0].latitude, lng: data.driverLocations[0].longitude, name: driver?.name ?? "Driver" }}
+                pickup={job.from_location}
+                dropoff={job.to_location}
+              />
             )}
           </section>
 
@@ -790,3 +788,41 @@ function RebookPanel({ token, deviceId, lastFrom, lastTo }: {
     </div>
   );
 }
+
+function ClientTripMap({ driver, pickup, dropoff }: {
+  driver: { lat: number; lng: number; name: string };
+  pickup: string;
+  dropoff: string;
+}) {
+  // In-app map (embed — no external Google Maps app opens).
+  // Uses the classic embed URL which does not require an API key.
+  const src = `https://maps.google.com/maps?q=${driver.lat},${driver.lng}&z=14&output=embed`;
+  const directionsSrc = `https://maps.google.com/maps?saddr=${encodeURIComponent(pickup)}&daddr=${encodeURIComponent(dropoff)}&output=embed`;
+  const [showRoute, setShowRoute] = useState(false);
+  return (
+    <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 bg-white">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <MapPin className="h-3.5 w-3.5 text-teal-700" /> {driver.name}'s live location
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowRoute((v) => !v)}
+          className="text-xs font-medium text-teal-700 hover:underline"
+        >
+          {showRoute ? "Show driver" : "Show trip route"}
+        </button>
+      </div>
+      <iframe
+        key={showRoute ? "route" : "driver"}
+        title="Trip map"
+        src={showRoute ? directionsSrc : src}
+        className="w-full h-64 border-0"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        allowFullScreen
+      />
+    </div>
+  );
+}
+
