@@ -292,10 +292,33 @@ function CalendarPage() {
     }
   }, [cardSignals, jobs]);
 
+  const [dispatchState, setDispatchState] = useState<{ job: Job; partnerId?: string } | null>(null);
+
   function onDragEnd(e: DragEndEvent) {
     const rawId = String(e.active.id);
     const dropId = e.over?.id ? String(e.over.id) : null;
     if (!dropId) return;
+
+    // Drop on partner lane → open dispatch dialog prefilled
+    if (dropId.startsWith("partner:")) {
+      const partnerCompanyId = dropId.slice(8);
+      const findJob = (id: string) => (jobs ?? []).find((j) => j.id === id) ?? null;
+      if (rawId.startsWith("group:")) {
+        const gid = rawId.slice(6);
+        const first = (jobs ?? []).find((j) => j.group_id === gid);
+        if (first) setDispatchState({ job: first, partnerId: partnerCompanyId });
+      } else {
+        const j = findJob(rawId);
+        if (j) {
+          // Ignore synthetic hop cards (already handed off)
+          if ((j as any)._origin_job_id) return;
+          if (j.external) { toast.error("This trip is already at a partner"); return; }
+          setDispatchState({ job: j, partnerId: partnerCompanyId });
+        }
+      }
+      return;
+    }
+
     const driverId = dropId === "unassigned" ? null : dropId.startsWith("driver:") ? dropId.slice(7) : undefined;
     if (driverId === undefined) return;
     if (rawId.startsWith("group:")) {
@@ -303,9 +326,11 @@ function CalendarPage() {
       const memberIds = (jobs ?? []).filter((j) => j.group_id === gid).map((j) => j.id);
       for (const id of memberIds) assignMut.mutate({ job_id: id, driver_id: driverId });
     } else {
+      if (rawId.includes("::hop-")) return; // synthetic
       assignMut.mutate({ job_id: rawId, driver_id: driverId });
     }
   }
+
 
   const markViewedFn = useServerFn(markJobViewedCoord);
   const handleMarkViewed = (id: string) => {
@@ -403,8 +428,8 @@ function CalendarPage() {
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
 
 
-      {/* Outbound (my trips currently at partners) */}
-      <OutboundBoard />
+      {/* Outbound trips now appear directly in partner lanes below */}
+
 
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
@@ -418,6 +443,15 @@ function CalendarPage() {
             : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
         </div>
       </DndContext>
+
+      {dispatchState && (
+        <DispatchDialog
+          open={!!dispatchState}
+          onOpenChange={(v) => { if (!v) setDispatchState(null); }}
+          job={dispatchState.job}
+          preselectedPartnerId={dispatchState.partnerId}
+        />
+      )}
 
       <JobFormDialog open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []} onSaved={() => refetch()} />
       <JobFormDialog
@@ -812,15 +846,41 @@ function minutesBetween(a: string, b: string): number {
 
 
 function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
+  const listConn = useServerFn(listConnections);
+  const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), refetchInterval: 30_000 });
+  const partners = (conns.data ?? []).filter((c: any) => c.status === "active");
   return (
     <div className="rounded-lg border bg-card p-3 overflow-x-auto">
       <div className="grid gap-3 sm:auto-cols-[minmax(240px,1fr)] sm:grid-flow-col">
-        {drivers.length === 0 && (
-          <div className="text-sm text-muted-foreground p-8 text-center">Add drivers first to see lanes.</div>
+        {partners.map((c: any) => {
+          const laneJobs = jobs.filter((j) => {
+            const chain: string[] = Array.isArray((j as any).dispatch_chain_company_ids) ? (j as any).dispatch_chain_company_ids : [];
+            return chain.includes(c.other.id) || (j as any).executor_company_id === c.other.id;
+          });
+          return <PartnerLane key={c.other.id} partnerId={c.other.id} partnerName={c.other.name} jobs={laneJobs} ctx={ctx} />;
+        })}
+        {drivers.length === 0 && partners.length === 0 && (
+          <div className="text-sm text-muted-foreground p-8 text-center">Add drivers or partners to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id)} ctx={ctx} />
+          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id && !(j as any)._origin_job_id)} ctx={ctx} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string; partnerName: string; jobs: Job[]; ctx: CardCtx }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `partner:${partnerId}` });
+  const items = bucketByGroup(jobs);
+  return (
+    <div ref={setNodeRef} className={`rounded-md border-2 border-dashed p-2 min-h-[220px] bg-amber-50/40 dark:bg-amber-950/10 ${isOver ? "ring-2 ring-amber-500 bg-amber-100/60" : ""}`}>
+      <div className="text-sm font-medium truncate flex items-center gap-1"><PlaneTakeoff className="h-3.5 w-3.5 text-amber-600" /> Partner · {partnerName}</div>
+      <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
+      <div className="space-y-2">
+        {jobs.length === 0
+          ? <div className="text-xs text-muted-foreground text-center py-6">No trips at this partner</div>
+          : renderItems(items, ctx)}
       </div>
     </div>
   );
@@ -1618,18 +1678,23 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   );
 }
 
-function DispatchDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
+function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job; preselectedPartnerId?: string }) {
   const [partnerId, setPartnerId] = useState<string>("");
   const [note, setNote] = useState("");
   const qc = useQueryClient();
   const listConn = useServerFn(listConnections);
   const dispatchFn = useServerFn(dispatchJobToPartner);
   const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
+  useEffect(() => {
+    if (open && preselectedPartnerId) setPartnerId(preselectedPartnerId);
+    if (!open) { setPartnerId(""); setNote(""); }
+  }, [open, preselectedPartnerId]);
   const mut = useMutation({
     mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
-    onSuccess: () => { toast.success("Dispatched"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
+    onSuccess: () => { toast.success("Sent to partner"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
     onError: (e: any) => toast.error(e.message),
   });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>

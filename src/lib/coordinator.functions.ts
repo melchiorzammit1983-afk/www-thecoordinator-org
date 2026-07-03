@@ -208,8 +208,63 @@ export const listJobs = createServerFn({ method: "GET" })
         labels: Array.isArray(r.job_labels) ? r.job_labels.map((j: any) => j.trip_labels).filter(Boolean) : [],
       };
     });
-    return [...mine, ...out];
+
+    const combined: any[] = [...mine, ...out];
+
+    // ---- Multi-hop expansion: creator sees a card in EVERY partner lane the trip has visited.
+    // For jobs where I'm origin/creator with 2+ hops (A→B→C…), emit a synthetic card per
+    // *earlier* hop so the trip is visible in every partner's lane hop-by-hop.
+    const originJobIds = combined
+      .filter((r) => r.company_id === c.id && Array.isArray(r.dispatch_chain_company_ids) && r.dispatch_chain_company_ids.length >= 2)
+      .map((r) => r.id);
+    if (originJobIds.length) {
+      const { data: hops } = await supabaseAdmin.from("job_dispatch_hops")
+        .select("job_id, hop_index, from_company_id, to_company_id, status, note, decided_at")
+        .in("job_id", originJobIds)
+        .order("hop_index", { ascending: true });
+      const hopsByJob = new Map<string, any[]>();
+      for (const h of hops ?? []) {
+        if (!hopsByJob.has(h.job_id)) hopsByJob.set(h.job_id, []);
+        hopsByJob.get(h.job_id)!.push(h);
+      }
+      // Look up partner names for any hop target we don't already know
+      const targetIds = new Set<string>();
+      for (const list of hopsByJob.values()) for (const h of list) targetIds.add(h.to_company_id);
+      const nameMap: Record<string, string> = {};
+      if (targetIds.size) {
+        const { data: comps } = await supabaseAdmin.from("companies")
+          .select("id, name").in("id", Array.from(targetIds));
+        for (const co of comps ?? []) nameMap[co.id] = co.name;
+      }
+      const extras: any[] = [];
+      for (const base of combined) {
+        if (!originJobIds.includes(base.id)) continue;
+        const list = hopsByJob.get(base.id) ?? [];
+        // Emit one synthetic card per non-final hop (final hop = current executor, already rendered).
+        for (let i = 0; i < list.length - 1; i++) {
+          const h = list[i];
+          const partnerLaneDriver = partnerMap[h.to_company_id] ?? null;
+          if (!partnerLaneDriver) continue; // no lane on my board, skip
+          extras.push({
+            ...base,
+            id: `${base.id}::hop-${h.hop_index}`, // synthetic id
+            _origin_job_id: base.id,
+            _hop_index: h.hop_index,
+            _hop_status: h.status,
+            external: true,
+            chain_role: "hop_watching",
+            executor_name: nameMap[h.to_company_id] ?? "Partner",
+            driver_id: partnerLaneDriver,
+            drivers: { name: `${nameMap[h.to_company_id] ?? "Partner"} · handed off` },
+          });
+        }
+      }
+      combined.push(...extras);
+    }
+
+    return combined;
   });
+
 
 
 const jobInput = z.object({
