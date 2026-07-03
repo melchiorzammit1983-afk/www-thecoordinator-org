@@ -1497,8 +1497,11 @@ function TripMenu({
 
   const ungroupFn = useServerFn(ungroupJobs);
   const ungroupMut = useMutation({
-    mutationFn: () => ungroupFn({ data: { job_id: job.id } }) as Promise<{ cleared: number }>,
-    onSuccess: (r) => { toast.success(`Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    mutationFn: () => ungroupFn({ data: { job_id: job.id } }) as Promise<{ cleared: number; missing?: boolean }>,
+    onSuccess: (r) => {
+      toast.success(r.missing ? "Trip already changed — board refreshed" : `Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 

@@ -58,15 +58,18 @@ export function BulkActionBar({
 
   const ungroupMut = useMutation({
     mutationFn: async () => {
+      let missing = 0;
       for (const gid of ungroupableGroupIds) {
-        await ungroupFn({ data: { group_id: gid } });
+        const result = (await ungroupFn({ data: { group_id: gid } })) as { missing?: boolean };
+        if (result.missing) missing++;
       }
-      return ungroupableGroupIds.length;
+      return { changed: ungroupableGroupIds.length - missing, missing };
     },
-    onSuccess: (n) => {
-      const skipped = groupIds.length - n;
+    onSuccess: ({ changed, missing }) => {
+      const skipped = groupIds.length - changed - missing;
       toast.success(
-        `Ungrouped ${n} bundle${n === 1 ? "" : "s"}` +
+        `Ungrouped ${changed} bundle${changed === 1 ? "" : "s"}` +
+          (missing > 0 ? ` · ${missing} already changed` : "") +
           (skipped > 0 ? ` · ${skipped} skipped (driver already accepted)` : ""),
       );
       qc.invalidateQueries({ queryKey: ["jobs"] });
