@@ -7,7 +7,7 @@ import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight,
+  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox,
   Pencil, Sparkles, Link2, Unlink,
 } from "lucide-react";
 
