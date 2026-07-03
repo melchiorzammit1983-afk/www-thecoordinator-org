@@ -110,7 +110,9 @@ type Job = {
   pax?: { id: string; name: string; status?: string | null; boarded_at?: string | null }[];
   labels?: TLabel[];
   external?: boolean;
+  chain_role?: "executor" | "creator_watching" | "hop_watching";
   executor_name?: string | null;
+  origin_name?: string | null;
   external_driver_name?: string | null;
   payment_status?: string | null;
   grouped_count?: number | null;
