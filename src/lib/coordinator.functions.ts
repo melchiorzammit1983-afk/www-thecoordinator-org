@@ -1123,6 +1123,59 @@ async function assertJobInCompany(ctx: Ctx, jobId: string) {
   return { company: c };
 }
 
+// ---------- Trip pricing (coordinator only) ----------
+// Reads and writes the sensitive price/payment fields on jobs. Access is
+// bulletproofed by:
+//   1. `requireSupabaseAuth` — must be a signed-in coordinator/admin.
+//   2. `assertJobInCompany` — job must be owned by, dispatched to, or in the
+//      dispatch chain of the caller's company. Every coordinator in the chain
+//      can therefore see the price, per product requirement.
+//   3. Explicit column projection — we never send price data to driver/client
+//      endpoints (`getDriverManifest`, `getDriverStatement`, `getClientTripPortal`
+//      all list explicit columns; grep for those to verify).
+export const getTripPricing = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error } = await supabaseAdmin.from("jobs")
+      .select("id, price_amount, price_currency, payment_method, payment_status, price_set_by, price_set_at, driver_started_at, driver_completed_at, driver_actual_minutes, driver_reported_km")
+      .eq("id", data.job_id).maybeSingle();
+    if (error) throw new Error(error.message);
+    return row ?? null;
+  });
+
+export const coordinatorSetTripPrice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({
+    job_id: z.string().uuid(),
+    price_amount: z.number().nonnegative().max(1_000_000).nullable(),
+    price_currency: z.string().trim().min(3).max(4).optional(),
+    payment_method: z.enum(["cash", "invoice"]).nullable().optional(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const patch: Record<string, unknown> = {
+      price_amount: data.price_amount,
+      price_currency: (data.price_currency ?? "EUR").toUpperCase(),
+      price_set_by: "coordinator",
+      price_set_at: new Date().toISOString(),
+    };
+    if (data.payment_method !== undefined) {
+      patch.payment_method = data.payment_method;
+      if (data.payment_method === "cash") patch.payment_status = "paid";
+      if (data.payment_method === "invoice") patch.payment_status = "pending";
+    }
+    const { error } = await supabaseAdmin.from("jobs")
+      .update(patch as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+
+
 async function siblingGroupJobIds(supabaseAdmin: Awaited<ReturnType<typeof getAdminClient>>, jobId: string): Promise<string[]> {
   const { data: row } = await supabaseAdmin.from("jobs")
     .select("group_id" as any).eq("id", jobId).maybeSingle();
