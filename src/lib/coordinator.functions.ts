@@ -1511,7 +1511,8 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin.from("trip_messages")
       .select("job_id, sender_kind").eq("company_id", c.id).is("read_by_coordinator_at", null)
-      .in("sender_kind", ["driver", "client"]);
+      .in("sender_kind", ["driver", "client"])
+      .not("thread_kind", "eq", "driver_client");
     if (error) throw new Error(error.message);
     const acc: Record<string, { driver: number; client: number; total: number }> = {};
     for (const m of (data ?? []) as { job_id: string; sender_kind: string }[]) {
