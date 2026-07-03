@@ -1,0 +1,2 @@
+ALTER TABLE public.trip_messages DROP CONSTRAINT trip_messages_sender_kind_check;
+ALTER TABLE public.trip_messages ADD CONSTRAINT trip_messages_sender_kind_check CHECK (sender_kind = ANY (ARRAY['driver'::text, 'coordinator'::text, 'client'::text]));
