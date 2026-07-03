@@ -444,6 +444,15 @@ function CalendarPage() {
         </div>
       </DndContext>
 
+      {dispatchState && (
+        <DispatchDialog
+          open={!!dispatchState}
+          onOpenChange={(v) => { if (!v) setDispatchState(null); }}
+          job={dispatchState.job}
+          preselectedPartnerId={dispatchState.partnerId}
+        />
+      )}
+
       <JobFormDialog open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []} onSaved={() => refetch()} />
       <JobFormDialog
         open={!!editJob} onOpenChange={(v) => !v && setEditJob(null)}
