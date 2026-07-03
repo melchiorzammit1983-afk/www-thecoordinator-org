@@ -156,6 +156,44 @@ export function TripDetailsSheet({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const rescheduleFn = useServerFn(rescheduleJobToFlight);
+  const rescheduleMut = useMutation({
+    mutationFn: () => rescheduleFn({ data: { id: job.id } }) as Promise<{ ok: true; date: string; time: string }>,
+    onSuccess: (r) => {
+      toast.success(`Pickup updated to ${r.date} ${r.time}`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const [holdPct, setHoldPct] = useState(0);
+  const holdRef = (() => {
+    const state = useState<{ start: number | null; raf: number | null }>({ start: null, raf: null })[0];
+    return state;
+  })();
+  const startHold = () => {
+    if (!flightIssue || !newTime || rescheduleMut.isPending) return;
+    holdRef.start = performance.now();
+    const tick = () => {
+      if (holdRef.start == null) return;
+      const p = Math.min(1, (performance.now() - holdRef.start) / 1000);
+      setHoldPct(p);
+      if (p >= 1) {
+        holdRef.start = null;
+        setHoldPct(0);
+        rescheduleMut.mutate();
+      } else {
+        holdRef.raf = requestAnimationFrame(tick);
+      }
+    };
+    holdRef.raf = requestAnimationFrame(tick);
+  };
+  const cancelHold = () => {
+    holdRef.start = null;
+    if (holdRef.raf != null) cancelAnimationFrame(holdRef.raf);
+    holdRef.raf = null;
+    setHoldPct(0);
+  };
+
 
 
   useEffect(() => {
