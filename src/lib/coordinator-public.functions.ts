@@ -1067,7 +1067,43 @@ export const pushClientLocation = createServerFn({ method: "POST" })
       accuracy_m: data.accuracy_m ?? null, mode: data.mode,
     } as never);
     if (error) throw new Error(error.message);
+
+    // Pin drops post a chat message so the driver gets a tappable Google Maps link.
+    if (data.mode === "pin") {
+      const lat = data.latitude.toFixed(6);
+      const lng = data.longitude.toFixed(6);
+      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+      const who = id?.pax_name ?? "Passenger";
+      const threadKind = id?.pax_id ? "driver_client" : "group";
+      await supabaseAdmin.from("trip_messages").insert({
+        job_id: job.id,
+        company_id: job.company_id,
+        sender_kind: "client",
+        sender_label: who,
+        body: `📍 ${who} shared their location — ${mapsLink}`,
+        thread_kind: threadKind,
+      } as never);
+    }
     return { ok: true };
+  });
+
+export const getClientLiveLocationDriver = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const since = new Date(Date.now() - 3 * 60_000).toISOString();
+    const { data: row, error } = await supabaseAdmin.from("client_locations")
+      .select("latitude, longitude, accuracy_m, captured_at, pax_name, mode")
+      .eq("job_id", job.id)
+      .eq("mode", "live")
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return row ?? null;
   });
 
 export const requestClientFollowUp = createServerFn({ method: "POST" })
