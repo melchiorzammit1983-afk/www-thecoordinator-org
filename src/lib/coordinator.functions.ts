@@ -1138,8 +1138,12 @@ export const listJobPax = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: jErr } = await supabaseAdmin.from("jobs")
-      .select("id").eq("id", data.job_id).eq("company_id", c.id).single();
-    if (jErr || !job) throw new Error("Job not found");
+      .select("id")
+      .eq("id", data.job_id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`)
+      .maybeSingle();
+    if (jErr) throw new Error(jErr.message);
+    if (!job) return [];
     const { data: rows, error } = await supabaseAdmin.from("pax")
       .select("id, name, status").eq("job_id", data.job_id).order("name");
     if (error) throw new Error(error.message);
