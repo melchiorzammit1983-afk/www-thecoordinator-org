@@ -1218,7 +1218,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const hasUnread = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0) > 0;
   const clientChange = !!sig?.client_change;
   const sosOpen = !!sig?.sos_open;
-  const driverStatusNew = !!sig?.driver_status_new;
+  const driverStatusNew = !!sig?.driver_status_new && !!job.driver_id;
   const rejected = !!(sig as any)?.rejected;
 
 
