@@ -1008,7 +1008,12 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "private").or(orParts.join(","));
     } else if (data.thread_kind === "driver_client") {
-      q = q.eq("thread_kind", "driver_client");
+      // Per-passenger privacy: only show driver↔this-client messages.
+      if (!identityId && !paxId) return [];
+      const orParts: string[] = [];
+      if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
+      if (paxId) orParts.push(`pax_id.eq.${paxId}`);
+      q = q.eq("thread_kind", "driver_client").or(orParts.join(","));
     } else {
       q = q.eq("thread_kind", "group");
     }
@@ -1029,16 +1034,20 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      .select("id, pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const label = (id as any)?.pax_name ?? "Passenger";
     const identityId = (id as any)?.id ?? null;
+    const paxId = (id as any)?.pax_id ?? null;
     let effectiveKind: "group" | "private" | "driver_client" = data.thread_kind;
     if (effectiveKind === "private" && !identityId) effectiveKind = "group";
+    if (effectiveKind === "driver_client" && !identityId && !paxId) effectiveKind = "group";
+    const scoped = effectiveKind === "private" || effectiveKind === "driver_client";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: job.id, company_id: job.company_id,
       sender_kind: "client", sender_label: label, body: data.body,
       thread_kind: effectiveKind,
-      client_identity_id: effectiveKind === "private" ? identityId : null,
+      client_identity_id: scoped ? identityId : null,
+      pax_id: scoped ? paxId : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1059,7 +1068,7 @@ export const pushClientLocation = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
     const { data: id } = await supabaseAdmin.from("client_link_identities")
-      .select("pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
+      .select("id, pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const { error } = await supabaseAdmin.from("client_locations").insert({
       token: data.token, job_id: job.id, company_id: job.company_id,
       device_id: data.device_id, pax_id: id?.pax_id ?? null, pax_name: id?.pax_name ?? null,
@@ -1074,7 +1083,8 @@ export const pushClientLocation = createServerFn({ method: "POST" })
       const lng = data.longitude.toFixed(6);
       const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
       const who = id?.pax_name ?? "Passenger";
-      const threadKind = id?.pax_id ? "driver_client" : "group";
+      const scoped = !!(id?.id || id?.pax_id);
+      const threadKind = scoped ? "driver_client" : "group";
       await supabaseAdmin.from("trip_messages").insert({
         job_id: job.id,
         company_id: job.company_id,
@@ -1082,6 +1092,8 @@ export const pushClientLocation = createServerFn({ method: "POST" })
         sender_label: who,
         body: `📍 ${who} shared their location — ${mapsLink}`,
         thread_kind: threadKind,
+        client_identity_id: scoped ? ((id as any)?.id ?? null) : null,
+        pax_id: scoped ? (id?.pax_id ?? null) : null,
       } as never);
     }
     return { ok: true };
