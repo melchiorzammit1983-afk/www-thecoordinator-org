@@ -1166,10 +1166,16 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     const isExecutor = src.executor_company_id === c.id;
     if (!isOwner && !isExecutor) throw new Error("Job not found");
 
+    // Mint a fresh per-child client link token so moved pax only see their split.
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const childToken = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
     // If the caller is a partner-executor of a dispatched trip, inherit the chain
     // so the creator continues to see the split children in the same partner lane.
     const inheritsChain = !isOwner && isExecutor;
     const insertPayload: Record<string, unknown> = {
+      // Trip core
       company_id: inheritsChain ? src.company_id : c.id,
       from_location: src.from_location, to_location: src.to_location,
       date: src.date, time: src.time, pickup_at: src.pickup_at,
@@ -1177,6 +1183,25 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       qr_strict_mode: false, tracking_enabled: false,
       vehicle: data.vehicle || null, driver_id: data.driver_id ?? null,
       parent_job_id: src.id,
+      // Flight context
+      from_flight: src.from_flight ?? null,
+      to_flight: src.to_flight ?? null,
+      flight_status: src.flight_status ?? null,
+      flight_status_note: src.flight_status_note ?? null,
+      flight_status_updated_at: src.flight_status_updated_at ?? null,
+      flight_scheduled_at: src.flight_scheduled_at ?? null,
+      flight_estimated_at: src.flight_estimated_at ?? null,
+      // Contact + grouping + approval + provenance
+      contact_phone: src.contact_phone ?? null,
+      group_id: src.group_id ?? null,
+      group_name: src.group_name ?? null,
+      group_note: src.group_note ?? null,
+      grouped_count: src.grouped_count ?? null,
+      grouped_at: src.grouped_at ?? null,
+      coord_approved_at: src.coord_approved_at ?? new Date().toISOString(),
+      source: src.source ?? null,
+      // Per-child client portal token
+      client_link_token: childToken,
     };
     if (inheritsChain) {
       insertPayload.origin_company_id = src.origin_company_id ?? src.company_id;
@@ -1203,12 +1228,33 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       });
     }
 
+    // Copy labels from parent → child so the card is visually complete.
+    const { data: parentLabels } = await supabaseAdmin.from("job_labels")
+      .select("label_id").eq("job_id", src.id);
+    if (parentLabels && parentLabels.length) {
+      await supabaseAdmin.from("job_labels").insert(
+        parentLabels.map((l: any) => ({ job_id: job.id, label_id: l.label_id })),
+      );
+    }
+
+    // Move the selected pax to the child.
     const { error: uErr } = await supabaseAdmin.from("pax")
       .update({ job_id: job.id })
       .in("id", data.pax_ids).eq("job_id", data.source_job_id);
     if (uErr) throw new Error(uErr.message);
+
+    // Rebind any client-link identities tied to those pax to the child's token,
+    // so the moved passengers' portal link resolves to the split they're on.
+    if (src.client_link_token) {
+      await supabaseAdmin.from("client_link_identities")
+        .update({ token: childToken } as never)
+        .eq("token", src.client_link_token)
+        .in("pax_id", data.pax_ids);
+    }
+
     return { ok: true, new_job_id: job.id };
   });
+
 
 export const movePaxToJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
