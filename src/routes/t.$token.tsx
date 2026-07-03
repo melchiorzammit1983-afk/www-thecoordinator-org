@@ -167,7 +167,7 @@ function ClientTripPortal() {
           {(job.to_location || "?")}{job.to_flight ? ` · ${job.to_flight}` : ""}
         </div>
         <div className="mt-1 text-sm opacity-90">
-          {job.pickup_at ? new Date(job.pickup_at).toLocaleString([], { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+          {job.pickup_at ? formatMaltaDateTime(job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : `${job.date}${job.time ? " · " + job.time.slice(0, 5) : ""}`}
         </div>
         {data.identity?.pax_name ? (
