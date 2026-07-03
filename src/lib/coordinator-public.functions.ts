@@ -45,13 +45,17 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     // that were explicitly assigned to them, not every company job).
     type DriverRow = {
       id: string; name: string; kind: string | null;
+      phone: string | null;
       seats_available: number | null; availability_note: string | null;
       profile_updated_at: string | null;
+      onboarded_at: string | null;
+      car_make_model: string | null;
+      plate: string | null;
     };
     let driverRow: DriverRow | null = null;
     if (link.subject_id) {
       const { data: drv } = await supabaseAdmin.from("drivers")
-        .select("id, name, kind, seats_available, availability_note, profile_updated_at")
+        .select("id, name, kind, phone, seats_available, availability_note, profile_updated_at, onboarded_at, car_make_model, plate")
         .eq("id", link.subject_id).maybeSingle();
       driverRow = (drv as DriverRow | null) ?? null;
     }
@@ -76,9 +80,13 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const driver = driverRow
       ? {
           id: driverRow.id, name: driverRow.name,
+          phone: driverRow.phone,
           seats_available: driverRow.seats_available,
           availability_note: driverRow.availability_note,
           profile_updated_at: driverRow.profile_updated_at,
+          onboarded_at: driverRow.onboarded_at,
+          car_make_model: driverRow.car_make_model,
+          plate: driverRow.plate,
         }
       : null;
     // Unread coordinator messages per job
