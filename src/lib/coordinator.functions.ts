@@ -22,6 +22,21 @@ async function checkIsAdmin(userId: string): Promise<boolean> {
   }
 }
 
+async function assertFeatureEnabled(companyId: string, feature: string) {
+  const supabaseAdmin = await getAdminClient();
+  const { data: ent } = await supabaseAdmin
+    .from("company_feature_entitlements")
+    .select("enabled, expires_at")
+    .eq("company_id", companyId)
+    .eq("feature", feature)
+    .maybeSingle();
+  if (!ent) return; // default enabled
+  const expired = ent.expires_at ? new Date(ent.expires_at).getTime() <= Date.now() : false;
+  if (!ent.enabled || expired) {
+    throw new Error(`This feature ("${feature}") has been disabled by the administrator.`);
+  }
+}
+
 function makePickupIso(date: string, time: string) {
   const normalizedTime = time.length === 5 ? `${time}:00` : time;
   const [y, mo, d] = date.split("-").map(Number);
