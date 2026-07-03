@@ -252,13 +252,11 @@ function ClientTripPortal() {
             )}
             {driver && <EtaPill token={token} />}
             {data.driverLocations?.[0] && (
-              <a
-                className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-teal-700 text-white py-2.5 text-sm font-medium"
-                href={`https://www.google.com/maps/search/?api=1&query=${data.driverLocations[0].latitude},${data.driverLocations[0].longitude}`}
-                target="_blank" rel="noreferrer"
-              >
-                <MapPin className="h-4 w-4" /> Track driver on Google Maps
-              </a>
+              <ClientTripMap
+                driver={{ lat: data.driverLocations[0].latitude, lng: data.driverLocations[0].longitude, name: driver?.name ?? "Driver" }}
+                pickup={job.from_location}
+                dropoff={job.to_location}
+              />
             )}
           </section>
 
