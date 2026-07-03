@@ -1307,7 +1307,17 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
-              {job.external && (
+              {job.chain_role === "creator_watching" && (
+                <Badge variant="outline" className="text-[10px] border-amber-500/60 text-amber-700 dark:text-amber-400">
+                  Watching · handed to {job.executor_name ?? "partner"}
+                </Badge>
+              )}
+              {job.chain_role === "hop_watching" && job.external && (
+                <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
+                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
+                </Badge>
+              )}
+              {job.external && !job.chain_role && (
                 <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
                   Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
                 </Badge>
