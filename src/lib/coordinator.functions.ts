@@ -1160,17 +1160,49 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: src, error } = await supabaseAdmin.from("jobs")
-      .select("*").eq("id", data.source_job_id).eq("company_id", c.id).single();
+      .select("*").eq("id", data.source_job_id).single();
     if (error || !src) throw new Error("Job not found");
-    const { data: job, error: iErr } = await supabaseAdmin.from("jobs").insert({
-      company_id: c.id,
+    const isOwner = src.company_id === c.id;
+    const isExecutor = src.executor_company_id === c.id;
+    if (!isOwner && !isExecutor) throw new Error("Job not found");
+
+    // If the caller is a partner-executor of a dispatched trip, inherit the chain
+    // so the creator continues to see the split children in the same partner lane.
+    const inheritsChain = !isOwner && isExecutor;
+    const insertPayload: Record<string, unknown> = {
+      company_id: inheritsChain ? src.company_id : c.id,
       from_location: src.from_location, to_location: src.to_location,
       date: src.date, time: src.time, pickup_at: src.pickup_at,
       flightorship: src.flightorship, clientcompanyname: src.clientcompanyname,
       qr_strict_mode: false, tracking_enabled: false,
       vehicle: data.vehicle || null, driver_id: data.driver_id ?? null,
-    }).select("id").single();
+      parent_job_id: src.id,
+    };
+    if (inheritsChain) {
+      insertPayload.origin_company_id = src.origin_company_id ?? src.company_id;
+      insertPayload.executor_company_id = c.id;
+      insertPayload.dispatch_chain_company_ids = src.dispatch_chain_company_ids ?? [src.company_id, c.id];
+      insertPayload.dispatch_status = "accepted";
+      insertPayload.dispatched_at = src.dispatched_at ?? new Date().toISOString();
+      insertPayload.dispatch_decided_at = new Date().toISOString();
+    }
+    const { data: job, error: iErr } = await supabaseAdmin.from("jobs")
+      .insert(insertPayload as never).select("id").single();
     if (iErr) throw new Error(iErr.message);
+
+    if (inheritsChain) {
+      // Mirror the accepted hop so chain timelines / statements reflect the split child.
+      await supabaseAdmin.from("job_dispatch_hops").insert({
+        job_id: job.id,
+        hop_index: 0,
+        from_company_id: src.origin_company_id ?? src.company_id,
+        to_company_id: c.id,
+        status: "accepted",
+        note: "split from parent trip",
+        decided_at: new Date().toISOString(),
+      });
+    }
+
     const { error: uErr } = await supabaseAdmin.from("pax")
       .update({ job_id: job.id })
       .in("id", data.pax_ids).eq("job_id", data.source_job_id);
