@@ -711,6 +711,7 @@ export type Database = {
       drivers: {
         Row: {
           availability_note: string | null
+          car_make_model: string | null
           company_id: string
           created_at: string
           email: string | null
@@ -719,7 +720,9 @@ export type Database = {
           linked_company_id: string | null
           linked_user_id: string | null
           name: string
+          onboarded_at: string | null
           phone: string | null
+          plate: string | null
           profile_updated_at: string | null
           seats_available: number | null
           status: Database["public"]["Enums"]["driver_status"]
@@ -728,6 +731,7 @@ export type Database = {
         }
         Insert: {
           availability_note?: string | null
+          car_make_model?: string | null
           company_id: string
           created_at?: string
           email?: string | null
@@ -736,7 +740,9 @@ export type Database = {
           linked_company_id?: string | null
           linked_user_id?: string | null
           name: string
+          onboarded_at?: string | null
           phone?: string | null
+          plate?: string | null
           profile_updated_at?: string | null
           seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
@@ -745,6 +751,7 @@ export type Database = {
         }
         Update: {
           availability_note?: string | null
+          car_make_model?: string | null
           company_id?: string
           created_at?: string
           email?: string | null
@@ -753,7 +760,9 @@ export type Database = {
           linked_company_id?: string | null
           linked_user_id?: string | null
           name?: string
+          onboarded_at?: string | null
           phone?: string | null
+          plate?: string | null
           profile_updated_at?: string | null
           seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
@@ -967,6 +976,7 @@ export type Database = {
           driver_accepted_at: string | null
           driver_actual_minutes: number | null
           driver_completed_at: string | null
+          driver_external: boolean
           driver_hidden_at: string | null
           driver_id: string | null
           driver_note: string | null
@@ -1033,6 +1043,7 @@ export type Database = {
           driver_accepted_at?: string | null
           driver_actual_minutes?: number | null
           driver_completed_at?: string | null
+          driver_external?: boolean
           driver_hidden_at?: string | null
           driver_id?: string | null
           driver_note?: string | null
@@ -1099,6 +1110,7 @@ export type Database = {
           driver_accepted_at?: string | null
           driver_actual_minutes?: number | null
           driver_completed_at?: string | null
+          driver_external?: boolean
           driver_hidden_at?: string | null
           driver_id?: string | null
           driver_note?: string | null
@@ -1419,6 +1431,7 @@ export type Database = {
           read_by_driver_at: string | null
           sender_kind: string
           sender_label: string | null
+          thread: string
           thread_kind: string
           updated_at: string
         }
@@ -1434,6 +1447,7 @@ export type Database = {
           read_by_driver_at?: string | null
           sender_kind: string
           sender_label?: string | null
+          thread?: string
           thread_kind?: string
           updated_at?: string
         }
@@ -1449,6 +1463,7 @@ export type Database = {
           read_by_driver_at?: string | null
           sender_kind?: string
           sender_label?: string | null
+          thread?: string
           thread_kind?: string
           updated_at?: string
         }
@@ -1494,6 +1509,17 @@ export type Database = {
       }
       driver_approve_deletion: {
         Args: { _job_id: string; _token: string }
+        Returns: undefined
+      }
+      driver_save_profile: {
+        Args: {
+          _car: string
+          _name: string
+          _phone: string
+          _plate: string
+          _seats: number
+          _token: string
+        }
         Returns: undefined
       }
       has_connection_permission: {
