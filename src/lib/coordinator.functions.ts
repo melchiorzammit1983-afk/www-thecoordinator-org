@@ -2088,7 +2088,8 @@ export const getClientTripLink = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    await assertJobInCompany(context, data.job_id);
+    const { company } = await assertJobInCompany(context, data.job_id);
+    await assertFeatureEnabled(company.id, "client_trip_portal");
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin.from("jobs")
       .select("id, client_link_token, from_location, from_flight, to_location, to_flight, date, time, pickup_at, group_id, group_name")
