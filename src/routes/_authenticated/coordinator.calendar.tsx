@@ -707,14 +707,6 @@ function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
   return out;
 }
 
-function partnerColor(id: string | null | undefined): string {
-  if (!id) return "hsl(38 92% 50%)";
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 78% 48%)`;
-}
-
-
 function minutesBetween(a: string, b: string): number {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
