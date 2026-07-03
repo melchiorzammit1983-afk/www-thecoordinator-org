@@ -1286,23 +1286,21 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
           job={job} ctx={ctx}
           onOpenSplit={() => setOpenSplit(true)}
           onOpenClone={() => setOpenClone(true)}
-          onOpenDispatch={() => setOpenDispatch(true)}
           driverName={shownDriver ?? undefined}
         />
       </div>
 
       <CloneDialog open={openClone} onOpenChange={setOpenClone} job={job} />
       <SplitDialog open={openSplit} onOpenChange={setOpenSplit} job={job} />
-      <DispatchDialog open={openDispatch} onOpenChange={setOpenDispatch} job={job} />
     </div>
   );
 }
 
 function TripMenu({
-  job, ctx, onOpenSplit, onOpenClone, onOpenDispatch, driverName,
+  job, ctx, onOpenSplit, onOpenClone, driverName,
 }: {
   job: Job; ctx: CardCtx;
-  onOpenSplit: () => void; onOpenClone: () => void; onOpenDispatch: () => void;
+  onOpenSplit: () => void; onOpenClone: () => void;
   driverName?: string;
 }) {
   const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
