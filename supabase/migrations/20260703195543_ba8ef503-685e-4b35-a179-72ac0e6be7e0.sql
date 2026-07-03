@@ -1,0 +1,2 @@
+ALTER TABLE public.trip_messages DROP CONSTRAINT IF EXISTS trip_messages_thread_kind_check;
+ALTER TABLE public.trip_messages ADD CONSTRAINT trip_messages_thread_kind_check CHECK (thread_kind = ANY (ARRAY['group'::text,'private'::text,'driver_client'::text,'driver_coord'::text]));
