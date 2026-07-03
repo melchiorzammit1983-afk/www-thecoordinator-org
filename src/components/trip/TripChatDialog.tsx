@@ -162,6 +162,24 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
           </div>
         )}
 
+        {role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && (
+          <div className="px-3 py-2 border-b bg-background flex items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">Chat with</span>
+            <Select value={driverPaxId} onValueChange={setDriverPaxId}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pick a passenger…" /></SelectTrigger>
+              <SelectContent>
+                {driverPaxList.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId && (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground bg-muted/30">
+            Pick a passenger above to see their private thread.
+          </div>
+        )}
+
+
         <div ref={scrollRef} className="max-h-[55vh] min-h-[240px] overflow-y-auto px-3 py-3 space-y-2 bg-muted/30">
           {(messages ?? []).length === 0 && (
             <p className="text-center text-xs text-muted-foreground py-8">No messages yet. Start the conversation.</p>
