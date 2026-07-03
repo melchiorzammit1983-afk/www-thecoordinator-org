@@ -1282,6 +1282,7 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({
     job_id: z.string().uuid(),
     identity_id: z.string().uuid().nullish(),
+    pax_id: z.string().uuid().nullish(),
     thread_kind: z.enum(["all", "private", "group"]).optional().default("all"),
   }).parse(i))
   .handler(async ({ data, context }) => {
@@ -1289,21 +1290,31 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     let filtered = (rows ?? []) as any[];
-    if (data.thread_kind === "private" && data.identity_id) {
+
+    // If a pax_id was provided but no identity_id, look up the identity tied to that pax.
+    let effectiveIdentityId: string | null = data.identity_id ?? null;
+    if (data.pax_id && !effectiveIdentityId) {
+      const { data: ident } = await supabaseAdmin
+        .from("client_link_identities")
+        .select("id").eq("pax_id", data.pax_id).order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+      effectiveIdentityId = (ident as any)?.id ?? null;
+    }
+
+    if (data.thread_kind === "private" && (effectiveIdentityId || data.pax_id)) {
       filtered = filtered.filter((r) =>
         r.sender_kind === "driver" ||
-        r.client_identity_id === data.identity_id ||
-        (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id)
+        (effectiveIdentityId && r.client_identity_id === effectiveIdentityId) ||
+        (data.pax_id && r.pax_id === data.pax_id) ||
+        (r.sender_kind === "coordinator" && (r.thread_kind === "group" || r.thread_kind == null) && !r.client_identity_id && !r.pax_id)
       );
     } else if (data.thread_kind === "group") {
       filtered = filtered.filter((r) =>
         r.sender_kind === "driver" ||
-        r.thread_kind === "group" ||
-        r.thread_kind == null
+        ((r.thread_kind === "group" || r.thread_kind == null) && !r.pax_id)
       );
     }
     const unreadIds = filtered.filter((r) =>
@@ -1324,6 +1335,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
       job_id: z.string().uuid(),
       body: z.string().trim().min(1).max(4000),
       identity_id: z.string().uuid().nullish(),
+      pax_id: z.string().uuid().nullish(),
       thread_kind: z.enum(["group", "private"]).optional().default("group"),
     }).parse(i),
   )
@@ -1333,7 +1345,18 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
     const label = userRow?.user?.email ?? "Coordinator";
-    const isPrivate = data.thread_kind === "private" && !!data.identity_id;
+
+    // Resolve identity from pax_id if not provided (so once a passenger picks
+    // their name the private thread continues seamlessly).
+    let identityId: string | null = data.identity_id ?? null;
+    if (data.pax_id && !identityId) {
+      const { data: ident } = await supabaseAdmin
+        .from("client_link_identities")
+        .select("id").eq("pax_id", data.pax_id).order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+      identityId = (ident as any)?.id ?? null;
+    }
+
+    const isPrivate = data.thread_kind === "private" && (!!identityId || !!data.pax_id);
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: company.id,
@@ -1341,7 +1364,8 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
       sender_label: label,
       body: data.body,
       thread_kind: isPrivate ? "private" : "group",
-      client_identity_id: isPrivate ? data.identity_id : null,
+      client_identity_id: isPrivate ? identityId : null,
+      pax_id: isPrivate ? (data.pax_id ?? null) : null,
     } as any);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1404,23 +1428,26 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
       supabaseAdmin.from("pax").select("id, name, job_id").in("job_id", jobIds),
       supabaseAdmin.from("jobs").select("id, client_link_token").in("id", jobIds),
       supabaseAdmin.from("trip_messages")
-        .select("id, job_id, client_identity_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
+        .select("id, job_id, client_identity_id, pax_id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind")
         .in("job_id", jobIds).order("created_at", { ascending: true }),
     ]);
 
     const tokens = (jobsRows ?? []).map((j: any) => j.client_link_token).filter(Boolean) as string[];
     const { data: idents } = tokens.length
       ? await supabaseAdmin.from("client_link_identities")
-          .select("id, token, pax_id, pax_name, last_seen_at").in("token", tokens)
+          .select("id, token, pax_id, pax_name, last_seen_at, first_seen_at").in("token", tokens)
       : { data: [] as any[] };
 
     const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-    type Ident = { id: string; pax_id: string | null; pax_name: string | null; last_seen_at: string | null };
+    type Ident = { id: string; pax_id: string | null; pax_name: string | null; last_seen_at: string | null; first_seen_at: string | null };
     const identsArr = (idents ?? []) as Ident[];
 
+    const now = Date.now();
     const out: Record<string, {
       identity_id: string | null;
       last_seen_at: string | null;
+      first_seen_at: string | null;
+      presence: "online" | "away" | "never";
       last_message: { body: string; created_at: string; sender_kind: string; sender_label: string | null; read_by_coordinator_at: string | null } | null;
       unread_count: number;
     }> = {};
@@ -1432,17 +1459,33 @@ export const listPaxActivityCoord = createServerFn({ method: "GET" })
 
       let msgs = (msgRows ?? []).filter((m: any) => m.sender_kind !== "coordinator");
       if (ident) {
-        msgs = msgs.filter((m: any) => m.client_identity_id === ident.id || (m.thread_kind === "group" && m.client_identity_id === null));
+        msgs = msgs.filter((m: any) =>
+          m.client_identity_id === ident.id ||
+          m.pax_id === p.id ||
+          (m.thread_kind === "group" && m.client_identity_id === null && !m.pax_id)
+        );
       } else {
-        // no identity yet — only surface group messages that could be from anyone
-        msgs = msgs.filter((m: any) => m.sender_kind === "client" && m.thread_kind === "group");
+        // Include queued coordinator messages tied to this pax slot + group client messages
+        msgs = (msgRows ?? []).filter((m: any) =>
+          m.pax_id === p.id ||
+          (m.sender_kind === "client" && m.thread_kind === "group")
+        );
       }
       const last = msgs.length ? msgs[msgs.length - 1] : null;
       const unread = msgs.filter((m: any) => m.sender_kind === "client" && !m.read_by_coordinator_at).length;
 
+      const lastSeen = ident?.last_seen_at ?? null;
+      const firstSeen = ident?.first_seen_at ?? null;
+      const presence: "online" | "away" | "never" =
+        lastSeen && (now - new Date(lastSeen).getTime()) < 60_000 ? "online"
+        : (lastSeen || firstSeen) ? "away"
+        : "never";
+
       out[p.id] = {
         identity_id: ident?.id ?? null,
-        last_seen_at: ident?.last_seen_at ?? null,
+        last_seen_at: lastSeen,
+        first_seen_at: firstSeen,
+        presence,
         last_message: last ? {
           body: last.body, created_at: last.created_at,
           sender_kind: last.sender_kind, sender_label: last.sender_label,

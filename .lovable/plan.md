@@ -1,58 +1,71 @@
 ## Goal
 
-Make the creator (Coordinator A) always see every partner-forwarded trip on their own dispatch board — one card per partner lane, hop by hop — from the moment it's dispatched, through acceptance, driving, and completion. Dragging a card onto a partner lane opens a confirm dialog and dispatches it.
+In `TripDetailsSheet`'s passenger list, show each passenger's connection/availability status and let the coordinator tap the chat icon to message that specific passenger directly — even before they've picked their name. Messages queue into a private thread that automatically attaches to the passenger's identity the moment they open the link and pick their name. In the client portal (`/t/$token`), split chat into **Coordinator** and **Driver** tabs.
 
-## What changes for the user
+## What the user sees
 
-1. **Partner lanes on the dispatch board.** Next to driver lanes, each active connected partner gets its own lane (day and week view). Empty lanes still show so trips can be dropped there.
-2. **Drag a trip onto a partner lane → confirm dialog opens** (partner prefilled, optional note) → Dispatch. Card immediately re-renders in that partner's lane with a "Sent · pending" badge and a partner-color left rim so it visually reads as "handed off".
-3. **Card stays on the creator's board forever.** After the partner accepts, the badge flips to "Accepted · at {Partner}". If the partner assigns a driver, the driver name appears on the same card. If the partner forwards to another partner C, a **second card** appears in C's lane on A's board (one card per hop). Cards for hops A doesn't own are read-only for A (no drag, no edit) but keep full chat + chain timeline + live status.
-4. **Statement already carries chain trips** — we verify every hop is included and labeled with the executor company + driver, so the client-facing invoice from A always reflects the full A→B→C→driver chain.
-5. **Outbound collapsed section is removed** — its purpose is now served by the always-visible partner lanes.
+**Coordinator side (passenger row):**
+- Small presence dot next to each name:
+  - **Grey** — never opened the link
+  - **Yellow** — opened before, offline now
+  - **Green** — online now (heartbeat in last 60s)
+- Sublabel updates: "Never opened" / "Last seen 5m ago" / "Online now".
+- Chat icon always enabled. Clicking opens `TripChatDialog` in **private queued mode** for that passenger slot — even if the pax has no `identity_id` yet.
+
+**Client side (`/t/$token` portal chat area):**
+- Two tabs: **Coordinator** and **Driver**.
+  - Coordinator tab = merged messages from every coordinator in the chain, private-to-me thread.
+  - Driver tab = messages with the currently assigned driver.
+- Any queued messages the coordinator sent before pickup show up here the first time they open the tab.
 
 ## Technical plan
 
-### Data / server
+### Presence signal (heartbeat, no extra infra)
 
-- `listJobs` (coordinator): broaden filter to include jobs where `company_of(me)` is in `dispatch_chain_company_ids` OR equals `origin_company_id` (not only `company_id`/`executor_company_id`). Add derived fields per row:
-  - `chain_role`: `"creator" | "executor" | "chain_viewer"`
-  - `current_partner`: `{ id, name } | null` (the current `executor_company_id` if it's not me)
-  - `hop_index`: which hop this card represents on my board
-- New server fn `listPartnerLanes()` returning `[{ id, name, color_hint }]` from active `coordinator_connections` for the current company. Cached 60s.
-- New server fn `getChainCardsForCreator(job_id)`: returns one row per hop where `from_company_id = me`, each mapped to a lane (target partner). Used to render one card per partner lane for the creator.
-- Realtime: subscribe to `job_dispatch_hops` and `jobs` changes for any job in my chain, so cards update instantly across all hops without polling.
+- Reuse existing `client_link_identities` table. Add columns:
+  - `last_seen_at timestamptz`
+  - `first_seen_at timestamptz`
+- New public server fn `heartbeatClientIdentity({ token, identity_id })` — `/t/$token` calls it on mount and every 45s while the tab is visible. Sets `last_seen_at = now()` (and `first_seen_at` if null).
+- New coordinator server fn `listPaxPresence(job_id)` returning per-pax `{ pax_id, identity_id, first_seen_at, last_seen_at, state: "never"|"away"|"online" }`. `state = online` if `last_seen_at > now() - 60s`, `away` if seen ever, else `never`. Cached 15s + realtime invalidation on `client_link_identities` changes for that job.
 
-### Frontend (`coordinator.calendar.tsx`)
+### Queued private thread before name pick
 
-- Extend `DriverLanes` → `DispatchLanes` that renders **Driver lanes + Partner lanes** in the same horizontal scroll grid. Partner lanes use `useDroppable({ id: "partner:{companyId}" })`.
-- `onDragEnd`: when `dropId` starts with `partner:`, open the existing `DispatchToPartnerDialog` prefilled with that partner and the job id — do not dispatch on drop.
-- New card variant `PartnerHopCard` (reuses `TripCard` styling) with:
-  - Left rim colored per partner (deterministic hash → HSL).
-  - Status badge: `Sent · pending` / `Accepted` / `Rejected` (falls back off the lane on reject) / `In progress` / `Completed`.
-  - Assigned driver name once the executor sets one (from live `jobs` row).
-  - Buttons: **Open chat**, **Chain timeline**, **Details** (read-only for `chain_viewer` role).
-- Chain expansion: for hop `A→B→C→driver`, the creator sees a card in B's lane AND a card in C's lane (one per hop), each showing its own hop status. Click either card → same `TripDetailsSheet` with `ChainTimeline` highlighted at that hop.
-- Remove the collapsed `OutboundBoard` (superseded). Keep `InboundBoard` for partners receiving trips.
+- `trip_messages` already supports `identity_id` (private) vs group. Add nullable `pax_id` column so a coordinator can address a message to a pax slot before an identity exists.
+- New coordinator server fn `postTripMessageForPax({ job_id, pax_id, body })`: inserts with `thread_kind = 'private'`, `pax_id = <slot>`, `identity_id = null`.
+- Modify `listTripMessagesCoord`: when called with `pax_id`, return all messages where `pax_id = X` OR (`identity_id` = the identity currently bound to that pax, if any).
+- Attach-on-pick: when a pax picks their name in `/t/$token` and gets an `identity_id`, run `attachIdentityToPax(pax_id, identity_id)` — updates any queued `trip_messages` rows with that `pax_id` and null `identity_id` to set `identity_id`. From then on the same private thread continues seamlessly.
+- Client-side private-thread read (`listTripMessages` for `/t/$token`): return messages where `identity_id = mine` OR (`pax_id = my_pax_id` AND `identity_id IS NULL`).
+
+### UI wiring
+
+- **`TripDetailsSheet.tsx`** passenger list:
+  - Consume `listPaxPresence(job.id)` via `useQuery` with realtime invalidation.
+  - Render presence dot + sublabel per row. Update chat button: always enabled, `onClick` opens `TripChatDialog` with `threadKind="private"`, and pass the new `pax_id` prop so it uses the queued-thread endpoints.
+- **`TripChatDialog.tsx`**: add optional `paxId` prop. When set and `role === "coordinator"`, call `postTripMessageForPax` and `listTripMessagesCoord({ pax_id })`. Header shows "Chat with {paxName} · queued until they open the link" if no identity yet, otherwise "Chat with {paxName} · online/away/offline".
+- **`/t/$token` portal** chat area: replace single thread with a two-tab shadcn `Tabs` (**Coordinator** / **Driver**). Coordinator tab uses existing private-thread reader; Driver tab filters `sender_kind IN ('driver','coordinator-with-driver-role')` for the assigned driver of that job (or just filters by `thread_kind='driver'` — see below). Add heartbeat effect.
+
+### Driver tab scoping (simple)
+
+- Add `thread_kind = 'driver'` value. Driver-portal `postTripMessage` writes with `thread_kind='driver'` (visible to assigned driver + client). Coordinator writes going into the Driver tab (from client side) also use `driver`. Coordinator↔pax stays `private`. Group thread unchanged.
+- Client `listTripMessages` returns:
+  - Coordinator tab: `thread_kind='private' AND (identity_id=mine OR (pax_id=mine AND identity_id IS NULL))`
+  - Driver tab: `thread_kind IN ('driver','all') AND (identity_id IS NULL OR identity_id=mine)`
+
+### Realtime
+
+- Client portal + `TripDetailsSheet` subscribe to `trip_messages` filtered by `job_id`, invalidating the relevant query keys. Presence dot subscribes to `client_link_identities` changes for the job.
 
 ### Access + safety
 
-- `TripDetailsSheet` and `TripChatDialog` already permit access for any company in the chain (`assertJobInCompany`). No policy changes needed; verify RLS on `jobs` still allows SELECT when `company_of(me) = ANY(dispatch_chain_company_ids)` (helper `job_in_my_chain` exists — add it to the jobs SELECT policy if not already used).
-- Drop-to-partner is disabled if no active connection exists with that company (server-side `dispatch_job_forward` already enforces `not_a_partner`; UI just won't render a lane).
-
-### Statements
-
-- `buildStatement`: confirm rows are emitted per hop when the coordinator is `creator` (they should see A→B and B→C hops, executor names, drivers, and payment method), and only price when they're in the chain. Add a "Chain" column: `A → B → C → Driver Name`.
-
-### Realtime + invalidations
-
-- One `supabase.channel("chain-live")` subscribed to `jobs` and `job_dispatch_hops` filtered by `dispatch_chain_company_ids @> {me}`; invalidates `["jobs"]` and `["chain-cards", jobId]` on change.
+- All new writes go through server functions with existing token/`assertJobInCompany` checks — no new RLS surface widening. `pax_id` is validated to belong to `job_id`. Client heartbeat validated by token + identity_id match (already the pattern for `postTripMessage`).
 
 ## Out of scope
 
-- Redesigning the driver lane card visuals.
-- Changing how partners themselves see the trip (their existing Inbound + own lanes stay).
-- Payment/pricing rules (already implemented last turn).
+- Typing indicators, read receipts, push notifications.
+- Voice/media messages.
+- Per-coordinator threads inside the Coordinator tab (single merged thread).
+- Changing driver-side chat UI.
 
 ## Ask after build
 
-Once live I'll ask whether partner lanes should be collapsible per-partner, and whether creator-side cards should show the partner's driver phone + live location by default or behind a click.
+Once live I'll ask: (a) whether the Coordinator tab should split per-coordinator when the chain has 3+ hops, and (b) whether we should send a "coordinator sent you a message" toast the first time a client opens their portal with queued messages waiting.
