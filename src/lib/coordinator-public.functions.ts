@@ -158,6 +158,9 @@ export const updateDriverProfile = createServerFn({ method: "POST" })
     z.object({
       token: z.string().min(8).max(128),
       name: z.string().trim().min(1).max(120).optional(),
+      phone: z.string().trim().min(1).max(40).optional(),
+      car_make_model: z.string().trim().max(120).nullable().optional(),
+      plate: z.string().trim().max(40).nullable().optional(),
       seats_available: z.number().int().min(0).max(200).nullable().optional(),
       availability_note: z.string().trim().max(500).nullable().optional(),
     }).parse(i),
@@ -166,8 +169,14 @@ export const updateDriverProfile = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link || !link.subject_id) throw new Error("driver_link_required");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { profile_updated_at: new Date().toISOString() };
+    const patch: Record<string, unknown> = {
+      profile_updated_at: new Date().toISOString(),
+      onboarded_at: new Date().toISOString(), // marks completion of first-time onboarding
+    };
     if (data.name !== undefined) patch.name = data.name;
+    if (data.phone !== undefined) patch.phone = data.phone;
+    if (data.car_make_model !== undefined) patch.car_make_model = data.car_make_model;
+    if (data.plate !== undefined) patch.plate = data.plate;
     if (data.seats_available !== undefined) patch.seats_available = data.seats_available;
     if (data.availability_note !== undefined) patch.availability_note = data.availability_note;
     const { error } = await supabaseAdmin.from("drivers")
