@@ -430,11 +430,16 @@ export type Database = {
       companies: {
         Row: {
           access_end: string | null
+          advert_caption: string | null
+          advert_enabled: boolean
+          advert_link: string | null
+          advert_url: string | null
           coordinator_phone: string | null
           created_at: string
           custom_link: string
           email: string
           id: string
+          logo_url: string | null
           name: string
           owner_user_id: string | null
           phone: string | null
@@ -445,11 +450,16 @@ export type Database = {
         }
         Insert: {
           access_end?: string | null
+          advert_caption?: string | null
+          advert_enabled?: boolean
+          advert_link?: string | null
+          advert_url?: string | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email: string
           id?: string
+          logo_url?: string | null
           name: string
           owner_user_id?: string | null
           phone?: string | null
@@ -460,11 +470,16 @@ export type Database = {
         }
         Update: {
           access_end?: string | null
+          advert_caption?: string | null
+          advert_enabled?: boolean
+          advert_link?: string | null
+          advert_url?: string | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email?: string
           id?: string
+          logo_url?: string | null
           name?: string
           owner_user_id?: string | null
           phone?: string | null
