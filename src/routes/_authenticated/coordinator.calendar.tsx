@@ -460,11 +460,30 @@ function CalendarPage() {
         />
       )}
 
-      <JobFormDialog open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []} onSaved={() => refetch()} />
+      <JobFormDialog
+        open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []}
+        onSaved={(d) => {
+          if (d) {
+            const [y, m, dd] = d.split("-").map(Number);
+            if (y && m && dd) setAnchor(new Date(y, m - 1, dd));
+          }
+          setOpenNew(false);
+          refetch();
+        }}
+      />
       <JobFormDialog
         open={!!editJob} onOpenChange={(v) => !v && setEditJob(null)}
-        drivers={drivers ?? []} job={editJob ?? undefined} onSaved={() => { setEditJob(null); refetch(); }}
+        drivers={drivers ?? []} job={editJob ?? undefined}
+        onSaved={(d) => {
+          if (d) {
+            const [y, m, dd] = d.split("-").map(Number);
+            if (y && m && dd) setAnchor(new Date(y, m - 1, dd));
+          }
+          setEditJob(null);
+          refetch();
+        }}
       />
+
       <PaxSplitDialog
         open={!!paxJob} onOpenChange={(v) => !v && setPaxJob(null)}
         jobId={paxJob?.id ?? null}
