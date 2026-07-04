@@ -315,9 +315,33 @@ function rowsToTsv(rows: AiRow[]): string {
   return [header, ...body].join("\n");
 }
 
+type Attachment = { name: string; mimeType: string; size: number; dataBase64: string };
+
+const MAX_FILES = 5;
+const MAX_BYTES = 10 * 1024 * 1024;
+const AI_MIME_RE = /^image\/(png|jpe?g|webp|heic|heif|gif)$|^application\/pdf$/i;
+const SHEET_EXT_RE = /\.(xlsx|xls|csv)$/i;
+const URL_RE = /https?:\/\/[^\s<>"']+/gi;
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(r.error);
+    r.onload = () => {
+      const s = String(r.result || "");
+      const i = s.indexOf(",");
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    r.readAsDataURL(file);
+  });
+}
+
 function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const parsed = useMemo(
     () => (looksLikeSheetPaste(raw) ? parseSheetPaste(raw) : parseTrips(raw)),
     [raw],
@@ -337,8 +361,8 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
   const aiFn = useServerFn(extractTripsFromText);
 
   const aiMut = useMutation({
-    mutationFn: (messages: ChatMsg[]) =>
-      aiFn({ data: { messages } }) as Promise<AiResp>,
+    mutationFn: (payload: { messages: ChatMsg[]; attachments?: Omit<Attachment, "size">[]; urls?: string[] }) =>
+      aiFn({ data: payload }) as Promise<AiResp>,
     onSuccess: (res) => {
       if (res.type === "question") {
         setPendingQuestion(res.payload);
@@ -352,25 +376,71 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
       setChat([]);
       setPendingQuestion(null);
       setReply("");
+      setAttachments([]);
       toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const addFiles = async (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    if (!arr.length) return;
+
+    // 1) Handle spreadsheet files locally — no AI, no attachments.
+    const sheets = arr.filter((f) => SHEET_EXT_RE.test(f.name) || /spreadsheet|excel|csv/i.test(f.type));
+    for (const f of sheets) {
+      try {
+        const tsv = await fileToSheetTsv(f);
+        if (tsv) {
+          setRaw((prev) => (prev.trim() ? prev + "\n" + tsv : tsv));
+          toast.success(`Loaded ${f.name} — parsed without AI`);
+        } else {
+          toast.error(`${f.name}: empty spreadsheet`);
+        }
+      } catch (e: any) {
+        toast.error(`${f.name}: ${e?.message || "could not read"}`);
+      }
+    }
+
+    // 2) Handle images/PDFs as AI attachments.
+    const media = arr.filter((f) => AI_MIME_RE.test(f.type));
+    const rejected = arr.filter((f) => !sheets.includes(f) && !media.includes(f));
+    if (rejected.length) toast.error(`Unsupported: ${rejected.map((f) => f.name).join(", ")}`);
+
+    const next: Attachment[] = [];
+    for (const f of media) {
+      if (f.size > MAX_BYTES) { toast.error(`${f.name} is over 10 MB`); continue; }
+      if (attachments.length + next.length >= MAX_FILES) { toast.error(`Max ${MAX_FILES} attachments`); break; }
+      try {
+        const dataBase64 = await fileToBase64(f);
+        next.push({ name: f.name, mimeType: f.type, size: f.size, dataBase64 });
+      } catch {
+        toast.error(`Could not read ${f.name}`);
+      }
+    }
+    if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, MAX_FILES));
+  };
+
   const startAi = () => {
     const text = raw.trim();
-    if (text.length < 3) return;
+    if (!text && attachments.length === 0) return;
     // Skip the AI entirely when the paste already looks like sheet/CSV rows —
     // parseSheetPaste handles it locally at zero token cost.
-    if (looksLikeSheetPaste(text)) {
+    if (text && !attachments.length && looksLikeSheetPaste(text)) {
       toast.message("Looks like sheet data — parsed without AI");
       return;
     }
-    const messages: ChatMsg[] = [{ role: "user", text }];
+    const urls = Array.from(new Set(text.match(URL_RE) ?? [])).slice(0, 3);
+    const userText = text || (attachments.length ? "Extract trips from the attached file(s)." : "");
+    const messages: ChatMsg[] = [{ role: "user", text: userText }];
     setChat(messages);
     setChatOpen(true);
     setPendingQuestion(null);
-    aiMut.mutate(messages);
+    aiMut.mutate({
+      messages,
+      attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
+      urls,
+    });
   };
 
   const sendReply = () => {
@@ -380,12 +450,19 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
     setChat(next);
     setReply("");
     setPendingQuestion(null);
-    aiMut.mutate(next);
+    // Follow-ups keep attachments/urls (AI may need to re-read them for context).
+    const urls = Array.from(new Set((raw.match(URL_RE) ?? []))).slice(0, 3);
+    aiMut.mutate({
+      messages: next,
+      attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
+      urls,
+    });
   };
 
   const cancelChat = () => {
     setChatOpen(false); setChat([]); setPendingQuestion(null); setReply("");
   };
+
 
   const earliestValidDate = valid
     .map((t) => t.date)
