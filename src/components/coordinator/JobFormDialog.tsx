@@ -55,7 +55,7 @@ export function JobFormDialog({
   onOpenChange: (v: boolean) => void;
   drivers: Driver[];
   job?: Job;
-  onSaved: () => void;
+  onSaved: (createdDate?: string) => void;
 }) {
   const isEdit = !!job;
   const bulkEnabled = useFeature("bulk_paste");
@@ -106,7 +106,8 @@ export function JobFormDialog({
 
 function ManualForm({
   drivers, job, prefill, onSaved,
-}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: () => void }) {
+}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void }) {
+
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
@@ -189,7 +190,7 @@ function ManualForm({
         qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
       };
-      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
+      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       if (pax.length) {
         await bulkFn({ data: { trips: [{
@@ -201,14 +202,16 @@ function ManualForm({
       } else {
         await createFn({ data: payload });
       }
+      return date;
     },
-    onSuccess: () => {
+    onSuccess: (savedDate) => {
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      onSaved();
+      onSaved(savedDate);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
 
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
@@ -294,7 +297,7 @@ function ManualForm({
   );
 }
 
-function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
+function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const parsed = useMemo(
@@ -335,6 +338,11 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const earliestValidDate = valid
+    .map((t) => t.date)
+    .filter(Boolean)
+    .sort()[0];
+
   const mut = useMutation({
     mutationFn: () => bulkFn({ data: { trips: valid.map((t) => ({
       from_location: t.from_location, to_location: t.to_location,
@@ -347,11 +355,12 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      if (incomplete.length === 0) onSaved();
+      if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
 
   return (
     <div className="space-y-3">
