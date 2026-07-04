@@ -270,26 +270,3 @@ function PreviewBar({ branding }: { branding: ReturnType<typeof Object> }) {
     </div>
   );
 }
-  return (
-    <div className="mx-auto max-w-3xl px-2 pb-2">
-      <div className="rounded-t-xl border border-b-0 bg-background shadow-lg flex items-center gap-3 pl-3 pr-3 py-2">
-        {b.logo_url
-          ? <img src={b.logo_url} alt="" className="h-9 w-9 rounded-md object-contain shrink-0" />
-          : <div className="h-9 w-9 rounded-md bg-primary/10 grid place-items-center text-xs font-semibold">
-              {(b.company_name ?? "").slice(0, 2).toUpperCase()}
-            </div>}
-        {b.advert_url ? (
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <img src={b.advert_url} alt="" className="h-14 w-auto max-w-[55%] object-contain rounded-md" />
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sponsored</div>
-              <div className="text-xs truncate">{b.advert_caption ?? b.company_name}</div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs font-medium">{b.company_name}</div>
-        )}
-      </div>
-    </div>
-  );
-}
