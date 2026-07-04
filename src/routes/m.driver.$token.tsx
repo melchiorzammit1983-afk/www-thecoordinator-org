@@ -30,6 +30,7 @@ import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
+import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 
 import {
