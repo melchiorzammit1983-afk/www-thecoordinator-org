@@ -7,6 +7,7 @@ export type BrandingInfo = {
   advert_url: string | null;
   advert_link: string | null;
   advert_caption: string | null;
+  booking_token?: string | null;
 } | null | undefined;
 
 /**
