@@ -954,6 +954,68 @@ export type Database = {
         }
         Relationships: []
       }
+      flight_status_snapshots: {
+        Row: {
+          actual_at: string | null
+          baggage_belt: string | null
+          captured_at: string
+          company_id: string
+          delay_minutes: number | null
+          direction: string
+          estimated_at: string | null
+          flight_iata: string
+          gate: string | null
+          id: string
+          job_id: string
+          raw: Json | null
+          scheduled_at: string | null
+          status: string | null
+          terminal: string | null
+        }
+        Insert: {
+          actual_at?: string | null
+          baggage_belt?: string | null
+          captured_at?: string
+          company_id: string
+          delay_minutes?: number | null
+          direction: string
+          estimated_at?: string | null
+          flight_iata: string
+          gate?: string | null
+          id?: string
+          job_id: string
+          raw?: Json | null
+          scheduled_at?: string | null
+          status?: string | null
+          terminal?: string | null
+        }
+        Update: {
+          actual_at?: string | null
+          baggage_belt?: string | null
+          captured_at?: string
+          company_id?: string
+          delay_minutes?: number | null
+          direction?: string
+          estimated_at?: string | null
+          flight_iata?: string
+          gate?: string | null
+          id?: string
+          job_id?: string
+          raw?: Json | null
+          scheduled_at?: string | null
+          status?: string | null
+          terminal?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_status_snapshots_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       groups: {
         Row: {
           coordinator_note: string | null
@@ -1212,6 +1274,71 @@ export type Database = {
           },
         ]
       }
+      job_route_cache: {
+        Row: {
+          company_id: string
+          computed_at: string
+          dest_lat: number | null
+          dest_lng: number | null
+          distance_m: number | null
+          duration_in_traffic_s: number | null
+          duration_s: number | null
+          job_id: string
+          leave_by_at: string | null
+          next_refresh_at: string | null
+          origin_lat: number | null
+          origin_lng: number | null
+          provider: string | null
+          raw: Json | null
+          severity: string | null
+          traffic_delay_s: number | null
+        }
+        Insert: {
+          company_id: string
+          computed_at?: string
+          dest_lat?: number | null
+          dest_lng?: number | null
+          distance_m?: number | null
+          duration_in_traffic_s?: number | null
+          duration_s?: number | null
+          job_id: string
+          leave_by_at?: string | null
+          next_refresh_at?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          provider?: string | null
+          raw?: Json | null
+          severity?: string | null
+          traffic_delay_s?: number | null
+        }
+        Update: {
+          company_id?: string
+          computed_at?: string
+          dest_lat?: number | null
+          dest_lng?: number | null
+          distance_m?: number | null
+          duration_in_traffic_s?: number | null
+          duration_s?: number | null
+          job_id?: string
+          leave_by_at?: string | null
+          next_refresh_at?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          provider?: string | null
+          raw?: Json | null
+          severity?: string | null
+          traffic_delay_s?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_route_cache_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: true
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           client_confirmed_at: string | null
@@ -1241,6 +1368,7 @@ export type Database = {
           driver_started_at: string | null
           executor_company_id: string | null
           flight_baggage_belt: string | null
+          flight_delay_minutes: number | null
           flight_estimated_at: string | null
           flight_gate: string | null
           flight_scheduled_at: string | null
@@ -1257,11 +1385,13 @@ export type Database = {
           grouped_at: string | null
           grouped_count: number | null
           id: string
+          leave_by_at: string | null
           origin_company_id: string | null
           parent_job_id: string | null
           payment_method: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
+          pickup_shift_reason: string | null
           points_charged: Json
           price_amount: number | null
           price_currency: string | null
@@ -1276,6 +1406,9 @@ export type Database = {
           to_flight: string | null
           to_location: string
           tracking_enabled: boolean
+          traffic_delay_minutes: number | null
+          traffic_severity: string | null
+          traffic_updated_at: string | null
           updated_at: string
           vehicle: string | null
         }
@@ -1309,6 +1442,7 @@ export type Database = {
           driver_started_at?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
+          flight_delay_minutes?: number | null
           flight_estimated_at?: string | null
           flight_gate?: string | null
           flight_scheduled_at?: string | null
@@ -1325,11 +1459,13 @@ export type Database = {
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          leave_by_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
           payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
+          pickup_shift_reason?: string | null
           points_charged?: Json
           price_amount?: number | null
           price_currency?: string | null
@@ -1344,6 +1480,9 @@ export type Database = {
           to_flight?: string | null
           to_location: string
           tracking_enabled?: boolean
+          traffic_delay_minutes?: number | null
+          traffic_severity?: string | null
+          traffic_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
         }
@@ -1377,6 +1516,7 @@ export type Database = {
           driver_started_at?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
+          flight_delay_minutes?: number | null
           flight_estimated_at?: string | null
           flight_gate?: string | null
           flight_scheduled_at?: string | null
@@ -1393,11 +1533,13 @@ export type Database = {
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          leave_by_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
           payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
+          pickup_shift_reason?: string | null
           points_charged?: Json
           price_amount?: number | null
           price_currency?: string | null
@@ -1412,6 +1554,9 @@ export type Database = {
           to_flight?: string | null
           to_location?: string
           tracking_enabled?: boolean
+          traffic_delay_minutes?: number | null
+          traffic_severity?: string | null
+          traffic_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
         }

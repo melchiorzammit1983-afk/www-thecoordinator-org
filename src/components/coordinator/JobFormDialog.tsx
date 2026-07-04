@@ -20,8 +20,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2, Sparkles } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
+import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -356,6 +357,20 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [reply, setReply] = useState("");
 
+  // Voice-to-trip transcript (surfaced when the coordinator uses the voice button)
+  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
+    setRaw((prev) => {
+      const tsv = rowsToTsv(trips);
+      return prev.trim() ? prev + "\n" + tsv : tsv;
+    });
+    setVoiceTranscript(transcript || null);
+    setShowTranscript(false);
+    setChatOpen(false);
+  };
+
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
   const aiFn = useServerFn(extractTripsFromText);
@@ -546,6 +561,30 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
             )}
           </div>
         </div>
+
+        {!chatOpen && (
+          <div className="flex items-center gap-2">
+            <VoiceToTripButton onTrips={handleVoiceTrips} disabled={aiMut.isPending} />
+            <span className="text-[11px] text-muted-foreground">Record a voice note or upload audio — AI extracts trips.</span>
+          </div>
+        )}
+
+        {!chatOpen && voiceTranscript && (
+          <div className="rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
+            <button
+              type="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowTranscript((v) => !v)}
+            >
+              <ChevronDown className={`h-3 w-3 transition-transform ${showTranscript ? "" : "-rotate-90"}`} />
+              Voice transcript
+            </button>
+            {showTranscript && (
+              <p className="mt-1.5 whitespace-pre-wrap text-foreground/80">{voiceTranscript}</p>
+            )}
+          </div>
+        )}
+
 
         {!chatOpen && attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
