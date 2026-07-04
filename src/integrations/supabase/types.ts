@@ -59,6 +59,51 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_activity_log: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_label: string | null
+          actor_user_id: string | null
+          after_data: Json | null
+          before_data: Json | null
+          changed_keys: string[] | null
+          company_id: string | null
+          created_at: string
+          id: string
+          row_id: string | null
+          table_name: string
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_label?: string | null
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          changed_keys?: string[] | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          row_id?: string | null
+          table_name: string
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_label?: string | null
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          changed_keys?: string[] | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          row_id?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
       admin_emails: {
         Row: {
           created_at: string

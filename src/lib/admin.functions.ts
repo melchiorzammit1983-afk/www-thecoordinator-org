@@ -481,3 +481,80 @@ export const clearFeatureEntitlement = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+
+// ---------- ACTIVITY LOG ----------
+
+export const listActivityLog = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      actor_user_id: z.string().uuid().nullable().optional(),
+      actor_email: z.string().trim().max(200).nullable().optional(),
+      table_name: z.string().trim().max(80).nullable().optional(),
+      action: z.enum(["INSERT", "UPDATE", "DELETE"]).nullable().optional(),
+      company_id: z.string().uuid().nullable().optional(),
+      row_id: z.string().trim().max(80).nullable().optional(),
+      since: z.string().datetime().nullable().optional(),
+      until: z.string().datetime().nullable().optional(),
+      search: z.string().trim().max(200).nullable().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+      offset: z.number().int().min(0).max(100000).default(0),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    let q = supabaseAdmin
+      .from("admin_activity_log")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(data.offset, data.offset + data.limit - 1);
+    if (data.actor_user_id) q = q.eq("actor_user_id", data.actor_user_id);
+    if (data.actor_email) q = q.ilike("actor_email", `%${data.actor_email}%`);
+    if (data.table_name) q = q.eq("table_name", data.table_name);
+    if (data.action) q = q.eq("action", data.action);
+    if (data.company_id) q = q.eq("company_id", data.company_id);
+    if (data.row_id) q = q.eq("row_id", data.row_id);
+    if (data.since) q = q.gte("created_at", data.since);
+    if (data.until) q = q.lte("created_at", data.until);
+    if (data.search) {
+      // Search JSON blobs by casting to text.
+      q = q.or(`row_id.ilike.%${data.search}%,actor_email.ilike.%${data.search}%`);
+    }
+    const { data: rows, error, count } = await q;
+    if (error) throw new Error(error.message);
+    return { rows: rows ?? [], total: count ?? 0 };
+  });
+
+export const listActivityFacets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    // Distinct actor + table + company lists — small; pulled from the last 30 days
+    // to keep the dropdowns focused on recent activity.
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+    const [{ data: actors }, { data: tables }, { data: companies }] = await Promise.all([
+      supabaseAdmin.from("admin_activity_log")
+        .select("actor_user_id, actor_email, actor_label")
+        .gte("created_at", since)
+        .not("actor_user_id", "is", null)
+        .limit(2000),
+      supabaseAdmin.from("admin_activity_log")
+        .select("table_name")
+        .gte("created_at", since)
+        .limit(5000),
+      supabaseAdmin.from("companies").select("id, name").order("name"),
+    ]);
+    const actorMap = new Map<string, { user_id: string; email: string | null; label: string | null }>();
+    for (const a of (actors ?? []) as any[]) {
+      if (!a.actor_user_id) continue;
+      if (!actorMap.has(a.actor_user_id))
+        actorMap.set(a.actor_user_id, { user_id: a.actor_user_id, email: a.actor_email, label: a.actor_label });
+    }
+    const tableSet = new Set<string>();
+    for (const t of (tables ?? []) as any[]) if (t.table_name) tableSet.add(t.table_name);
+    return {
+      actors: Array.from(actorMap.values()).sort((a, b) => (a.email ?? "").localeCompare(b.email ?? "")),
+      tables: Array.from(tableSet).sort(),
+      companies: (companies ?? []) as { id: string; name: string }[],
+    };
+  });
