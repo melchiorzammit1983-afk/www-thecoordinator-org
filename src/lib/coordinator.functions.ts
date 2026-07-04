@@ -3081,7 +3081,7 @@ async function runAutoCoordinate(companyId: string) {
     sb.from("drivers")
       .select("id, name")
       .eq("company_id", companyId)
-      .neq("status", "inactive")
+      .neq("status", "offline")
       .limit(60),
   ]);
 
