@@ -961,6 +961,103 @@ export type Database = {
           },
         ]
       }
+      job_price_proposals: {
+        Row: {
+          amount_eur: number
+          created_at: string
+          from_company_id: string | null
+          from_driver_id: string | null
+          from_party_kind: string
+          hop_id: string | null
+          id: string
+          job_id: string
+          note: string | null
+          parent_id: string | null
+          responded_at: string | null
+          responded_by_user_id: string | null
+          status: string
+          to_company_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_eur: number
+          created_at?: string
+          from_company_id?: string | null
+          from_driver_id?: string | null
+          from_party_kind: string
+          hop_id?: string | null
+          id?: string
+          job_id: string
+          note?: string | null
+          parent_id?: string | null
+          responded_at?: string | null
+          responded_by_user_id?: string | null
+          status?: string
+          to_company_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_eur?: number
+          created_at?: string
+          from_company_id?: string | null
+          from_driver_id?: string | null
+          from_party_kind?: string
+          hop_id?: string | null
+          id?: string
+          job_id?: string
+          note?: string | null
+          parent_id?: string | null
+          responded_at?: string | null
+          responded_by_user_id?: string | null
+          status?: string
+          to_company_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_price_proposals_from_company_id_fkey"
+            columns: ["from_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_from_driver_id_fkey"
+            columns: ["from_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_hop_id_fkey"
+            columns: ["hop_id"]
+            isOneToOne: false
+            referencedRelation: "job_dispatch_hops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "job_price_proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_to_company_id_fkey"
+            columns: ["to_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           client_confirmed_at: string | null
