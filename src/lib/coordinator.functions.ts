@@ -38,6 +38,31 @@ async function assertFeatureEnabled(companyId: string, feature: string) {
   }
 }
 
+// Append enabled custom AI rules to a base system prompt so every AI call
+// respects the coordinator's own management style (M4).
+async function buildSystemPrompt(companyId: string, base: string): Promise<string> {
+  try {
+    const sb = await getAdminClient();
+    const { data } = await sb
+      .from("company_ai_rules")
+      .select("title, rule_text")
+      .eq("company_id", companyId)
+      .eq("enabled", true)
+      .order("sort_order", { ascending: true })
+      .limit(30);
+    const rules = (data ?? []) as { title: string; rule_text: string }[];
+    if (rules.length === 0) return base;
+    const block = rules
+      .map((r, i) => `${i + 1}. ${r.title ? r.title + ": " : ""}${r.rule_text}`)
+      .join("\n");
+    return `${base}\n\n== COMPANY RULES (always follow) ==\n${block}`;
+  } catch {
+    return base;
+  }
+}
+
+
+
 
 
 function makePickupIso(date: string, time: string) {
