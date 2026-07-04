@@ -190,7 +190,7 @@ function ManualForm({
         qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
       };
-      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return; }
+      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       if (pax.length) {
         await bulkFn({ data: { trips: [{
@@ -202,14 +202,16 @@ function ManualForm({
       } else {
         await createFn({ data: payload });
       }
+      return date;
     },
-    onSuccess: () => {
+    onSuccess: (savedDate) => {
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      onSaved();
+      onSaved(savedDate);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
 
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
