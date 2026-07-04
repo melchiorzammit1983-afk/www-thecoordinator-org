@@ -31,6 +31,7 @@ import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
+import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 
 import {
@@ -104,7 +105,7 @@ function DriverManifest() {
   const fn = useServerFn(getDriverManifest);
   const { data, isLoading } = useQuery({
     queryKey: ["driver-manifest", token],
-    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; jobs: Job[]; driver: Driver | null } | null>,
+    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; jobs: Job[]; driver: Driver | null; branding: BrandingInfo } | null>,
     refetchInterval: 20_000,
   });
   const [openJob, setOpenJob] = useState<Job | null>(null);
@@ -150,7 +151,7 @@ function DriverManifest() {
 
   const driver = data.driver;
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background pb-28">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -233,6 +234,7 @@ function DriverManifest() {
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="driver" token={token}
       />
+      <BrandingBar branding={data.branding} />
     </div>
   );
 }
