@@ -9,6 +9,21 @@ async function getAdminClient() {
   return supabaseAdmin;
 }
 
+async function spendSoft(companyId: string | null | undefined, featureKey: string, note: string, jobId?: string) {
+  if (!companyId) return;
+  try {
+    const sb = await getAdminClient();
+    await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: note,
+      _cost_override: undefined as unknown as number,
+    });
+  } catch {
+    // metering never breaks primary action
+  }
+
 
 async function myCompany(ctx: Ctx) {
   const supabaseAdmin = await getAdminClient();
