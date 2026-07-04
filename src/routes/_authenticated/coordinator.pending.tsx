@@ -75,6 +75,12 @@ function BookingCard({ b, onDone }: { b: any; onDone: () => void }) {
           <div className="text-xs text-muted-foreground">{b.client_email}{b.room_number ? ` · Room ${b.room_number}` : ""}</div>
           <div className="text-sm mt-2">{b.from_location} → {b.to_location}</div>
           <div className="text-xs text-muted-foreground">{b.date ?? "—"} at {b.time?.slice(0,5)}</div>
+          {b.promo_note && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+              <span className="text-[10px] uppercase tracking-widest opacity-70">Promo</span>
+              <span>{b.promo_note}</span>
+            </div>
+          )}
         </div>
         <Badge variant="secondary">Pending</Badge>
       </div>
