@@ -38,6 +38,7 @@ import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
+import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -201,6 +202,12 @@ const AuthenticatedAdminActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const ApiPublicCronRolloverSubscriptionsRoute =
+  ApiPublicCronRolloverSubscriptionsRouteImport.update({
+    id: '/api/public/cron/rollover-subscriptions',
+    path: '/api/public/cron/rollover-subscriptions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -259,6 +267,7 @@ export interface FileRoutesByTo {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -291,6 +300,7 @@ export interface FileRoutesById {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -323,6 +333,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
+    | '/api/public/cron/rollover-subscriptions'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
+    | '/api/public/cron/rollover-subscriptions'
   id:
     | '__root__'
     | '/'
@@ -382,6 +394,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
+    | '/api/public/cron/rollover-subscriptions'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -394,6 +407,7 @@ export interface RootRouteChildren {
   TTokenRoute: typeof TTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRoute
+  ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -601,6 +615,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/api/public/cron/rollover-subscriptions': {
+      id: '/api/public/cron/rollover-subscriptions'
+      path: '/api/public/cron/rollover-subscriptions'
+      fullPath: '/api/public/cron/rollover-subscriptions'
+      preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -691,6 +712,8 @@ const rootRouteChildren: RootRouteChildren = {
   TTokenRoute: TTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRoute,
+  ApiPublicCronRolloverSubscriptionsRoute:
+    ApiPublicCronRolloverSubscriptionsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
