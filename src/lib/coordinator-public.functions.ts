@@ -1457,10 +1457,8 @@ export const driverRespondToPrice = createServerFn({ method: "POST" })
     // or withdraw their own proposal (from_driver = them).
     if (data.action === "accept") {
       if (prop.from_party_kind !== "company") throw new Error("not_a_counter_offer");
-      // Verify this driver is the intended recipient: check job's driver_id.
-      const { data: job } = await supabaseAdmin.from("jobs")
-        .select("driver_id").eq("id", prop.job_id).maybeSingle();
-      if (!job || (job as any).driver_id !== link.subject_id) throw new Error("forbidden");
+      if (prop.to_driver_id !== link.subject_id) throw new Error("forbidden");
+      if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
       const { error } = await supabaseAdmin.from("job_price_proposals").update({
         status: "accepted",
         responded_at: new Date().toISOString(),
@@ -1479,32 +1477,19 @@ export const driverRespondToPrice = createServerFn({ method: "POST" })
   });
 
 // Returns the driver-side proposal thread for a job (only proposals visible
-// to this driver — theirs plus counter-offers directed at their assignment).
+// to this driver — theirs plus counter-offers directed at them).
 export const listMyDriverPriceThread = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     if (!link.subject_id) return [];
-    const executorCompanyId = job.executor_company_id ?? job.company_id;
-    // Rows either originated from this driver, OR are counter-offers from the
-    // executor company back to a proposal from this driver.
     const { data: rows, error } = await supabaseAdmin.from("job_price_proposals")
-      .select("id, from_party_kind, from_company_id, from_driver_id, to_company_id, amount_eur, status, parent_id, note, created_at, responded_at")
+      .select("id, from_party_kind, from_company_id, from_driver_id, to_company_id, to_driver_id, amount_eur, status, parent_id, note, created_at, responded_at")
       .eq("job_id", data.job_id)
+      .or(`from_driver_id.eq.${link.subject_id},to_driver_id.eq.${link.subject_id}`)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    const mine = (rows ?? []).filter((r: any) =>
-      r.from_driver_id === link.subject_id
-      || (r.from_party_kind === "company" && r.from_company_id === executorCompanyId && r.to_company_id !== executorCompanyId),
-    );
-    // Second filter: counters targeted at the driver — we accept any company
-    // proposal on this job where the from_company is the executor (i.e. reply
-    // to this driver's earlier proposal).
-    const filtered = (rows ?? []).filter((r: any) =>
-      r.from_driver_id === link.subject_id
-      || (r.from_party_kind === "company" && r.from_company_id === executorCompanyId),
-    );
-    return filtered.length ? filtered : mine;
+    return rows ?? [];
   });
