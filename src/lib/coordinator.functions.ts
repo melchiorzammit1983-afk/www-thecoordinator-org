@@ -35,6 +35,9 @@ async function spendSoft(
   } catch {
     // swallow — metering must never break the primary action
   }
+}
+
+
 
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
