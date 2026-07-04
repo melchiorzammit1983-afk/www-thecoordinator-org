@@ -14,10 +14,11 @@ function DashboardPage() {
   const { data } = useQuery({ queryKey: ["coord-summary"], queryFn: () => fn() });
 
   const cards = [
-    { to: "/coordinator/pending", label: "Pending approvals", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500" },
-    { to: "/coordinator/calendar", label: "Unassigned jobs", value: data?.unassigned_jobs ?? 0, icon: Truck, tone: "text-blue-500" },
-    { to: "/coordinator/calendar", label: "Today's trips", value: data?.today_jobs ?? 0, icon: CalendarDays, tone: "text-emerald-500" },
-    { to: "/coordinator/drivers", label: "Drivers", value: data?.drivers ?? 0, icon: Users, tone: "text-primary" },
+    { to: "/coordinator/pending", label: "Pending approvals", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500", pulse: false },
+    { to: "/coordinator/calendar", label: "Price proposals", value: data?.open_price_proposals ?? 0, icon: Euro, tone: "text-emerald-600", pulse: (data?.open_price_proposals ?? 0) > 0 },
+    { to: "/coordinator/calendar", label: "Unassigned jobs", value: data?.unassigned_jobs ?? 0, icon: Truck, tone: "text-blue-500", pulse: false },
+    { to: "/coordinator/calendar", label: "Today's trips", value: data?.today_jobs ?? 0, icon: CalendarDays, tone: "text-emerald-500", pulse: false },
+    { to: "/coordinator/drivers", label: "Drivers", value: data?.drivers ?? 0, icon: Users, tone: "text-primary", pulse: false },
   ];
 
   return (
