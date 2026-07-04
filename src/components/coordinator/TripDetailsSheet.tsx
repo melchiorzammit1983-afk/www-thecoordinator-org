@@ -41,6 +41,10 @@ export type DetailsJob = {
   flight_status: string | null; flight_status_note: string | null;
   flight_status_updated_at?: string | null;
   flight_scheduled_at: string | null; flight_estimated_at: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+  pickup_shift_reason?: string | null;
   drivers?: DriverEmbed | null;
   pax?: Pax[];
   labels?: TLabel[];
