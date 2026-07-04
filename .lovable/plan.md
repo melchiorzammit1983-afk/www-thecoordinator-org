@@ -1,96 +1,73 @@
 
-# Implementation Plan — M1–M3 + AI Center + Admin AI Controls + Voice-to-Trip UI
+# Monetization: Admin-Configurable Feature Pricing
 
-Adds **Milestone 6**. M1–M5 unchanged.
+Turn every valuable action in the app into a metered, revenue-producing event that admin can price globally or per-company, with decimal support and a hybrid block strategy so trip creation is never fully blocked.
 
----
+## What admin gets
 
-## M1 · Traffic + flight schema
-`job_route_cache`, `flight_status_snapshots`, denormalised traffic/flight columns on `jobs`. Schema only.
+A new **Admin → Feature Pricing** tab listing every billable feature with:
+- Label, key, category (Core / AI / Comms / Data)
+- Cost in points (decimal, e.g. `1.50`)
+- Enabled toggle
+- "Block when out of points?" toggle (per feature — lets trip creation stay free-on-empty while AI features hard-block)
 
-## M2 · Automated driver assignment
-`job_assignment_events`, `auto_assign_job()` RPC, `autoAssignJob` server fn, insert trigger, `ai_auto_assign` feature key. Gated by entitlement + `ai_configuration.auto_assign_enabled`.
+Inside **Company Billing dialog**, a new "Price overrides" section lets admin set a custom cost for that company on any feature (blank = use global).
 
-## M3 · Trip card traffic badges
-`TrafficBadge` in trip card, details sheet, job form preview.
+## New billable actions (in addition to existing AI features)
 
-## M4 · AI Control & Settings Center (coordinator)
-`/coordinator/ai-center` with three sections: automation toggles (`ai_configuration`), Command Bar (`runAiCommand` + `ai_command_log`), Rule Engine (`company_ai_rules`). New `buildSystemPrompt()` helper appends rules to every existing AI system prompt (6 call sites).
+| Key | Label | Default cost | Blocks on empty? |
+|---|---|---|---|
+| `trip_created` | Trip created | 1.50 | No (hybrid) |
+| `trip_dispatched` | Trip dispatched to partner | 0.50 | No |
+| `client_link_sent` | Client tracking link / SMS | 0.25 | Yes |
+| `route_traffic_refresh` | Route + traffic recompute | 0.10 | Yes |
+| `flight_status_refresh` | Flight status poll | 0.10 | Yes |
 
-## M5 · Admin AI access control
-`plans.ai_features jsonb`, `entitlements.override_source`, `get_effective_ai_access` RPC, plan-level AI editor in `admin.pricing.tsx`, per-company "AI access" tab in `CompanyBillingDialog`, `use-features.ts` refactor.
+Defaults are seeded; admin can change any of them.
 
----
+## Behaviour when balance hits zero
 
-## Milestone 6 — Voice-to-Trip button in Bulk Paste modal (NEW)
+- Features marked **block_on_empty = true** → RPC raises `insufficient_points`, UI opens the top-up dialog.
+- Features marked **block_on_empty = false** (trip creation, dispatch) → action proceeds, balance goes negative, ledger records the debt, admin sees a red "Owed: X pts" chip on the company row.
 
-### 6A. Backend — reuse the existing `aiVoiceNoteToTrip` server fn
-Already implemented in `src/lib/coordinator.functions.ts` per the earlier expansion. Confirm its shape supports two inputs:
-- Recorded blob: `{ audio_base64: string, mime: string }` (browser recording, WAV preferred per STT knowledge)
-- Uploaded file: same shape — reuse the parser, no new fn needed
+## Technical details
 
-If the current implementation only accepts one shape, extend the Zod input to accept either, but keep the return type identical to the existing bulk-paste parser: `{ trips: ParsedTrip[], warnings: string[] }` so the modal's existing "review & save" table renders it with zero refactor.
+### Migration
+- `ai_feature_costs` + `feature_costs` + `points_ledger.points_deducted` + `companies.points_balance` + `company_subscriptions.points_remaining_this_period` + `plans.included_points`: alter to `numeric(10,2)`.
+- Add columns to `ai_feature_costs`: `category text`, `block_on_empty boolean default true`, `enabled boolean default true`.
+- New table `company_feature_price_overrides (company_id, feature_key, points_cost numeric(10,2), unique(company_id, feature_key))` with admin-only RLS + GRANTs.
+- Rewrite `spend_points` RPC:
+  1. Resolve cost: override → global → 1.0 fallback.
+  2. If `enabled = false` → raise `feature_disabled`.
+  3. Deduct from `company_subscriptions.points_remaining_this_period`, then `companies.points_balance`.
+  4. If both would go below zero AND `block_on_empty = true` → raise `insufficient_points`.
+  5. If `block_on_empty = false` → allow negative on `companies.points_balance`, insert ledger row.
+- Seed the 5 new feature rows.
 
-The fn continues to:
-- Verify `ai_voice_to_trip` entitlement + `spend_points`
-- Call Lovable AI STT (`openai/gpt-4o-mini-transcribe`, streaming SSE) → transcript
-- Feed transcript into the existing text-extraction pipeline (same one bulk-paste uses)
-- Return parsed trips + transcript for display
-- Run system prompt through `buildSystemPrompt()` (from M4) so coordinator's custom rules apply automatically
+### Server functions (`src/lib/admin.functions.ts`)
+- `adminListFeaturePricing()` — returns global rows.
+- `adminUpdateFeaturePricing({ feature_key, points_cost, enabled, block_on_empty, label, category })`.
+- `adminSetCompanyPriceOverride({ company_id, feature_key, points_cost | null })`.
+- `adminListCompanyPriceOverrides({ company_id })`.
 
-### 6B. Frontend — new component `src/components/coordinator/VoiceToTripButton.tsx`
+### Metering wiring
+Add `spend_points` calls in coordinator server functions:
+- `trip_created` — inside job/booking insert paths (`createJob`, public booking accept).
+- `trip_dispatched` — inside dispatch-hop insert.
+- `client_link_sent` — inside client-link creation / SMS send.
+- `route_traffic_refresh` — inside the route cache refresh path.
+- `flight_status_refresh` — inside `flight_status_snapshots` insert.
 
-Two-mode button placed at the top of the bulk-paste modal, above the textarea:
+Each call passes `job_id` where available so the ledger stays traceable.
 
-- **Record button** (mic icon, primary variant)
-  - Uses Web Audio API + `MediaRecorder` fallback, per the STT knowledge file: capture PCM via `getUserMedia`, encode a complete WAV on stop (avoids Safari fragmented-mp4 and MediaRecorder header issues).
-  - Recording state UI: red pulse dot, timer (mm:ss), "Stop" button.
-  - Guard: reject blobs < 2 KB with toast "Recording was empty — please try again."
-  - Max recording length: 5 min soft cap with visual warning at 4:30.
+### UI
+- New route: `src/routes/_authenticated/admin.feature-pricing.tsx` — editable table (label, cost input step=0.01, category select, two toggles, save-per-row).
+- `CompanyBillingDialog.tsx` — add "Price overrides" section: list of features with cost input + "Reset to global" button.
+- Coordinator `PointsBadge` + `RequestTopupDialog` — show negative balance in red with "Amount owed" label when < 0.
 
-- **Upload button** (paperclip icon, outline variant)
-  - `<input type="file" accept="audio/*">`
-  - Client-side size cap: 20 MB (matches existing platform limit).
-  - Client-side format check: reject if MIME doesn't start with `audio/`.
+### TypeScript
+Regenerate `src/integrations/supabase/types.ts` after migration (auto). Update `Points` display helpers to format `numeric` as `1.50` (2 decimals, trim trailing zeros for whole numbers).
 
-Both paths funnel into the same async handler:
-1. Convert to base64 (or upload to a signed URL if we later need > 20 MB — out of scope now).
-2. Wrap in `<FeatureGate feature="ai_voice_to_trip">`. If gated/out of points, the existing gate renders the "Buy points" CTA and the button is disabled.
-3. Show inline progress: "Transcribing…" → "Extracting trips…" (two-phase spinner from the SSE stream).
-4. On success:
-   - Populate the existing bulk-paste "Parsed trips" review table with the returned trips.
-   - Show the transcript in a collapsible section above the table ("Show transcript ▾") so the coordinator can spot-check what the AI heard.
-   - Any `warnings` render as amber alert chips (e.g. "Couldn't determine pickup time for trip 2").
-5. On error: toast with the server-side message; recording preserved so the user can retry without re-recording. 429/402 rendered with the standard billing/back-off messaging.
-
-### 6C. Integration point
-`src/components/coordinator/JobFormDialog.tsx` (which hosts the bulk-paste flow — verified via file listing) gets a small header row above the paste textarea:
-
-```
-[🎤 Record voice note] [📎 Upload audio]   —or—   paste text below
-```
-
-No structural changes to the existing bulk-paste review UI: the voice path just pre-fills the same parsed-trips table via `setParsedTrips(response.trips)`.
-
-### 6D. Points & rules wiring
-- Cost taken from `ai_feature_costs.ai_voice_to_trip` (already seeded in earlier migration).
-- Charged once per successful transcription+extraction, not on failure.
-- `company_ai_rules` (M4) injected into the extraction prompt so rules like "trips before 06:00 are always airport pickups" apply to voice input identically to text input.
-
-### 6E. Safety
-- Never send raw audio to the client's browser console or logs.
-- Recording permission handled per browser (`getUserMedia` promise); denial shows a helpful message with a link to the browser's mic-permission settings.
-- Stop all `MediaStream` tracks + close `AudioContext` on unmount to prevent mic-indicator staying on.
-
----
-
-## Order of operations
-```text
-M1 → M2 → M3 → M4 → M5 → M6
-```
-Each shippable independently; M6 depends on M4's `buildSystemPrompt` helper being wired into `aiVoiceNoteToTrip`, but the button UI can be built in parallel.
-
-## Still open (blocking M2/M4 code, NOT blocking M6 UI)
-Four earlier questions on coordinate resolution, bulk-execute confirm threshold, which AI features receive custom rules, and which job sources auto-fire the assign trigger.
-
-Approve to start with M1 migration — or say "start with M6" and I'll ship the Voice-to-Trip button first since its backend already exists.
+## Out of scope
+- Auto-invoicing / Stripe billing on debt — surfaced to admin only, collected manually for now.
+- Plan-level bundled discounts on new billable actions — plans keep working, decimals just reduce faster.
