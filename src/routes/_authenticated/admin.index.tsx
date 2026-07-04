@@ -30,6 +30,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { FeatureEntitlementsDialog } from "@/components/admin/FeatureEntitlementsDialog";
+import { CompanyBillingDialog } from "@/components/admin/CompanyBillingDialog";
 
 type CompanyRow = {
   id: string;
