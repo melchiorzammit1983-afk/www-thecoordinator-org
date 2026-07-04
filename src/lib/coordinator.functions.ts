@@ -862,6 +862,9 @@ export const generateMagicLink = createServerFn({ method: "POST" })
       subject_label: data.subject_label, token, expires_at, created_by: context.userId,
     }).select().single();
     if (error) throw new Error(error.message);
+    if (data.kind === "client") {
+      await spendSoft(c.id, "client_link_sent", "Client tracking link created");
+    }
     return row;
   });
 
