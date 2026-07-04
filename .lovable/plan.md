@@ -1,78 +1,44 @@
-## Direction
+# Driver app: flashing active card + auto-stop tracking on finish
 
-Mobile-first landing rebuild. All mockups are redrawn in code but mirror the **real app UI** — real sidebar labels (Dashboard, Dispatch, Pending, Drivers, Portal Links, Labels, Statements, Collaborate, My Driving, Branding), the real colored-stripe trip card, the real driver manifest layout, the real client trip portal with live tracking + SOS. **All names are fake/invented** (coordinator "Sea Breeze Fleet", hotel "Le Meridien Malta", driver "Andrei"). **QR code is removed everywhere.**
+Two small changes on the driver-side manifest (`/m/driver/:token`).
 
-## Page structure (top to bottom)
+## 1. Flash the trip card while it's in progress
 
-### 1. Nav (sticky, compact on mobile)
-- Left: your logo (h-10) + "The Coordinators" wordmark (hidden below sm)
-- Right: `Login` (ghost) and `Book a Demo` (solid navy). Both stay visible on mobile but compact.
+On the driver's trip card in `src/routes/m.driver.$token.tsx` (the block that starts around line 400 and shows the colored-stripe header + `TripProgress`), add a subtle pulsing highlight when `job.status === "in_progress"` so the driver instantly sees which trip has passengers on board.
 
-### 2. Hero (stacked on mobile, side-by-side ≥ md)
-- Eyebrow chip: "Built in Malta for Maltese transport operators"
-- Headline: **"Stop manually dispatching. Start collaborating."**
-- Sub-headline: existing Malta hotels/shipping-agents/fleet-owners copy
-- Buttons: `Get Started Free` (primary navy) + `See How It Works` (ghost, anchors to §4)
-- Trust row: No credit card · No driver app required · Live flight tracking
-- **Phone mockup on right (stacks below CTAs on mobile)** = redrawn client trip portal (`/t/:token`): header with logo + "Le Meridien Malta · Room 402", TripProgress bar, "Andrei · 4 min away" pulsing dot, chat preview, red SOS button. No QR.
+- Add a new keyframe `trip-flash` in `src/styles.css` — a slow 1.6s pulse that fades the card's ring/border between the brand accent and transparent. Kept subtle (no full-card background flash) so it doesn't fight the existing colored stripe.
+- Expose it as a utility class `.animate-trip-flash`.
+- On the card wrapper, conditionally apply `animate-trip-flash ring-2 ring-primary/60` when `job.status === "in_progress"`.
+- Also add a small "In progress" pill next to the existing status badge (line ~455) so the state is readable, not only felt.
 
-### 3. Problem vs Solution (kept)
-Two cards stack on mobile — red-tinted old way / emerald-tinted new way, copy unchanged.
+No behavior change for other statuses.
 
-### 4. How It Works — real coordinator flow (new section)
-Vertical timeline on mobile, 4-column grid on desktop. Each step shows a mini render of the actual UI area.
+## 2. Stop live tracking the moment the trip is finished
 
-1. **Paste bookings** — mini Pending screen with a WhatsApp-style paste block + "Parse with AI" button.
-2. **AI parses in seconds** — mini list of parsed trip rows: name, pickup time, pax, flight number.
-3. **Send driver a web link** — mini Drivers screen with "Send WhatsApp link" action + a tiny phone showing the driver manifest opening straight into an Accept card (no login).
-4. **Track live + collaborate** — mini Dispatch board with the real colored-stripe trip cards and a small "chain" overlay for Trip Jumping.
+Currently `DriverLiveShare` auto-*starts* when `hasActiveTrip` becomes true, but never auto-*stops* when it becomes false, so GPS keeps broadcasting after the driver marks the trip completed. The client-live query is already correctly gated by `job.status !== "completed"`, so only the driver-broadcast side needs fixing.
 
-### 5. Bento Features (kept)
-Same 4 cards (Trip Jumping · Zero-Friction Drivers · AI Bulk Uploads · Ad Network); stacks to 1-column on mobile with simpler illustrations.
+In `src/components/driver/DriverLiveShare.tsx`:
 
-### 6. Client Experience (rewritten — no QR)
-Text left, phone mockup right (stacks on mobile). Phone shows the **live tracking screen** (no QR):
-- Header: "Le Meridien Malta · Room 402"
-- Map placeholder with a pulsing driver pin + "Andrei · 4 min away"
-- TripProgress bar (Assigned → En route → Arrived → Complete)
-- Chat bubble preview
-- Big red SOS button
+- Change the auto-start effect (lines 117–119) to also auto-stop:
+  ```ts
+  useEffect(() => {
+    if (hasActiveTrip && !enabled) setEnabled(true);
+    else if (!hasActiveTrip && enabled) setEnabled(false);
+  }, [hasActiveTrip, enabled]);
+  ```
+- The existing teardown branch in the `enabled` effect (lines 123–140+) already clears the web `watchPosition`, releases the wake lock, and removes the native `BackgroundGeolocation` watcher, so flipping `enabled` to false is enough to fully stop GPS.
+- Also clear the persisted "keep tracking on next launch" flag when we auto-stop, so reopening the manifest after a completed trip doesn't immediately turn tracking back on.
 
-Copy rewritten:
-> **Put the trip in their pocket.**
-> Send a secure booking link straight to your VIP corporate client or hotel guest. They confirm in one tap, then get live driver location, private chat with the driver, and a one-tap SOS safety button — no app to install.
+In `src/routes/m.driver.$token.tsx` (line 198), `hasActiveTrip` already excludes `completed`, so as soon as the driver taps "Trip finished" and the mutation invalidates the manifest query, `hasActiveTrip` flips to false and tracking stops within one refetch cycle. No extra plumbing needed.
 
-Bullets: Live GPS + ETA · Private chat per trip · One-tap SOS
+## Files touched
 
-### 7. Bottom CTA (kept)
-Dark navy card + logo + `Start Your Network Now` + `Book a Demo`.
-
-### 8. Footer (kept, compact)
-
-## Mobile-friendliness rules applied everywhere
-- Base padding `px-5 py-16` on mobile; `md:px-6 md:py-24` on desktop
-- Hero H1 caps at `text-4xl` on mobile (previous 4xl→7xl overflowed 375px)
-- Two-column grids: `grid-cols-1 md:grid-cols-2 gap-8`
-- Bento: explicit `grid-cols-1 md:grid-cols-6`
-- Phone mockups `max-w-[260px] mx-auto` so they breathe on a 375px screen
-- Sticky nav shrinks to `py-2.5` on mobile; nav buttons switch to `text-xs` below sm
-
-## Realistic scenario names (invented, one consistent story)
-- Coordinator company: **Sea Breeze Fleet**
-- Hotel client: **Le Meridien Malta**
-- Driver: **Andrei**
-- Sample trips: MLA Airport ↔ Le Meridien / Corinthia / Valletta Waterfront
-- Flight examples: KM110, RY4501
-
-## Technical notes
-- Single file rewrite: `src/routes/index.tsx`
-- No new dependencies
-- Logo asset already uploaded (`src/assets/coordinators-logo.png.asset.json`)
-- Brand color `#1a2a52` (extracted from logo)
-- lucide-react icons only, no QR icon in Client Experience
-- Preview will be switched to mobile after building so you can review on the target form factor first
+- `src/styles.css` — add `trip-flash` keyframe + `.animate-trip-flash` utility.
+- `src/routes/m.driver.$token.tsx` — apply flashing classes + "In progress" pill on the active card.
+- `src/components/driver/DriverLiveShare.tsx` — auto-stop when `hasActiveTrip` goes false, clear persisted flag.
 
 ## Out of scope
-- No changes to actual app routes/dashboards
-- No copy changes to sections you didn't mention
-- No new fonts (can add Inter/Geist via @fontsource in a follow-up)
+
+- The driver-chat passenger picker (already works for >1 pax on the Client tab).
+- Any coordinator-side card styling.
+- Changing the trip status flow or the "Trip finished" summary dialog.

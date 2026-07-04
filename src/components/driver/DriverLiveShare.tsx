@@ -116,6 +116,7 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
   // then see the car move without the driver having to remember to tap.
   useEffect(() => {
     if (hasActiveTrip && !enabled) setEnabled(true);
+    else if (!hasActiveTrip && enabled) setEnabled(false);
   }, [hasActiveTrip, enabled]);
 
 
