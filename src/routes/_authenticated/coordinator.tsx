@@ -49,6 +49,7 @@ function CoordinatorLayout() {
   });
 
   const [mustChangePw, setMustChangePw] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
