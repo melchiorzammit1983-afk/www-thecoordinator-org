@@ -525,7 +525,8 @@ export const getClientBookings = createServerFn({ method: "GET" })
       : q;
     const { data: bookings, error } = await filtered;
     if (error) throw new Error(error.message);
-    return { link, bookings: bookings ?? [] };
+    const branding = await loadCompanyBranding(link.company_id);
+    return { link, bookings: bookings ?? [], branding };
   });
 
 // ---------- Phase 3: Client actions ----------
