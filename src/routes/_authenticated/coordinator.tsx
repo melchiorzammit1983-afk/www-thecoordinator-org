@@ -108,6 +108,11 @@ function CoordinatorLayout() {
             <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
           </div>
           <div className="md:hidden">
+            <Button variant="ghost" size="icon" onClick={() => setShowChangePw(true)} className="h-8 w-8" aria-label="Change password">
+              <KeyRound className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="md:hidden">
             <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 h-8 px-2">
               <LogOut className="h-4 w-4" />
               <span className="text-xs">Sign out</span>
