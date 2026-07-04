@@ -169,6 +169,7 @@ function CompanyRowView({ c }: { c: CompanyRow }) {
           <AccessDialog company={c} onDone={invalidate} />
           <CoordinatorDialog company={c} onDone={invalidate} />
           <FeatureEntitlementsDialog company={{ id: c.id, name: c.name }} />
+          <CompanyBillingDialog company={{ id: c.id, name: c.name }} />
           <DeleteCoordinatorDialog company={c} onDone={invalidate} />
         </div>
       </TableCell>
