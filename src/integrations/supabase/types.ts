@@ -976,7 +976,8 @@ export type Database = {
           responded_at: string | null
           responded_by_user_id: string | null
           status: string
-          to_company_id: string
+          to_company_id: string | null
+          to_driver_id: string | null
           updated_at: string
         }
         Insert: {
@@ -993,7 +994,8 @@ export type Database = {
           responded_at?: string | null
           responded_by_user_id?: string | null
           status?: string
-          to_company_id: string
+          to_company_id?: string | null
+          to_driver_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1010,7 +1012,8 @@ export type Database = {
           responded_at?: string | null
           responded_by_user_id?: string | null
           status?: string
-          to_company_id?: string
+          to_company_id?: string | null
+          to_driver_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1054,6 +1057,13 @@ export type Database = {
             columns: ["to_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_price_proposals_to_driver_id_fkey"
+            columns: ["to_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
             referencedColumns: ["id"]
           },
         ]
