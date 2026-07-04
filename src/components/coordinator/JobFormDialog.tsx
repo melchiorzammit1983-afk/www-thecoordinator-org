@@ -360,6 +360,12 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
   const startAi = () => {
     const text = raw.trim();
     if (text.length < 3) return;
+    // Skip the AI entirely when the paste already looks like sheet/CSV rows —
+    // parseSheetPaste handles it locally at zero token cost.
+    if (looksLikeSheetPaste(text)) {
+      toast.message("Looks like sheet data — parsed without AI");
+      return;
+    }
     const messages: ChatMsg[] = [{ role: "user", text }];
     setChat(messages);
     setChatOpen(true);

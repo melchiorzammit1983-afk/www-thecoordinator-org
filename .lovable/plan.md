@@ -1,44 +1,35 @@
-# Driver app: flashing active card + auto-stop tracking on finish
+# Reduce AI usage for "Understand with AI"
 
-Two small changes on the driver-side manifest (`/m/driver/:token`).
+Goal: make the Paste-bulk AI feature use as few tokens as possible while keeping quality good for messy WhatsApp/email pastes.
 
-## 1. Flash the trip card while it's in progress
+## Changes
 
-On the driver's trip card in `src/routes/m.driver.$token.tsx` (the block that starts around line 400 and shows the colored-stripe header + `TripProgress`), add a subtle pulsing highlight when `job.status === "in_progress"` so the driver instantly sees which trip has passengers on board.
+### 1. Switch model → `gemini-2.5-flash-lite`
+File: `src/lib/coordinator.functions.ts` (`extractTripsFromText` handler)
+- Change endpoint URL from `models/gemini-2.5-flash:generateContent` to `models/gemini-2.5-flash-lite:generateContent`.
+- Roughly 5–8× cheaper per token than `gemini-2.5-flash`, still strong for structured extraction. Uses your existing `GEMINI_API_KEY`, so it stays off Lovable credits.
 
-- Add a new keyframe `trip-flash` in `src/styles.css` — a slow 1.6s pulse that fades the card's ring/border between the brand accent and transparent. Kept subtle (no full-card background flash) so it doesn't fight the existing colored stripe.
-- Expose it as a utility class `.animate-trip-flash`.
-- On the card wrapper, conditionally apply `animate-trip-flash ring-2 ring-primary/60` when `job.status === "in_progress"`.
-- Also add a small "In progress" pill next to the existing status badge (line ~455) so the state is readable, not only felt.
+### 2. Trim the system instruction (~40% shorter)
+Same handler.
+- Collapse the 20-line prompt to a compact version that keeps only the 8 keys, the flight/airport rule, the missing-info rule, and the JSON output shape. Drop repeated examples and filler.
 
-No behavior change for other statuses.
+### 3. Cap `maxOutputTokens`
+Same handler, in `generationConfig`.
+- Add `maxOutputTokens: 512`. Enough for ~10 trips of JSON; prevents runaway responses.
 
-## 2. Stop live tracking the moment the trip is finished
+### 4. Cap chat history sent to Gemini
+Same handler.
+- Keep only the last 4 messages (`data.messages.slice(-4)`) instead of up to 20. Follow-ups only need the recent turns.
 
-Currently `DriverLiveShare` auto-*starts* when `hasActiveTrip` becomes true, but never auto-*stops* when it becomes false, so GPS keeps broadcasting after the driver marks the trip completed. The client-live query is already correctly gated by `job.status !== "completed"`, so only the driver-broadcast side needs fixing.
-
-In `src/components/driver/DriverLiveShare.tsx`:
-
-- Change the auto-start effect (lines 117–119) to also auto-stop:
-  ```ts
-  useEffect(() => {
-    if (hasActiveTrip && !enabled) setEnabled(true);
-    else if (!hasActiveTrip && enabled) setEnabled(false);
-  }, [hasActiveTrip, enabled]);
-  ```
-- The existing teardown branch in the `enabled` effect (lines 123–140+) already clears the web `watchPosition`, releases the wake lock, and removes the native `BackgroundGeolocation` watcher, so flipping `enabled` to false is enough to fully stop GPS.
-- Also clear the persisted "keep tracking on next launch" flag when we auto-stop, so reopening the manifest after a completed trip doesn't immediately turn tracking back on.
-
-In `src/routes/m.driver.$token.tsx` (line 198), `hasActiveTrip` already excludes `completed`, so as soon as the driver taps "Trip finished" and the mutation invalidates the manifest query, `hasActiveTrip` flips to false and tracking stops within one refetch cycle. No extra plumbing needed.
-
-## Files touched
-
-- `src/styles.css` — add `trip-flash` keyframe + `.animate-trip-flash` utility.
-- `src/routes/m.driver.$token.tsx` — apply flashing classes + "In progress" pill on the active card.
-- `src/components/driver/DriverLiveShare.tsx` — auto-stop when `hasActiveTrip` goes false, clear persisted flag.
+### 5. Skip the AI entirely for spreadsheet pastes
+File: `src/components/coordinator/JobFormDialog.tsx` (`BulkForm`)
+- In `startAi`, if `looksLikeSheetPaste(raw)` is true, don't call the AI — just show a toast ("Looks like sheet data — parsed directly") and let the existing `parseSheetPaste` render staged rows. Zero tokens spent.
 
 ## Out of scope
+- Switching provider (staying on your direct Gemini key).
+- Changing the chat-UI mini-conversation flow.
+- Changing how AI-returned rows feed into `parseSheetPaste`.
 
-- The driver-chat passenger picker (already works for >1 pax on the Client tab).
-- Any coordinator-side card styling.
-- Changing the trip status flow or the "Trip finished" summary dialog.
+## Expected effect
+- Typical WhatsApp paste: ~70–85% fewer input tokens per call (shorter prompt + shorter history), ~5× cheaper per token (Flash-Lite), capped output.
+- Excel/Sheets paste: 100% cheaper (no AI call).
