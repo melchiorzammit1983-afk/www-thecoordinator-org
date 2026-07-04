@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EditBookingDialog } from "@/components/client/EditBookingDialog";
 import { RecurringDialog } from "@/components/client/RecurringDialog";
+import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 
 export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
@@ -35,7 +36,7 @@ function ClientPortal() {
   const fn = useServerFn(getClientBookings);
   const { data, isLoading } = useQuery({
     queryKey: ["client-portal", token],
-    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; bookings: Booking[] } | null>,
+    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; bookings: Booking[]; branding: BrandingInfo } | null>,
   });
   const [editing, setEditing] = useState<Booking | null>(null);
 
@@ -45,7 +46,7 @@ function ClientPortal() {
   const upcoming = data.bookings.filter((b) => !b.pickup_at || new Date(b.pickup_at).getTime() > Date.now() - 3600_000);
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-muted/30 pb-28">
       <header className="border-b bg-background px-4 py-4">
         <div className="max-w-3xl mx-auto">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">Your bookings</div>
@@ -65,6 +66,7 @@ function ClientPortal() {
         token={token}
         booking={editing}
       />
+      <BrandingBar branding={data.branding} />
     </div>
   );
 }
