@@ -511,18 +511,61 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
               </DropdownMenuContent>
             </DropdownMenu>
             {aiEnabled && !chatOpen && (
-              <Button
-                type="button" size="sm" variant="outline"
-                disabled={aiMut.isPending || raw.trim().length < 3}
-                onClick={startAi}
-                className="h-7"
-              >
-                <Sparkles className="h-3 w-3 mr-1" />
-                {aiMut.isPending ? "Understanding…" : "Understand with AI"}
-              </Button>
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf,.xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) void addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button" size="sm" variant="outline"
+                  className="h-7"
+                  disabled={aiMut.isPending || attachments.length >= MAX_FILES}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach images, PDFs, or spreadsheet files"
+                >
+                  <Paperclip className="h-3 w-3 mr-1" />
+                  Attach
+                </Button>
+                <Button
+                  type="button" size="sm" variant="outline"
+                  disabled={aiMut.isPending || (raw.trim().length < 3 && attachments.length === 0)}
+                  onClick={startAi}
+                  className="h-7"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  {aiMut.isPending ? "Understanding…" : "Understand with AI"}
+                </Button>
+              </>
             )}
           </div>
         </div>
+
+        {!chatOpen && attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {attachments.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                <Paperclip className="h-3 w-3" />
+                <span className="max-w-[160px] truncate">{a.name}</span>
+                <span className="text-muted-foreground">({Math.round(a.size / 1024)} KB)</span>
+                <button
+                  type="button"
+                  className="ml-0.5 rounded-full hover:bg-background"
+                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                  aria-label={`Remove ${a.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {chatOpen ? (
           <div className="rounded-md border bg-muted/30 p-3 space-y-2">
@@ -537,7 +580,9 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
                 </div>
               ))}
               {aiMut.isPending && (
-                <div className="text-xs text-muted-foreground italic">AI is thinking…</div>
+                <div className="text-xs text-muted-foreground italic">
+                  {attachments.length > 0 ? "Analyzing attachment(s)…" : "AI is thinking…"}
+                </div>
               )}
             </div>
             {pendingQuestion && !aiMut.isPending && (
@@ -560,21 +605,36 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
             </div>
           </div>
         ) : (
-          <Textarea
-            rows={10} value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            placeholder={"Paste rows copied from your Excel or Google Sheet — headers are optional.\nOr paste a WhatsApp/email message in any language, then click ✨ Understand with AI.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
-            className="font-mono text-xs"
-          />
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault(); setIsDragging(false);
+              if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
+            }}
+            className={isDragging ? "rounded-md ring-2 ring-primary" : ""}
+          >
+            <Textarea
+              rows={10} value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData.files || []);
+                if (files.length) { e.preventDefault(); void addFiles(files); }
+              }}
+              placeholder={"Paste text, drop an image/PDF, or paste a link.\nExcel/CSV rows also work — headers optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
+              className="font-mono text-xs"
+            />
+          </div>
         )}
 
         {!chatOpen && (
           <p className="text-xs text-muted-foreground">
             {aiEnabled
-              ? "Paste rows from the template, or a WhatsApp/email message and click ✨ Understand with AI. The AI may ask a short follow-up if info is missing."
+              ? "Paste text, a link, or attach an image/PDF (WhatsApp screenshot, booking confirmation, itinerary). Excel/CSV files are parsed locally with no AI cost."
               : "You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
           </p>
         )}
+
 
       </div>
       {parsed.length > 0 && (
