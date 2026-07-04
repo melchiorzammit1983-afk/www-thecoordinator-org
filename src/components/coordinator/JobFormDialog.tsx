@@ -178,6 +178,20 @@ function ManualForm({
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
   const bulkFn = useServerFn(createJobsBulk);
+  const previewFn = useServerFn(previewTripStatus);
+
+  const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
+  const previewMut = useMutation({
+    mutationFn: () => previewFn({ data: {
+      from_location: from || (fromFlight ? "Airport" : ""),
+      to_location: to || (toFlight ? "Airport" : ""),
+      date, time,
+      from_flight: fromFlight || undefined,
+      to_flight: toFlight || undefined,
+    } }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const preview = previewMut.data;
 
 
   const mut = useMutation({
