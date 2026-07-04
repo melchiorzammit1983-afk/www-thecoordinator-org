@@ -47,14 +47,16 @@ export function BrandingBar({ branding }: { branding: BrandingInfo }) {
       <div className="mx-auto max-w-3xl px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
         <div className="pointer-events-auto rounded-t-xl border border-b-0 bg-background/95 backdrop-blur shadow-lg flex items-center gap-3 pl-3 pr-2 py-2">
           <a
-            href={advert_link || undefined}
-            target={advert_link ? "_blank" : undefined}
+            href={clickHref || undefined}
+            target={clickTarget}
             rel="noreferrer"
             className="flex-1 flex items-center gap-3 min-w-0 no-underline text-foreground"
           >
             {AdvertMedia}
             <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sponsored</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                {booking_token ? "Tap to book" : "Sponsored"}
+              </div>
               <div className="text-xs truncate">{advert_caption ?? company_name ?? ""}</div>
             </div>
           </a>
