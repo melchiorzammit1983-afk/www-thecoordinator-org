@@ -558,3 +558,313 @@ export const listActivityFacets = createServerFn({ method: "GET" })
       companies: (companies ?? []) as { id: string; name: string }[],
     };
   });
+
+
+// ---------- MONETIZATION: PLANS ----------
+
+export const adminListPlans = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const { data } = await sb.from("plans").select("*").order("sort_order");
+    return data ?? [];
+  });
+
+export const adminUpsertPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      code: z.string().trim().min(1).max(40),
+      name: z.string().trim().min(1).max(80),
+      price_monthly: z.number().min(0),
+      included_points: z.number().int().min(0),
+      feature_keys: z.array(z.string()).max(50),
+      sort_order: z.number().int().min(0).max(999).default(0),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const row = { ...data };
+    const { error } = await sb.from("plans").upsert(row as never, { onConflict: "code" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminDeletePlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.from("plans").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- MONETIZATION: POINT PACKS ----------
+
+export const adminListPointPacks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const { data } = await sb.from("point_packs").select("*").order("sort_order");
+    return data ?? [];
+  });
+
+export const adminUpsertPointPack = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().trim().min(1).max(80),
+      points: z.number().int().positive(),
+      price: z.number().min(0),
+      sort_order: z.number().int().min(0).max(999).default(0),
+      is_active: z.boolean().default(true),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    if (data.id) {
+      const { error } = await sb.from("point_packs").update(data as never).eq("id", data.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await sb.from("point_packs").insert(data as never);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const adminDeletePointPack = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.from("point_packs").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- MONETIZATION: AI FEATURE COSTS ----------
+
+export const adminSetFeatureCost = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      feature_key: z.string().trim().min(1).max(80),
+      points_cost: z.number().int().min(0).max(10000),
+      label: z.string().trim().max(120).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.from("ai_feature_costs")
+      .upsert({ ...data } as never, { onConflict: "feature_key" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- COMPANY: assign plan / grant points / cap feature ----------
+
+export const adminSetCompanyPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ company_id: z.string().uuid(), plan_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.rpc("set_company_plan", {
+      _company_id: data.company_id,
+      _plan_id: data.plan_id,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminGrantPoints = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      company_id: z.string().uuid(),
+      points: z.number().int().min(-1_000_000).max(1_000_000),
+      note: z.string().trim().max(300).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.rpc("admin_grant_points", {
+      _company_id: data.company_id,
+      _points: data.points,
+      _note: data.note ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminSetFeatureCap = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      company_id: z.string().uuid(),
+      feature: z.string().trim().min(1).max(80),
+      monthly_cap: z.number().int().min(0).max(1_000_000).nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.from("company_feature_entitlements").upsert(
+      {
+        company_id: data.company_id,
+        feature: data.feature,
+        enabled: true,
+        monthly_cap: data.monthly_cap,
+        created_by: context.userId,
+      } as never,
+      { onConflict: "company_id,feature" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminGetCompanyBilling = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ company_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const [
+      { data: company },
+      { data: subscription },
+      { data: ledger },
+    ] = await Promise.all([
+      sb.from("companies").select("id, name, points_balance").eq("id", data.company_id).maybeSingle(),
+      sb.from("company_subscriptions").select("*, plans(*)").eq("company_id", data.company_id).maybeSingle(),
+      sb.from("points_ledger").select("*").eq("company_id", data.company_id)
+        .order("created_at", { ascending: false }).limit(50),
+    ]);
+    return { company, subscription, ledger: ledger ?? [] };
+  });
+
+// ---------- TOP-UP QUEUE ----------
+
+export const adminListTopups = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      status: z.enum(["pending", "approved", "declined", "all"]).default("pending"),
+      limit: z.number().int().min(1).max(200).default(50),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    let q = sb.from("topup_requests")
+      .select("*, companies(id, name), point_packs(id, name, points, price)")
+      .order("created_at", { ascending: false })
+      .limit(data.limit);
+    if (data.status !== "all") q = q.eq("status", data.status);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const adminApproveTopup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ id: z.string().uuid(), points_override: z.number().int().positive().optional() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { data: req } = await sb.from("topup_requests").select("*").eq("id", data.id).maybeSingle();
+    if (!req) throw new Error("Top-up not found");
+    if (req.status !== "pending") throw new Error("Already processed");
+    const grant = data.points_override ?? req.points_requested;
+    const { error: gErr } = await sb.rpc("admin_grant_points", {
+      _company_id: req.company_id,
+      _points: grant,
+      _note: `topup approved (req ${req.id})`,
+    });
+    if (gErr) throw new Error(gErr.message);
+    const { error: uErr } = await sb.from("topup_requests")
+      .update({ status: "approved" } as never).eq("id", data.id);
+    if (uErr) throw new Error(uErr.message);
+    return { ok: true, granted: grant };
+  });
+
+export const adminDeclineTopup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb.from("topup_requests")
+      .update({ status: "declined" } as never).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- REVENUE DASHBOARD ----------
+
+export const adminRevenueDashboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString();
+
+    const [
+      { data: subs },
+      { data: ledger30 },
+      { data: topups30 },
+      { data: companies },
+    ] = await Promise.all([
+      sb.from("company_subscriptions").select("*, plans(*), companies(id, name)"),
+      sb.from("points_ledger").select("*").gte("created_at", since30),
+      sb.from("topup_requests").select("*").gte("created_at", since30),
+      sb.from("companies").select("id, name, points_balance"),
+    ]);
+
+    const subsArr = (subs ?? []) as any[];
+    const mrr = subsArr.reduce((sum, s) => sum + Number(s?.plans?.price_monthly ?? 0), 0);
+    const approvedTopups = (topups30 ?? []).filter((t: any) => t.status === "approved");
+    const topupRevenue = approvedTopups.reduce((s: number, t: any) => s + Number(t.price ?? 0), 0);
+    const pointsSold = approvedTopups.reduce((s: number, t: any) => s + Number(t.points_requested ?? 0), 0);
+    const totalPointsSpent = (ledger30 ?? []).reduce((s: number, l: any) => s + Math.max(0, Number(l.points_deducted ?? 0)), 0);
+
+    // Feature adoption
+    const featureCounts = new Map<string, number>();
+    for (const l of (ledger30 ?? []) as any[]) {
+      if (!l.feature_key) continue;
+      featureCounts.set(l.feature_key, (featureCounts.get(l.feature_key) ?? 0) + 1);
+    }
+
+    // Top spenders (by points spent last 30d)
+    const spendByCompany = new Map<string, number>();
+    for (const l of (ledger30 ?? []) as any[]) {
+      spendByCompany.set(l.company_id, (spendByCompany.get(l.company_id) ?? 0) + Math.max(0, Number(l.points_deducted ?? 0)));
+    }
+    const companyMap = new Map((companies ?? []).map((c: any) => [c.id, c.name]));
+    const topSpenders = Array.from(spendByCompany.entries())
+      .map(([id, spent]) => ({ id, name: companyMap.get(id) ?? "—", spent }))
+      .sort((a, b) => b.spent - a.spent)
+      .slice(0, 10);
+
+    // Plan distribution
+    const planDist = new Map<string, number>();
+    for (const s of subsArr) {
+      const name = s?.plans?.name ?? "—";
+      planDist.set(name, (planDist.get(name) ?? 0) + 1);
+    }
+
+    return {
+      mrr,
+      topup_revenue_30d: topupRevenue,
+      total_revenue_30d: mrr + topupRevenue,
+      points_sold_30d: pointsSold,
+      points_spent_30d: totalPointsSpent,
+      active_subscriptions: subsArr.length,
+      total_companies: (companies ?? []).length,
+      feature_usage_30d: Array.from(featureCounts.entries())
+        .map(([feature_key, count]) => ({ feature_key, count }))
+        .sort((a, b) => b.count - a.count),
+      top_spenders: topSpenders,
+      plan_distribution: Array.from(planDist.entries()).map(([plan, count]) => ({ plan, count })),
+    };
+  });
+
