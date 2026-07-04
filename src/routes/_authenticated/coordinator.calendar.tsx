@@ -46,6 +46,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
+import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
@@ -131,6 +132,10 @@ type Job = {
   dispatch_status?: string | null;
   dispatch_chain_company_ids?: string[] | null;
   executor_company_id?: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+  pickup_shift_reason?: string | null;
 };
 
 
@@ -1409,6 +1414,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 <TripProgress status={job.status} compact />
               </div>
             )}
+            <TrafficBadge
+              info={{
+                traffic_delay_minutes: job.traffic_delay_minutes,
+                traffic_severity: job.traffic_severity,
+                leave_by_at: job.leave_by_at,
+                pickup_shift_reason: job.pickup_shift_reason,
+              }}
+              compact
+              className="mt-1"
+            />
             <div className="flex flex-wrap gap-1 mt-1">
               {paxCount > 0 && (() => {
                 const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
