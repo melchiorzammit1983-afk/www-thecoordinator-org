@@ -92,11 +92,14 @@ export function VoiceToTripButton({
   useEffect(() => cleanup, []);
 
   const startRecording = async () => {
-    if (!enabled || outOfPoints || mut.isPending || disabled) return;
+    if (mut.isPending || disabled) return;
+    if (!enabled) { toast.error("Voice-to-trip isn't enabled on your plan"); return; }
+    if (outOfPoints) { toast.error(`Not enough points (needs ${cost})`); return; }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       toast.error("This browser can't record audio");
       return;
     }
+
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
