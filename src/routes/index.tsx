@@ -132,10 +132,10 @@ function Hero() {
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-2.5">
               <Link
-                to="/auth"
+                to="/request-access"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1a2a52] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1a2a52]/20 hover:bg-[#243668] transition-all"
               >
-                Get Started Free <ArrowRight className="h-4 w-4" />
+                Get Started <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#how"
@@ -146,7 +146,7 @@ function Hero() {
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs text-slate-500">
               <span className="inline-flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-emerald-600" /> No credit card
+                <Check className="h-3.5 w-3.5 text-emerald-600" /> Pay as you go
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Check className="h-3.5 w-3.5 text-emerald-600" /> No driver app required
