@@ -265,6 +265,7 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       dispatch_chain_company_ids: [...chain, data.partner_company_id],
     }).eq("id", data.job_id);
     if (updateError) throw new Error(updateError.message);
+    await spendSoft(c.id, "trip_dispatched", "Trip dispatched to partner", data.job_id);
     return { ok: true };
   });
 
