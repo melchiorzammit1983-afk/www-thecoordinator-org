@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot, KeyRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,7 @@ function CoordinatorLayout() {
   });
 
   const [mustChangePw, setMustChangePw] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
@@ -107,6 +108,11 @@ function CoordinatorLayout() {
             <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
           </div>
           <div className="md:hidden">
+            <Button variant="ghost" size="icon" onClick={() => setShowChangePw(true)} className="h-8 w-8" aria-label="Change password">
+              <KeyRound className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="md:hidden">
             <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 h-8 px-2">
               <LogOut className="h-4 w-4" />
               <span className="text-xs">Sign out</span>
@@ -134,7 +140,10 @@ function CoordinatorLayout() {
             );
           })}
         </nav>
-        <div className="hidden md:block mt-auto p-3 border-t">
+        <div className="hidden md:block mt-auto p-3 border-t space-y-1">
+          <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setShowChangePw(true)}>
+            <KeyRound className="h-4 w-4" /> Change password
+          </Button>
           <Button variant="ghost" className="w-full justify-start gap-3" onClick={signOut}>
             <LogOut className="h-4 w-4" /> Sign out
           </Button>
@@ -144,6 +153,9 @@ function CoordinatorLayout() {
         <Outlet />
       </main>
       {mustChangePw && <ChangePasswordDialog onDone={() => setMustChangePw(false)} />}
+      {showChangePw && !mustChangePw && (
+        <ChangePasswordDialog mode="voluntary" onDone={() => setShowChangePw(false)} onCancel={() => setShowChangePw(false)} />
+      )}
     </div>
 
   );

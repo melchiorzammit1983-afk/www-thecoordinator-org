@@ -5,11 +5,13 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
-import { whoAmI } from "@/lib/admin.functions";
+import { whoAmI, requestPasswordReset } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Copy } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -149,8 +151,88 @@ function SignInForm() {
       <Button type="submit" className="w-full" disabled={loading}>
         {loading ? "Signing in…" : "Sign in"}
       </Button>
+      <div className="text-center">
+        <ForgotPasswordDialog defaultPhone={phone} />
+      </div>
     </form>
   );
 }
+
+function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
+  const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState(defaultPhone || "+");
+  const [loading, setLoading] = useState(false);
+  const [tempPw, setTempPw] = useState<string | null>(null);
+  const resetFn = useServerFn(requestPasswordReset);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const parsed = z.string().trim().regex(/^\+[1-9]\d{6,14}$/).safeParse(phone.trim());
+    if (!parsed.success) return toast.error("Enter phone in international format, e.g. +35699123456");
+    setLoading(true);
+    try {
+      const res = await resetFn({ data: { phone: parsed.data } });
+      setTempPw(res.temp_password);
+      toast.success("Password reset — copy your temporary password below.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not reset password");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function close() {
+    setOpen(false);
+    setTempPw(null);
+    setPhone(defaultPhone || "+");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : close())}>
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+        Forgot password?
+      </button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reset your password</DialogTitle>
+          <DialogDescription>
+            We'll generate a new temporary password for your account. You'll be asked to set a new one after signing in.
+          </DialogDescription>
+        </DialogHeader>
+        {tempPw ? (
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/50 p-3">
+              <div className="text-xs text-muted-foreground mb-1">Your temporary password</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-sm break-all">{tempPw}</code>
+                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(tempPw); toast.success("Copied"); }}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Sign in with this password now; you'll be prompted to set a new one immediately.
+            </p>
+            <DialogFooter>
+              <Button onClick={close}>Done</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="fp-phone">Phone number</Label>
+              <Input id="fp-phone" type="tel" inputMode="tel" placeholder="+35699123456" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={close} disabled={loading}>Cancel</Button>
+              <Button type="submit" disabled={loading}>{loading ? "Resetting…" : "Reset password"}</Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 
