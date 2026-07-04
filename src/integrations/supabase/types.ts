@@ -119,6 +119,94 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_command_log: {
+        Row: {
+          actions: Json
+          actor_user_id: string | null
+          company_id: string
+          created_at: string
+          error: string | null
+          id: string
+          mode: string
+          prompt: string
+          response: string | null
+          status: string
+        }
+        Insert: {
+          actions?: Json
+          actor_user_id?: string | null
+          company_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          mode?: string
+          prompt: string
+          response?: string | null
+          status?: string
+        }
+        Update: {
+          actions?: Json
+          actor_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          mode?: string
+          prompt?: string
+          response?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_command_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_configuration: {
+        Row: {
+          ai_command_enabled: boolean
+          auto_assign_enabled: boolean
+          auto_extract_bulk: boolean
+          auto_reply_drafts: boolean
+          company_id: string
+          created_at: string
+          updated_at: string
+          voice_to_trip_enabled: boolean
+        }
+        Insert: {
+          ai_command_enabled?: boolean
+          auto_assign_enabled?: boolean
+          auto_extract_bulk?: boolean
+          auto_reply_drafts?: boolean
+          company_id: string
+          created_at?: string
+          updated_at?: string
+          voice_to_trip_enabled?: boolean
+        }
+        Update: {
+          ai_command_enabled?: boolean
+          auto_assign_enabled?: boolean
+          auto_extract_bulk?: boolean
+          auto_reply_drafts?: boolean
+          company_id?: string
+          created_at?: string
+          updated_at?: string
+          voice_to_trip_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_configuration_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_feature_costs: {
         Row: {
           feature_key: string
@@ -513,6 +601,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      company_ai_rules: {
+        Row: {
+          company_id: string
+          created_at: string
+          enabled: boolean
+          id: string
+          rule_text: string
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          rule_text: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          rule_text?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_ai_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_coordinator_invites: {
         Row: {
@@ -1063,6 +1192,64 @@ export type Database = {
           },
           {
             foreignKeyName: "groups_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_assignment_events: {
+        Row: {
+          company_id: string
+          created_at: string
+          driver_id: string | null
+          event_type: string
+          id: string
+          job_id: string
+          meta: Json
+          reason: string | null
+          score: number | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          driver_id?: string | null
+          event_type: string
+          id?: string
+          job_id: string
+          meta?: Json
+          reason?: string | null
+          score?: number | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          driver_id?: string | null
+          event_type?: string
+          id?: string
+          job_id?: string
+          meta?: Json
+          reason?: string | null
+          score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_assignment_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_assignment_events_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_assignment_events_job_id_fkey"
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
@@ -1992,6 +2179,14 @@ export type Database = {
       admin_grant_points: {
         Args: { _company_id: string; _note?: string; _points: number }
         Returns: undefined
+      }
+      auto_assign_job: {
+        Args: { _job_id: string }
+        Returns: {
+          driver_id: string
+          reason: string
+          score: number
+        }[]
       }
       rollover_subscriptions: { Args: never; Returns: number }
       set_company_plan: {

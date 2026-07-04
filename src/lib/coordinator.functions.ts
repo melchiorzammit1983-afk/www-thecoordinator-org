@@ -38,6 +38,31 @@ async function assertFeatureEnabled(companyId: string, feature: string) {
   }
 }
 
+// Append enabled custom AI rules to a base system prompt so every AI call
+// respects the coordinator's own management style (M4).
+async function buildSystemPrompt(companyId: string, base: string): Promise<string> {
+  try {
+    const sb = await getAdminClient();
+    const { data } = await sb
+      .from("company_ai_rules")
+      .select("title, rule_text")
+      .eq("company_id", companyId)
+      .eq("enabled", true)
+      .order("sort_order", { ascending: true })
+      .limit(30);
+    const rules = (data ?? []) as { title: string; rule_text: string }[];
+    if (rules.length === 0) return base;
+    const block = rules
+      .map((r, i) => `${i + 1}. ${r.title ? r.title + ": " : ""}${r.rule_text}`)
+      .join("\n");
+    return `${base}\n\n== COMPANY RULES (always follow) ==\n${block}`;
+  } catch {
+    return base;
+  }
+}
+
+
+
 
 
 function makePickupIso(date: string, time: string) {
@@ -2223,7 +2248,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const maxOutputTokens = hasMedia ? 1024 : 512;
 
     const today = new Date().toISOString().slice(0, 10);
-    const systemInstruction = [
+    const baseInstruction = [
       `You are a transport-coordinator data extractor. Sources may be text, images, PDFs, or web pages.`,
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
@@ -2231,6 +2256,8 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
       'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
     ].join("\n");
+    const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
+
 
     const trimmed = data.messages.slice(-4);
     const contents = trimmed.map((m, i) => {
@@ -2865,10 +2892,13 @@ export const aiSuggestTripGroupings = createServerFn({ method: "POST" })
     ).join("\n");
 
     const parsed = await callGemini(
-      `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
+      await buildSystemPrompt(c.id,
+        `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
+      ),
       "gemini-2.5-flash-lite",
       { maxOutputTokens: 1200 },
     );
+
     const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
     return { suggestions: groups };
   });
@@ -2903,10 +2933,13 @@ export const aiPlanDriverDay = createServerFn({ method: "POST" })
     ).join("\n");
 
     const parsed = await callGemini(
-      `Order these trips for one driver to minimize backtracking and idle time. Respect pickup times when set (do not schedule pickup before its time).\nReturn JSON: {"ordered_trip_ids":["uuid",...],"summary":"one short sentence with estimated minutes saved"}.\nTrips:\n${summary}`,
+      await buildSystemPrompt(c.id,
+        `Order these trips for one driver to minimize backtracking and idle time. Respect pickup times when set (do not schedule pickup before its time).\nReturn JSON: {"ordered_trip_ids":["uuid",...],"summary":"one short sentence with estimated minutes saved"}.\nTrips:\n${summary}`,
+      ),
       "gemini-2.5-flash",
       { maxOutputTokens: 800 },
     );
+
     return {
       ordered_trip_ids: Array.isArray(parsed?.ordered_trip_ids) ? parsed.ordered_trip_ids : list.map((j: any) => j.id),
       summary: String(parsed?.summary ?? ""),
@@ -2928,10 +2961,13 @@ export const aiDraftChatReplies = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, "ai_reply_drafter");
     await spendOrThrow(c.id, "ai_reply_drafter", "Chat reply drafts");
     const parsed = await callGemini(
-      `You draft short, polite chat replies for a transport coordinator to send to a client. Tone: ${data.tone}. Language: match the client message. Return JSON {"drafts":["...","...","..."]} with 3 options, each under 200 chars. Client message:\n"${data.last_message}"\nContext: ${data.context_summary ?? "n/a"}`,
+      await buildSystemPrompt(c.id,
+        `You draft short, polite chat replies for a transport coordinator to send to a client. Tone: ${data.tone}. Language: match the client message. Return JSON {"drafts":["...","...","..."]} with 3 options, each under 200 chars. Client message:\n"${data.last_message}"\nContext: ${data.context_summary ?? "n/a"}`,
+      ),
       "gemini-2.5-flash-lite",
       { maxOutputTokens: 400 },
     );
+
     const drafts = Array.isArray(parsed?.drafts) ? parsed.drafts.map(String).slice(0, 3) : [];
     return { drafts };
   });
@@ -2955,12 +2991,15 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
 
     // Transcribe + extract in a single Gemini multimodal call.
     const today = new Date().toISOString().slice(0, 10);
+    const baseVoicePrompt = `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.`;
+    const sysPrompt = await buildSystemPrompt(c.id, baseVoicePrompt);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.` }] },
+        systemInstruction: { parts: [{ text: sysPrompt }] },
+
         contents: [{ role: "user", parts: [
           { text: "Extract trips from this voice note." },
           { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
@@ -2990,5 +3029,222 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
         quantity: String(r?.quantity ?? "1"),
       })),
     };
+  });
+
+// ==========================================================
+// M4 · AI CONTROL & SETTINGS CENTER
+// ==========================================================
+
+// ---- Config (automation toggles) ----
+export const getAiConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data } = await sb.from("ai_configuration").select("*").eq("company_id", c.id).maybeSingle();
+    return data ?? {
+      company_id: c.id,
+      auto_assign_enabled: false,
+      auto_extract_bulk: true,
+      auto_reply_drafts: true,
+      ai_command_enabled: true,
+      voice_to_trip_enabled: true,
+    };
+  });
+
+export const saveAiConfig = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      auto_assign_enabled: z.boolean(),
+      auto_extract_bulk: z.boolean(),
+      auto_reply_drafts: z.boolean(),
+      ai_command_enabled: z.boolean(),
+      voice_to_trip_enabled: z.boolean(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { error } = await sb.from("ai_configuration").upsert({ company_id: c.id, ...data }, { onConflict: "company_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---- Rules (custom business rules) ----
+export const listAiRules = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data, error } = await sb
+      .from("company_ai_rules")
+      .select("id, title, rule_text, enabled, sort_order, created_at, updated_at")
+      .eq("company_id", c.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const upsertAiRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      title: z.string().trim().min(1).max(120),
+      rule_text: z.string().trim().min(3).max(2000),
+      enabled: z.boolean().default(true),
+      sort_order: z.number().int().default(0),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    if (data.id) {
+      const { error } = await sb.from("company_ai_rules")
+        .update({ title: data.title, rule_text: data.rule_text, enabled: data.enabled, sort_order: data.sort_order })
+        .eq("id", data.id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+      return { ok: true, id: data.id };
+    }
+    const { data: row, error } = await sb.from("company_ai_rules")
+      .insert({ company_id: c.id, title: data.title, rule_text: data.rule_text, enabled: data.enabled, sort_order: data.sort_order })
+      .select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    return { ok: true, id: row?.id };
+  });
+
+export const deleteAiRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { error } = await sb.from("company_ai_rules").delete().eq("id", data.id).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---- AI Command Bar ----
+export const runAiCommand = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      prompt: z.string().trim().min(2).max(2000),
+      mode: z.enum(["read", "execute"]).default("read"),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+
+    const { data: cfg } = await sb.from("ai_configuration").select("ai_command_enabled").eq("company_id", c.id).maybeSingle();
+    if (cfg && cfg.ai_command_enabled === false) {
+      throw new Error("AI Command Bar is disabled in your AI settings.");
+    }
+
+    const featureKey = data.mode === "execute" ? "ai_command_execute" : "ai_command_read";
+    await assertFeatureEnabled(c.id, featureKey);
+    await spendOrThrow(c.id, featureKey, `AI command (${data.mode}): ${data.prompt.slice(0, 60)}`);
+
+    // Build lightweight context — today's jobs + free drivers
+    const today = new Date().toISOString().slice(0, 10);
+    const [{ data: jobs }, { data: drivers }] = await Promise.all([
+      sb.from("jobs")
+        .select("id, name, surname, from_location, to_location, pickup_at, time, date, driver_id, status")
+        .eq("company_id", c.id)
+        .gte("date", today)
+        .order("date", { ascending: true }).order("time", { ascending: true })
+        .limit(80),
+      sb.from("drivers").select("id, name, status").eq("company_id", c.id).limit(40),
+    ]);
+
+    const baseSys = [
+      "You are the AI operations assistant for a transport dispatch coordinator.",
+      `Mode: ${data.mode}. In read mode you answer questions and suggest actions. In execute mode you also propose a JSON action list the app can run.`,
+      "Return JSON: {\"response\":\"markdown answer\",\"actions\":[{\"type\":\"assign\"|\"unassign\"|\"reschedule\"|\"note\",\"job_id\":\"uuid\",\"driver_id\":\"uuid?\",\"pickup_at\":\"iso?\",\"note\":\"?\"}]}",
+      "Only reference job_id and driver_id values from the CONTEXT below. Never fabricate ids.",
+      "If a request would touch more than 5 jobs, list them under actions but set response to explain that confirmation is required.",
+    ].join("\n");
+    const sys = await buildSystemPrompt(c.id, baseSys);
+
+    const ctxText = `CONTEXT
+JOBS (${(jobs ?? []).length}):
+${(jobs ?? []).map((j: any) => `- ${j.id} | ${j.date} ${j.time ?? ""} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | pax ${j.name ?? ""} ${j.surname ?? ""} | driver=${j.driver_id ?? "none"} | status=${j.status ?? ""}`).join("\n")}
+
+DRIVERS (${(drivers ?? []).length}):
+${(drivers ?? []).map((d: any) => `- ${d.id} | ${d.name ?? ""} | ${d.status ?? ""}`).join("\n")}`;
+
+    let parsed: any = { response: "", actions: [] };
+    let status: "ok" | "error" | "awaiting_confirm" = "ok";
+    let errMsg: string | null = null;
+    try {
+      parsed = await callGemini(`${sys}\n\n${ctxText}\n\nUSER: ${data.prompt}`, "gemini-2.5-flash", { maxOutputTokens: 1500 });
+    } catch (e: any) {
+      status = "error";
+      errMsg = e?.message ?? "AI error";
+    }
+
+    const actions = Array.isArray(parsed?.actions) ? parsed.actions : [];
+    if (data.mode === "execute" && actions.length > 5) status = "awaiting_confirm";
+
+    await sb.from("ai_command_log").insert({
+      company_id: c.id,
+      actor_user_id: context.userId,
+      mode: data.mode,
+      prompt: data.prompt,
+      response: String(parsed?.response ?? ""),
+      actions,
+      status,
+      error: errMsg,
+    });
+
+    if (status === "error") throw new Error(errMsg ?? "AI error");
+    return { response: String(parsed?.response ?? ""), actions, status };
+  });
+
+export const listAiCommandHistory = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data } = await sb.from("ai_command_log")
+      .select("id, mode, prompt, response, actions, status, created_at")
+      .eq("company_id", c.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    return data ?? [];
+  });
+
+// ==========================================================
+// M2 · Auto-assign driver
+// ==========================================================
+export const autoAssignJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    // Ensure the job belongs to (or is executed by) this company
+    const { data: job } = await sb.from("jobs")
+      .select("id, company_id, executor_company_id, driver_id")
+      .eq("id", data.job_id).maybeSingle();
+    if (!job) throw new Error("Trip not found");
+    if (job.company_id !== c.id && job.executor_company_id !== c.id) {
+      throw new Error("Not allowed for this trip");
+    }
+    if (job.driver_id) return { ok: true, driver_id: job.driver_id, reason: "already_assigned", score: 0 };
+
+    await assertFeatureEnabled(c.id, "ai_auto_assign");
+    const { data: res, error } = await sb.rpc("auto_assign_job", { _job_id: data.job_id });
+    if (error) throw new Error(error.message);
+    const row = Array.isArray(res) ? res[0] : res;
+    if (!row?.driver_id) {
+      return { ok: false, driver_id: null, reason: row?.reason ?? "no_driver", score: 0 };
+    }
+    // Charge only on successful assignment
+    await spendOrThrow(c.id, "ai_auto_assign", `Auto-assign trip ${data.job_id.slice(0, 8)}`, data.job_id);
+    return { ok: true, driver_id: row.driver_id, reason: row.reason, score: Number(row.score ?? 0) };
   });
 

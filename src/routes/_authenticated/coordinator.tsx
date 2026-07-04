@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -30,8 +30,10 @@ const NAV = [
   { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" as const },
   { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" as const },
   { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: null },
+  { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
   { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
 ] as const;
+
 
 
 function CoordinatorLayout() {
