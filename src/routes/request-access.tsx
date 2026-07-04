@@ -144,6 +144,11 @@ function RequestAccessPage() {
               ? "Tell us about your operation and we'll walk you through The Coordinator live."
               : "The Coordinator is invite-only. Fill this in and we'll approve your account within 24 hours."}
           </p>
+          {refCode && (
+            <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Referred by <span className="font-mono">{refCode}</span> — we'll credit them when your account is approved.
+            </div>
+          )}
 
           <form onSubmit={submit} className="space-y-4">
             <div>
