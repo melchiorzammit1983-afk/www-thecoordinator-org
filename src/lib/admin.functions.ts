@@ -868,3 +868,64 @@ export const adminRevenueDashboard = createServerFn({ method: "GET" })
     };
   });
 
+
+
+// ---------- PUBLIC PASSWORD RESET (phone-based) ----------
+
+// In-memory rate limit map (per-instance). Best-effort; not shared across workers.
+const _resetAttempts = new Map<string, number>();
+
+function generateTempPassword(len = 12) {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
+  return out;
+}
+
+export const requestPasswordReset = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        phone: z
+          .string()
+          .trim()
+          .regex(/^\+[1-9]\d{6,14}$/, "Phone must be in E.164 format, e.g. +35699123456"),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => {
+    const phone = data.phone;
+    const digits = phone.replace(/[^\d]/g, "");
+    const email = `p${digits}@phone.crewchange.local`;
+
+    // Rate limit: 1 reset per phone per 60 seconds (per worker instance).
+    const last = _resetAttempts.get(phone) ?? 0;
+    const now = Date.now();
+    if (now - last < 60_000) {
+      throw new Error("Please wait a minute before requesting another reset.");
+    }
+    _resetAttempts.set(phone, now);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Find user by synthetic email (paginated up to 1000).
+    let existing: { id: string; user_metadata?: any } | null = null;
+    for (let page = 1; page <= 5 && !existing; page++) {
+      const { data: list, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+      if (error) throw new Error(error.message);
+      existing = list.users.find((u) => u.email?.toLowerCase() === email) as any;
+      if (list.users.length < 200) break;
+    }
+    if (!existing) throw new Error("No account found for that phone number.");
+
+    const temp_password = generateTempPassword(12);
+    const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+      password: temp_password,
+      user_metadata: { ...(existing.user_metadata ?? {}), must_change_password: true },
+    });
+    if (uErr) throw new Error(uErr.message);
+
+    return { ok: true, temp_password };
+  });
