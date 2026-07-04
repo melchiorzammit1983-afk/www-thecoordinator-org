@@ -530,14 +530,45 @@ function CalendarPage() {
         <AiGroupSuggestionsButton date={range.from} />
       </div>
 
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
-          <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
-          {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
-            : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
+      {trafficSorted ? (
+        <div className="rounded-md border bg-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium text-muted-foreground">
+              Traffic view — sorted by {trafficSort === "leave_by" ? "leave-by time" : "severity"} · {trafficSorted.length} trip{trafficSorted.length === 1 ? "" : "s"}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTrafficSort("none")}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline"
+            >
+              back to lanes
+            </button>
+          </div>
+          {trafficSorted.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-6 text-center">No trips match the current filter.</div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {trafficSorted.map((j) => (
+                <TripCard
+                  key={j.id}
+                  job={j}
+                  ctx={cardCtx}
+                  driverName={(drivers ?? []).find((d) => d.id === j.driver_id)?.name}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      </DndContext>
+      ) : (
+        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+            <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
+            {view === "day"
+              ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
+              : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
+          </div>
+        </DndContext>
+      )}
 
       {dispatchState && (
         <DispatchDialog
