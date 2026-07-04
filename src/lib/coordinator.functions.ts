@@ -3438,3 +3438,21 @@ export const autoAssignJob = createServerFn({ method: "POST" })
     return { ok: true, driver_id: row.driver_id, reason: row.reason, score: Number(row.score ?? 0) };
   });
 
+
+// ---------- REFERRALS ----------
+
+export const listMyReferrals = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    if (!(c as any).referral_code) return { code: null, requests: [] as any[] };
+    const supabaseAdmin = await getAdminClient();
+    const { data, error } = await supabaseAdmin
+      .from("access_requests")
+      .select("id, full_name, company_name, email, kind, status, created_at")
+      .eq("referral_code", (c as any).referral_code)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return { code: (c as any).referral_code as string, requests: data ?? [] };
+  });
