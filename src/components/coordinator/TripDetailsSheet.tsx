@@ -46,6 +46,7 @@ export type DetailsJob = {
   external?: boolean;
   executor_name?: string | null;
   external_driver_name?: string | null;
+  promo_note?: string | null;
 };
 
 export function TripDetailsSheet({
