@@ -226,7 +226,7 @@ export function VoiceToTripButton({
         size="sm"
         variant="outline"
         className="h-7"
-        disabled={!enabled || outOfPoints || busy || recording || disabled}
+        disabled={busy || recording || disabled}
         onClick={() => fileInputRef.current?.click()}
         title={tip}
       >
