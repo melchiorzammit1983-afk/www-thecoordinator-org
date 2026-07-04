@@ -19,9 +19,19 @@ export type BrandingInfo = {
 export function BrandingBar({ branding }: { branding: BrandingInfo }) {
   const [dismissed, setDismissed] = useState(false);
   if (!branding) return null;
-  const { advert_url, advert_link, advert_caption, company_name } = branding;
+  const { advert_url, advert_link, advert_caption, company_name, booking_token } = branding;
   if (!advert_url) return null;
   if (dismissed) return null;
+
+  // Priority: coordinator's own booking page (carries the promo caption
+  // as ?promo=... so it lands on the booking as a billing reminder).
+  // Fall back to an external advert_link. Otherwise render the advert
+  // without a link.
+  const promo = (advert_caption ?? "").trim();
+  const clickHref = booking_token
+    ? `/c/${booking_token}${promo ? `?promo=${encodeURIComponent(promo)}` : ""}`
+    : (advert_link || null);
+  const clickTarget = clickHref && !booking_token ? "_blank" : undefined;
 
   const AdvertMedia = (
     <img
