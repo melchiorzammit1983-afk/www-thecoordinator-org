@@ -297,7 +297,7 @@ function ManualForm({
   );
 }
 
-function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t: ParsedTrip) => void }) {
+function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const parsed = useMemo(
@@ -338,6 +338,11 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const earliestValidDate = valid
+    .map((t) => t.date)
+    .filter(Boolean)
+    .sort()[0];
+
   const mut = useMutation({
     mutationFn: () => bulkFn({ data: { trips: valid.map((t) => ({
       from_location: t.from_location, to_location: t.to_location,
@@ -350,11 +355,12 @@ function BulkForm({ onSaved, onComplete }: { onSaved: () => void; onComplete: (t
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      if (incomplete.length === 0) onSaved();
+      if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
 
   return (
     <div className="space-y-3">
