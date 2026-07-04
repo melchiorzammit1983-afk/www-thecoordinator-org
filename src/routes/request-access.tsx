@@ -45,6 +45,7 @@ function RequestAccessPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const isDemo = String(search.demo ?? "") === "1" || search.demo === true;
+  const refCode = (search.ref ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
