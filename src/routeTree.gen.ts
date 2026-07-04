@@ -41,6 +41,7 @@ import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
+import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
 
@@ -223,6 +224,12 @@ const AuthenticatedAdminActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const LovableEmailQueueProcessRoute =
+  LovableEmailQueueProcessRouteImport.update({
+    id: '/lovable/email/queue/process',
+    path: '/lovable/email/queue/process',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronRolloverSubscriptionsRoute =
   ApiPublicCronRolloverSubscriptionsRouteImport.update({
     id: '/api/public/cron/rollover-subscriptions',
@@ -270,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -303,6 +311,7 @@ export interface FileRoutesByTo {
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -340,6 +349,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -377,6 +387,7 @@ export interface FileRouteTypes {
     | '/coordinator/'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -410,6 +421,7 @@ export interface FileRouteTypes {
     | '/coordinator'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/lovable/email/queue/process'
   id:
     | '__root__'
     | '/'
@@ -446,6 +458,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -461,6 +474,7 @@ export interface RootRouteChildren {
   MDriverTokenRoute: typeof MDriverTokenRoute
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
+  LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -689,6 +703,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/lovable/email/queue/process': {
+      id: '/lovable/email/queue/process'
+      path: '/lovable/email/queue/process'
+      fullPath: '/lovable/email/queue/process'
+      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/rollover-subscriptions': {
       id: '/api/public/cron/rollover-subscriptions'
       path: '/api/public/cron/rollover-subscriptions'
@@ -802,6 +823,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
+  LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
