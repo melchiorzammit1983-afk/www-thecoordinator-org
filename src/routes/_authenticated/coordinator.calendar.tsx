@@ -46,6 +46,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
+import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
