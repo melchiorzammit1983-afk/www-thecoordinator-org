@@ -1,73 +1,85 @@
+## Landing page updates (`src/routes/index.tsx`)
 
-# Monetization: Admin-Configurable Feature Pricing
+**Wording — remove "Free":**
+- Hero CTA: "Get Started Free" → "Get Started" (button links to `/request-access`, not `/auth`).
+- Hero micro-badges: replace "No credit card" with "Pay as you go".
+- Add a small tagline under the hero: *"Points-based pricing — pay only for what you use."*
+- Anywhere else "Free" appears (trial mentions, badges), rewrite to "Pay as you go" / "Only pay for what you use".
+- Nav bar / header: add a secondary "Request Access" link; keep "Sign in" going to `/auth` for existing users.
 
-Turn every valuable action in the app into a metered, revenue-producing event that admin can price globally or per-company, with decimal support and a hybrid block strategy so trip creation is never fully blocked.
+**New sections (kept simple):**
 
-## What admin gets
+1. **How points work** (3 short cards):
+   - "1 point ≈ one small action" (trip created 1.5 pts, dispatch 0.5 pts, client SMS 0.25 pts).
+   - "Top up anytime — no subscription lock-in."
+   - "Only pay for what you actually use."
 
-A new **Admin → Feature Pricing** tab listing every billable feature with:
-- Label, key, category (Core / AI / Comms / Data)
-- Cost in points (decimal, e.g. `1.50`)
-- Enabled toggle
-- "Block when out of points?" toggle (per feature — lets trip creation stay free-on-empty while AI features hard-block)
+2. **FAQ** (accordion, 5 items):
+   - How much does it cost? → Pay-as-you-go via points; example rates.
+   - Do drivers need to install an app? → No.
+   - Is it available outside Malta? → Currently focused on Malta.
+   - How do I get access? → Request access, we approve, you're in.
+   - Where is my data stored? → Secure cloud with role-based access.
 
-Inside **Company Billing dialog**, a new "Price overrides" section lets admin set a custom cost for that company on any feature (blank = use global).
+3. **Trust strip** (placeholder):
+   - Grayscale row of 4–6 partner logo slots (`bg-slate-100` boxes with "Your logo" until real ones are added).
+   - Single testimonial quote card below (placeholder text you can swap later).
 
-## New billable actions (in addition to existing AI features)
+**Book a Demo:** the current `mailto:` link becomes a `<Link to="/request-access" search={{ demo: 1 }}>` so demo requests land in the same form (pre-checked "This is a demo request").
 
-| Key | Label | Default cost | Blocks on empty? |
-|---|---|---|---|
-| `trip_created` | Trip created | 1.50 | No (hybrid) |
-| `trip_dispatched` | Trip dispatched to partner | 0.50 | No |
-| `client_link_sent` | Client tracking link / SMS | 0.25 | Yes |
-| `route_traffic_refresh` | Route + traffic recompute | 0.10 | Yes |
-| `flight_status_refresh` | Flight status poll | 0.10 | Yes |
+## New route: `src/routes/request-access.tsx`
 
-Defaults are seeded; admin can change any of them.
+Public route (SSR on). Simple centered card form using existing shadcn `Input`, `Select`, `Textarea`, `Checkbox`, `Button`.
 
-## Behaviour when balance hits zero
+Fields (all Zod-validated, trimmed, length-capped):
+- Company name * (max 120)
+- Contact name * (max 80)
+- Email * (email, max 200)
+- Phone * (max 40)
+- Role * — Select: Hotel / Shipping agent / Fleet owner / Other
+- Fleet size / expected trips per month * — Select: 1–5, 6–20, 21–50, 50+
+- Message (optional, max 1000)
+- Hidden/auto `kind`: `demo` if `?demo=1` in URL, else `access`. UI shows a small badge "Demo request" when in demo mode.
 
-- Features marked **block_on_empty = true** → RPC raises `insufficient_points`, UI opens the top-up dialog.
-- Features marked **block_on_empty = false** (trip creation, dispatch) → action proceeds, balance goes negative, ledger records the debt, admin sees a red "Owed: X pts" chip on the company row.
+Submit calls a public `createServerFn` `submitAccessRequest` that:
+1. Validates with Zod.
+2. Inserts into existing `public.access_requests` (adds `kind` column via migration — see below).
+3. Fires an email notification to you (admin) via `email_domain--scaffold_transactional_email` infra if an email domain is configured; otherwise no-op (log only). Subject differs: `[Demo] New demo request from X` vs `New access request from X`.
+4. Returns `{ ok: true }`. Form shows a success card: *"Thanks — we'll be in touch within 24h."*
 
-## Technical details
+Head metadata: title "Request access — The Coordinator", description matches, `noindex` (avoid crawler spam on the form).
 
-### Migration
-- `ai_feature_costs` + `feature_costs` + `points_ledger.points_deducted` + `companies.points_balance` + `company_subscriptions.points_remaining_this_period` + `plans.included_points`: alter to `numeric(10,2)`.
-- Add columns to `ai_feature_costs`: `category text`, `block_on_empty boolean default true`, `enabled boolean default true`.
-- New table `company_feature_price_overrides (company_id, feature_key, points_cost numeric(10,2), unique(company_id, feature_key))` with admin-only RLS + GRANTs.
-- Rewrite `spend_points` RPC:
-  1. Resolve cost: override → global → 1.0 fallback.
-  2. If `enabled = false` → raise `feature_disabled`.
-  3. Deduct from `company_subscriptions.points_remaining_this_period`, then `companies.points_balance`.
-  4. If both would go below zero AND `block_on_empty = true` → raise `insufficient_points`.
-  5. If `block_on_empty = false` → allow negative on `companies.points_balance`, insert ledger row.
-- Seed the 5 new feature rows.
+## Database migration
 
-### Server functions (`src/lib/admin.functions.ts`)
-- `adminListFeaturePricing()` — returns global rows.
-- `adminUpdateFeaturePricing({ feature_key, points_cost, enabled, block_on_empty, label, category })`.
-- `adminSetCompanyPriceOverride({ company_id, feature_key, points_cost | null })`.
-- `adminListCompanyPriceOverrides({ company_id })`.
+Small schema change on `public.access_requests`:
+- Add `kind text not null default 'access' check (kind in ('access','demo'))`.
+- Add `notes_admin text` (for you to jot notes when reviewing).
+- No new tables. Existing RLS + admin-only read policies stay.
 
-### Metering wiring
-Add `spend_points` calls in coordinator server functions:
-- `trip_created` — inside job/booking insert paths (`createJob`, public booking accept).
-- `trip_dispatched` — inside dispatch-hop insert.
-- `client_link_sent` — inside client-link creation / SMS send.
-- `route_traffic_refresh` — inside the route cache refresh path.
-- `flight_status_refresh` — inside `flight_status_snapshots` insert.
+Regenerate `types.ts` after approval.
 
-Each call passes `job_id` where available so the ledger stays traceable.
+## Admin visibility
 
-### UI
-- New route: `src/routes/_authenticated/admin.feature-pricing.tsx` — editable table (label, cost input step=0.01, category select, two toggles, save-per-row).
-- `CompanyBillingDialog.tsx` — add "Price overrides" section: list of features with cost input + "Reset to global" button.
-- Coordinator `PointsBadge` + `RequestTopupDialog` — show negative balance in red with "Amount owed" label when < 0.
+Existing admin panel already surfaces `access_requests`. Add a "Demo" badge next to demo rows (small `Badge` component change in the admin access-requests table — the row where `kind='demo'`). No new admin page.
 
-### TypeScript
-Regenerate `src/integrations/supabase/types.ts` after migration (auto). Update `Points` display helpers to format `numeric` as `1.50` (2 decimals, trim trailing zeros for whole numbers).
+## Notification to you
 
-## Out of scope
-- Auto-invoicing / Stripe billing on debt — surfaced to admin only, collected manually for now.
-- Plan-level bundled discounts on new billable actions — plans keep working, decimals just reduce faster.
+Two options depending on your setup:
+- **If Lovable Emails is set up on this project** (custom domain): send via the transactional email infra to your admin email (`hello@coordinatormt.com` or whatever you prefer — I'll ask before wiring).
+- **If not yet set up**: I'll leave the email hook stubbed with a clear TODO and only insert the DB row. You'll still see it in the admin panel with a "New" indicator.
+
+## Files touched
+
+- `src/routes/index.tsx` — copy edits, new sections, CTA rewiring.
+- `src/routes/request-access.tsx` — new.
+- `src/lib/public.functions.ts` (or extend existing public functions file) — `submitAccessRequest` server fn.
+- `src/components/admin/AccessRequestsTable.tsx` (or wherever it lives) — demo badge.
+- `supabase/migrations/…` — add `kind`, `notes_admin` columns.
+
+## Out of scope for this pass
+
+- Actual auto-provisioning of accounts (you approve manually in admin panel — same as today).
+- Payment / Stripe integration.
+- Marketing SEO deep dive.
+
+**One thing I need from you before building:** which email should receive the "new request" / "new demo" notifications? (Also — is Lovable Emails already configured for this project, or should I skip the email step and stick to admin-panel-only for now?)

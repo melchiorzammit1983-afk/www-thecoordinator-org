@@ -60,6 +60,9 @@ function Landing() {
       <HowItWorks />
       <Bento />
       <ClientExperience />
+      <HowPointsWork />
+      <TrustStrip />
+      <FaqSection />
       <FinalCta />
       <Footer />
     </div>
@@ -84,12 +87,13 @@ function Nav() {
           >
             Login
           </Link>
-          <a
-            href="mailto:hello@coordinatormt.com?subject=Book%20a%20Demo"
+          <Link
+            to="/request-access"
+            search={{ demo: "1" }}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#1a2a52] px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-white hover:bg-[#243668] shadow-sm hover:shadow-md transition-all"
           >
             Book a Demo <ArrowRight className="h-3.5 w-3.5" />
-          </a>
+          </Link>
         </div>
       </div>
     </header>
@@ -128,10 +132,10 @@ function Hero() {
             </p>
             <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-2.5">
               <Link
-                to="/auth"
+                to="/request-access"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1a2a52] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1a2a52]/20 hover:bg-[#243668] transition-all"
               >
-                Get Started Free <ArrowRight className="h-4 w-4" />
+                Get Started <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#how"
@@ -142,7 +146,7 @@ function Hero() {
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs text-slate-500">
               <span className="inline-flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-emerald-600" /> No credit card
+                <Check className="h-3.5 w-3.5 text-emerald-600" /> Pay as you go
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Check className="h-3.5 w-3.5 text-emerald-600" /> No driver app required
@@ -635,18 +639,143 @@ function FinalCta() {
           </p>
           <div className="mt-7 flex flex-col sm:flex-row justify-center gap-2.5">
             <Link
-              to="/auth"
+              to="/request-access"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-[#0f1a35] shadow-xl hover:bg-slate-100 transition-all"
             >
-              Start Your Network Now <ArrowRight className="h-4 w-4" />
+              Get Started <ArrowRight className="h-4 w-4" />
             </Link>
-            <a
-              href="mailto:hello@coordinatormt.com?subject=Book%20a%20Demo"
+            <Link
+              to="/request-access"
+              search={{ demo: "1" }}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
             >
               Book a Demo
-            </a>
+            </Link>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================ HOW POINTS WORK ============================ */
+function HowPointsWork() {
+  const items = [
+    { title: "Pay as you go", body: "No monthly lock-in. Buy points, spend only when you use the platform." },
+    { title: "Fractional pricing", body: "A trip is 1.5 pts. Dispatching to a partner is 0.5 pts. A client SMS link is 0.25 pts." },
+    { title: "Top up anytime", body: "Request a top-up from your dashboard. Volume discounts on larger packs." },
+  ];
+  return (
+    <section id="pricing" className="border-t border-slate-100 bg-slate-50/60">
+      <div className="mx-auto max-w-6xl px-5 md:px-6 py-14 md:py-20">
+        <div className="text-center max-w-2xl mx-auto">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#1a2a52]/10 px-3 py-1 text-[11px] font-semibold text-[#1a2a52]">
+            Pay as you go
+          </div>
+          <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+            Simple points-based pricing
+          </h2>
+          <p className="mt-3 text-slate-600">
+            No subscriptions. No wasted seats. You only pay for the actions your team actually takes.
+          </p>
+        </div>
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {items.map((it) => (
+            <div key={it.title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="h-10 w-10 rounded-xl bg-[#1a2a52]/10 flex items-center justify-center text-[#1a2a52] font-bold">
+                pts
+              </div>
+              <h3 className="mt-4 font-semibold text-slate-900">{it.title}</h3>
+              <p className="mt-2 text-sm text-slate-600 leading-relaxed">{it.body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-8 text-center">
+          <Link
+            to="/request-access"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#1a2a52] px-5 py-3 text-sm font-semibold text-white hover:bg-[#243668] transition-colors"
+          >
+            Get Started <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================ TRUST STRIP ============================ */
+function TrustStrip() {
+  return (
+    <section className="border-t border-slate-100 bg-white">
+      <div className="mx-auto max-w-6xl px-5 md:px-6 py-12 md:py-16">
+        <p className="text-center text-xs uppercase tracking-[0.15em] text-slate-500 font-semibold">
+          Trusted by operators across Malta
+        </p>
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-[11px] font-medium text-slate-400"
+            >
+              Your logo
+            </div>
+          ))}
+        </div>
+        <blockquote className="mt-10 max-w-3xl mx-auto rounded-2xl border border-slate-200 bg-slate-50 p-6 md:p-8 text-center">
+          <p className="text-base md:text-lg text-slate-800 leading-relaxed">
+            "We stopped losing jobs on busy weekends. The Coordinator lets us push overflow to trusted partners in seconds."
+          </p>
+          <footer className="mt-4 text-sm text-slate-500">— Operations Manager, Maltese transport company</footer>
+        </blockquote>
+      </div>
+    </section>
+  );
+}
+
+/* ============================ FAQ ============================ */
+function FaqSection() {
+  const faqs = [
+    {
+      q: "How much does it cost?",
+      a: "Pay-as-you-go with points. A trip costs ~1.5 pts, dispatching to a partner ~0.5 pts, sending a client tracking SMS ~0.25 pts. Top up whenever you need to — no monthly subscription required.",
+    },
+    {
+      q: "Do drivers need to install an app?",
+      a: "No. Drivers get a plain web link on their phone — no installs, no app-store hoops, no logins.",
+    },
+    {
+      q: "Is it available outside Malta?",
+      a: "Right now we're focused on serving Malta's hotels, shipping agents, and fleet owners. Reach out if you're elsewhere — we'll let you know when we expand.",
+    },
+    {
+      q: "How do I get access?",
+      a: "The Coordinator is invite-only. Submit the request form and we'll review and approve within 24 hours.",
+    },
+    {
+      q: "Where is my data stored?",
+      a: "In a secure cloud with strict role-based access. Only you and the partners you explicitly connect with can see your trips.",
+    },
+  ];
+  return (
+    <section className="border-t border-slate-100 bg-slate-50/60">
+      <div className="mx-auto max-w-3xl px-5 md:px-6 py-14 md:py-20">
+        <div className="text-center">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+            Frequently asked questions
+          </h2>
+        </div>
+        <div className="mt-8 space-y-3">
+          {faqs.map((f) => (
+            <details key={f.q} className="group rounded-xl border border-slate-200 bg-white p-4 md:p-5 open:shadow-sm">
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-3 font-semibold text-slate-900">
+                <span>{f.q}</span>
+                <span className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-open:rotate-45 transition-transform">
+                  +
+                </span>
+              </summary>
+              <p className="mt-3 text-sm text-slate-600 leading-relaxed">{f.a}</p>
+            </details>
+          ))}
         </div>
       </div>
     </section>

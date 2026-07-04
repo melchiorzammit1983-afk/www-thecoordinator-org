@@ -23,7 +23,9 @@ export type Database = {
           fleet_size: string | null
           full_name: string
           id: string
+          kind: string
           message: string | null
+          notes_admin: string | null
           phone: string | null
           referral_code: string | null
           role: string | null
@@ -37,7 +39,9 @@ export type Database = {
           fleet_size?: string | null
           full_name: string
           id?: string
+          kind?: string
           message?: string | null
+          notes_admin?: string | null
           phone?: string | null
           referral_code?: string | null
           role?: string | null
@@ -51,7 +55,9 @@ export type Database = {
           fleet_size?: string | null
           full_name?: string
           id?: string
+          kind?: string
           message?: string | null
+          notes_admin?: string | null
           phone?: string | null
           referral_code?: string | null
           role?: string | null
