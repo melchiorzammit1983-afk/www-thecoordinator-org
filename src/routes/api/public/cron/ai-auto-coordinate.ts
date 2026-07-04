@@ -21,9 +21,8 @@ export const Route = createFileRoute("/api/public/cron/ai-auto-coordinate")({
         const results: Array<{ company_id: string; ok: boolean; note?: string }> = [];
         for (const r of rows ?? []) {
           try {
-            // Import the internal helper lazily to avoid pulling server-fn wrapper.
-            const mod = await import("@/lib/coordinator.functions.server-helpers");
-            const plan = await mod.runAutoCoordinateForCompany((r as any).company_id);
+            const mod = await import("@/lib/coordinator.functions");
+            const plan = await mod.runAutoCoordinate((r as any).company_id);
             results.push({ company_id: (r as any).company_id, ok: true, note: `${plan.proposals.length} proposals` });
           } catch (e) {
             results.push({ company_id: (r as any).company_id, ok: false, note: (e as Error).message });

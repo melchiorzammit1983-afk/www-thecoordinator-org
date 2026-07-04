@@ -3060,7 +3060,7 @@ type CoordProposal =
   | { kind: "group"; trip_ids: string[]; reason: string }
   | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string };
 
-async function runAutoCoordinate(companyId: string) {
+export async function runAutoCoordinate(companyId: string) {
   const sb = await getAdminClient();
   const { data: cfg } = await sb.from("ai_configuration")
     .select("auto_coordinate_enabled").eq("company_id", companyId).maybeSingle();
