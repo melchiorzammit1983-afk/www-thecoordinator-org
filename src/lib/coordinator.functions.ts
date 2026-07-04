@@ -2982,12 +2982,15 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
 
     // Transcribe + extract in a single Gemini multimodal call.
     const today = new Date().toISOString().slice(0, 10);
+    const baseVoicePrompt = `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.`;
+    const sysPrompt = await buildSystemPrompt(c.id, baseVoicePrompt);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.` }] },
+        systemInstruction: { parts: [{ text: sysPrompt }] },
+
         contents: [{ role: "user", parts: [
           { text: "Extract trips from this voice note." },
           { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
