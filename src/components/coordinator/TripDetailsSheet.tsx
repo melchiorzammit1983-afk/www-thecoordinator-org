@@ -9,6 +9,7 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
+import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
 import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
@@ -40,6 +41,10 @@ export type DetailsJob = {
   flight_status: string | null; flight_status_note: string | null;
   flight_status_updated_at?: string | null;
   flight_scheduled_at: string | null; flight_estimated_at: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+  pickup_shift_reason?: string | null;
   drivers?: DriverEmbed | null;
   pax?: Pax[];
   labels?: TLabel[];
@@ -263,6 +268,16 @@ export function TripDetailsSheet({
               </div>
             )}
           </SheetHeader>
+
+          <TrafficBadge
+            info={{
+              traffic_delay_minutes: job.traffic_delay_minutes,
+              traffic_severity: job.traffic_severity,
+              leave_by_at: job.leave_by_at,
+              pickup_shift_reason: job.pickup_shift_reason,
+            }}
+          />
+
 
           {/* Progress */}
           <div className="rounded-md border p-3 space-y-2 bg-muted/40">
