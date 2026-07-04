@@ -378,10 +378,15 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
           <div className="text-xs font-medium text-muted-foreground truncate">{dateLabel}</div>
         </div>
         <div className="flex items-center gap-1">
+          {job.status === "in_progress" && (
+            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] gap-1 animate-pulse">
+              <span className="h-1.5 w-1.5 rounded-full bg-white" /> In progress
+            </Badge>
+          )}
           {job.deletion_requested_at && (
             <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle className="h-3 w-3" /> Delete requested</Badge>
           )}
-          {accepted && !job.deletion_requested_at && (
+          {accepted && !job.deletion_requested_at && job.status !== "in_progress" && (
             <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] gap-1"><CheckCircle2 className="h-3 w-3" /> Accepted</Badge>
           )}
           {!accepted && !job.deletion_requested_at && (
