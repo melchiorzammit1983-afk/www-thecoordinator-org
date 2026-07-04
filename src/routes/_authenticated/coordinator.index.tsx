@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardSummary } from "@/lib/coordinator.functions";
-import { CalendarDays, Inbox, Users, Truck } from "lucide-react";
+import { CalendarDays, Inbox, Users, Truck, Euro } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
   head: () => ({ meta: [{ title: "Dashboard — Coordinator" }] }),
