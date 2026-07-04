@@ -489,8 +489,24 @@ export const respondToPriceProposal = createServerFn({ method: "POST" })
     if (!["proposed", "countered"].includes(prop.status)) throw new Error("Proposal already closed");
     const now = new Date().toISOString();
 
+    // Recall rules — load job state; any recall/response is invalid once the
+    // trip has left the coordinator's control (started, completed, cancelled).
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, status, driver_id, executor_company_id, company_id, dispatch_chain_company_ids")
+      .eq("id", prop.job_id).maybeSingle();
+    if (!job) throw new Error("Job not found");
+    const terminal = ["completed", "cancelled"];
+    if (terminal.includes(job.status as string)) {
+      throw new Error("Trip already closed — proposal can no longer be changed");
+    }
+    const started = ["en_route", "arrived", "in_progress"].includes(job.status as string);
+
     if (data.action === "withdraw") {
       if (!iAmFrom) throw new Error("Only the proposer can withdraw");
+      // Rule: proposer can only withdraw while the offer is still open and the
+      // receiver has not accepted (accepted is caught by the status check).
+      // Once countered by the receiver, the original is closed too.
+      if (prop.status !== "proposed") throw new Error("Cannot withdraw — receiver already responded");
       const { error } = await supabaseAdmin.from("job_price_proposals").update({
         status: "recalled", responded_at: now, responded_by_user_id: context.userId,
       } as never).eq("id", data.proposal_id);
@@ -541,12 +557,17 @@ export const respondToPriceProposal = createServerFn({ method: "POST" })
     }
 
     if (data.action === "recall_assignment") {
-      // Mark proposal recalled + unassign on the job.
-      await supabaseAdmin.from("job_price_proposals").update({
-        status: "recalled", responded_at: now, responded_by_user_id: context.userId,
-      } as never).eq("id", data.proposal_id);
+      // Rule: only allowed before the trip has started (driver hasn't gone en_route).
+      if (started) throw new Error("Cannot recall — driver has already started the trip");
+
       if (prop.from_party_kind === "driver") {
-        // Clear the driver from the job (return to unassigned).
+        // Rule: driver must still be the one assigned; otherwise there's nothing to recall.
+        if (job.driver_id !== prop.from_driver_id) {
+          throw new Error("Cannot recall — driver is no longer assigned to this trip");
+        }
+        await supabaseAdmin.from("job_price_proposals").update({
+          status: "recalled", responded_at: now, responded_by_user_id: context.userId,
+        } as never).eq("id", data.proposal_id);
         const { error } = await supabaseAdmin.from("jobs").update({
           driver_id: null,
           driver_accepted_at: null,
@@ -554,23 +575,27 @@ export const respondToPriceProposal = createServerFn({ method: "POST" })
         if (error) throw new Error(error.message);
       } else {
         // Partner recall: revert executor to previous sender and remove the hop.
-        const { data: job } = await supabaseAdmin.from("jobs")
-          .select("id, dispatch_chain_company_ids").eq("id", prop.job_id).maybeSingle();
-        if (job && prop.hop_id) {
-          const { data: hopRow } = await supabaseAdmin.from("job_dispatch_hops")
-            .select("id, from_company_id, to_company_id").eq("id", prop.hop_id).maybeSingle();
-          if (hopRow) {
-            await supabaseAdmin.from("job_dispatch_hops").delete().eq("id", hopRow.id);
-            const chain: string[] = Array.isArray((job as any).dispatch_chain_company_ids)
-              ? (job as any).dispatch_chain_company_ids : [];
-            await supabaseAdmin.from("jobs").update({
-              executor_company_id: hopRow.from_company_id,
-              dispatch_status: "rejected",
-              dispatch_decided_at: now,
-              dispatch_chain_company_ids: chain.filter((id) => id !== hopRow.to_company_id),
-            } as never).eq("id", prop.job_id);
-          }
+        if (!prop.hop_id) throw new Error("Cannot recall — no hop to revert");
+        const { data: hopRow } = await supabaseAdmin.from("job_dispatch_hops")
+          .select("id, from_company_id, to_company_id").eq("id", prop.hop_id).maybeSingle();
+        if (!hopRow) throw new Error("Cannot recall — hop not found");
+        // Rule: partner must still be current executor (they haven't already
+        // forwarded it further downstream); otherwise recall is stale.
+        if (job.executor_company_id !== hopRow.to_company_id) {
+          throw new Error("Cannot recall — trip has already moved further down the chain");
         }
+        await supabaseAdmin.from("job_price_proposals").update({
+          status: "recalled", responded_at: now, responded_by_user_id: context.userId,
+        } as never).eq("id", data.proposal_id);
+        await supabaseAdmin.from("job_dispatch_hops").delete().eq("id", hopRow.id);
+        const chain: string[] = Array.isArray((job as any).dispatch_chain_company_ids)
+          ? (job as any).dispatch_chain_company_ids : [];
+        await supabaseAdmin.from("jobs").update({
+          executor_company_id: hopRow.from_company_id,
+          dispatch_status: "rejected",
+          dispatch_decided_at: now,
+          dispatch_chain_company_ids: chain.filter((id) => id !== hopRow.to_company_id),
+        } as never).eq("id", prop.job_id);
       }
       return { ok: true };
     }
