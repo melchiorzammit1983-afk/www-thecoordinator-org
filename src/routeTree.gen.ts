@@ -32,8 +32,13 @@ import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
+import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
+import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
+import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authenticated/admin.revenue'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
+import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
+import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -161,10 +166,34 @@ const AuthenticatedCoordinatorBrandingRoute =
     path: '/branding',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorBillingRoute =
+  AuthenticatedCoordinatorBillingRouteImport.update({
+    id: '/billing',
+    path: '/billing',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedAdminTopupsRoute =
+  AuthenticatedAdminTopupsRouteImport.update({
+    id: '/topups',
+    path: '/topups',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminRevenueRoute =
+  AuthenticatedAdminRevenueRouteImport.update({
+    id: '/revenue',
+    path: '/revenue',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminRequestsRoute =
   AuthenticatedAdminRequestsRouteImport.update({
     id: '/requests',
     path: '/requests',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminPricingRoute =
+  AuthenticatedAdminPricingRouteImport.update({
+    id: '/pricing',
+    path: '/pricing',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminActivityRoute =
@@ -172,6 +201,12 @@ const AuthenticatedAdminActivityRoute =
     id: '/activity',
     path: '/activity',
     getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const ApiPublicCronRolloverSubscriptionsRoute =
+  ApiPublicCronRolloverSubscriptionsRouteImport.update({
+    id: '/api/public/cron/rollover-subscriptions',
+    path: '/api/public/cron/rollover-subscriptions',
+    getParentRoute: () => rootRouteImport,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -184,7 +219,11 @@ export interface FileRoutesByFullPath {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
+  '/admin/topups': typeof AuthenticatedAdminTopupsRoute
+  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -199,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -208,7 +248,11 @@ export interface FileRoutesByTo {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
+  '/admin/topups': typeof AuthenticatedAdminTopupsRoute
+  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -223,6 +267,7 @@ export interface FileRoutesByTo {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -236,7 +281,11 @@ export interface FileRoutesById {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/_authenticated/admin/revenue': typeof AuthenticatedAdminRevenueRoute
+  '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
+  '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -251,6 +300,7 @@ export interface FileRoutesById {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -264,7 +314,11 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/admin/activity'
+    | '/admin/pricing'
     | '/admin/requests'
+    | '/admin/revenue'
+    | '/admin/topups'
+    | '/coordinator/billing'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -279,6 +333,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
+    | '/api/public/cron/rollover-subscriptions'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -288,7 +343,11 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/admin/activity'
+    | '/admin/pricing'
     | '/admin/requests'
+    | '/admin/revenue'
+    | '/admin/topups'
+    | '/coordinator/billing'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -303,6 +362,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
+    | '/api/public/cron/rollover-subscriptions'
   id:
     | '__root__'
     | '/'
@@ -315,7 +375,11 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
+    | '/_authenticated/admin/revenue'
+    | '/_authenticated/admin/topups'
+    | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/branding'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -330,6 +394,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
+    | '/api/public/cron/rollover-subscriptions'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -342,6 +407,7 @@ export interface RootRouteChildren {
   TTokenRoute: typeof TTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRoute
+  ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -507,11 +573,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorBrandingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/billing': {
+      id: '/_authenticated/coordinator/billing'
+      path: '/billing'
+      fullPath: '/coordinator/billing'
+      preLoaderRoute: typeof AuthenticatedCoordinatorBillingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/admin/topups': {
+      id: '/_authenticated/admin/topups'
+      path: '/topups'
+      fullPath: '/admin/topups'
+      preLoaderRoute: typeof AuthenticatedAdminTopupsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/revenue': {
+      id: '/_authenticated/admin/revenue'
+      path: '/revenue'
+      fullPath: '/admin/revenue'
+      preLoaderRoute: typeof AuthenticatedAdminRevenueRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/requests': {
       id: '/_authenticated/admin/requests'
       path: '/requests'
       fullPath: '/admin/requests'
       preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/pricing': {
+      id: '/_authenticated/admin/pricing'
+      path: '/pricing'
+      fullPath: '/admin/pricing'
+      preLoaderRoute: typeof AuthenticatedAdminPricingRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/activity': {
@@ -521,18 +615,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/api/public/cron/rollover-subscriptions': {
+      id: '/api/public/cron/rollover-subscriptions'
+      path: '/api/public/cron/rollover-subscriptions'
+      fullPath: '/api/public/cron/rollover-subscriptions'
+      preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
+  AuthenticatedAdminRevenueRoute: typeof AuthenticatedAdminRevenueRoute
+  AuthenticatedAdminTopupsRoute: typeof AuthenticatedAdminTopupsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
+  AuthenticatedAdminRevenueRoute: AuthenticatedAdminRevenueRoute,
+  AuthenticatedAdminTopupsRoute: AuthenticatedAdminTopupsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
@@ -540,6 +647,7 @@ const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
   AuthenticatedCoordinatorCollaborateRoute: typeof AuthenticatedCoordinatorCollaborateRoute
@@ -555,6 +663,7 @@ interface AuthenticatedCoordinatorRouteChildren {
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
     AuthenticatedCoordinatorBrandingRoute:
       AuthenticatedCoordinatorBrandingRoute,
     AuthenticatedCoordinatorCalendarRoute:
@@ -603,17 +712,9 @@ const rootRouteChildren: RootRouteChildren = {
   TTokenRoute: TTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRoute,
+  ApiPublicCronRolloverSubscriptionsRoute:
+    ApiPublicCronRolloverSubscriptionsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

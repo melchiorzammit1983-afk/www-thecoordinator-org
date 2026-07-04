@@ -119,6 +119,27 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_feature_costs: {
+        Row: {
+          feature_key: string
+          label: string | null
+          points_cost: number
+          updated_at: string
+        }
+        Insert: {
+          feature_key: string
+          label?: string | null
+          points_cost?: number
+          updated_at?: string
+        }
+        Update: {
+          feature_key?: string
+          label?: string | null
+          points_cost?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       client_booking_modifications: {
         Row: {
           acknowledged_at: string | null
@@ -531,7 +552,10 @@ export type Database = {
           expires_at: string | null
           feature: string
           id: string
+          monthly_cap: number | null
+          period_reset_at: string
           updated_at: string
+          usage_this_period: number
         }
         Insert: {
           company_id: string
@@ -541,7 +565,10 @@ export type Database = {
           expires_at?: string | null
           feature: string
           id?: string
+          monthly_cap?: number | null
+          period_reset_at?: string
           updated_at?: string
+          usage_this_period?: number
         }
         Update: {
           company_id?: string
@@ -551,7 +578,10 @@ export type Database = {
           expires_at?: string | null
           feature?: string
           id?: string
+          monthly_cap?: number | null
+          period_reset_at?: string
           updated_at?: string
+          usage_this_period?: number
         }
         Relationships: [
           {
@@ -559,6 +589,57 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_subscriptions: {
+        Row: {
+          company_id: string
+          created_at: string
+          current_period_end: string
+          current_period_start: string
+          id: string
+          plan_id: string
+          points_remaining_this_period: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          plan_id: string
+          points_remaining_this_period?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          plan_id?: string
+          points_remaining_this_period?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_subscriptions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
             referencedColumns: ["id"]
           },
         ]
@@ -1473,10 +1554,80 @@ export type Database = {
           },
         ]
       }
+      plans: {
+        Row: {
+          code: string
+          created_at: string
+          feature_keys: string[]
+          id: string
+          included_points: number
+          name: string
+          price_monthly: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          feature_keys?: string[]
+          id?: string
+          included_points?: number
+          name: string
+          price_monthly?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          feature_keys?: string[]
+          id?: string
+          included_points?: number
+          name?: string
+          price_monthly?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      point_packs: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          points: number
+          price: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          points: number
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          points?: number
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       points_ledger: {
         Row: {
           company_id: string
           created_at: string
+          feature_key: string | null
           feature_used: Database["public"]["Enums"]["feature_name"] | null
           id: string
           job_id: string | null
@@ -1486,6 +1637,7 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string
+          feature_key?: string | null
           feature_used?: Database["public"]["Enums"]["feature_name"] | null
           id?: string
           job_id?: string | null
@@ -1495,6 +1647,7 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string
+          feature_key?: string | null
           feature_used?: Database["public"]["Enums"]["feature_name"] | null
           id?: string
           job_id?: string | null
@@ -1524,7 +1677,9 @@ export type Database = {
           created_at: string
           id: string
           note: string | null
+          pack_id: string | null
           points_requested: number
+          price: number | null
           requested_by: string
           status: Database["public"]["Enums"]["topup_request_status"]
           updated_at: string
@@ -1534,7 +1689,9 @@ export type Database = {
           created_at?: string
           id?: string
           note?: string | null
+          pack_id?: string | null
           points_requested: number
+          price?: number | null
           requested_by: string
           status?: Database["public"]["Enums"]["topup_request_status"]
           updated_at?: string
@@ -1544,7 +1701,9 @@ export type Database = {
           created_at?: string
           id?: string
           note?: string | null
+          pack_id?: string | null
           points_requested?: number
+          price?: number | null
           requested_by?: string
           status?: Database["public"]["Enums"]["topup_request_status"]
           updated_at?: string
@@ -1555,6 +1714,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topup_requests_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "point_packs"
             referencedColumns: ["id"]
           },
         ]
@@ -1678,7 +1844,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      admin_grant_points: {
+        Args: { _company_id: string; _note?: string; _points: number }
+        Returns: undefined
+      }
+      rollover_subscriptions: { Args: never; Returns: number }
+      set_company_plan: {
+        Args: { _company_id: string; _plan_id: string }
+        Returns: undefined
+      }
+      spend_points: {
+        Args: {
+          _company_id: string
+          _cost_override?: number
+          _feature_key: string
+          _job_id?: string
+          _note?: string
+        }
+        Returns: number
+      }
     }
     Enums: {
       booking_status:

@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
 import { BrandLogo } from "@/components/branding/BrandLogo";
+import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
@@ -29,6 +30,7 @@ const NAV = [
   { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" as const },
   { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" as const },
   { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: null },
+  { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
 ] as const;
 
 
@@ -95,9 +97,12 @@ function CoordinatorLayout() {
       <aside className="md:w-64 md:min-h-screen md:border-r bg-background flex md:flex-col">
         <div className="px-4 py-4 md:py-6 border-b flex items-center gap-3">
           <BrandLogo logoUrl={(company as any).logo_url ?? null} name={company.name} />
-          <div className="hidden md:block min-w-0">
+          <div className="hidden md:block min-w-0 flex-1">
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
+          </div>
+          <div className="hidden md:block">
+            <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
           </div>
         </div>
         <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">

@@ -53,6 +53,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
+import { AiGroupSuggestionsButton } from "@/components/coordinator/AiGroupSuggestionsButton";
 import { useFeature } from "@/hooks/use-features";
 
 
@@ -441,6 +442,10 @@ function CalendarPage() {
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
+
+      <div className="flex justify-end mb-2">
+        <AiGroupSuggestionsButton date={range.from} />
+      </div>
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">

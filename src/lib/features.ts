@@ -13,6 +13,9 @@ export type FeatureKey =
   | "chat"
   | "ai_extraction"
   | "ai_group_suggestions"
+  | "ai_daily_plan"
+  | "ai_reply_drafter"
+  | "ai_voice_to_trip"
   | "client_trip_portal"
   | "client_push_notifications"
   | "client_eta"
@@ -20,7 +23,7 @@ export type FeatureKey =
   | "client_offline_mode"
   | "branding_advert";
 
-export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string }[] = [
+export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
   { key: "pending",         label: "Pending approvals", description: "Client booking modifications queue" },
   { key: "drivers",         label: "Drivers",           description: "Manage the driver roster" },
@@ -33,8 +36,11 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "flight_tracking", label: "Flight tracking",   description: "AviationStack flight status" },
   { key: "bulk_paste",      label: "Bulk paste",        description: "WhatsApp bulk trip import" },
   { key: "chat",            label: "Trip chat",         description: "Coordinator ↔ driver chat on trips" },
-  { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages (any language) into trips using AI" },
-  { key: "ai_group_suggestions", label: "AI auto-group suggestions", description: "Suggest groupings of unassigned trips by time & route" },
+  { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages, files, or links into trips using AI", isAi: true },
+  { key: "ai_group_suggestions", label: "AI auto-group suggestions", description: "Suggest groupings of unassigned trips by time & route", isAi: true },
+  { key: "ai_daily_plan",   label: "AI daily plan",     description: "Order a driver's trips to minimize idle time & backtracking", isAi: true },
+  { key: "ai_reply_drafter", label: "AI reply drafter", description: "Draft 2–3 chat replies in the client's language & tone", isAi: true },
+  { key: "ai_voice_to_trip", label: "AI voice-note → trip", description: "Record or upload a voice note; AI transcribes and extracts trips", isAi: true },
   { key: "client_trip_portal", label: "Client trip portal", description: "Per-trip client link with chat, live tracking, share location & rebook" },
   { key: "client_push_notifications", label: "Client push alerts", description: "Browser/PWA push notifications for driver assigned, en-route, arriving" },
   { key: "client_eta",      label: "Client live ETA",   description: "Traffic-aware ETA countdown on client portal from driver location" },
@@ -44,3 +50,4 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
+export const AI_FEATURE_KEYS = FEATURE_CATALOG.filter((f) => f.isAi).map((f) => f.key) as FeatureKey[];
