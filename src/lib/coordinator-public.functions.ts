@@ -410,13 +410,20 @@ export const unhideJobForDriver = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const getDriverStatement = createServerFn({ method: "GET" })
+export const getDriverStatement = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       token: z.string().min(8).max(128),
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       payment: z.enum(["all", "paid", "pending"]).optional(),
+      status: z.array(z.string()).optional(),
+      flight_status: z.array(z.string()).optional(),
+      flight_contains: z.string().trim().max(80).optional(),
+      from_contains: z.string().trim().max(120).optional(),
+      to_contains: z.string().trim().max(120).optional(),
+      pax_contains: z.string().trim().max(120).optional(),
+      search: z.string().trim().max(200).optional(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -424,8 +431,20 @@ export const getDriverStatement = createServerFn({ method: "GET" })
     if (!link) throw new Error("invalid_or_expired_link");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin.from("jobs")
-      .select("id, date, time, pickup_at, from_location, to_location, clientcompanyname, vehicle, status, payment_status")
-      .order("date", { ascending: true }).order("time", { ascending: true });
+      .select(`
+        id, date, time, pickup_at, status, payment_status,
+        from_location, to_location, from_flight, to_flight, flightorship,
+        flight_status, flight_status_note,
+        clientcompanyname, vehicle,
+        price_amount, price_currency, payment_method, price_set_by,
+        driver_actual_minutes, driver_reported_km,
+        driver_accepted_at, deletion_requested_at, created_at,
+        drivers(id,name,phone,vehicle),
+        pax(id,name,status,boarded_at),
+        job_labels(trip_labels(id,name,color))
+      `)
+      .order("date", { ascending: true }).order("time", { ascending: true })
+      .limit(5000);
     if (link.subject_id) {
       q = q.eq("driver_id", link.subject_id);
     } else {
@@ -434,10 +453,64 @@ export const getDriverStatement = createServerFn({ method: "GET" })
     if (data.from) q = q.gte("date", data.from);
     if (data.to) q = q.lte("date", data.to);
     if (data.payment && data.payment !== "all") q = q.eq("payment_status", data.payment);
+    if (data.status?.length) q = q.in("status", data.status as never);
+    if (data.flight_status?.length) q = q.in("flight_status", data.flight_status as never);
+    if (data.flight_contains) q = q.or(`from_flight.ilike.%${data.flight_contains}%,to_flight.ilike.%${data.flight_contains}%,flightorship.ilike.%${data.flight_contains}%`);
+    if (data.from_contains) q = q.ilike("from_location", `%${data.from_contains}%`);
+    if (data.to_contains) q = q.ilike("to_location", `%${data.to_contains}%`);
+    if (data.search) {
+      const s = data.search.replace(/[%,]/g, "");
+      q = q.or(`from_location.ilike.%${s}%,to_location.ilike.%${s}%,flightorship.ilike.%${s}%,from_flight.ilike.%${s}%,to_flight.ilike.%${s}%,clientcompanyname.ilike.%${s}%`);
+    }
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    let jobs = (rows ?? []) as any[];
+    if (data.pax_contains) {
+      const needle = data.pax_contains.toLowerCase();
+      jobs = jobs.filter((j) =>
+        (j.pax ?? []).some((p: any) => (p.name ?? "").toLowerCase().includes(needle))
+      );
+    }
+    return jobs.map((j) => {
+      const pax = j.pax ?? [];
+      const labels = (j.job_labels ?? []).map((x: any) => x.trip_labels).filter(Boolean);
+      return {
+        id: j.id,
+        date: j.date,
+        time: j.time,
+        pickup_at: j.pickup_at,
+        status: j.status,
+        payment_status: j.payment_status,
+        from_location: j.from_location,
+        to_location: j.to_location,
+        flight: j.from_flight || j.to_flight || j.flightorship || "",
+        flight_status: j.flight_status ?? "",
+        flight_status_note: j.flight_status_note ?? "",
+        clientcompanyname: j.clientcompanyname ?? "",
+        vehicle: j.vehicle ?? "",
+        driver_name: j.drivers?.name ?? "",
+        driver_phone: j.drivers?.phone ?? "",
+        driver_vehicle: j.drivers?.vehicle ?? "",
+        pax_count: pax.length,
+        pax_names: pax.map((p: any) => p.name).join(", "),
+        pax_boarded: pax.filter((p: any) => !!p.boarded_at).length,
+        labels: labels.map((l: any) => l.name).join(", "),
+        price_amount: j.price_amount != null ? Number(j.price_amount) : null,
+        price_currency: j.price_currency ?? "",
+        price_display: j.price_amount != null
+          ? `${Number(j.price_amount).toFixed(2)} ${j.price_currency ?? ""}`.trim()
+          : "",
+        payment_method: j.payment_method ?? "",
+        price_set_by: j.price_set_by ?? "",
+        driver_actual_minutes: j.driver_actual_minutes ?? null,
+        driver_reported_km: j.driver_reported_km != null ? Number(j.driver_reported_km) : null,
+        driver_accepted_at: j.driver_accepted_at,
+        deletion_requested_at: j.deletion_requested_at,
+        created_at: j.created_at,
+      };
+    });
   });
+
 
 
 export const driverAcceptJob = createServerFn({ method: "POST" })
