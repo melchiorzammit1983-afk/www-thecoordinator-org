@@ -2892,10 +2892,13 @@ export const aiSuggestTripGroupings = createServerFn({ method: "POST" })
     ).join("\n");
 
     const parsed = await callGemini(
-      `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
+      await buildSystemPrompt(c.id,
+        `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
+      ),
       "gemini-2.5-flash-lite",
       { maxOutputTokens: 1200 },
     );
+
     const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
     return { suggestions: groups };
   });
