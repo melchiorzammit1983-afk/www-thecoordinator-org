@@ -66,6 +66,21 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const setEntFn = useServerFn(setFeatureEntitlement);
+  const clearEntFn = useServerFn(clearFeatureEntitlement);
+  const toggleMut = useMutation({
+    mutationFn: ({ feature, enabled }: { feature: FeatureKey; enabled: boolean }) =>
+      setEntFn({ data: { company_id: company.id, feature, enabled } }),
+    onSuccess: () => { toast.success("Access updated"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const clearMut = useMutation({
+    mutationFn: (feature: FeatureKey) =>
+      clearEntFn({ data: { company_id: company.id, feature } }),
+    onSuccess: () => { toast.success("Reverted to plan default"); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const [grantAmt, setGrantAmt] = useState("500");
 
   const currentPlanId = billing?.subscription?.plan_id ?? "";
