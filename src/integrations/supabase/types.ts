@@ -571,6 +571,7 @@ export type Database = {
           owner_user_id: string | null
           phone: string | null
           points_balance: number
+          referral_code: string
           require_client_company: boolean
           status: Database["public"]["Enums"]["company_status"]
           updated_at: string
@@ -591,6 +592,7 @@ export type Database = {
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
+          referral_code?: string
           require_client_company?: boolean
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
@@ -611,6 +613,7 @@ export type Database = {
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
+          referral_code?: string
           require_client_company?: boolean
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string

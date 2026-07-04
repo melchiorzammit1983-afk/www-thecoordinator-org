@@ -14,11 +14,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-type Search = { demo?: string | number | boolean };
+type Search = { demo?: string | number | boolean; ref?: string };
 
 export const Route = createFileRoute("/request-access")({
   validateSearch: (s: Record<string, unknown>): Search => ({
     demo: s.demo as Search["demo"],
+    ref: typeof s.ref === "string" ? s.ref.slice(0, 40) : undefined,
   }),
   head: () => ({
     meta: [
@@ -44,6 +45,7 @@ function RequestAccessPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const isDemo = String(search.demo ?? "") === "1" || search.demo === true;
+  const refCode = (search.ref ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -86,6 +88,7 @@ function RequestAccessPage() {
         message: parsed.data.message || null,
         kind: isDemo ? "demo" : "access",
         status: "new",
+        referral_code: refCode || null,
       } as never);
       if (error) throw error;
       setDone(true);
@@ -141,6 +144,11 @@ function RequestAccessPage() {
               ? "Tell us about your operation and we'll walk you through The Coordinator live."
               : "The Coordinator is invite-only. Fill this in and we'll approve your account within 24 hours."}
           </p>
+          {refCode && (
+            <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Referred by <span className="font-mono">{refCode}</span> — we'll credit them when your account is approved.
+            </div>
+          )}
 
           <form onSubmit={submit} className="space-y-4">
             <div>
