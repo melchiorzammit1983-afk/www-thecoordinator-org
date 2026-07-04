@@ -138,6 +138,9 @@ function DriverManifest() {
   }, [jobs.length, archivedJobs.length]);
 
 
+  const branding = data?.branding;
+  useFavicon(branding?.logo_url ?? null);
+
   if (isLoading) {
     return (
       <div className="min-h-screen grid place-items-center">
@@ -151,8 +154,7 @@ function DriverManifest() {
   if (!data) return <NotFound />;
 
   const driver = data.driver;
-  const branding = data.branding;
-  useFavicon(branding?.logo_url ?? null);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background pb-28">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
