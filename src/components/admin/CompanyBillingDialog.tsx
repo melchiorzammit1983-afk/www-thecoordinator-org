@@ -146,6 +146,42 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
               </div>
             </section>
 
+            {/* AI feature access (per-company override of plan) */}
+            <section>
+              <h3 className="text-sm font-medium mb-2 flex items-center gap-2"><Sparkles className="h-4 w-4" /> AI feature access</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Toggle each AI feature for this company. Overrides the plan default; use "Reset" to revert.
+              </p>
+              <div className="space-y-1.5">
+                {AI_FEATURE_KEYS.map((k) => {
+                  const label = FEATURE_CATALOG.find((f) => f.key === k)?.label ?? k;
+                  const row = (entRows ?? []).find((e: any) => e.key === k);
+                  const enabled = row ? !!row.enabled : true;
+                  const overridden = !!row?.has_override;
+                  return (
+                    <div key={k} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{label}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {overridden ? "Custom override" : "Plan default"}
+                        </div>
+                      </div>
+                      {overridden && (
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => clearMut.mutate(k)}>
+                          Reset
+                        </Button>
+                      )}
+                      <Switch
+                        checked={enabled}
+                        onCheckedChange={(v) => toggleMut.mutate({ feature: k, enabled: v })}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+
             {/* Recent ledger */}
             <section>
               <h3 className="text-sm font-medium mb-2">Recent activity</h3>
