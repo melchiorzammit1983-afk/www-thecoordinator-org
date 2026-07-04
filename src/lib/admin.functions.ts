@@ -345,7 +345,24 @@ export const listAccessRequests = createServerFn({ method: "GET" })
     if (data.status !== "all") q = q.eq("status", data.status);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    const list = rows ?? [];
+    const codes = Array.from(new Set(
+      list.map((r: any) => r.referral_code).filter((c: any): c is string => !!c),
+    ));
+    let refMap: Record<string, { id: string; name: string }> = {};
+    if (codes.length) {
+      const { data: companies } = await supabaseAdmin
+        .from("companies")
+        .select("id, name, referral_code")
+        .in("referral_code", codes as never);
+      for (const c of (companies ?? []) as any[]) {
+        if (c.referral_code) refMap[c.referral_code] = { id: c.id, name: c.name };
+      }
+    }
+    return list.map((r: any) => ({
+      ...r,
+      referred_by: r.referral_code ? refMap[r.referral_code] ?? null : null,
+    }));
   });
 
 export const setAccessRequestStatus = createServerFn({ method: "POST" })
