@@ -15,7 +15,9 @@ import { Switch } from "@/components/ui/switch";
 import {
   adminGetCompanyBilling, adminListPlans, adminSetCompanyPlan, adminGrantPoints,
   adminSetFeatureCap, listFeatureEntitlements, setFeatureEntitlement, clearFeatureEntitlement,
+  adminListCompanyPriceOverrides, adminSetCompanyPriceOverride,
 } from "@/lib/admin.functions";
+import { listAiFeatureCosts } from "@/lib/billing.functions";
 import type { FeatureKey } from "@/lib/features";
 import { AI_FEATURE_KEYS, FEATURE_CATALOG } from "@/lib/features";
 
