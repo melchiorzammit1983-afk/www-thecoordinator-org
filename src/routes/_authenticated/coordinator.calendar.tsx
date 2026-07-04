@@ -366,7 +366,30 @@ function CalendarPage() {
 
   const isPendingClient = (j: Job) =>
     !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
-  const visibleAll = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const afterAlerts = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const visibleAll = trafficFilter.size
+    ? afterAlerts.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+    : afterAlerts;
+  const severityCounts: Record<string, number> = { light: 0, moderate: 0, heavy: 0, severe: 0 };
+  for (const j of afterAlerts) {
+    const s = String(j.traffic_severity ?? "");
+    if (s in severityCounts) severityCounts[s]++;
+  }
+  const SEV_RANK: Record<string, number> = { severe: 4, heavy: 3, moderate: 2, light: 1 };
+  const trafficSorted = trafficSort === "none" ? null : [...visibleAll].sort((a, b) => {
+    if (trafficSort === "severity") {
+      const rb = SEV_RANK[String(b.traffic_severity ?? "")] ?? 0;
+      const ra = SEV_RANK[String(a.traffic_severity ?? "")] ?? 0;
+      if (rb !== ra) return rb - ra;
+      const db = (b.traffic_delay_minutes ?? 0) - (a.traffic_delay_minutes ?? 0);
+      if (db !== 0) return db;
+    } else {
+      const av = a.leave_by_at ? new Date(a.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+      const bv = b.leave_by_at ? new Date(b.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+      if (av !== bv) return av - bv;
+    }
+    return ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""));
+  });
   const pendingClientJobs = visibleAll.filter(isPendingClient);
   const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
