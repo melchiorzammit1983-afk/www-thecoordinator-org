@@ -1012,6 +1012,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       driverLocations,
       identity,
       openSos: openSos ?? [],
+      branding,
     };
   });
 
