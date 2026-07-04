@@ -417,6 +417,15 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
       driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
     } as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+    // Withdraw any still-open price proposals from this driver on this job.
+    if (link.subject_id) {
+      await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled", responded_at: new Date().toISOString(),
+      } as never)
+        .eq("job_id", data.job_id)
+        .eq("from_driver_id", link.subject_id)
+        .in("status", ["proposed", "countered"]);
+    }
     return { ok: true };
   });
 
