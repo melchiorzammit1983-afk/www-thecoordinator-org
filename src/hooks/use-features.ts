@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyFeatures } from "@/lib/coordinator.functions";
+import { getMyBilling } from "@/lib/billing.functions";
 import { supabase } from "@/integrations/supabase/client";
 import type { FeatureKey } from "@/lib/features";
 
@@ -9,7 +10,6 @@ export function useFeatures() {
   const fn = useServerFn(getMyFeatures);
   const qc = useQueryClient();
 
-  // Realtime: when the admin toggles any entitlement, invalidate immediately.
   useEffect(() => {
     const channel = supabase
       .channel(`feature-entitlements-self-${Math.random().toString(36).slice(2)}`)
@@ -28,7 +28,7 @@ export function useFeatures() {
     queryKey: ["my-features"],
     queryFn: () => fn() as Promise<Record<string, boolean>>,
     staleTime: 0,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
@@ -36,7 +36,34 @@ export function useFeatures() {
 
 export function useFeature(key: FeatureKey): boolean {
   const { data, isLoading } = useFeatures();
-  // Before first load: allow (avoid flicker). After load: strict.
   if (isLoading || !data) return true;
   return data[key] !== false;
+}
+
+export function useMyBilling() {
+  const fn = useServerFn(getMyBilling);
+  return useQuery({
+    queryKey: ["my-billing"],
+    queryFn: () => fn() as Promise<{
+      company: { id: string; name: string; points_balance: number } | null;
+      subscription: { plan_id: string; points_remaining_this_period: number; current_period_end: string; plans: { name: string; included_points: number; price_monthly: number } } | null;
+      costs: { feature_key: string; points_cost: number; label: string | null }[];
+      recent: { id: string; feature_key: string | null; points_deducted: number; created_at: string; note: string | null }[];
+    } | null>,
+    staleTime: 15_000,
+  });
+}
+
+export function useFeatureCost(key: string): number {
+  const { data } = useMyBilling();
+  if (!data) return 1;
+  return data.costs.find((c) => c.feature_key === key)?.points_cost ?? 1;
+}
+
+export function usePointsRemaining(): number {
+  const { data } = useMyBilling();
+  if (!data) return 0;
+  const plan = data.subscription?.points_remaining_this_period ?? 0;
+  const balance = data.company?.points_balance ?? 0;
+  return plan + balance;
 }
