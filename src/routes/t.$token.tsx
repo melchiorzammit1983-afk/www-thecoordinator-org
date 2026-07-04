@@ -167,6 +167,8 @@ function ClientTripPortal() {
     if (hasIdentity) setPickerOpen(false);
   }, [needsIdentity, hasIdentity]);
 
+  useFavicon((data as any)?.branding?.logo_url ?? null);
+
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Offline banner */}
