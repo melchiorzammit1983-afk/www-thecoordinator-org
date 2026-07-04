@@ -29,6 +29,7 @@ type AiConfig = {
   auto_reply_drafts: boolean;
   ai_command_enabled: boolean;
   voice_to_trip_enabled: boolean;
+  auto_coordinate_enabled: boolean;
 };
 
 type AiRule = {
@@ -84,6 +85,7 @@ function TogglesSection() {
   if (isLoading || !cfg) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const rows: { key: keyof AiConfig; label: string; desc: string }[] = [
+    { key: "auto_coordinate_enabled", label: "AI Auto-Coordinate", desc: "AI reviews the whole unassigned backlog and proposes groupings + driver assignments. Nothing runs without your approval." },
     { key: "auto_assign_enabled", label: "Auto-assign drivers", desc: "New trips are matched to a free driver instantly." },
     { key: "auto_extract_bulk", label: "Bulk-paste AI extraction", desc: "Turn pasted text into structured trips automatically." },
     { key: "voice_to_trip_enabled", label: "Voice → trip", desc: "Record or upload a voice note to create trips." },

@@ -1,85 +1,108 @@
-## Landing page updates (`src/routes/index.tsx`)
 
-**Wording — remove "Free":**
-- Hero CTA: "Get Started Free" → "Get Started" (button links to `/request-access`, not `/auth`).
-- Hero micro-badges: replace "No credit card" with "Pay as you go".
-- Add a small tagline under the hero: *"Points-based pricing — pay only for what you use."*
-- Anywhere else "Free" appears (trial mentions, badges), rewrite to "Pay as you go" / "Only pay for what you use".
-- Nav bar / header: add a secondary "Request Access" link; keep "Sign in" going to `/auth` for existing users.
+## Goal
+Turn today's "AI suggest groups" button into a broader **AI Auto-Coordinate** feature that plans the whole backlog (not just one day), proposes every action for one-click approval, is guarded by a **master switch** the coordinator controls, and consumes **points** on a schedule the admin picks.
 
-**New sections (kept simple):**
+Per your answers:
+- **Autonomy:** propose-only — AI never mutates trips until the coordinator approves.
+- **Runs:** manual "Run AI Auto-Coordinate now" button + one daily scheduled pass.
+- **Points:** admin chooses metering mode (default: per action taken).
+- **Switch:** single master toggle in AI Center.
 
-1. **How points work** (3 short cards):
-   - "1 point ≈ one small action" (trip created 1.5 pts, dispatch 0.5 pts, client SMS 0.25 pts).
-   - "Top up anytime — no subscription lock-in."
-   - "Only pay for what you actually use."
+---
 
-2. **FAQ** (accordion, 5 items):
-   - How much does it cost? → Pay-as-you-go via points; example rates.
-   - Do drivers need to install an app? → No.
-   - Is it available outside Malta? → Currently focused on Malta.
-   - How do I get access? → Request access, we approve, you're in.
-   - Where is my data stored? → Secure cloud with role-based access.
+## User-facing changes
 
-3. **Trust strip** (placeholder):
-   - Grayscale row of 4–6 partner logo slots (`bg-slate-100` boxes with "Your logo" until real ones are added).
-   - Single testimonial quote card below (placeholder text you can swap later).
+### 1. Calendar toolbar
+Replace `AiGroupSuggestionsButton` with `AiAutoCoordinateButton`:
+- Label: "AI Auto-Coordinate" (Sparkles icon)
+- Opens a dialog that runs a planning pass over **all unassigned jobs** (not filtered by the selected date).
+- Dialog shows a **proposal list** grouped by action type:
+  - Group trips (N groups)
+  - Assign driver (N trips)
+  - Reassign / rebalance (N trips)
+- Each row: Accept / Skip. Footer: **Accept all** / **Skip all** / **Close**.
+- Empty state: "Nothing to coordinate — you're all caught up."
+- Disabled with tooltip when master switch is OFF or feature entitlement is off.
 
-**Book a Demo:** the current `mailto:` link becomes a `<Link to="/request-access" search={{ demo: 1 }}>` so demo requests land in the same form (pre-checked "This is a demo request").
+### 2. AI Center → Toggles
+Add one new row above the existing toggles:
+- **AI Auto-Coordinate** — "AI reviews unassigned trips and proposes groupings + driver assignments. Nothing runs without your approval."
+- Stored as `auto_coordinate_enabled` on `ai_configuration`.
 
-## New route: `src/routes/request-access.tsx`
+### 3. Admin → AI feature costs
+The existing admin pricing table (`ai_feature_costs`) already supports per-feature `points_cost`. We add one new row `ai_auto_coordinate` and one **metering mode** column so admin picks how to charge:
+- `per_action` (default) — deduct on each accepted proposal
+- `per_run` — deduct once per planning pass
+- `per_trip` — deduct per unique trip touched in the run
 
-Public route (SSR on). Simple centered card form using existing shadcn `Input`, `Select`, `Textarea`, `Checkbox`, `Button`.
+---
 
-Fields (all Zod-validated, trimmed, length-capped):
-- Company name * (max 120)
-- Contact name * (max 80)
-- Email * (email, max 200)
-- Phone * (max 40)
-- Role * — Select: Hotel / Shipping agent / Fleet owner / Other
-- Fleet size / expected trips per month * — Select: 1–5, 6–20, 21–50, 50+
-- Message (optional, max 1000)
-- Hidden/auto `kind`: `demo` if `?demo=1` in URL, else `access`. UI shows a small badge "Demo request" when in demo mode.
+## Backend changes
 
-Submit calls a public `createServerFn` `submitAccessRequest` that:
-1. Validates with Zod.
-2. Inserts into existing `public.access_requests` (adds `kind` column via migration — see below).
-3. Fires an email notification to you (admin) via `email_domain--scaffold_transactional_email` infra if an email domain is configured; otherwise no-op (log only). Subject differs: `[Demo] New demo request from X` vs `New access request from X`.
-4. Returns `{ ok: true }`. Form shows a success card: *"Thanks — we'll be in touch within 24h."*
+### Server functions (`src/lib/coordinator.functions.ts`)
+1. **`aiAutoCoordinate`** (`POST`, auth) — replaces `aiSuggestTripGroupings`:
+   - Reads ALL company `jobs` with `driver_id IS NULL` and `pickup_at >= now() - 24h` (covers backlog + upcoming).
+   - Checks `ai_configuration.auto_coordinate_enabled === true`; else throws.
+   - Loads free-driver roster.
+   - Calls Gemini with a single planner prompt → returns `{ proposals: [{ kind: "group"|"assign", trip_ids, driver_id?, reason }] }`.
+   - Meters points based on admin mode:
+     - `per_run` → `spendOrThrow` once here
+     - `per_trip` → deduct `distinct_trip_count × cost`
+     - `per_action` → **do not spend here**; deduct on accept
+   - Returns proposals + `metering_mode` so the UI knows whether accept costs points.
+2. **`applyAutoCoordinateProposal`** (`POST`, auth) — accepts one proposal:
+   - `kind:"group"` → calls existing `groupJobs` logic
+   - `kind:"assign"` → sets `driver_id` on the trip(s)
+   - If `metering_mode === "per_action"`, `spendOrThrow` once here.
+3. Keep `aiSuggestTripGroupings` exported as a thin wrapper for backward compatibility, or delete after removing calendar imports (delete is cleaner).
 
-Head metadata: title "Request access — The Coordinator", description matches, `noindex` (avoid crawler spam on the form).
+### Feature catalog (`src/lib/features.ts`)
+- Rename `ai_group_suggestions` → `ai_auto_coordinate` (update label/description). Keep the old key as an alias in `FEATURE_CATALOG` for one release so existing entitlements/costs rows keep working, or write a data migration that renames the rows in `ai_feature_costs` and `company_feature_entitlements`. Plan uses the migration path — cleaner.
 
-## Database migration
+### Database (migration)
+```text
+ALTER TABLE ai_configuration
+  ADD COLUMN auto_coordinate_enabled boolean NOT NULL DEFAULT false;
 
-Small schema change on `public.access_requests`:
-- Add `kind text not null default 'access' check (kind in ('access','demo'))`.
-- Add `notes_admin text` (for you to jot notes when reviewing).
-- No new tables. Existing RLS + admin-only read policies stay.
+ALTER TABLE ai_feature_costs
+  ADD COLUMN metering_mode text NOT NULL DEFAULT 'per_action'
+    CHECK (metering_mode IN ('per_action','per_run','per_trip'));
 
-Regenerate `types.ts` after approval.
+-- Rename existing feature key
+UPDATE ai_feature_costs           SET feature_key='ai_auto_coordinate' WHERE feature_key='ai_group_suggestions';
+UPDATE company_feature_entitlements SET feature='ai_auto_coordinate'   WHERE feature='ai_group_suggestions';
+UPDATE company_feature_price_overrides SET feature_key='ai_auto_coordinate' WHERE feature_key='ai_group_suggestions';
 
-## Admin visibility
+-- Seed default cost if missing
+INSERT INTO ai_feature_costs (feature_key, points_cost, enabled, block_on_empty, metering_mode)
+VALUES ('ai_auto_coordinate', 2, true, true, 'per_action')
+ON CONFLICT (feature_key) DO NOTHING;
+```
+GRANT statements already exist on these tables — no new tables created.
 
-Existing admin panel already surfaces `access_requests`. Add a "Demo" badge next to demo rows (small `Badge` component change in the admin access-requests table — the row where `kind='demo'`). No new admin page.
+### Daily scheduled pass
+New `src/routes/api/public/cron/ai-auto-coordinate.ts` route:
+- For each company with `auto_coordinate_enabled=true`, runs `aiAutoCoordinate` and stores the proposals on a lightweight cache (reuse `ai_command_log` with `mode='auto_coordinate'`) so the coordinator sees them next time they open the dialog.
+- Scheduled via `pg_cron` daily at 06:30 UTC using the existing rollover-cron pattern already in the project.
 
-## Notification to you
-
-Two options depending on your setup:
-- **If Lovable Emails is set up on this project** (custom domain): send via the transactional email infra to your admin email (`hello@coordinatormt.com` or whatever you prefer — I'll ask before wiring).
-- **If not yet set up**: I'll leave the email hook stubbed with a clear TODO and only insert the DB row. You'll still see it in the admin panel with a "New" indicator.
+---
 
 ## Files touched
+- `src/components/coordinator/AiGroupSuggestionsButton.tsx` → rename/rewrite to `AiAutoCoordinateButton.tsx` (propose-list UI, per-row accept).
+- `src/routes/_authenticated/coordinator.calendar.tsx` → swap import + feature-flag key + drop `date` prop.
+- `src/routes/_authenticated/coordinator.ai-center.tsx` → add master toggle row.
+- `src/lib/coordinator.functions.ts` → add `aiAutoCoordinate`, `applyAutoCoordinateProposal`; remove/alias `aiSuggestTripGroupings`; extend `AiConfig` shape + `saveAiConfig` validator with `auto_coordinate_enabled`.
+- `src/lib/features.ts` → rename catalog entry.
+- `src/components/admin/FeatureEntitlementsDialog.tsx` (if it edits costs) → surface `metering_mode` dropdown; otherwise add to admin pricing page.
+- Migration: schema + data rename as above.
+- New cron route + pg_cron schedule.
 
-- `src/routes/index.tsx` — copy edits, new sections, CTA rewiring.
-- `src/routes/request-access.tsx` — new.
-- `src/lib/public.functions.ts` (or extend existing public functions file) — `submitAccessRequest` server fn.
-- `src/components/admin/AccessRequestsTable.tsx` (or wherever it lives) — demo badge.
-- `supabase/migrations/…` — add `kind`, `notes_admin` columns.
+## What stays the same
+- Existing entitlements, points ledger, and `spend_points` RPC — reused as-is.
+- `groupJobs`, `auto_assign_job` RPC — reused inside `applyAutoCoordinateProposal`.
+- No touch to the AI Command Bar, Rules, or other AI Center sections.
 
-## Out of scope for this pass
-
-- Actual auto-provisioning of accounts (you approve manually in admin panel — same as today).
-- Payment / Stripe integration.
-- Marketing SEO deep dive.
-
-**One thing I need from you before building:** which email should receive the "new request" / "new demo" notifications? (Also — is Lovable Emails already configured for this project, or should I skip the email step and stick to admin-panel-only for now?)
+## Out of scope (ask again if needed)
+- Full autopilot / auto-execute (you chose propose-only).
+- Reassignment of already-assigned trips (current unassigned-only scope keeps risk low).
+- Per-scope sub-toggles (you chose a single master switch).

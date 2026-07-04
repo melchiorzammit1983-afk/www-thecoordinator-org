@@ -54,7 +54,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
-import { AiGroupSuggestionsButton } from "@/components/coordinator/AiGroupSuggestionsButton";
+import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
 import { useFeature } from "@/hooks/use-features";
 
 
@@ -527,7 +527,7 @@ function CalendarPage() {
 
 
       <div className="flex justify-end mb-2">
-        <AiGroupSuggestionsButton date={range.from} />
+        <AiAutoCoordinateButton />
       </div>
 
       {trafficSorted ? (
@@ -903,7 +903,7 @@ function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
-  const suggestionsEnabled = useFeature("ai_group_suggestions");
+  const suggestionsEnabled = useFeature("ai_auto_coordinate");
   const suggestions = useMemo(
     () => (suggestionsEnabled ? suggestGroups(jobs) : []),
     [jobs, suggestionsEnabled],

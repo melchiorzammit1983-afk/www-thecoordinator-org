@@ -12,7 +12,7 @@ export type FeatureKey =
   | "bulk_paste"
   | "chat"
   | "ai_extraction"
-  | "ai_group_suggestions"
+  | "ai_auto_coordinate"
   | "ai_daily_plan"
   | "ai_reply_drafter"
   | "ai_voice_to_trip"
@@ -37,7 +37,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "bulk_paste",      label: "Bulk paste",        description: "WhatsApp bulk trip import" },
   { key: "chat",            label: "Trip chat",         description: "Coordinator ↔ driver chat on trips" },
   { key: "ai_extraction",   label: "AI trip extraction", description: "Understand pasted messages, files, or links into trips using AI", isAi: true },
-  { key: "ai_group_suggestions", label: "AI auto-group suggestions", description: "Suggest groupings of unassigned trips by time & route", isAi: true },
+  { key: "ai_auto_coordinate", label: "AI Auto-Coordinate", description: "AI reviews the whole unassigned backlog and proposes groupings + driver assignments for one-click approval", isAi: true },
   { key: "ai_daily_plan",   label: "AI daily plan",     description: "Order a driver's trips to minimize idle time & backtracking", isAi: true },
   { key: "ai_reply_drafter", label: "AI reply drafter", description: "Draft 2–3 chat replies in the client's language & tone", isAi: true },
   { key: "ai_voice_to_trip", label: "AI voice-note → trip", description: "Record or upload a voice note; AI transcribes and extracts trips", isAi: true },

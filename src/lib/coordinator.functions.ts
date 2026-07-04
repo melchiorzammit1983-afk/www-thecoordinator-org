@@ -3055,43 +3055,159 @@ async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?
   try { return JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
 }
 
-// ---------- AI: Group suggestions ----------
-export const aiSuggestTripGroupings = createServerFn({ method: "POST" })
+// ---------- AI: Auto-Coordinate (propose-only autopilot) ----------
+type CoordProposal =
+  | { kind: "group"; trip_ids: string[]; reason: string }
+  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string };
+
+export async function runAutoCoordinate(companyId: string) {
+  const sb = await getAdminClient();
+  const { data: cfg } = await sb.from("ai_configuration")
+    .select("auto_coordinate_enabled").eq("company_id", companyId).maybeSingle();
+  if (!cfg || cfg.auto_coordinate_enabled !== true) {
+    throw new Error("AI Auto-Coordinate is off — turn it on in AI Center → Toggles.");
+  }
+  await assertFeatureEnabled(companyId, "ai_auto_coordinate");
+
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const [{ data: jobs }, { data: drivers }] = await Promise.all([
+    sb.from("jobs")
+      .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
+      .eq("company_id", companyId)
+      .is("driver_id", null)
+      .or(`pickup_at.gte.${cutoff},pickup_at.is.null`)
+      .order("pickup_at", { ascending: true, nullsFirst: false })
+      .limit(120),
+    sb.from("drivers")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .neq("status", "offline")
+      .limit(60),
+  ]);
+
+  const list = jobs ?? [];
+  const drv = drivers ?? [];
+
+  const { data: costRow } = await sb.from("ai_feature_costs")
+    .select("points_cost, metering_mode")
+    .eq("feature_key", "ai_auto_coordinate")
+    .maybeSingle();
+  const meteringMode: "per_action" | "per_run" | "per_trip" =
+    (costRow?.metering_mode as any) ?? "per_action";
+
+  if (list.length === 0) {
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+  }
+
+  const tripLines = list.map((j: any) =>
+    `${j.id}: ${j.pickup_at ?? j.date + " " + (j.time ?? "??")} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
+  ).join("\n");
+  const driverLines = drv.map((d: any) => `${d.id}: ${d.name ?? ""}`).join("\n") || "(no free drivers)";
+
+  const parsed = await callGemini(
+    await buildSystemPrompt(companyId,
+      `You are a transport dispatch autopilot. Look at the ENTIRE unassigned backlog and propose the minimum set of actions that clears it.\n` +
+      `Return JSON: {"proposals":[\n` +
+      `  {"kind":"group","trip_ids":["uuid",...],"reason":"..."},\n` +
+      `  {"kind":"assign","trip_ids":["uuid",...],"driver_id":"uuid","reason":"..."}\n` +
+      `]}\n` +
+      `Rules: only real groups (2+ trips, same/near pickup within 30min AND overlapping routes). Only propose assignments when a specific driver clearly fits. Do NOT invent trip_ids or driver_ids — use only the IDs listed below.\n\n` +
+      `TRIPS:\n${tripLines}\n\nDRIVERS:\n${driverLines}`,
+    ),
+    "gemini-2.5-flash",
+    { maxOutputTokens: 2000 },
+  );
+
+  const tripIdSet = new Set(list.map((j: any) => j.id));
+  const driverIdSet = new Set(drv.map((d: any) => d.id));
+  const raw = Array.isArray(parsed?.proposals) ? parsed.proposals : [];
+  const proposals: CoordProposal[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== "object") continue;
+    const trip_ids = Array.isArray(p.trip_ids) ? p.trip_ids.filter((t: any) => typeof t === "string" && tripIdSet.has(t)) : [];
+    if (trip_ids.length === 0) continue;
+    if (p.kind === "group" && trip_ids.length >= 2) {
+      proposals.push({ kind: "group", trip_ids, reason: String(p.reason ?? "").slice(0, 300) });
+    } else if (p.kind === "assign" && typeof p.driver_id === "string" && driverIdSet.has(p.driver_id)) {
+      proposals.push({ kind: "assign", trip_ids, driver_id: p.driver_id, reason: String(p.reason ?? "").slice(0, 300) });
+    }
+  }
+
+  // Per-run / per-trip metering happens up-front; per-action defers to accept.
+  if (meteringMode === "per_run" && proposals.length > 0) {
+    await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate planning run");
+  } else if (meteringMode === "per_trip") {
+    const touched = new Set<string>();
+    for (const p of proposals) p.trip_ids.forEach((t) => touched.add(t));
+    const perCost = Number(costRow?.points_cost ?? 1);
+    for (let i = 0; i < touched.size; i++) {
+      await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate trip", undefined);
+      // NOTE: uses configured points_cost per touched trip via spend_points RPC.
+      void perCost;
+    }
+  }
+
+  return { proposals, metering_mode: meteringMode, considered: list.length };
+}
+
+export const aiAutoCoordinate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    return runAutoCoordinate(c.id);
+  });
+
+export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(i),
+    z.object({
+      kind: z.enum(["group", "assign"]),
+      trip_ids: z.array(z.string().uuid()).min(1).max(50),
+      driver_id: z.string().uuid().optional(),
+    }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    await assertFeatureEnabled(c.id, "ai_group_suggestions");
-    const supabaseAdmin = await getAdminClient();
-    const { data: jobs } = await supabaseAdmin
-      .from("jobs")
-      .select("id, name, surname, from_location, to_location, pickup_at, time, quantity")
-      .eq("company_id", c.id)
-      .eq("date", data.date)
-      .is("driver_id", null)
-      .limit(60);
-    const list = jobs ?? [];
-    if (list.length < 2) return { suggestions: [] as { trip_ids: string[]; reason: string }[] };
+    const sb = await getAdminClient();
 
-    await spendOrThrow(c.id, "ai_group_suggestions", `Group suggestions for ${data.date}`);
+    // Verify all trips belong to this company.
+    const { data: rows, error } = await sb.from("jobs")
+      .select("id, company_id, group_id" as any)
+      .in("id", data.trip_ids).eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length !== data.trip_ids.length) throw new Error("Some trips not found");
 
-    const summary = list.map((j: any) =>
-      `${j.id}: ${j.time ?? "??"} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
-    ).join("\n");
+    if (data.kind === "group") {
+      if (data.trip_ids.length < 2) throw new Error("Need at least 2 trips to group");
+      const existing = (rows as any[]).map((r) => r.group_id).find((g) => !!g) as string | undefined;
+      const gid = existing ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      const { error: uErr } = await sb.from("jobs")
+        .update({
+          group_id: gid,
+          grouped_count: data.trip_ids.length,
+          grouped_at: new Date().toISOString(),
+          group_name: "AI Auto-Coordinate",
+        } as never)
+        .in("id", data.trip_ids);
+      if (uErr) throw new Error(uErr.message);
+    } else {
+      if (!data.driver_id) throw new Error("Missing driver_id for assignment");
+      const { error: uErr } = await sb.from("jobs")
+        .update({ driver_id: data.driver_id, driver_accepted_at: null } as never)
+        .in("id", data.trip_ids)
+        .is("driver_id", null); // never overwrite existing assignments
+      if (uErr) throw new Error(uErr.message);
+    }
 
-    const parsed = await callGemini(
-      await buildSystemPrompt(c.id,
-        `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
-      ),
-      "gemini-2.5-flash-lite",
-      { maxOutputTokens: 1200 },
-    );
-
-    const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
-    return { suggestions: groups };
+    // Per-action metering (per_run / per_trip already charged at plan time).
+    const { data: costRow } = await sb.from("ai_feature_costs")
+      .select("metering_mode").eq("feature_key", "ai_auto_coordinate").maybeSingle();
+    if ((costRow?.metering_mode ?? "per_action") === "per_action") {
+      await spendOrThrow(c.id, "ai_auto_coordinate", `Auto-Coordinate ${data.kind}`);
+    }
+    return { ok: true };
   });
+
 
 // ---------- AI: Daily plan ----------
 export const aiPlanDriverDay = createServerFn({ method: "POST" })
@@ -3239,6 +3355,7 @@ export const getAiConfig = createServerFn({ method: "GET" })
       auto_reply_drafts: true,
       ai_command_enabled: true,
       voice_to_trip_enabled: true,
+      auto_coordinate_enabled: false,
     };
   });
 
@@ -3251,6 +3368,7 @@ export const saveAiConfig = createServerFn({ method: "POST" })
       auto_reply_drafts: z.boolean(),
       ai_command_enabled: z.boolean(),
       voice_to_trip_enabled: z.boolean(),
+      auto_coordinate_enabled: z.boolean(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
