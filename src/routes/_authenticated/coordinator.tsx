@@ -103,6 +103,15 @@ function CoordinatorLayout() {
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
           </div>
+          <div className="md:hidden ml-auto">
+            <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
+          </div>
+          <div className="md:hidden">
+            <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 h-8 px-2">
+              <LogOut className="h-4 w-4" />
+              <span className="text-xs">Sign out</span>
+            </Button>
+          </div>
           <div className="hidden md:block">
             <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
           </div>
