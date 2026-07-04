@@ -14,11 +14,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-type Search = { demo?: string | number | boolean };
+type Search = { demo?: string | number | boolean; ref?: string };
 
 export const Route = createFileRoute("/request-access")({
   validateSearch: (s: Record<string, unknown>): Search => ({
     demo: s.demo as Search["demo"],
+    ref: typeof s.ref === "string" ? s.ref.slice(0, 40) : undefined,
   }),
   head: () => ({
     meta: [
