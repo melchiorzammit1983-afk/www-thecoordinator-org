@@ -1414,6 +1414,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 <TripProgress status={job.status} compact />
               </div>
             )}
+            <TrafficBadge
+              info={{
+                traffic_delay_minutes: job.traffic_delay_minutes,
+                traffic_severity: job.traffic_severity,
+                leave_by_at: job.leave_by_at,
+                pickup_shift_reason: job.pickup_shift_reason,
+              }}
+              compact
+              className="mt-1"
+            />
             <div className="flex flex-wrap gap-1 mt-1">
               {paxCount > 0 && (() => {
                 const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
