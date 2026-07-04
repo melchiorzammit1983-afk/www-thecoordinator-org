@@ -14,7 +14,7 @@ export const getCompanyByLink = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data: row, error } = await supabaseAdmin
       .from("companies")
-      .select("id, name, require_client_company, status")
+      .select("id, name, require_client_company, status, logo_url")
       .eq("custom_link", data.token)
       .maybeSingle();
     if (error) throw new Error(error.message);
