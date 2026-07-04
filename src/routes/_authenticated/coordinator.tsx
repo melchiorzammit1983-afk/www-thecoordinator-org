@@ -97,9 +97,12 @@ function CoordinatorLayout() {
       <aside className="md:w-64 md:min-h-screen md:border-r bg-background flex md:flex-col">
         <div className="px-4 py-4 md:py-6 border-b flex items-center gap-3">
           <BrandLogo logoUrl={(company as any).logo_url ?? null} name={company.name} />
-          <div className="hidden md:block min-w-0">
+          <div className="hidden md:block min-w-0 flex-1">
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
+          </div>
+          <div className="hidden md:block">
+            <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
           </div>
         </div>
         <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">
