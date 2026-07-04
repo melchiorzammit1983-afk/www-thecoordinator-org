@@ -297,6 +297,24 @@ function ManualForm({
   );
 }
 
+type AiRow = {
+  pickupDate: string; pickupTime: string;
+  pickupAddress: string; deliveryAddress: string;
+  customerName: string; contactNumber: string;
+  transportType: string; quantity: string;
+};
+type AiResp = { type: "question"; payload: string } | { type: "data"; payload: AiRow[] };
+type ChatMsg = { role: "user" | "model"; text: string };
+
+function rowsToTsv(rows: AiRow[]): string {
+  const header = (SHEET_HEADERS as readonly string[]).join("\t");
+  const body = rows.map((r) => [
+    r.pickupDate, r.pickupTime, r.pickupAddress, r.deliveryAddress,
+    r.customerName, r.contactNumber, r.transportType, r.quantity,
+  ].map((c) => (c ?? "").toString().replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"));
+  return [header, ...body].join("\n");
+}
+
 function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
@@ -308,35 +326,60 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
   const incomplete = parsed.filter((t) => t.errors.length > 0);
   const aiEnabled = useFeature("ai_extraction");
 
+  // Chat state for the "Understand with AI" mini-chat
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [reply, setReply] = useState("");
+
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
   const aiFn = useServerFn(extractTripsFromText);
 
   const aiMut = useMutation({
-    mutationFn: () => aiFn({ data: { text: raw } }) as Promise<{ trips: any[] }>,
+    mutationFn: (messages: ChatMsg[]) =>
+      aiFn({ data: { messages } }) as Promise<AiResp>,
     onSuccess: (res) => {
-      const trips = res?.trips ?? [];
-      if (!trips.length) { toast.error("AI could not find any trips"); return; }
-      // Convert AI trips back to the parser's paste format so the existing review UI handles them.
-      const blocks = trips.map((t) => {
-        const lines: string[] = [];
-        if (t.pickup_date) lines.push(`📅 ${t.pickup_date} ⏰ ${t.pickup_time || ""}`.trim());
-        if (t.client_company) lines.push(`🏢 ${t.client_company}`);
-        if (t.from_location || t.flight_code) lines.push(`📍 From: ${t.from_location || "Airport"}`);
-        if (t.to_location || t.flight_code) lines.push(`📍 To: ${t.to_location || "Airport"}`);
-        if (t.flight_code) lines.push(`✈ ${t.flight_code}`);
-        if (t.contact_phone) lines.push(`📞 ${t.contact_phone}`);
-        if (t.passengers?.length) {
-          lines.push("👤 Names");
-          for (const p of t.passengers) lines.push(`• ${p}`);
-        }
-        return lines.join("\n");
-      }).join("\n\n");
-      setRaw(blocks);
-      toast.success(`AI extracted ${trips.length} trip${trips.length === 1 ? "" : "s"}`);
+      if (res.type === "question") {
+        setPendingQuestion(res.payload);
+        setChat((prev) => [...prev, { role: "model", text: res.payload }]);
+        return;
+      }
+      const rows = res.payload ?? [];
+      if (!rows.length) { toast.error("AI could not find any trips"); return; }
+      setRaw(rowsToTsv(rows));
+      setChatOpen(false);
+      setChat([]);
+      setPendingQuestion(null);
+      setReply("");
+      toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const startAi = () => {
+    const text = raw.trim();
+    if (text.length < 3) return;
+    const messages: ChatMsg[] = [{ role: "user", text }];
+    setChat(messages);
+    setChatOpen(true);
+    setPendingQuestion(null);
+    aiMut.mutate(messages);
+  };
+
+  const sendReply = () => {
+    const t = reply.trim();
+    if (!t) return;
+    const next: ChatMsg[] = [...chat, { role: "user", text: t }];
+    setChat(next);
+    setReply("");
+    setPendingQuestion(null);
+    aiMut.mutate(next);
+  };
+
+  const cancelChat = () => {
+    setChatOpen(false); setChat([]); setPendingQuestion(null); setReply("");
+  };
 
   const earliestValidDate = valid
     .map((t) => t.date)
@@ -384,11 +427,11 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {aiEnabled && (
+            {aiEnabled && !chatOpen && (
               <Button
                 type="button" size="sm" variant="outline"
                 disabled={aiMut.isPending || raw.trim().length < 3}
-                onClick={() => aiMut.mutate()}
+                onClick={startAi}
                 className="h-7"
               >
                 <Sparkles className="h-3 w-3 mr-1" />
@@ -397,17 +440,58 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
             )}
           </div>
         </div>
-        <Textarea
-          rows={10} value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          placeholder={"Paste rows copied from your Excel or Google Sheet — headers are optional.\nOr paste a WhatsApp/email message in any language.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-muted-foreground">
-          {aiEnabled
-            ? "You can paste rows straight from the template (headers optional), a WhatsApp/email message, or click ✨ Understand with AI."
-            : "You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
-        </p>
+
+        {chatOpen ? (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+            <div className="max-h-60 overflow-auto space-y-2">
+              {chat.map((m, i) => (
+                <div key={i} className={`text-xs rounded-md px-2 py-1.5 whitespace-pre-wrap ${
+                  m.role === "user"
+                    ? "bg-primary text-primary-foreground ml-auto max-w-[85%] w-fit"
+                    : "bg-background border max-w-[85%] w-fit"
+                }`}>
+                  {m.text}
+                </div>
+              ))}
+              {aiMut.isPending && (
+                <div className="text-xs text-muted-foreground italic">AI is thinking…</div>
+              )}
+            </div>
+            {pendingQuestion && !aiMut.isPending && (
+              <div className="flex gap-2">
+                <Input
+                  autoFocus value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="Type your answer…"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendReply(); } }}
+                />
+                <Button type="button" size="sm" onClick={sendReply} disabled={!reply.trim()}>
+                  Send
+                </Button>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button type="button" size="sm" variant="ghost" className="h-7" onClick={cancelChat}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Textarea
+            rows={10} value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            placeholder={"Paste rows copied from your Excel or Google Sheet — headers are optional.\nOr paste a WhatsApp/email message in any language, then click ✨ Understand with AI.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
+            className="font-mono text-xs"
+          />
+        )}
+
+        {!chatOpen && (
+          <p className="text-xs text-muted-foreground">
+            {aiEnabled
+              ? "Paste rows from the template, or a WhatsApp/email message and click ✨ Understand with AI. The AI may ask a short follow-up if info is missing."
+              : "You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
+          </p>
+        )}
 
       </div>
       {parsed.length > 0 && (
