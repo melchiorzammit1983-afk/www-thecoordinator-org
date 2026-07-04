@@ -108,11 +108,23 @@ export function RequestTopupDialog({ trigger }: { trigger?: React.ReactNode }) {
   );
 }
 
+function formatPoints(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
 export function PointsBadge() {
   const remaining = usePointsRemaining();
+  const negative = remaining < 0;
   return (
-    <Badge variant={remaining > 20 ? "secondary" : "destructive"} className="gap-1">
-      <Coins className="h-3 w-3" /> {remaining}
+    <Badge
+      variant={negative || remaining <= 20 ? "destructive" : "secondary"}
+      className="gap-1"
+      title={negative ? "Amount owed" : "Points remaining"}
+    >
+      <Coins className="h-3 w-3" />
+      {negative ? `Owed ${formatPoints(Math.abs(remaining))}` : formatPoints(remaining)}
     </Badge>
   );
 }

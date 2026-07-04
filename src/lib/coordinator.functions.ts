@@ -10,6 +10,35 @@ async function getAdminClient() {
   return supabaseAdmin;
 }
 
+/**
+ * Best-effort metering: deducts points for a feature but NEVER throws.
+ * Use for billable events that must not break core operations (trip creation,
+ * dispatch). Features with block_on_empty=true still deduct; overflow either
+ * hits the subscription pool or is allowed negative when block_on_empty=false.
+ */
+async function spendSoft(
+  companyId: string | null | undefined,
+  featureKey: string,
+  note: string,
+  jobId?: string,
+) {
+  if (!companyId) return;
+  try {
+    const sb = await getAdminClient();
+    await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: note,
+      _cost_override: undefined as unknown as number,
+    });
+  } catch {
+    // swallow — metering must never break the primary action
+  }
+}
+
+
+
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
     const supabaseAdmin = await getAdminClient();
@@ -390,6 +419,7 @@ export const createJob = createServerFn({ method: "POST" })
     }).select().single();
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
+    await spendSoft(c.id, "trip_created", "Trip created", row.id);
     return row;
   });
 
@@ -744,6 +774,7 @@ export const approveBooking = createServerFn({ method: "POST" })
     if (jErr) throw new Error(jErr.message);
     await supabaseAdmin.from("client_bookings")
       .update({ status: "accepted", job_id: job.id }).eq("id", data.id);
+    await spendSoft(c.id, "trip_created", "Trip from client booking", job.id);
     return { ok: true, job };
   });
 
@@ -831,6 +862,9 @@ export const generateMagicLink = createServerFn({ method: "POST" })
       subject_label: data.subject_label, token, expires_at, created_by: context.userId,
     }).select().single();
     if (error) throw new Error(error.message);
+    if (data.kind === "client") {
+      await spendSoft(c.id, "client_link_sent", "Client tracking link created");
+    }
     return row;
   });
 
@@ -981,6 +1015,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
+      await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
     }
     return { created };
   });
@@ -1276,6 +1311,9 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       .insert(insertPayload as never).select("id").single();
     if (iErr) throw new Error(iErr.message);
 
+    // Meter the child trip
+    await spendSoft(c.id, "trip_created", "Trip split from parent", job.id);
+
     if (inheritsChain) {
       // Mirror the accepted hop so chain timelines / statements reflect the split child.
       await supabaseAdmin.from("job_dispatch_hops").insert({
@@ -1287,6 +1325,7 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
         note: "split from parent trip",
         decided_at: new Date().toISOString(),
       });
+      await spendSoft(src.origin_company_id ?? src.company_id, "trip_dispatched", "Trip dispatched via split", job.id);
     }
 
     // Copy labels from parent → child so the card is visually complete.
@@ -2509,6 +2548,7 @@ export const getClientTripLink = createServerFn({ method: "POST" })
       const { error: uErr } = await supabaseAdmin.from("jobs")
         .update({ client_link_token: token } as never).eq("id", data.job_id);
       if (uErr) throw new Error(uErr.message);
+      await spendSoft(company.id, "client_link_sent", "Client trip link issued", data.job_id);
     }
     const { count } = await supabaseAdmin.from("pax")
       .select("id", { count: "exact", head: true }).eq("job_id", data.job_id);

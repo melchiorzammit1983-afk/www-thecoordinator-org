@@ -15,7 +15,9 @@ import { Switch } from "@/components/ui/switch";
 import {
   adminGetCompanyBilling, adminListPlans, adminSetCompanyPlan, adminGrantPoints,
   adminSetFeatureCap, listFeatureEntitlements, setFeatureEntitlement, clearFeatureEntitlement,
+  adminListCompanyPriceOverrides, adminSetCompanyPriceOverride,
 } from "@/lib/admin.functions";
+import { listAiFeatureCosts } from "@/lib/billing.functions";
 import type { FeatureKey } from "@/lib/features";
 import { AI_FEATURE_KEYS, FEATURE_CATALOG } from "@/lib/features";
 
@@ -182,6 +184,9 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
             </section>
 
 
+            {/* Per-company price overrides */}
+            <PriceOverridesSection companyId={company.id} />
+
             {/* Recent ledger */}
             <section>
               <h3 className="text-sm font-medium mb-2">Recent activity</h3>
@@ -190,7 +195,7 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
                   <div key={l.id} className="px-3 py-1.5 flex items-center gap-2">
                     <span className="text-muted-foreground min-w-[130px]">{new Date(l.created_at).toLocaleString()}</span>
                     <span className="font-mono flex-1 truncate">{l.feature_key ?? "—"}</span>
-                    <Badge variant="secondary" className="text-[10px]">{l.points_deducted > 0 ? `-${l.points_deducted}` : `+${Math.abs(l.points_deducted)}`}</Badge>
+                    <Badge variant="secondary" className="text-[10px]">{Number(l.points_deducted) > 0 ? `-${Number(l.points_deducted)}` : `+${Math.abs(Number(l.points_deducted))}`}</Badge>
                   </div>
                 ))}
                 {(billing?.ledger ?? []).length === 0 ? <div className="p-3 text-muted-foreground">No activity yet.</div> : null}
@@ -219,6 +224,95 @@ function CapRow({ feature, label, row, onSave }: { feature: FeatureKey; label: s
       </div>
       <Input type="number" placeholder="∞" value={cap} onChange={(e) => setCap(e.target.value)} className="h-8 w-24" />
       <Button size="sm" variant="outline" onClick={() => onSave(cap === "" ? null : Number(cap))}>Save</Button>
+    </div>
+  );
+}
+
+function PriceOverridesSection({ companyId }: { companyId: string }) {
+  const qc = useQueryClient();
+  const listCostsFn = useServerFn(listAiFeatureCosts);
+  const listOverridesFn = useServerFn(adminListCompanyPriceOverrides);
+  const setOverrideFn = useServerFn(adminSetCompanyPriceOverride);
+
+  const { data: costs } = useQuery({
+    queryKey: ["ai-feature-costs"],
+    queryFn: () => listCostsFn() as Promise<any[]>,
+  });
+  const { data: overrides } = useQuery({
+    queryKey: ["company-price-overrides", companyId],
+    queryFn: () => listOverridesFn({ data: { company_id: companyId } }) as Promise<Array<{ feature_key: string; points_cost: number }>>,
+  });
+
+  const setMut = useMutation({
+    mutationFn: (row: { feature_key: string; points_cost: number | null }) =>
+      setOverrideFn({ data: { company_id: companyId, ...row } }),
+    onSuccess: () => {
+      toast.success("Override saved");
+      qc.invalidateQueries({ queryKey: ["company-price-overrides", companyId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const overrideMap = new Map((overrides ?? []).map((o) => [o.feature_key, Number(o.points_cost)]));
+
+  return (
+    <section>
+      <h3 className="text-sm font-medium mb-2">Per-company price overrides</h3>
+      <p className="text-xs text-muted-foreground mb-3">
+        Set a custom point cost for this company. Leave blank to use the global default.
+      </p>
+      <div className="rounded-md border divide-y max-h-64 overflow-y-auto">
+        {(costs ?? []).map((c: any) => (
+          <OverrideRow
+            key={c.feature_key}
+            cost={c}
+            override={overrideMap.get(c.feature_key) ?? null}
+            onSave={(v) => setMut.mutate({ feature_key: c.feature_key, points_cost: v })}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OverrideRow({
+  cost, override, onSave,
+}: {
+  cost: any;
+  override: number | null;
+  onSave: (v: number | null) => void;
+}) {
+  const [val, setVal] = useState<string>(override != null ? String(override) : "");
+  const effective = val === "" ? Number(cost.points_cost) : Number(val);
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 text-sm">
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">{cost.label ?? cost.feature_key}</div>
+        <div className="text-[10px] text-muted-foreground">
+          Global: {Number(cost.points_cost)} · Effective: <strong>{effective}</strong>
+        </div>
+      </div>
+      <Input
+        type="number"
+        step="0.01"
+        min="0"
+        placeholder="default"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        className="h-8 w-24"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onSave(val === "" ? null : Number(val))}
+      >
+        Save
+      </Button>
+      {override != null && (
+        <Button size="sm" variant="ghost" onClick={() => { setVal(""); onSave(null); }}>
+          Reset
+        </Button>
+      )}
     </div>
   );
 }

@@ -180,6 +180,13 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
 }
 
 // ---------- Feature Costs ----------
+const CATEGORIES = [
+  { key: "core", label: "Core" },
+  { key: "ai", label: "AI" },
+  { key: "comms", label: "Comms" },
+  { key: "data", label: "Data" },
+] as const;
+
 function FeatureCostsCard() {
   const qc = useQueryClient();
   const listFn = useServerFn(listAiFeatureCosts);
@@ -187,22 +194,43 @@ function FeatureCostsCard() {
   const { data: costs } = useQuery({ queryKey: ["ai-feature-costs"], queryFn: () => listFn() });
   const setMut = useMutation({
     mutationFn: (row: any) => setFn({ data: row }),
-    onSuccess: () => { toast.success("Cost updated"); qc.invalidateQueries({ queryKey: ["ai-feature-costs"] }); },
+    onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["ai-feature-costs"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const grouped = CATEGORIES.map((cat) => ({
+    ...cat,
+    rows: (costs ?? []).filter((c: any) => (c.category ?? "ai") === cat.key),
+  })).filter((g) => g.rows.length > 0);
+
   return (
     <Card>
-      <CardHeader><CardTitle>Feature point costs</CardTitle></CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow><TableHead>Feature</TableHead><TableHead>Label</TableHead><TableHead>Points per use</TableHead><TableHead></TableHead></TableRow>
-          </TableHeader>
-          <TableBody>
-            {(costs ?? []).map((c: any) => <CostRow key={c.feature_key} cost={c} onSave={setMut.mutate} />)}
-          </TableBody>
-        </Table>
+      <CardHeader>
+        <CardTitle>Feature point costs</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Decimals allowed (e.g. 1.5). Disable to turn a feature off globally. "Block on empty" hard-stops the action when a company runs out; leave off for core operations (trip creation) so they never break.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {grouped.map((g) => (
+          <div key={g.key}>
+            <div className="text-xs font-semibold uppercase text-muted-foreground mb-2">{g.label}</div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Feature</TableHead>
+                  <TableHead>Points / use</TableHead>
+                  <TableHead>Enabled</TableHead>
+                  <TableHead>Block on empty</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {g.rows.map((c: any) => <CostRow key={c.feature_key} cost={c} onSave={setMut.mutate} />)}
+              </TableBody>
+            </Table>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
@@ -210,13 +238,51 @@ function FeatureCostsCard() {
 
 function CostRow({ cost, onSave }: { cost: any; onSave: (r: any) => void }) {
   const [points, setPoints] = useState(String(cost.points_cost));
+  const [enabled, setEnabled] = useState<boolean>(cost.enabled !== false);
+  const [block, setBlock] = useState<boolean>(cost.block_on_empty !== false);
+  const dirty =
+    points !== String(cost.points_cost) ||
+    enabled !== (cost.enabled !== false) ||
+    block !== (cost.block_on_empty !== false);
   return (
     <TableRow>
-      <TableCell className="font-mono text-xs">{cost.feature_key}</TableCell>
-      <TableCell>{cost.label ?? "—"}</TableCell>
-      <TableCell><Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="h-8 w-24" /></TableCell>
+      <TableCell>
+        <div className="text-sm font-medium">{cost.label ?? cost.feature_key}</div>
+        <div className="font-mono text-[10px] text-muted-foreground">{cost.feature_key}</div>
+      </TableCell>
+      <TableCell>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={points}
+          onChange={(e) => setPoints(e.target.value)}
+          className="h-8 w-24"
+        />
+      </TableCell>
+      <TableCell>
+        <button type="button" onClick={() => setEnabled(!enabled)}>
+          <Badge variant={enabled ? "default" : "outline"}>{enabled ? "On" : "Off"}</Badge>
+        </button>
+      </TableCell>
+      <TableCell>
+        <button type="button" onClick={() => setBlock(!block)}>
+          <Badge variant={block ? "destructive" : "secondary"}>{block ? "Hard stop" : "Allow negative"}</Badge>
+        </button>
+      </TableCell>
       <TableCell className="text-right">
-        <Button size="sm" variant="ghost" onClick={() => onSave({ feature_key: cost.feature_key, points_cost: Number(points), label: cost.label })}>
+        <Button
+          size="sm"
+          variant={dirty ? "default" : "ghost"}
+          onClick={() => onSave({
+            feature_key: cost.feature_key,
+            points_cost: Number(points),
+            label: cost.label,
+            category: (cost.category ?? "ai"),
+            enabled,
+            block_on_empty: block,
+          })}
+        >
           <Save className="h-4 w-4" />
         </Button>
       </TableCell>
