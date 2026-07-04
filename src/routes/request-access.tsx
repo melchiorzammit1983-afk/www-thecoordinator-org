@@ -88,6 +88,7 @@ function RequestAccessPage() {
         message: parsed.data.message || null,
         kind: isDemo ? "demo" : "access",
         status: "new",
+        referral_code: refCode || null,
       } as never);
       if (error) throw error;
       setDone(true);
