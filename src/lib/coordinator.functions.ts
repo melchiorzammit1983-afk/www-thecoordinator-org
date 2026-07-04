@@ -2160,37 +2160,31 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
 
     const today = new Date().toISOString().slice(0, 10);
     const systemInstruction = [
-      "You are a precise transport data extraction utility.",
-      "Extract trip details into these 8 keys exactly: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
-      `Today's date is ${today}. Resolve relative words (today, tomorrow, oggi, domani, etc.) to YYYY-MM-DD. pickupTime is 24h HH:MM.`,
-      "",
-      "Flight & Airport Rules:",
-      "- Look for flight codes (e.g. KM 101, EK 109). Determine if it is an arrival or departure.",
-      "- Always output the word 'Airport' in the corresponding address field (pickupAddress or deliveryAddress).",
-      "- Place the exact flight code into the 'pickupTime' field so the automated backend flight tracker can read it.",
-      "",
-      "Missing Info Rule:",
-      "- Date, Origin, and Destination are strictly mandatory.",
-      "- If any mandatory field is missing, ask a single, extremely brief question (e.g. 'Date missing. What day?'). No greetings or filler.",
-      "",
-      "Output Format: strictly a JSON object with two keys.",
-      '- If asking a question: { "type": "question", "payload": "Your short question here." }',
-      '- If data is complete: { "type": "data", "payload": [ { "pickupDate": "...", "pickupTime": "...", "pickupAddress": "...", "deliveryAddress": "...", "customerName": "...", "contactNumber": "...", "transportType": "...", "quantity": "..." } ] }',
-      "Do not wrap the output in markdown code blocks.",
+      `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
+      "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
+      "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
+      "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
+      'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
     ].join("\n");
 
-    const contents = data.messages.map((m) => ({
+    // Only send the last few turns — older context is not needed for extraction.
+    const trimmed = data.messages.slice(-4);
+    const contents = trimmed.map((m) => ({
       role: m.role, parts: [{ text: m.text }],
     }));
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents,
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.1,
+          maxOutputTokens: 512,
+        },
       }),
     });
     if (!res.ok) {
