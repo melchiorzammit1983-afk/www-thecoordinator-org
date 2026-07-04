@@ -314,6 +314,7 @@ export const driverFinalizeTrip = createServerFn({ method: "POST" })
       sender_kind: "driver",
       sender_label: link.subject_label ?? "Driver",
       body: parts.join(" · "),
+      thread_kind: "driver_coord",
     } as never);
 
     // Auto-dissolve group if all siblings done (same logic as updateJobStatus).
@@ -455,6 +456,7 @@ export const driverRejectJob = createServerFn({ method: "POST" })
       sender_kind: "driver",
       sender_label: link.subject_label ?? "Driver",
       body: `⚠️ Driver rejected this trip. Reason: ${reason}`,
+      thread_kind: "driver_coord",
     } as never);
     return { ok: true };
   });
@@ -762,6 +764,7 @@ export const markPaxNoShow = createServerFn({ method: "POST" })
       sender_kind: "driver",
       sender_label: link.subject_label ?? "Driver",
       body: `🚫 No-show: ${(paxRow as any).name}`,
+      thread_kind: "driver_coord",
     } as never);
     return { ok: true };
   });
@@ -806,6 +809,7 @@ export const driverReportLate = createServerFn({ method: "POST" })
       sender_kind: "driver",
       sender_label: link.subject_label ?? "Driver",
       body: `🕒 Running ~${data.minutes} min late${suffix}`,
+      thread_kind: "driver_coord",
     } as never);
     return { ok: true };
   });
