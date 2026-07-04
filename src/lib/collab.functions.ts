@@ -23,6 +23,9 @@ async function spendSoft(companyId: string | null | undefined, featureKey: strin
   } catch {
     // metering never breaks primary action
   }
+}
+
+
 
 
 async function myCompany(ctx: Ctx) {
