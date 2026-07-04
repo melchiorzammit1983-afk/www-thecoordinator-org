@@ -2136,73 +2136,93 @@ export const setJobContactPhoneIfEmpty = createServerFn({ method: "POST" })
     return { ok: true, set: true };
   });
 
-// ---------- AI TRIP EXTRACTION ----------
+// ---------- AI TRIP EXTRACTION (Gemini direct, chat-style) ----------
+// Accepts a conversation (user pastes + follow-up replies) and returns either
+// a short clarifying question or the finished 8-column trip rows.
 export const extractTripsFromText = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ text: z.string().min(3).max(20000) }).parse(d),
+    z.object({
+      messages: z.array(z.object({
+        role: z.enum(["user", "model"]),
+        text: z.string().min(1).max(20000),
+      })).min(1).max(20),
+    }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const supabaseAdmin = await getAdminClient();
-    // Feature gate — admin can disable per company
     const { data: co } = await supabaseAdmin
       .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
     if (co) await assertFeatureEnabled(co.id, "ai_extraction");
 
-
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("AI is not configured");
-
-    const { generateText, Output, NoObjectGeneratedError } = await import("ai");
-    const { createLovableAiGatewayProvider } = await import("@/lib/ai-gateway.server");
-    const gateway = createLovableAiGatewayProvider(key);
-    const model = gateway("google/gemini-3-flash-preview");
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error("GEMINI_API_KEY is not configured");
 
     const today = new Date().toISOString().slice(0, 10);
-    const schema = z.object({
-      trips: z.array(z.object({
-        from_location: z.string(),
-        to_location: z.string(),
-        pickup_date: z.string(), // YYYY-MM-DD
-        pickup_time: z.string(), // HH:mm 24h
-        flight_code: z.string().nullable(),
-        contact_phone: z.string().nullable(),
-        client_company: z.string().nullable(),
-        notes: z.string().nullable(),
-        passengers: z.array(z.string()),
-      })),
-    });
-
-    const system = [
-      "You extract crew-change transport trips from messages in ANY language (English, Italian, Spanish, French, Tagalog, etc.).",
-      "Return one entry per distinct trip. Split multiple trips when dates/times/routes clearly differ.",
-      "Rules:",
-      `- Today's date is ${today}. Resolve relative words ("today"/"oggi", "tomorrow"/"domani") to YYYY-MM-DD.`,
-      "- pickup_time must be 24h HH:mm.",
-      "- flight_code: uppercase, no space (e.g. 'km 643' -> 'KM643'). null if none.",
-      "- If a flight is present and location is missing, use 'Airport'.",
-      "- contact_phone: extract any phone number in E.164-ish form. null if none.",
-      "- passengers: array of clean human names only, no phone numbers, no emojis, no bullet chars.",
-      "- Do NOT invent data. Leave string fields empty ('') and null nullable fields when unknown.",
+    const systemInstruction = [
+      "You are a precise transport data extraction utility.",
+      "Extract trip details into these 8 keys exactly: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
+      `Today's date is ${today}. Resolve relative words (today, tomorrow, oggi, domani, etc.) to YYYY-MM-DD. pickupTime is 24h HH:MM.`,
+      "",
+      "Flight & Airport Rules:",
+      "- Look for flight codes (e.g. KM 101, EK 109). Determine if it is an arrival or departure.",
+      "- Always output the word 'Airport' in the corresponding address field (pickupAddress or deliveryAddress).",
+      "- Place the exact flight code into the 'pickupTime' field so the automated backend flight tracker can read it.",
+      "",
+      "Missing Info Rule:",
+      "- Date, Origin, and Destination are strictly mandatory.",
+      "- If any mandatory field is missing, ask a single, extremely brief question (e.g. 'Date missing. What day?'). No greetings or filler.",
+      "",
+      "Output Format: strictly a JSON object with two keys.",
+      '- If asking a question: { "type": "question", "payload": "Your short question here." }',
+      '- If data is complete: { "type": "data", "payload": [ { "pickupDate": "...", "pickupTime": "...", "pickupAddress": "...", "deliveryAddress": "...", "customerName": "...", "contactNumber": "...", "transportType": "...", "quantity": "..." } ] }',
+      "Do not wrap the output in markdown code blocks.",
     ].join("\n");
 
-    try {
-      const { output } = await generateText({
-        model,
-        system,
-        prompt: data.text,
-        output: Output.object({ schema }),
-      });
-      return output;
-    } catch (err: any) {
-      if (NoObjectGeneratedError.isInstance?.(err)) {
-        throw new Error("AI could not extract trips from this text");
-      }
-      const msg = String(err?.message ?? err);
-      if (msg.includes("429")) throw new Error("AI is rate limited — try again in a moment");
-      if (msg.includes("402")) throw new Error("AI credits exhausted — add credits in Settings → Plans & credits");
-      throw new Error(msg);
+    const contents = data.messages.map((m) => ({
+      role: m.role, parts: [{ text: m.text }],
+    }));
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents,
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      if (res.status === 429) throw new Error("AI is rate limited — try again in a moment");
+      throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
     }
+    const json = await res.json() as any;
+    const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    if (!text) throw new Error("Empty response from AI");
+
+    let parsed: any;
+    try { parsed = JSON.parse(text); }
+    catch { throw new Error("AI returned invalid JSON"); }
+
+    if (parsed?.type === "question" && typeof parsed.payload === "string") {
+      return { type: "question" as const, payload: parsed.payload };
+    }
+    if (parsed?.type === "data" && Array.isArray(parsed.payload)) {
+      const rows = parsed.payload.map((r: any) => ({
+        pickupDate: String(r?.pickupDate ?? ""),
+        pickupTime: String(r?.pickupTime ?? ""),
+        pickupAddress: String(r?.pickupAddress ?? ""),
+        deliveryAddress: String(r?.deliveryAddress ?? ""),
+        customerName: String(r?.customerName ?? ""),
+        contactNumber: String(r?.contactNumber ?? ""),
+        transportType: String(r?.transportType ?? ""),
+        quantity: String(r?.quantity ?? "1"),
+      }));
+      return { type: "data" as const, payload: rows };
+    }
+    throw new Error("AI returned unexpected shape");
   });
 
 // ---------- Group / Ungroup (reversible link, keeps trip details) ----------
