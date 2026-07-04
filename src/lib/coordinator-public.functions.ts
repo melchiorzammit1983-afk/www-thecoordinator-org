@@ -1032,19 +1032,25 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
       paxId = (id as any)?.pax_id ?? null;
     }
 
+    // Defense in depth: clients can never see anything but their own group
+    // or private thread. Price proposals live in a separate table and are
+    // never joined here. We whitelist columns, whitelist sender_kind, and
+    // constrain thread_kind with .eq() so a stray driver_coord row (system
+    // alerts, driver↔coordinator private notes, etc.) can never leak through.
     let q = supabaseAdmin.from("trip_messages")
       .select("id, sender_kind, sender_label, body, created_at, thread_kind, client_identity_id, pax_id, is_sos")
       .in("job_id", ids)
+      .in("sender_kind", ["driver", "client", "coordinator"])
       .order("created_at", { ascending: true });
 
-    if (data.thread_kind === "private") {
+    const wantedKind: "group" | "private" | "driver_client" = data.thread_kind;
+    if (wantedKind === "private") {
       if (!identityId && !paxId) return [];
       const orParts: string[] = [];
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "private").or(orParts.join(","));
-    } else if (data.thread_kind === "driver_client") {
-      // Per-passenger privacy: only show driver↔this-client messages.
+    } else if (wantedKind === "driver_client") {
       if (!identityId && !paxId) return [];
       const orParts: string[] = [];
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
@@ -1055,7 +1061,10 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
     }
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    // Belt-and-braces post-filter: never trust the DB round-trip; drop anything
+    // whose thread_kind doesn't match the requested audience.
+    const safe = (rows ?? []).filter((r: any) => r.thread_kind === wantedKind);
+    return safe;
   });
 
 export const postClientTripMessage = createServerFn({ method: "POST" })
