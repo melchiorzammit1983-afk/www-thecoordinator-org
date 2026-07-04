@@ -212,7 +212,7 @@ export function VoiceToTripButton({
           size="sm"
           variant="outline"
           className="h-7"
-          disabled={!enabled || outOfPoints || busy || disabled}
+          disabled={busy || disabled}
           onClick={startRecording}
           title={tip}
         >
