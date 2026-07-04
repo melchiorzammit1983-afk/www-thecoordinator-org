@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus } from "@/lib/coordinator.functions";
+import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
+import { Plane, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv, SHEET_HEADERS } from "@/lib/sheet-template";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -176,6 +178,20 @@ function ManualForm({
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
   const bulkFn = useServerFn(createJobsBulk);
+  const previewFn = useServerFn(previewTripStatus);
+
+  const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
+  const previewMut = useMutation({
+    mutationFn: () => previewFn({ data: {
+      from_location: from || (fromFlight ? "Airport" : ""),
+      to_location: to || (toFlight ? "Airport" : ""),
+      date, time,
+      from_flight: fromFlight || undefined,
+      to_flight: toFlight || undefined,
+    } }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const preview = previewMut.data;
 
 
   const mut = useMutation({
@@ -291,6 +307,69 @@ function ManualForm({
         label="Enable Live Tracking" hint="GPS updates from driver device"
         checked={track} onChange={setTrack}
       />
+      <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-medium text-muted-foreground">Live status preview</div>
+          <Button
+            type="button" size="sm" variant="outline"
+            disabled={!canPreview || previewMut.isPending}
+            onClick={() => previewMut.mutate()}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${previewMut.isPending ? "animate-spin" : ""}`} />
+            {previewMut.isPending ? "Checking…" : preview ? "Refresh" : "Check traffic & flight"}
+          </Button>
+        </div>
+        {!preview && !previewMut.isPending && (
+          <div className="text-[11px] text-muted-foreground">
+            Fill from/to and date/time (and optional flight) then check for real-time delays before saving. Preview only — no points spent.
+          </div>
+        )}
+        {preview && (
+          <div className="space-y-2 text-xs">
+            {preview.traffic ? (
+              preview.traffic.ok ? (
+                <div className="space-y-1">
+                  <TrafficBadge info={{
+                    traffic_delay_minutes: preview.traffic.delay_minutes ?? 0,
+                    traffic_severity: preview.traffic.severity ?? null,
+                    leave_by_at: preview.traffic.leave_by_at ?? null,
+                  }} />
+                  <div className="text-[11px] text-muted-foreground">
+                    {preview.traffic.duration_text}
+                    {preview.traffic.distance_text ? ` · ${preview.traffic.distance_text}` : ""}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">
+                  Traffic unavailable ({preview.traffic.reason ?? "error"}).
+                </div>
+              )
+            ) : (
+              <div className="text-[11px] text-muted-foreground">Traffic: need both From and To to estimate.</div>
+            )}
+            {preview.flight ? (
+              preview.flight.ok ? (
+                <div className="flex items-start gap-2">
+                  <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                  <div>
+                    <div className="font-medium">{preview.flight.code} · {preview.flight.status}</div>
+                    <div className="text-[11px] text-muted-foreground">{preview.flight.note}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Plane className="h-3.5 w-3.5" />
+                  Flight {preview.flight.code}: {preview.flight.reason === "not_found" ? "not on Malta board" : preview.flight.reason === "not_configured" ? "flight lookup not configured" : "check failed"}
+                </div>
+              )
+            ) : (
+              (fromFlight || toFlight) ? null : (
+                <div className="text-[11px] text-muted-foreground">Add a flight code to see arrival/departure status.</div>
+              )
+            )}
+          </div>
+        )}
+      </div>
       <DialogFooter>
         <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
       </DialogFooter>

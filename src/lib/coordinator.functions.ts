@@ -1223,6 +1223,156 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     }
   });
 
+// Preview traffic + flight status for a trip that hasn't been saved yet.
+// Read-only; does NOT deduct points or write any DB rows.
+export const previewTripStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      from_location: z.string().trim().max(300).optional(),
+      to_location: z.string().trim().max(300).optional(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      from_flight: z.string().trim().max(20).optional(),
+      to_flight: z.string().trim().max(20).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    let pickupIso: string | null = null;
+    if (data.date && data.time) {
+      try { pickupIso = maltaWallTimeToUtcIso(data.date, data.time); } catch { pickupIso = null; }
+    }
+
+    // ---- FLIGHT ----
+    let flight: {
+      ok: boolean;
+      status?: string;
+      note?: string;
+      scheduled?: string | null;
+      estimated?: string | null;
+      terminal?: string | null;
+      gate?: string | null;
+      code?: string;
+      reason?: string;
+    } | null = null;
+    const flightCode = (data.from_flight || data.to_flight || "").trim();
+    if (flightCode) {
+      const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
+      if (!process.env.FIRECRAWL_API_KEY) {
+        flight = { ok: false, code: flightCode, reason: "not_configured" };
+      } else {
+        try {
+          const rows = await fetchMaltaBoard(kind);
+          const norm = normalizeFlightCode(flightCode);
+          const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
+          if (!row) {
+            flight = { ok: false, code: flightCode, reason: "not_found" };
+          } else {
+            const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
+            const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
+            let mapped = mapMaltaStatus(row.status);
+            const shownTime = (row.estimated || row.scheduled || "").trim();
+            const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
+            if (scheduledIso && pickupIso) {
+              const s = new Date(scheduledIso).getTime();
+              const p = new Date(pickupIso).getTime();
+              if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+                mapped = "time_mismatch";
+              }
+            }
+            let note: string;
+            switch (mapped) {
+              case "cancelled": note = "CANCELLED"; break;
+              case "diverted": note = "DIVERTED"; break;
+              case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
+              case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
+              case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
+              case "active": note = row.status || "In progress"; break;
+              default: note = `On time · ${shownTime || "?"}`; break;
+            }
+            if (row.gate) note += ` · Gate ${row.gate}`;
+            if (row.terminal) note += ` · T${row.terminal}`;
+            flight = {
+              ok: true, code: flightCode, status: mapped, note,
+              scheduled: scheduledIso, estimated: estimatedIso,
+              terminal: row.terminal ?? null, gate: row.gate ?? null,
+            };
+          }
+        } catch (e: any) {
+          flight = { ok: false, code: flightCode, reason: "scrape_failed" };
+        }
+      }
+    }
+
+    // ---- TRAFFIC ----
+    let traffic: {
+      ok: boolean;
+      delay_minutes?: number;
+      severity?: "light" | "moderate" | "heavy" | "severe";
+      duration_text?: string;
+      duration_seconds?: number;
+      free_seconds?: number;
+      distance_text?: string;
+      leave_by_at?: string | null;
+      reason?: string;
+    } | null = null;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (data.from_location && data.to_location) {
+      if (!apiKey) {
+        traffic = { ok: false, reason: "not_configured" };
+      } else {
+        try {
+          // For future pickups, Google requires a Unix timestamp in the future.
+          // If pickup is in the past or missing, use "now" for a real-time estimate.
+          const nowMs = Date.now();
+          const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
+          const depTime = pickupMs > nowMs + 60_000 ? Math.floor(pickupMs / 1000) : "now";
+          const dmUrl =
+            `https://maps.googleapis.com/maps/api/distancematrix/json` +
+            `?origins=${encodeURIComponent(data.from_location)}` +
+            `&destinations=${encodeURIComponent(data.to_location)}` +
+            `&departure_time=${depTime}&traffic_model=best_guess&key=${apiKey}`;
+          const dm: any = await (await fetch(dmUrl)).json();
+          const el = dm?.rows?.[0]?.elements?.[0];
+          if (!el || el.status !== "OK") {
+            traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
+          } else {
+            const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
+            const free = el.duration?.value ?? null;
+            const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
+            const delayMin = Math.round(delaySec / 60);
+            const ratio = free && dur ? dur / free : 1;
+            let severity: "light" | "moderate" | "heavy" | "severe" = "light";
+            if (ratio >= 1.75 || delayMin >= 30) severity = "severe";
+            else if (ratio >= 1.4 || delayMin >= 15) severity = "heavy";
+            else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
+            const leaveBy = pickupIso && dur
+              ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString()
+              : null;
+            traffic = {
+              ok: true,
+              delay_minutes: delayMin,
+              severity,
+              duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+              duration_seconds: dur ?? undefined,
+              free_seconds: free ?? undefined,
+              distance_text: el.distance?.text ?? "",
+              leave_by_at: leaveBy,
+            };
+          }
+        } catch {
+          traffic = { ok: false, reason: "dm_failed" };
+        }
+      }
+    }
+
+    return {
+      pickup_at: pickupIso,
+      flight,
+      traffic,
+    };
+  });
+
 export const listJobPax = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
