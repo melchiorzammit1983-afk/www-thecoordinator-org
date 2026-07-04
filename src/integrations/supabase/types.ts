@@ -176,6 +176,7 @@ export type Database = {
         Row: {
           ai_command_enabled: boolean
           auto_assign_enabled: boolean
+          auto_coordinate_enabled: boolean
           auto_extract_bulk: boolean
           auto_reply_drafts: boolean
           company_id: string
@@ -186,6 +187,7 @@ export type Database = {
         Insert: {
           ai_command_enabled?: boolean
           auto_assign_enabled?: boolean
+          auto_coordinate_enabled?: boolean
           auto_extract_bulk?: boolean
           auto_reply_drafts?: boolean
           company_id: string
@@ -196,6 +198,7 @@ export type Database = {
         Update: {
           ai_command_enabled?: boolean
           auto_assign_enabled?: boolean
+          auto_coordinate_enabled?: boolean
           auto_extract_bulk?: boolean
           auto_reply_drafts?: boolean
           company_id?: string
@@ -220,6 +223,7 @@ export type Database = {
           enabled: boolean
           feature_key: string
           label: string | null
+          metering_mode: string
           points_cost: number
           updated_at: string
         }
@@ -229,6 +233,7 @@ export type Database = {
           enabled?: boolean
           feature_key: string
           label?: string | null
+          metering_mode?: string
           points_cost?: number
           updated_at?: string
         }
@@ -238,6 +243,7 @@ export type Database = {
           enabled?: boolean
           feature_key?: string
           label?: string | null
+          metering_mode?: string
           points_cost?: number
           updated_at?: string
         }
