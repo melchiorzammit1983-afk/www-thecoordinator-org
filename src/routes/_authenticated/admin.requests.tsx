@@ -109,7 +109,7 @@ function RequestsPage() {
                     </Badge>
                     {r.referral_code && (
                       <Badge variant="secondary" className="text-xs">
-                        ref: {r.referral_code}
+                        ref: {r.referred_by?.name ?? r.referral_code}
                       </Badge>
                     )}
                   </div>
