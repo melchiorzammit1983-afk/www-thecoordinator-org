@@ -80,6 +80,12 @@ function AdminLayout() {
             <div className="font-semibold text-sm">Crew Change</div>
             <div className="text-xs text-muted-foreground">Admin console</div>
           </div>
+          <div className="md:hidden ml-auto">
+            <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 h-8 px-2">
+              <LogOut className="h-4 w-4" />
+              <span className="text-xs">Sign out</span>
+            </Button>
+          </div>
         </div>
         <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">
           {NAV.map((item) => {
