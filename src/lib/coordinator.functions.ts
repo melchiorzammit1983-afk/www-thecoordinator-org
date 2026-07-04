@@ -774,6 +774,7 @@ export const approveBooking = createServerFn({ method: "POST" })
     if (jErr) throw new Error(jErr.message);
     await supabaseAdmin.from("client_bookings")
       .update({ status: "accepted", job_id: job.id }).eq("id", data.id);
+    await spendSoft(c.id, "trip_created", "Trip from client booking", job.id);
     return { ok: true, job };
   });
 
