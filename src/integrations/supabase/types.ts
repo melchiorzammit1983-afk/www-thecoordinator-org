@@ -209,18 +209,27 @@ export type Database = {
       }
       ai_feature_costs: {
         Row: {
+          block_on_empty: boolean
+          category: string
+          enabled: boolean
           feature_key: string
           label: string | null
           points_cost: number
           updated_at: string
         }
         Insert: {
+          block_on_empty?: boolean
+          category?: string
+          enabled?: boolean
           feature_key: string
           label?: string | null
           points_cost?: number
           updated_at?: string
         }
         Update: {
+          block_on_empty?: boolean
+          category?: string
+          enabled?: boolean
           feature_key?: string
           label?: string | null
           points_cost?: number
@@ -715,6 +724,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "company_feature_entitlements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_feature_price_overrides: {
+        Row: {
+          company_id: string
+          created_at: string
+          feature_key: string
+          id: string
+          points_cost: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          feature_key: string
+          id?: string
+          points_cost: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          feature_key?: string
+          id?: string
+          points_cost?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_feature_price_overrides_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -2176,10 +2220,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      admin_grant_points: {
-        Args: { _company_id: string; _note?: string; _points: number }
-        Returns: undefined
-      }
+      admin_grant_points:
+        | {
+            Args: { _company_id: string; _note?: string; _points: number }
+            Returns: undefined
+          }
+        | {
+            Args: { _company_id: string; _note?: string; _points: number }
+            Returns: undefined
+          }
       auto_assign_job: {
         Args: { _job_id: string }
         Returns: {
