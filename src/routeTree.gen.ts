@@ -32,6 +32,7 @@ import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
+import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -159,6 +160,12 @@ const AuthenticatedAdminRequestsRoute =
     path: '/requests',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminActivityRoute =
+  AuthenticatedAdminActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -191,6 +199,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -217,6 +226,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/coordinator'
     | '/c/$token'
     | '/t/$token'
+    | '/admin/activity'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/c/$token'
     | '/t/$token'
+    | '/admin/activity'
     | '/admin/requests'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -290,6 +302,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator'
     | '/c/$token'
     | '/t/$token'
+    | '/_authenticated/admin/activity'
     | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -481,15 +494,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/activity': {
+      id: '/_authenticated/admin/activity'
+      path: '/activity'
+      fullPath: '/admin/activity'
+      preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
   }
 }
 
 interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }

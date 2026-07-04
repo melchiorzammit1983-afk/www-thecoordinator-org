@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Building2, LogOut, Inbox } from "lucide-react";
+import { Building2, LogOut, Inbox, Activity } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { whoAmI, countNewAccessRequests } from "@/lib/admin.functions";
@@ -15,6 +15,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 const NAV = [
   { to: "/admin", label: "Companies", icon: Building2, exact: true },
   { to: "/admin/requests", label: "Requests", icon: Inbox, exact: false },
+  { to: "/admin/activity", label: "Activity log", icon: Activity, exact: false },
 ] as const;
 
 function AdminLayout() {
