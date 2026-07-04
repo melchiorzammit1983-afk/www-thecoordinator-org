@@ -1466,20 +1466,37 @@ export const driverRespondToPrice = createServerFn({ method: "POST" })
       .select("*").eq("id", data.proposal_id).maybeSingle();
     if (readErr) throw new Error(readErr.message);
     if (!prop) throw new Error("proposal_not_found");
-    // Driver may accept a coordinator counter (to_company acts, from is company),
-    // or withdraw their own proposal (from_driver = them).
+    if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
+
+    // Recall rules — trip must still be open and not in progress.
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, status, driver_id").eq("id", prop.job_id).maybeSingle();
+    if (!job) throw new Error("job_not_found");
+    if (["completed", "cancelled"].includes(job.status as string)) {
+      throw new Error("trip_closed");
+    }
+
     if (data.action === "accept") {
+      // Driver accepting a coordinator counter-offer.
       if (prop.from_party_kind !== "company") throw new Error("not_a_counter_offer");
       if (prop.to_driver_id !== link.subject_id) throw new Error("forbidden");
-      if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
+      // Rule: driver must still be assigned to this job to accept the counter.
+      if (job.driver_id !== link.subject_id) throw new Error("no_longer_assigned");
       const { error } = await supabaseAdmin.from("job_price_proposals").update({
         status: "accepted",
         responded_at: new Date().toISOString(),
       } as never).eq("id", data.proposal_id);
       if (error) throw new Error(error.message);
     } else {
+      // Driver withdrawing their own proposal.
       if (prop.from_driver_id !== link.subject_id) throw new Error("forbidden");
-      if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
+      // Rule: can only withdraw while the offer is still open (proposed).
+      // Once the coordinator counters, the original is closed automatically.
+      if (prop.status !== "proposed") throw new Error("coordinator_already_responded");
+      // Rule: the trip must not have started.
+      if (["en_route", "arrived", "in_progress"].includes(job.status as string)) {
+        throw new Error("trip_already_started");
+      }
       const { error } = await supabaseAdmin.from("job_price_proposals").update({
         status: "recalled",
         responded_at: new Date().toISOString(),
