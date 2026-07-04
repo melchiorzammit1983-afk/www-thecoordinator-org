@@ -7,6 +7,38 @@ async function getAdminClient() {
   return supabaseAdmin;
 }
 
+/**
+ * Loads the coordinator's branding (logo + optional advert) for a company,
+ * respecting both the coordinator's on/off switch AND the admin
+ * `branding_advert` feature entitlement. Returns null when nothing should
+ * be shown.
+ */
+async function loadCompanyBranding(companyId: string) {
+  const supabaseAdmin = await getAdminClient();
+  const [{ data: co }, { data: ent }] = await Promise.all([
+    supabaseAdmin.from("companies")
+      .select("id, name, logo_url, advert_url, advert_link, advert_caption, advert_enabled")
+      .eq("id", companyId).maybeSingle(),
+    supabaseAdmin.from("company_feature_entitlements")
+      .select("enabled, expires_at")
+      .eq("company_id", companyId).eq("feature", "branding_advert").maybeSingle(),
+  ]);
+  if (!co) return null;
+  const now = Date.now();
+  const adminAllows = !ent
+    ? true
+    : !!ent.enabled && (!ent.expires_at || new Date(ent.expires_at).getTime() > now);
+  const advertOn = adminAllows && !!(co as any).advert_enabled && !!(co as any).advert_url;
+  return {
+    company_name: (co as any).name as string,
+    logo_url: ((co as any).logo_url as string | null) ?? null,
+    advert_url: advertOn ? ((co as any).advert_url as string | null) : null,
+    advert_link: advertOn ? ((co as any).advert_link as string | null) : null,
+    advert_caption: advertOn ? ((co as any).advert_caption as string | null) : null,
+  };
+}
+
+
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
   const supabaseAdmin = await getAdminClient();
   const { data, error } = await supabaseAdmin
