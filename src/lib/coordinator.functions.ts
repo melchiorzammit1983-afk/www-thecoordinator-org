@@ -419,6 +419,7 @@ export const createJob = createServerFn({ method: "POST" })
     }).select().single();
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
+    await spendSoft(c.id, "trip_created", "Trip created", row.id);
     return row;
   });
 
