@@ -11,6 +11,7 @@ import { useMyCompany } from "@/hooks/use-coordinator";
 import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
+import { BrandLogo } from "@/components/branding/BrandLogo";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
@@ -93,9 +94,7 @@ function CoordinatorLayout() {
     <div className="min-h-screen flex flex-col md:flex-row bg-muted/30 w-full">
       <aside className="md:w-64 md:min-h-screen md:border-r bg-background flex md:flex-col">
         <div className="px-4 py-4 md:py-6 border-b flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary text-primary-foreground grid place-items-center font-semibold">
-            {company.name.slice(0, 2).toUpperCase()}
-          </div>
+          <BrandLogo logoUrl={(company as any).logo_url ?? null} name={company.name} />
           <div className="hidden md:block min-w-0">
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>

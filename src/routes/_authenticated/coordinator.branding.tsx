@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { BrandingBar } from "@/components/branding/BrandingBar";
+
 import { useFeatures } from "@/hooks/use-features";
 import { Upload, Trash2, ImageIcon } from "lucide-react";
 
@@ -213,49 +213,59 @@ function BrandingPage() {
       </section>
 
       {/* ---------------- LIVE PREVIEW ---------------- */}
-      <section className="mt-6 rounded-lg border bg-card p-4">
+      <section className="mt-6 rounded-lg border bg-card p-4 space-y-4">
         <h2 className="font-semibold">Preview</h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          This is exactly what drivers and clients see at the bottom of their screens.
+        <p className="text-xs text-muted-foreground -mt-2">
+          This is exactly what drivers and clients see: your logo appears in the app header, and the advert (if any) at the bottom.
         </p>
-        <div className="relative mt-4 rounded-lg border bg-muted/40 h-40">
-          <div className="absolute inset-x-0 bottom-0">
-            {/* Local, non-fixed clone of BrandingBar for visual preview */}
-            <PreviewBar branding={previewBranding} />
+
+        {/* Header preview */}
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Header</div>
+          <div className="rounded-lg border bg-background flex items-center gap-3 p-3">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="h-11 w-11 rounded-md object-contain border bg-background shrink-0" />
+            ) : (
+              <div className="h-11 w-11 rounded-md bg-primary/10 text-primary grid place-items-center text-xs font-semibold shrink-0">
+                {((company as any)?.name ?? "").slice(0, 2).toUpperCase() || "—"}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground truncate">{(company as any)?.name ?? "Your company"}</div>
+              <div className="text-sm font-semibold truncate">Driver or client name</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom advert preview */}
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Bottom advert</div>
+          <div className="relative rounded-lg border bg-muted/40 h-32">
+            <div className="absolute inset-x-0 bottom-0">
+              <PreviewBar branding={previewBranding} />
+            </div>
           </div>
         </div>
       </section>
-
-      {/* Actual live footer at the very bottom of the page too */}
-      <BrandingBar branding={previewBranding} />
     </div>
   );
 }
 
 function PreviewBar({ branding }: { branding: ReturnType<typeof Object> }) {
   const b = branding as any;
-  if (!b.logo_url && !b.advert_url) {
-    return <div className="p-4 text-xs text-center text-muted-foreground">Nothing to show yet.</div>;
+  if (!b.advert_url) {
+    return <div className="p-4 text-xs text-center text-muted-foreground">No advert to show — bottom bar stays hidden.</div>;
   }
   return (
     <div className="mx-auto max-w-3xl px-2 pb-2">
       <div className="rounded-t-xl border border-b-0 bg-background shadow-lg flex items-center gap-3 pl-3 pr-3 py-2">
-        {b.logo_url
-          ? <img src={b.logo_url} alt="" className="h-9 w-9 rounded-md object-contain shrink-0" />
-          : <div className="h-9 w-9 rounded-md bg-primary/10 grid place-items-center text-xs font-semibold">
-              {(b.company_name ?? "").slice(0, 2).toUpperCase()}
-            </div>}
-        {b.advert_url ? (
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <img src={b.advert_url} alt="" className="h-14 w-auto max-w-[55%] object-contain rounded-md" />
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sponsored</div>
-              <div className="text-xs truncate">{b.advert_caption ?? b.company_name}</div>
-            </div>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <img src={b.advert_url} alt="" className="h-14 w-auto max-w-[55%] object-contain rounded-md" />
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sponsored</div>
+            <div className="text-xs truncate">{b.advert_caption ?? b.company_name}</div>
           </div>
-        ) : (
-          <div className="text-xs font-medium">{b.company_name}</div>
-        )}
+        </div>
       </div>
     </div>
   );

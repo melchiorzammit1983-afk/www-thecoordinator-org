@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { EditBookingDialog } from "@/components/client/EditBookingDialog";
 import { RecurringDialog } from "@/components/client/RecurringDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
+import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 
 export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
@@ -44,13 +45,20 @@ function ClientPortal() {
   if (!data) return <NotFound />;
 
   const upcoming = data.bookings.filter((b) => !b.pickup_at || new Date(b.pickup_at).getTime() > Date.now() - 3600_000);
+  const branding = data.branding;
+  useFavicon(branding?.logo_url ?? null);
 
   return (
     <div className="min-h-screen bg-muted/30 pb-28">
       <header className="border-b bg-background px-4 py-4">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-xs text-muted-foreground uppercase tracking-wide">Your bookings</div>
-          <h1 className="text-xl font-semibold">{data.link.subject_label ?? "Client portal"}</h1>
+        <div className="max-w-3xl mx-auto flex items-center gap-3">
+          <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "C"} size="lg" />
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground uppercase tracking-wide truncate">
+              {branding?.company_name ?? "Your bookings"}
+            </div>
+            <h1 className="text-xl font-semibold truncate">{data.link.subject_label ?? "Client portal"}</h1>
+          </div>
         </div>
       </header>
       <main className="max-w-3xl mx-auto p-4 space-y-3">

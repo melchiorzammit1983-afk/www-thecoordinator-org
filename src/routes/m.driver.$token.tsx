@@ -32,6 +32,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
+import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 
 import {
@@ -150,19 +151,26 @@ function DriverManifest() {
   if (!data) return <NotFound />;
 
   const driver = data.driver;
+  const branding = data.branding;
+  useFavicon(branding?.logo_url ?? null);
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background pb-28">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] text-primary font-semibold uppercase tracking-widest">Driver Manifest</div>
-            <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
-            {driver && (
-              <div className="text-[11px] text-muted-foreground truncate">
-                {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
-                {driver.availability_note ?? "No availability set"}
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "D"} />
+            <div className="min-w-0">
+              <div className="text-[10px] text-primary font-semibold uppercase tracking-widest truncate">
+                {branding?.company_name ?? "Driver Manifest"}
               </div>
-            )}
+              <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
+              {driver && (
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
+                  {driver.availability_note ?? "No availability set"}
+                </div>
+              )}
+            </div>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

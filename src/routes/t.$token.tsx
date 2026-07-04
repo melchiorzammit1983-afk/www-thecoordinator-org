@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
 import { BrandingBar } from "@/components/branding/BrandingBar";
+import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 
 
 export const Route = createFileRoute("/t/$token")({
@@ -166,6 +167,8 @@ function ClientTripPortal() {
     if (hasIdentity) setPickerOpen(false);
   }, [needsIdentity, hasIdentity]);
 
+  useFavicon((data as any)?.branding?.logo_url ?? null);
+
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Offline banner */}
@@ -179,14 +182,25 @@ function ClientTripPortal() {
       )}
 
       {/* Header */}
+      
       <header className="bg-gradient-to-br from-teal-800 to-teal-700 text-white px-4 pt-6 pb-5 shadow">
-        <div className="text-[11px] uppercase tracking-widest opacity-70">{company?.name ?? "Transfer"}</div>
-        <div className="mt-1 font-semibold text-lg leading-tight">
-          {(job.from_location || "?")}{job.from_flight ? ` · ${job.from_flight}` : ""}
-          <span className="opacity-70"> → </span>
-          {(job.to_location || "?")}{job.to_flight ? ` · ${job.to_flight}` : ""}
+        <div className="flex items-center gap-3">
+          <BrandLogo
+            logoUrl={(data as any)?.branding?.logo_url ?? null}
+            name={company?.name ?? "T"}
+            size="lg"
+            className="border-white/30 bg-white/10"
+          />
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-widest opacity-70 truncate">{company?.name ?? "Transfer"}</div>
+            <div className="mt-1 font-semibold text-base leading-tight truncate">
+              {(job.from_location || "?")}{job.from_flight ? ` · ${job.from_flight}` : ""}
+              <span className="opacity-70"> → </span>
+              {(job.to_location || "?")}{job.to_flight ? ` · ${job.to_flight}` : ""}
+            </div>
+          </div>
         </div>
-        <div className="mt-1 text-sm opacity-90">
+        <div className="mt-2 text-sm opacity-90">
           {job.pickup_at ? formatMaltaDateTime(job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : `${job.date}${job.time ? " · " + job.time.slice(0, 5) : ""}`}
         </div>
