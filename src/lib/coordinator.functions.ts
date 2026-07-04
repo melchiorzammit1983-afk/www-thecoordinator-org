@@ -2933,10 +2933,13 @@ export const aiPlanDriverDay = createServerFn({ method: "POST" })
     ).join("\n");
 
     const parsed = await callGemini(
-      `Order these trips for one driver to minimize backtracking and idle time. Respect pickup times when set (do not schedule pickup before its time).\nReturn JSON: {"ordered_trip_ids":["uuid",...],"summary":"one short sentence with estimated minutes saved"}.\nTrips:\n${summary}`,
+      await buildSystemPrompt(c.id,
+        `Order these trips for one driver to minimize backtracking and idle time. Respect pickup times when set (do not schedule pickup before its time).\nReturn JSON: {"ordered_trip_ids":["uuid",...],"summary":"one short sentence with estimated minutes saved"}.\nTrips:\n${summary}`,
+      ),
       "gemini-2.5-flash",
       { maxOutputTokens: 800 },
     );
+
     return {
       ordered_trip_ids: Array.isArray(parsed?.ordered_trip_ids) ? parsed.ordered_trip_ids : list.map((j: any) => j.id),
       summary: String(parsed?.summary ?? ""),
