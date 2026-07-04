@@ -445,7 +445,57 @@ function CalendarPage() {
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
         </div>
-        <div className="flex justify-end items-center gap-2">
+        <div className="flex flex-wrap justify-end items-center gap-2">
+          {(["light","moderate","heavy","severe"] as const).map((s) => {
+            const active = trafficFilter.has(s);
+            const styles: Record<string,string> = {
+              light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
+              moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+              heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
+              severe: "border-red-500/50 text-red-700 dark:text-red-300",
+            };
+            const activeBg: Record<string,string> = {
+              light: "bg-emerald-500/15",
+              moderate: "bg-amber-500/15",
+              heavy: "bg-orange-500/15",
+              severe: "bg-red-500/15",
+            };
+            return (
+              <button
+                key={s} type="button"
+                onClick={() => toggleTrafficFilter(s)}
+                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
+                title={`Show only ${s} traffic trips`}
+              >
+                {active ? "● " : ""}{s} · {severityCounts[s]}
+              </button>
+            );
+          })}
+          {trafficFilter.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setTrafficFilter(new Set())}
+              className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              clear
+            </button>
+          )}
+          <div className="flex rounded-md border overflow-hidden text-[11px]">
+            {([
+              { k: "none", label: "Default" },
+              { k: "leave_by", label: "Leave by ↑" },
+              { k: "severity", label: "Severity ↓" },
+            ] as const).map((o) => (
+              <button
+                key={o.k} type="button"
+                onClick={() => setTrafficSort(o.k)}
+                className={`px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                title={`Sort by ${o.label}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setAlertsOnly((v) => !v)}
