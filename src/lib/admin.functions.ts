@@ -750,7 +750,7 @@ export const adminListTopups = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
     z.object({
-      status: z.enum(["pending", "approved", "declined", "all"]).default("pending"),
+      status: z.enum(["pending", "fulfilled", "rejected", "all"]).default("pending"),
       limit: z.number().int().min(1).max(200).default(50),
     }).parse(i),
   )
@@ -760,7 +760,7 @@ export const adminListTopups = createServerFn({ method: "POST" })
       .select("*, companies(id, name), point_packs(id, name, points, price)")
       .order("created_at", { ascending: false })
       .limit(data.limit);
-    if (data.status !== "all") q = q.eq("status", data.status);
+    if (data.status !== "all") q = q.eq("status", data.status as "pending" | "fulfilled" | "rejected");
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return rows ?? [];
@@ -784,7 +784,7 @@ export const adminApproveTopup = createServerFn({ method: "POST" })
     });
     if (gErr) throw new Error(gErr.message);
     const { error: uErr } = await sb.from("topup_requests")
-      .update({ status: "approved" } as never).eq("id", data.id);
+      .update({ status: "fulfilled" } as never).eq("id", data.id);
     if (uErr) throw new Error(uErr.message);
     return { ok: true, granted: grant };
   });
@@ -795,7 +795,7 @@ export const adminDeclineTopup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const sb = await assertAdmin(context);
     const { error } = await sb.from("topup_requests")
-      .update({ status: "declined" } as never).eq("id", data.id);
+      .update({ status: "rejected" } as never).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
