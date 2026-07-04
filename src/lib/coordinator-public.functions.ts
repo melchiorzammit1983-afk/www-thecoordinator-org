@@ -133,7 +133,8 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       }, {});
     }
     const jobsWithUnread = (jobs ?? []).map((j: { id: string }) => ({ ...j, unread_messages: unread[j.id] ?? 0 }));
-    return { link, jobs: jobsWithUnread, driver };
+    const branding = await loadCompanyBranding(link.company_id);
+    return { link, jobs: jobsWithUnread, driver, branding };
   });
 
 // ---------- Trip messages (driver side) ----------
