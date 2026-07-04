@@ -2223,7 +2223,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const maxOutputTokens = hasMedia ? 1024 : 512;
 
     const today = new Date().toISOString().slice(0, 10);
-    const systemInstruction = [
+    const baseInstruction = [
       `You are a transport-coordinator data extractor. Sources may be text, images, PDFs, or web pages.`,
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
@@ -2231,6 +2231,8 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
       'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
     ].join("\n");
+    const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
+
 
     const trimmed = data.messages.slice(-4);
     const contents = trimmed.map((m, i) => {
