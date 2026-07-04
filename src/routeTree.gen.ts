@@ -42,6 +42,7 @@ import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
+import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -228,6 +229,12 @@ const ApiPublicCronRolloverSubscriptionsRoute =
     path: '/api/public/cron/rollover-subscriptions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCronAiAutoCoordinateRoute =
+  ApiPublicCronAiAutoCoordinateRouteImport.update({
+    id: '/api/public/cron/ai-auto-coordinate',
+    path: '/api/public/cron/ai-auto-coordinate',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -261,6 +268,7 @@ export interface FileRoutesByFullPath {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesByTo {
@@ -293,6 +301,7 @@ export interface FileRoutesByTo {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRoutesById {
@@ -329,6 +338,7 @@ export interface FileRoutesById {
   '/m/driver/$token': typeof MDriverTokenRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 export interface FileRouteTypes {
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
+    | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -397,6 +408,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
+    | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
   id:
     | '__root__'
@@ -432,6 +444,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
+    | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
   fileRoutesById: FileRoutesById
 }
@@ -446,6 +459,7 @@ export interface RootRouteChildren {
   TTokenRoute: typeof TTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRoute
+  ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
 }
 
@@ -682,6 +696,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cron/ai-auto-coordinate': {
+      id: '/api/public/cron/ai-auto-coordinate'
+      path: '/api/public/cron/ai-auto-coordinate'
+      fullPath: '/api/public/cron/ai-auto-coordinate'
+      preLoaderRoute: typeof ApiPublicCronAiAutoCoordinateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -778,6 +799,7 @@ const rootRouteChildren: RootRouteChildren = {
   TTokenRoute: TTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRoute,
+  ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
 }
