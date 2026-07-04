@@ -562,6 +562,30 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
           </div>
         </div>
 
+        {!chatOpen && (
+          <div className="flex items-center gap-2">
+            <VoiceToTripButton onTrips={handleVoiceTrips} disabled={aiMut.isPending} />
+            <span className="text-[11px] text-muted-foreground">Record a voice note or upload audio — AI extracts trips.</span>
+          </div>
+        )}
+
+        {!chatOpen && voiceTranscript && (
+          <div className="rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
+            <button
+              type="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowTranscript((v) => !v)}
+            >
+              <ChevronDown className={`h-3 w-3 transition-transform ${showTranscript ? "" : "-rotate-90"}`} />
+              Voice transcript
+            </button>
+            {showTranscript && (
+              <p className="mt-1.5 whitespace-pre-wrap text-foreground/80">{voiceTranscript}</p>
+            )}
+          </div>
+        )}
+
+
         {!chatOpen && attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((a, i) => (
