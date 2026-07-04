@@ -53,13 +53,21 @@ function PublicBookingPage() {
   const [done, setDone] = useState(false);
   const submitFn = useServerFn(submitClientBooking);
 
+  // Promo carried in from the coordinator's advert (e.g. "20% off").
+  // Kept in state so the client sees it in the "Submitted" screen too.
+  const promo = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const p = new URLSearchParams(window.location.search).get("promo") ?? "";
+    return p.trim().slice(0, 200);
+  }, []);
+
   const [form, setForm] = useState({
     name: "", surname: "", client_email: "", room_number: "",
     from_location: "", to_location: "", time: "",
   });
 
   const mut = useMutation({
-    mutationFn: () => submitFn({ data: { token: params.token, ...form } }),
+    mutationFn: () => submitFn({ data: { token: params.token, ...form, promo_note: promo || undefined } as any }),
     onSuccess: () => { setDone(true); toast.success("Booking submitted"); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -70,6 +78,12 @@ function PublicBookingPage() {
 
   const logoUrl = (company as any)?.logo_url ?? null;
   useFavicon(logoUrl);
+  // Keep tab title reflective of the promo so the user sees it too.
+  useEffect(() => {
+    if (promo && typeof document !== "undefined") {
+      document.title = `${promo} — ${company.name}`;
+    }
+  }, [promo, company.name]);
 
   return (
     <div className="min-h-screen bg-muted/30 py-10 px-4">
