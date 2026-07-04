@@ -268,6 +268,10 @@ export function TripDetailsSheet({
           {/* Pricing (coordinator-only) */}
           <TripPricingPanel jobId={job.id} />
 
+          {/* Private per-hop price proposals */}
+          <PriceProposalsPanel jobId={job.id} />
+
+
 
 
           {/* Alerts */}
