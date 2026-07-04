@@ -269,6 +269,16 @@ export function TripDetailsSheet({
             )}
           </SheetHeader>
 
+          <TrafficBadge
+            info={{
+              traffic_delay_minutes: job.traffic_delay_minutes,
+              traffic_severity: job.traffic_severity,
+              leave_by_at: job.leave_by_at,
+              pickup_shift_reason: job.pickup_shift_reason,
+            }}
+          />
+
+
           {/* Progress */}
           <div className="rounded-md border p-3 space-y-2 bg-muted/40">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip status</div>
