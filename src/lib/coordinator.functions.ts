@@ -2548,6 +2548,7 @@ export const getClientTripLink = createServerFn({ method: "POST" })
       const { error: uErr } = await supabaseAdmin.from("jobs")
         .update({ client_link_token: token } as never).eq("id", data.job_id);
       if (uErr) throw new Error(uErr.message);
+      await spendSoft(company.id, "client_link_sent", "Client trip link issued", data.job_id);
     }
     const { count } = await supabaseAdmin.from("pax")
       .select("id", { count: "exact", head: true }).eq("job_id", data.job_id);
