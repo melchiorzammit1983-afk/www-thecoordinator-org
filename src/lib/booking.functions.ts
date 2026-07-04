@@ -34,6 +34,7 @@ export const submitClientBooking = createServerFn({ method: "POST" })
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM"),
+        promo_note: z.string().trim().max(200).optional().or(z.literal("")),
       })
       .parse(input),
   )
@@ -57,7 +58,8 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       from_location: data.from_location,
       to_location: data.to_location,
       time: data.time.length === 5 ? `${data.time}:00` : data.time,
-    });
+      promo_note: data.promo_note ? data.promo_note.trim() : null,
+    } as any);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
