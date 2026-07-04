@@ -57,7 +57,7 @@ function BrandingPage() {
   }, [company]);
 
   const save = useMutation({
-    mutationFn: (patch: Parameters<typeof update>[0]["data"]) => update({ data: patch }),
+    mutationFn: (patch: Record<string, unknown>) => update({ data: patch as any }),
     onSuccess: () => {
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["my-company-branding"] });
