@@ -1308,6 +1308,9 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       .insert(insertPayload as never).select("id").single();
     if (iErr) throw new Error(iErr.message);
 
+    // Meter the child trip
+    await spendSoft(c.id, "trip_created", "Trip split from parent", job.id);
+
     if (inheritsChain) {
       // Mirror the accepted hop so chain timelines / statements reflect the split child.
       await supabaseAdmin.from("job_dispatch_hops").insert({
@@ -1319,6 +1322,7 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
         note: "split from parent trip",
         decided_at: new Date().toISOString(),
       });
+      await spendSoft(src.origin_company_id ?? src.company_id, "trip_dispatched", "Trip dispatched via split", job.id);
     }
 
     // Copy labels from parent → child so the card is visually complete.
