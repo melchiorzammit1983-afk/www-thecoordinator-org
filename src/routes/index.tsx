@@ -639,17 +639,18 @@ function FinalCta() {
           </p>
           <div className="mt-7 flex flex-col sm:flex-row justify-center gap-2.5">
             <Link
-              to="/auth"
+              to="/request-access"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-[#0f1a35] shadow-xl hover:bg-slate-100 transition-all"
             >
-              Start Your Network Now <ArrowRight className="h-4 w-4" />
+              Get Started <ArrowRight className="h-4 w-4" />
             </Link>
-            <a
-              href="mailto:hello@coordinatormt.com?subject=Book%20a%20Demo"
+            <Link
+              to="/request-access"
+              search={{ demo: "1" }}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
             >
               Book a Demo
-            </a>
+            </Link>
           </div>
         </div>
       </div>
