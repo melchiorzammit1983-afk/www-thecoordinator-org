@@ -1,0 +1,1 @@
+DROP FUNCTION public.admin_grant_points(uuid, integer, text);

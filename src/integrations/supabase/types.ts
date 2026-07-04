@@ -2220,15 +2220,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      admin_grant_points:
-        | {
-            Args: { _company_id: string; _note?: string; _points: number }
-            Returns: undefined
-          }
-        | {
-            Args: { _company_id: string; _note?: string; _points: number }
-            Returns: undefined
-          }
+      admin_grant_points: {
+        Args: { _company_id: string; _note?: string; _points: number }
+        Returns: undefined
+      }
       auto_assign_job: {
         Args: { _job_id: string }
         Returns: {
