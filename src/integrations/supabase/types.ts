@@ -180,6 +180,7 @@ export type Database = {
           name: string
           parent_job_id: string | null
           pickup_at: string | null
+          promo_note: string | null
           room_number: string | null
           status: Database["public"]["Enums"]["booking_status"]
           surname: string
@@ -200,6 +201,7 @@ export type Database = {
           name: string
           parent_job_id?: string | null
           pickup_at?: string | null
+          promo_note?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           surname: string
@@ -220,6 +222,7 @@ export type Database = {
           name?: string
           parent_job_id?: string | null
           pickup_at?: string | null
+          promo_note?: string | null
           room_number?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           surname?: string
@@ -1183,6 +1186,7 @@ export type Database = {
           price_currency: string | null
           price_set_at: string | null
           price_set_by: string | null
+          promo_note: string | null
           qr_strict_mode: boolean
           self_assigned_user_id: string | null
           source: string
@@ -1250,6 +1254,7 @@ export type Database = {
           price_currency?: string | null
           price_set_at?: string | null
           price_set_by?: string | null
+          promo_note?: string | null
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
           source?: string
@@ -1317,6 +1322,7 @@ export type Database = {
           price_currency?: string | null
           price_set_at?: string | null
           price_set_by?: string | null
+          promo_note?: string | null
           qr_strict_mode?: boolean
           self_assigned_user_id?: string | null
           source?: string
