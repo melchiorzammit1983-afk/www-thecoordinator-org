@@ -155,6 +155,11 @@ function CalendarPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [trafficFilter, setTrafficFilter] = useState<Set<string>>(new Set());
+  const [trafficSort, setTrafficSort] = useState<"none" | "leave_by" | "severity">("none");
+  const toggleTrafficFilter = (s: string) => setTrafficFilter((prev) => {
+    const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n;
+  });
   const qc = useQueryClient();
   const clientPortalEnabled = useFeature("client_trip_portal");
 
@@ -361,7 +366,30 @@ function CalendarPage() {
 
   const isPendingClient = (j: Job) =>
     !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
-  const visibleAll = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const afterAlerts = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
+  const visibleAll = trafficFilter.size
+    ? afterAlerts.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+    : afterAlerts;
+  const severityCounts: Record<string, number> = { light: 0, moderate: 0, heavy: 0, severe: 0 };
+  for (const j of afterAlerts) {
+    const s = String(j.traffic_severity ?? "");
+    if (s in severityCounts) severityCounts[s]++;
+  }
+  const SEV_RANK: Record<string, number> = { severe: 4, heavy: 3, moderate: 2, light: 1 };
+  const trafficSorted = trafficSort === "none" ? null : [...visibleAll].sort((a, b) => {
+    if (trafficSort === "severity") {
+      const rb = SEV_RANK[String(b.traffic_severity ?? "")] ?? 0;
+      const ra = SEV_RANK[String(a.traffic_severity ?? "")] ?? 0;
+      if (rb !== ra) return rb - ra;
+      const db = (b.traffic_delay_minutes ?? 0) - (a.traffic_delay_minutes ?? 0);
+      if (db !== 0) return db;
+    } else {
+      const av = a.leave_by_at ? new Date(a.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+      const bv = b.leave_by_at ? new Date(b.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+      if (av !== bv) return av - bv;
+    }
+    return ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""));
+  });
   const pendingClientJobs = visibleAll.filter(isPendingClient);
   const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
@@ -417,7 +445,57 @@ function CalendarPage() {
             <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
           </div>
         </div>
-        <div className="flex justify-end items-center gap-2">
+        <div className="flex flex-wrap justify-end items-center gap-2">
+          {(["light","moderate","heavy","severe"] as const).map((s) => {
+            const active = trafficFilter.has(s);
+            const styles: Record<string,string> = {
+              light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
+              moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+              heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
+              severe: "border-red-500/50 text-red-700 dark:text-red-300",
+            };
+            const activeBg: Record<string,string> = {
+              light: "bg-emerald-500/15",
+              moderate: "bg-amber-500/15",
+              heavy: "bg-orange-500/15",
+              severe: "bg-red-500/15",
+            };
+            return (
+              <button
+                key={s} type="button"
+                onClick={() => toggleTrafficFilter(s)}
+                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
+                title={`Show only ${s} traffic trips`}
+              >
+                {active ? "● " : ""}{s} · {severityCounts[s]}
+              </button>
+            );
+          })}
+          {trafficFilter.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setTrafficFilter(new Set())}
+              className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              clear
+            </button>
+          )}
+          <div className="flex rounded-md border overflow-hidden text-[11px]">
+            {([
+              { k: "none", label: "Default" },
+              { k: "leave_by", label: "Leave by ↑" },
+              { k: "severity", label: "Severity ↓" },
+            ] as const).map((o) => (
+              <button
+                key={o.k} type="button"
+                onClick={() => setTrafficSort(o.k)}
+                className={`px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                title={`Sort by ${o.label}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setAlertsOnly((v) => !v)}
@@ -452,14 +530,45 @@ function CalendarPage() {
         <AiGroupSuggestionsButton date={range.from} />
       </div>
 
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
-          <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
-          {view === "day"
-            ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
-            : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
+      {trafficSorted ? (
+        <div className="rounded-md border bg-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium text-muted-foreground">
+              Traffic view — sorted by {trafficSort === "leave_by" ? "leave-by time" : "severity"} · {trafficSorted.length} trip{trafficSorted.length === 1 ? "" : "s"}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTrafficSort("none")}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline"
+            >
+              back to lanes
+            </button>
+          </div>
+          {trafficSorted.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-6 text-center">No trips match the current filter.</div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {trafficSorted.map((j) => (
+                <TripCard
+                  key={j.id}
+                  job={j}
+                  ctx={cardCtx}
+                  driverName={(drivers ?? []).find((d) => d.id === j.driver_id)?.name}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      </DndContext>
+      ) : (
+        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+            <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
+            {view === "day"
+              ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
+              : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
+          </div>
+        </DndContext>
+      )}
 
       {dispatchState && (
         <DispatchDialog
