@@ -484,8 +484,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         />
       )}
 
+      {/* Price proposal (optional pre-accept) */}
+      {!job.deletion_requested_at && (
+        <DriverPricePanel token={token} jobId={job.id} accepted={accepted} />
+      )}
+
       {/* Actions */}
       <div className="p-3 pt-3 grid grid-cols-2 gap-2">
+
         {!accepted && !job.deletion_requested_at && (
           <>
             <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
