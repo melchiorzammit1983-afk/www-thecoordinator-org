@@ -5,11 +5,13 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
-import { whoAmI } from "@/lib/admin.functions";
+import { whoAmI, requestPasswordReset } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Copy } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
