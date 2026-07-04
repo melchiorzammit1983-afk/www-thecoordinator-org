@@ -25,6 +25,7 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import { cn } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
+import { BrandingBar } from "@/components/branding/BrandingBar";
 
 
 export const Route = createFileRoute("/t/$token")({
@@ -315,6 +316,7 @@ function ClientTripPortal() {
       {tab === "rebook" && (
         <RebookPanel token={token} deviceId={deviceId} lastFrom={job.from_location ?? ""} lastTo={job.to_location ?? ""} />
       )}
+      <BrandingBar branding={(data as any)?.branding ?? null} />
     </div>
   );
 }

@@ -76,11 +76,38 @@ export const getMyCompany = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("companies")
-      .select("id, name, status, access_end, require_client_company, custom_link")
+      .select("id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled")
       .eq("owner_user_id", context.userId)
       .maybeSingle();
     if (error) return null;
     return data ?? null;
+  });
+
+export const updateMyBranding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      logo_url: z.string().max(2_000_000).nullable().optional(),
+      advert_url: z.string().max(2_000_000).nullable().optional(),
+      advert_link: z.string().trim().max(500).nullable().optional(),
+      advert_caption: z.string().trim().max(200).nullable().optional(),
+      advert_enabled: z.boolean().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await getAdminClient();
+    const { data: co, error: cErr } = await supabaseAdmin
+      .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    if (cErr || !co) throw new Error("No company assigned");
+    const patch: Record<string, unknown> = {};
+    if ("logo_url" in data) patch.logo_url = data.logo_url ?? null;
+    if ("advert_url" in data) patch.advert_url = data.advert_url ?? null;
+    if ("advert_link" in data) patch.advert_link = data.advert_link || null;
+    if ("advert_caption" in data) patch.advert_caption = data.advert_caption || null;
+    if ("advert_enabled" in data) patch.advert_enabled = !!data.advert_enabled;
+    const { error } = await supabaseAdmin.from("companies").update(patch as never).eq("id", co.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 
