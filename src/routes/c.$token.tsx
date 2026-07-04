@@ -68,11 +68,15 @@ function PublicBookingPage() {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  const logoUrl = (company as any)?.logo_url ?? null;
+  useFavicon(logoUrl);
+
   return (
     <div className="min-h-screen bg-muted/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
-        <div className="mb-6 text-center">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <BrandLogo logoUrl={logoUrl} name={company.name} size="lg" />
+          <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
           <h1 className="text-2xl font-semibold mt-1">{company.name}</h1>
         </div>
         <Card>
