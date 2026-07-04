@@ -789,6 +789,40 @@ function ProfileDialog({ open, onOpenChange, token, driver }: {
   );
 }
 
+const STMT_COLUMNS: { key: string; label: string; group: string }[] = [
+  { key: "date", label: "Date", group: "Trip" },
+  { key: "time", label: "Time", group: "Trip" },
+  { key: "status", label: "Status", group: "Trip" },
+  { key: "payment_status", label: "Payment", group: "Trip" },
+  { key: "payment_method", label: "Payment method", group: "Trip" },
+  { key: "price_display", label: "Amount", group: "Trip" },
+  { key: "price_currency", label: "Currency", group: "Trip" },
+  { key: "price_set_by", label: "Price set by", group: "Trip" },
+  { key: "labels", label: "Labels", group: "Trip" },
+  { key: "clientcompanyname", label: "Client company", group: "Trip" },
+  { key: "created_at", label: "Created", group: "Trip" },
+  { key: "from_location", label: "From", group: "Route" },
+  { key: "to_location", label: "To", group: "Route" },
+  { key: "flight", label: "Flight", group: "Route" },
+  { key: "flight_status", label: "Flight status", group: "Route" },
+  { key: "driver_name", label: "Driver", group: "People" },
+  { key: "driver_phone", label: "Driver phone", group: "People" },
+  { key: "driver_vehicle", label: "Driver vehicle", group: "People" },
+  { key: "vehicle", label: "Trip vehicle", group: "People" },
+  { key: "pax_count", label: "Pax count", group: "People" },
+  { key: "pax_names", label: "Passenger names", group: "People" },
+  { key: "pax_boarded", label: "Boarded", group: "People" },
+  { key: "driver_actual_minutes", label: "Duration (min)", group: "Ops" },
+  { key: "driver_reported_km", label: "Distance (km)", group: "Ops" },
+  { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
+];
+const DRIVER_DEFAULT_COLS = [
+  "date","time","from_location","to_location","flight","clientcompanyname",
+  "pax_names","pax_count","status","payment_status","price_display",
+];
+const STMT_STATUSES = ["pending","assigned","accepted","en_route","arrived","in_progress","completed","cancelled"];
+const STMT_FLIGHT_STATUSES = ["scheduled","active","landed","delayed","cancelled","diverted"];
+
 function StatementDialog({ open, onOpenChange, token, driverName }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driverName: string;
 }) {
@@ -797,42 +831,117 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
   const [from, setFrom] = useState(monthAgo);
   const [to, setTo] = useState(today);
   const [payment, setPayment] = useState<"all" | "paid" | "pending">("all");
+  const [status, setStatus] = useState<string[]>([]);
+  const [flightStatus, setFlightStatus] = useState<string[]>([]);
+  const [flightContains, setFlightContains] = useState("");
+  const [fromContains, setFromContains] = useState("");
+  const [toContains, setToContains] = useState("");
+  const [paxContains, setPaxContains] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedCols, setSelectedCols] = useState<string[]>(() => {
+    if (typeof window === "undefined") return DRIVER_DEFAULT_COLS;
+    try {
+      const raw = window.localStorage.getItem("driver:statement:columns:v1");
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return DRIVER_DEFAULT_COLS;
+  });
+  const [showFilters, setShowFilters] = useState(false);
+  const [showCols, setShowCols] = useState(false);
+
+  function saveCols(next: string[]) {
+    setSelectedCols(next);
+    try { window.localStorage.setItem("driver:statement:columns:v1", JSON.stringify(next)); } catch { /* ignore */ }
+  }
+  function toggle<T>(arr: T[], v: T): T[] {
+    return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+  }
+
   const fn = useServerFn(getDriverStatement);
-  const mut = useMutation({
-    mutationFn: () => fn({ data: { token, from, to, payment } }),
-    onSuccess: (rows) => {
-      const list = rows as Array<Record<string, unknown>>;
-      if (list.length === 0) { toast.info("No trips in this range"); return; }
-      const headers = ["date","time","from","to","client","vehicle","status","payment"];
-      const csv = [headers.join(",")].concat(list.map((r) => [
-        r.date, (r.time as string || "").slice(0,5),
-        csvCell(r.from_location), csvCell(r.to_location),
-        csvCell(r.clientcompanyname), csvCell(r.vehicle),
-        r.status, r.payment_status,
-      ].join(","))).join("\n");
+  const build = () => fn({ data: {
+    token, from, to, payment,
+    status: status.length ? status : undefined,
+    flight_status: flightStatus.length ? flightStatus : undefined,
+    flight_contains: flightContains || undefined,
+    from_contains: fromContains || undefined,
+    to_contains: toContains || undefined,
+    pax_contains: paxContains || undefined,
+    search: search || undefined,
+  } }) as Promise<Array<Record<string, unknown>>>;
+
+  function fileBase() {
+    const slug = driverName.replace(/\s+/g, "_") || "driver";
+    return `statement_${slug}_${from}_${to}`;
+  }
+
+  function buildRows(list: Array<Record<string, unknown>>) {
+    const cols = STMT_COLUMNS.filter((c) => selectedCols.includes(c.key));
+    return list.map((r) => {
+      const out: Record<string, unknown> = {};
+      for (const c of cols) {
+        let v = r[c.key];
+        if (v == null || v === "") v = "";
+        else if (c.key === "time" && typeof v === "string") v = v.slice(0, 5);
+        else if (c.key.endsWith("_at") || c.key === "created_at") {
+          try { v = new Date(v as string).toLocaleString(); } catch { /* keep raw */ }
+        }
+        out[c.label] = v;
+      }
+      return out;
+    });
+  }
+
+  const csvMut = useMutation({
+    mutationFn: build,
+    onSuccess: (list) => {
+      if (!list.length) { toast.info("No trips in this range"); return; }
+      const rows = buildRows(list);
+      const headers = Object.keys(rows[0]);
+      const csv = [headers.join(",")].concat(
+        rows.map((r) => headers.map((h) => csvCell(r[h])).join(","))
+      ).join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `statement-${driverName.replace(/\s+/g, "_")}-${from}_${to}.csv`;
+      a.download = `${fileBase()}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success(`${list.length} trip(s) exported`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const xlsxMut = useMutation({
+    mutationFn: build,
+    onSuccess: async (list) => {
+      if (!list.length) { toast.info("No trips in this range"); return; }
+      const rows = buildRows(list);
+      const XLSX = await import("xlsx");
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Statement");
+      XLSX.writeFile(wb, `${fileBase()}.xlsx`);
+      toast.success(`${list.length} trip(s) exported`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const busy = csvMut.isPending || xlsxMut.isPending;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Download statement</DialogTitle>
-          <DialogDescription>Export a CSV of your trips.</DialogDescription>
+          <DialogDescription>Filter your trips, pick the columns you want, then export.</DialogDescription>
         </DialogHeader>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
           <div className="col-span-2 space-y-1.5">
-            <Label>Payment</Label>
-            <div className="flex gap-2">
+            <Label className="text-xs">Payment</Label>
+            <div className="flex gap-2 flex-wrap">
               {(["all","paid","pending"] as const).map((k) => (
                 <Button key={k} type="button" size="sm"
                   variant={payment === k ? "default" : "outline"}
@@ -841,15 +950,97 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button disabled={mut.isPending} onClick={() => mut.mutate()}>
-            <Download className="h-4 w-4 mr-1" /> {mut.isPending ? "Preparing…" : "Download CSV"}
+
+        <div className="border rounded-lg">
+          <button type="button" onClick={() => setShowFilters((s) => !s)}
+            className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+            <span>More filters</span>
+            <span className="text-xs text-muted-foreground">{showFilters ? "Hide" : "Show"}</span>
+          </button>
+          {showFilters && (
+            <div className="px-3 pb-3 space-y-3 border-t pt-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1"><Label className="text-xs">Free search</Label>
+                  <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="text…" /></div>
+                <div className="space-y-1"><Label className="text-xs">Flight contains</Label>
+                  <Input value={flightContains} onChange={(e) => setFlightContains(e.target.value)} placeholder="KM101" /></div>
+                <div className="space-y-1"><Label className="text-xs">From contains</Label>
+                  <Input value={fromContains} onChange={(e) => setFromContains(e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-xs">To contains</Label>
+                  <Input value={toContains} onChange={(e) => setToContains(e.target.value)} /></div>
+                <div className="space-y-1 col-span-2"><Label className="text-xs">Passenger name</Label>
+                  <Input value={paxContains} onChange={(e) => setPaxContains(e.target.value)} /></div>
+              </div>
+              <div>
+                <Label className="text-xs mb-1 block">Trip status</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {STMT_STATUSES.map((s) => (
+                    <button key={s} type="button" onClick={() => setStatus((a) => toggle(a, s))}
+                      className={`text-[11px] rounded-full px-2.5 py-1 border ${status.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}>
+                      {s.replace("_"," ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs mb-1 block">Flight status</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {STMT_FLIGHT_STATUSES.map((s) => (
+                    <button key={s} type="button" onClick={() => setFlightStatus((a) => toggle(a, s))}
+                      className={`text-[11px] rounded-full px-2.5 py-1 border ${flightStatus.includes(s) ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border rounded-lg">
+          <button type="button" onClick={() => setShowCols((s) => !s)}
+            className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+            <span>Columns ({selectedCols.length})</span>
+            <span className="text-xs text-muted-foreground">{showCols ? "Hide" : "Pick"}</span>
+          </button>
+          {showCols && (
+            <div className="px-3 pb-3 border-t pt-3 space-y-3">
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => saveCols(STMT_COLUMNS.map((c) => c.key))}>All</Button>
+                <Button size="sm" variant="outline" onClick={() => saveCols(DRIVER_DEFAULT_COLS)}>Defaults</Button>
+                <Button size="sm" variant="outline" onClick={() => saveCols([])}>None</Button>
+              </div>
+              {["Trip","Route","People","Ops"].map((g) => (
+                <div key={g}>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{g}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STMT_COLUMNS.filter((c) => c.group === g).map((c) => (
+                      <button key={c.key} type="button"
+                        onClick={() => saveCols(selectedCols.includes(c.key) ? selectedCols.filter((k) => k !== c.key) : [...selectedCols, c.key])}
+                        className={`text-[11px] rounded-full px-2.5 py-1 border ${selectedCols.includes(c.key) ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}>
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
+          <Button variant="outline" disabled={busy || !selectedCols.length} onClick={() => csvMut.mutate()}>
+            <Download className="h-4 w-4 mr-1" /> {csvMut.isPending ? "Preparing…" : "Download CSV"}
+          </Button>
+          <Button disabled={busy || !selectedCols.length} onClick={() => xlsxMut.mutate()}>
+            <FileText className="h-4 w-4 mr-1" /> {xlsxMut.isPending ? "Preparing…" : "Download XLSX"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
 
 function csvCell(v: unknown): string {
   if (v == null) return "";
