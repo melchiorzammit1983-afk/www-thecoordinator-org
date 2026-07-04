@@ -17,7 +17,7 @@ async function loadCompanyBranding(companyId: string) {
   const supabaseAdmin = await getAdminClient();
   const [{ data: co }, { data: ent }] = await Promise.all([
     supabaseAdmin.from("companies")
-      .select("id, name, logo_url, advert_url, advert_link, advert_caption, advert_enabled")
+      .select("id, name, logo_url, advert_url, advert_link, advert_caption, advert_enabled, custom_link")
       .eq("id", companyId).maybeSingle(),
     supabaseAdmin.from("company_feature_entitlements")
       .select("enabled, expires_at")
@@ -35,6 +35,7 @@ async function loadCompanyBranding(companyId: string) {
     advert_url: advertOn ? ((co as any).advert_url as string | null) : null,
     advert_link: advertOn ? ((co as any).advert_link as string | null) : null,
     advert_caption: advertOn ? ((co as any).advert_caption as string | null) : null,
+    booking_token: ((co as any).custom_link as string | null) ?? null,
   };
 }
 
