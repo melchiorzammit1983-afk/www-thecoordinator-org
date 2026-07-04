@@ -443,6 +443,10 @@ function CalendarPage() {
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
 
+      <div className="flex justify-end mb-2">
+        <AiGroupSuggestionsButton date={range.from} />
+      </div>
+
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
           <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
