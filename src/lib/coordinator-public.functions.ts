@@ -985,6 +985,8 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(5);
 
+    const branding = await loadCompanyBranding(job.company_id);
+
     return {
       job: {
         id: job.id, group_id: job.group_id, group_name: job.group_name,
