@@ -652,8 +652,11 @@ export const adminSetFeatureCost = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       feature_key: z.string().trim().min(1).max(80),
-      points_cost: z.number().int().min(0).max(10000),
+      points_cost: z.number().min(0).max(10000),
       label: z.string().trim().max(120).optional(),
+      category: z.enum(["core", "ai", "comms", "data"]).optional(),
+      enabled: z.boolean().optional(),
+      block_on_empty: z.boolean().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -661,6 +664,48 @@ export const adminSetFeatureCost = createServerFn({ method: "POST" })
     const { error } = await sb.from("ai_feature_costs")
       .upsert({ ...data } as never, { onConflict: "feature_key" });
     if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminListCompanyPriceOverrides = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ company_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { data: rows, error } = await sb
+      .from("company_feature_price_overrides")
+      .select("feature_key, points_cost")
+      .eq("company_id", data.company_id);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const adminSetCompanyPriceOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      company_id: z.string().uuid(),
+      feature_key: z.string().trim().min(1).max(80),
+      points_cost: z.number().min(0).max(10000).nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    if (data.points_cost === null) {
+      const { error } = await sb.from("company_feature_price_overrides")
+        .delete()
+        .eq("company_id", data.company_id)
+        .eq("feature_key", data.feature_key);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await sb.from("company_feature_price_overrides")
+        .upsert({
+          company_id: data.company_id,
+          feature_key: data.feature_key,
+          points_cost: data.points_cost,
+        } as never, { onConflict: "company_id,feature_key" });
+      if (error) throw new Error(error.message);
+    }
     return { ok: true };
   });
 
@@ -686,7 +731,7 @@ export const adminGrantPoints = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       company_id: z.string().uuid(),
-      points: z.number().int().min(-1_000_000).max(1_000_000),
+      points: z.number().min(-1_000_000).max(1_000_000),
       note: z.string().trim().max(300).optional(),
     }).parse(i),
   )
