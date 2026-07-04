@@ -1011,6 +1011,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
+      await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
     }
     return { created };
   });
