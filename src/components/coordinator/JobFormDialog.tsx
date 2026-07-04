@@ -20,8 +20,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2, Sparkles } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
+import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
