@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   adminGetCompanyBilling, adminListPlans, adminSetCompanyPlan, adminGrantPoints,
-  adminSetFeatureCap, listFeatureEntitlements,
+  adminSetFeatureCap, listFeatureEntitlements, setFeatureEntitlement, clearFeatureEntitlement,
 } from "@/lib/admin.functions";
 import type { FeatureKey } from "@/lib/features";
 import { AI_FEATURE_KEYS, FEATURE_CATALOG } from "@/lib/features";
