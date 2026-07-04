@@ -180,7 +180,7 @@ function ClientTripPortal() {
       )}
 
       {/* Header */}
-      <FaviconEffect url={(data as any)?.branding?.logo_url ?? null} />
+      
       <header className="bg-gradient-to-br from-teal-800 to-teal-700 text-white px-4 pt-6 pb-5 shadow">
         <div className="flex items-center gap-3">
           <BrandLogo
