@@ -357,6 +357,20 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [reply, setReply] = useState("");
 
+  // Voice-to-trip transcript (surfaced when the coordinator uses the voice button)
+  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
+    setRaw((prev) => {
+      const tsv = rowsToTsv(trips);
+      return prev.trim() ? prev + "\n" + tsv : tsv;
+    });
+    setVoiceTranscript(transcript || null);
+    setShowTranscript(false);
+    setChatOpen(false);
+  };
+
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
   const aiFn = useServerFn(extractTripsFromText);
