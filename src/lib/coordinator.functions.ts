@@ -3355,6 +3355,7 @@ export const getAiConfig = createServerFn({ method: "GET" })
       auto_reply_drafts: true,
       ai_command_enabled: true,
       voice_to_trip_enabled: true,
+      auto_coordinate_enabled: false,
     };
   });
 
@@ -3367,6 +3368,7 @@ export const saveAiConfig = createServerFn({ method: "POST" })
       auto_reply_drafts: z.boolean(),
       ai_command_enabled: z.boolean(),
       voice_to_trip_enabled: z.boolean(),
+      auto_coordinate_enabled: z.boolean(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
