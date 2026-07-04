@@ -87,12 +87,13 @@ function Nav() {
           >
             Login
           </Link>
-          <a
-            href="mailto:hello@coordinatormt.com?subject=Book%20a%20Demo"
+          <Link
+            to="/request-access"
+            search={{ demo: "1" }}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#1a2a52] px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-white hover:bg-[#243668] shadow-sm hover:shadow-md transition-all"
           >
             Book a Demo <ArrowRight className="h-3.5 w-3.5" />
-          </a>
+          </Link>
         </div>
       </div>
     </header>
