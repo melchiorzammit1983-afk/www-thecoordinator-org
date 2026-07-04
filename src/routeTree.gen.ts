@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as RequestAccessRouteImport } from './routes/request-access'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
@@ -44,6 +45,11 @@ import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RequestAccessRoute = RequestAccessRouteImport.update({
+  id: '/request-access',
+  path: '/request-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -220,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
@@ -252,6 +259,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
@@ -284,6 +292,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
@@ -318,6 +327,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/request-access'
     | '/sitemap.xml'
     | '/admin'
     | '/coordinator'
@@ -350,6 +360,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/request-access'
     | '/sitemap.xml'
     | '/c/$token'
     | '/t/$token'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/admin-auth'
     | '/auth'
+    | '/request-access'
     | '/sitemap.xml'
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
@@ -415,6 +427,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminAuthRoute: typeof AdminAuthRoute
   AuthRoute: typeof AuthRoute
+  RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   CTokenRoute: typeof CTokenRoute
   TTokenRoute: typeof TTokenRoute
@@ -430,6 +443,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/request-access': {
+      id: '/request-access'
+      path: '/request-access'
+      fullPath: '/request-access'
+      preLoaderRoute: typeof RequestAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -730,6 +750,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminAuthRoute: AdminAuthRoute,
   AuthRoute: AuthRoute,
+  RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   CTokenRoute: CTokenRoute,
   TTokenRoute: TTokenRoute,
