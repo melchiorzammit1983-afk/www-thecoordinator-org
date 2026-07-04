@@ -135,7 +135,10 @@ function CoordinatorLayout() {
             );
           })}
         </nav>
-        <div className="hidden md:block mt-auto p-3 border-t">
+        <div className="hidden md:block mt-auto p-3 border-t space-y-1">
+          <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setShowChangePw(true)}>
+            <KeyRound className="h-4 w-4" /> Change password
+          </Button>
           <Button variant="ghost" className="w-full justify-start gap-3" onClick={signOut}>
             <LogOut className="h-4 w-4" /> Sign out
           </Button>
@@ -145,6 +148,9 @@ function CoordinatorLayout() {
         <Outlet />
       </main>
       {mustChangePw && <ChangePasswordDialog onDone={() => setMustChangePw(false)} />}
+      {showChangePw && !mustChangePw && (
+        <ChangePasswordDialog mode="voluntary" onDone={() => setShowChangePw(false)} onCancel={() => setShowChangePw(false)} />
+      )}
     </div>
 
   );
