@@ -2782,3 +2782,213 @@ export const rejectClientJob = createServerFn({ method: "POST" })
     await supabaseAdmin.from("jobs").delete().eq("id", data.job_id);
     return { ok: true };
   });
+
+// ==========================================================
+// AI SUITE — group suggestions, daily plan, reply drafter,
+// voice-to-trip. All metered via spend_points RPC.
+// ==========================================================
+
+async function spendOrThrow(
+  companyId: string,
+  featureKey: string,
+  note: string,
+  jobId?: string,
+) {
+  const sb = await getAdminClient();
+  const { error } = await sb.rpc("spend_points", {
+    _company_id: companyId,
+    _feature_key: featureKey,
+    _job_id: (jobId ?? undefined) as unknown as string,
+    _note: note,
+    _cost_override: undefined as unknown as number,
+  });
+  if (error) {
+    const msg = error.message || "";
+    if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to continue.");
+    if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for this AI feature.");
+    if (msg.includes("feature_disabled")) throw new Error("This feature has been disabled by the administrator.");
+    throw new Error(msg);
+  }
+}
+
+async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not configured");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: opts?.temperature ?? 0.2,
+        maxOutputTokens: opts?.maxOutputTokens ?? 800,
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
+    throw new Error(`AI error ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const json = await res.json() as any;
+  const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+  if (!text) throw new Error("AI returned empty response");
+  try { return JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+}
+
+// ---------- AI: Group suggestions ----------
+export const aiSuggestTripGroupings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertFeatureEnabled(c.id, "ai_group_suggestions");
+    const supabaseAdmin = await getAdminClient();
+    const { data: jobs } = await supabaseAdmin
+      .from("jobs")
+      .select("id, name, surname, from_location, to_location, pickup_at, time, quantity")
+      .eq("company_id", c.id)
+      .eq("date", data.date)
+      .is("driver_id", null)
+      .limit(60);
+    const list = jobs ?? [];
+    if (list.length < 2) return { suggestions: [] as { trip_ids: string[]; reason: string }[] };
+
+    await spendOrThrow(c.id, "ai_group_suggestions", `Group suggestions for ${data.date}`);
+
+    const summary = list.map((j: any) =>
+      `${j.id}: ${j.time ?? "??"} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
+    ).join("\n");
+
+    const parsed = await callGemini(
+      `You are a transport dispatch optimizer. Below are unassigned trips for one day.\nGroup trips that can share the same vehicle (same/similar pickup time within 30min AND overlapping/near routes).\nReturn JSON: {"groups":[{"trip_ids":["uuid",...],"reason":"..."}]}. Only include real groups (>=2 trips). Trips:\n${summary}`,
+      "gemini-2.5-flash-lite",
+      { maxOutputTokens: 1200 },
+    );
+    const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
+    return { suggestions: groups };
+  });
+
+// ---------- AI: Daily plan ----------
+export const aiPlanDriverDay = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      driver_id: z.string().uuid(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertFeatureEnabled(c.id, "ai_daily_plan");
+    const supabaseAdmin = await getAdminClient();
+    const { data: jobs } = await supabaseAdmin
+      .from("jobs")
+      .select("id, from_location, to_location, pickup_at, time")
+      .eq("company_id", c.id)
+      .eq("date", data.date)
+      .eq("driver_id", data.driver_id)
+      .limit(40);
+    const list = jobs ?? [];
+    if (list.length < 2) return { ordered_trip_ids: list.map((j: any) => j.id), summary: "Not enough trips to reorder." };
+
+    await spendOrThrow(c.id, "ai_daily_plan", `Daily plan for ${data.date}`);
+
+    const summary = list.map((j: any) =>
+      `${j.id}: ${j.time ?? "??"} | ${j.from_location ?? ""} → ${j.to_location ?? ""}`,
+    ).join("\n");
+
+    const parsed = await callGemini(
+      `Order these trips for one driver to minimize backtracking and idle time. Respect pickup times when set (do not schedule pickup before its time).\nReturn JSON: {"ordered_trip_ids":["uuid",...],"summary":"one short sentence with estimated minutes saved"}.\nTrips:\n${summary}`,
+      "gemini-2.5-flash",
+      { maxOutputTokens: 800 },
+    );
+    return {
+      ordered_trip_ids: Array.isArray(parsed?.ordered_trip_ids) ? parsed.ordered_trip_ids : list.map((j: any) => j.id),
+      summary: String(parsed?.summary ?? ""),
+    };
+  });
+
+// ---------- AI: Reply drafter ----------
+export const aiDraftChatReplies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      last_message: z.string().trim().min(1).max(2000),
+      context_summary: z.string().trim().max(2000).optional(),
+      tone: z.enum(["friendly", "formal", "brief"]).default("friendly"),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertFeatureEnabled(c.id, "ai_reply_drafter");
+    await spendOrThrow(c.id, "ai_reply_drafter", "Chat reply drafts");
+    const parsed = await callGemini(
+      `You draft short, polite chat replies for a transport coordinator to send to a client. Tone: ${data.tone}. Language: match the client message. Return JSON {"drafts":["...","...","..."]} with 3 options, each under 200 chars. Client message:\n"${data.last_message}"\nContext: ${data.context_summary ?? "n/a"}`,
+      "gemini-2.5-flash-lite",
+      { maxOutputTokens: 400 },
+    );
+    const drafts = Array.isArray(parsed?.drafts) ? parsed.drafts.map(String).slice(0, 3) : [];
+    return { drafts };
+  });
+
+// ---------- AI: Voice note → trip ----------
+export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      audio_base64: z.string().min(10).max(20_000_000),
+      mime_type: z.string().min(3).max(80),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertFeatureEnabled(c.id, "ai_voice_to_trip");
+    await spendOrThrow(c.id, "ai_voice_to_trip", "Voice note → trip");
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error("GEMINI_API_KEY is not configured");
+
+    // Transcribe + extract in a single Gemini multimodal call.
+    const today = new Date().toISOString().slice(0, 10);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.` }] },
+        contents: [{ role: "user", parts: [
+          { text: "Extract trips from this voice note." },
+          { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
+        ] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`AI error ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const json = await res.json() as any;
+    const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    let parsed: any;
+    try { parsed = JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+    const trips = Array.isArray(parsed?.trips) ? parsed.trips : [];
+    return {
+      transcript: String(parsed?.transcript ?? ""),
+      trips: trips.map((r: any) => ({
+        pickupDate: String(r?.pickupDate ?? ""),
+        pickupTime: String(r?.pickupTime ?? ""),
+        pickupAddress: String(r?.pickupAddress ?? ""),
+        deliveryAddress: String(r?.deliveryAddress ?? ""),
+        customerName: String(r?.customerName ?? ""),
+        contactNumber: String(r?.contactNumber ?? ""),
+        transportType: String(r?.transportType ?? ""),
+        quantity: String(r?.quantity ?? "1"),
+      })),
+    };
+  });
+
