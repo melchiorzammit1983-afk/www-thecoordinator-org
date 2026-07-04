@@ -155,6 +155,11 @@ function CalendarPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [trafficFilter, setTrafficFilter] = useState<Set<string>>(new Set());
+  const [trafficSort, setTrafficSort] = useState<"none" | "leave_by" | "severity">("none");
+  const toggleTrafficFilter = (s: string) => setTrafficFilter((prev) => {
+    const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n;
+  });
   const qc = useQueryClient();
   const clientPortalEnabled = useFeature("client_trip_portal");
 
