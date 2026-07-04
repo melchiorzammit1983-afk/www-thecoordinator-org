@@ -93,6 +93,15 @@ function PublicBookingPage() {
           <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
           <h1 className="text-2xl font-semibold mt-1">{company.name}</h1>
         </div>
+        {promo && (
+          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">
+            <div className="text-[10px] uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-semibold">Promotion applied</div>
+            <div className="text-base font-semibold text-emerald-800 dark:text-emerald-200 mt-0.5">{promo}</div>
+            <div className="text-[11px] text-emerald-800/80 dark:text-emerald-200/80 mt-1">
+              This note will be attached to your booking so the operations team can apply it when billing.
+            </div>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Request transport</CardTitle>
