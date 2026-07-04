@@ -53,6 +53,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
+import { AiGroupSuggestionsButton } from "@/components/coordinator/AiGroupSuggestionsButton";
 import { useFeature } from "@/hooks/use-features";
 
 
