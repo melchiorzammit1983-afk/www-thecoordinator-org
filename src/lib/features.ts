@@ -17,7 +17,8 @@ export type FeatureKey =
   | "client_push_notifications"
   | "client_eta"
   | "client_sos"
-  | "client_offline_mode";
+  | "client_offline_mode"
+  | "branding_advert";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -39,6 +40,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "client_eta",      label: "Client live ETA",   description: "Traffic-aware ETA countdown on client portal from driver location" },
   { key: "client_sos",      label: "Client SOS button", description: "Emergency SOS on client portal with location broadcast to coordinator" },
   { key: "client_offline_mode", label: "Client offline mode", description: "Cache last trip data so the portal works with no signal" },
+  { key: "branding_advert",  label: "Branding & advert",   description: "Coordinator logo + advert banner shown at bottom of driver and client apps" },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
