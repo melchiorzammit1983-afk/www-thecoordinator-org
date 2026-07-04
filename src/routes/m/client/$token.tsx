@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { EditBookingDialog } from "@/components/client/EditBookingDialog";
 import { RecurringDialog } from "@/components/client/RecurringDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
+import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 
 export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
