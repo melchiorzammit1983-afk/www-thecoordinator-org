@@ -34,6 +34,7 @@ import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
+import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -174,6 +175,12 @@ const AuthenticatedAdminRequestsRoute =
     path: '/requests',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminPricingRoute =
+  AuthenticatedAdminPricingRouteImport.update({
+    id: '/pricing',
+    path: '/pricing',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -191,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -216,6 +224,7 @@ export interface FileRoutesByTo {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -245,6 +254,7 @@ export interface FileRoutesById {
   '/c/$token': typeof CTokenRoute
   '/t/$token': typeof TTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/admin/activity'
+    | '/admin/pricing'
     | '/admin/requests'
     | '/coordinator/billing'
     | '/coordinator/branding'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/admin/activity'
+    | '/admin/pricing'
     | '/admin/requests'
     | '/coordinator/billing'
     | '/coordinator/branding'
@@ -327,6 +339,7 @@ export interface FileRouteTypes {
     | '/c/$token'
     | '/t/$token'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/branding'
@@ -534,6 +547,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/pricing': {
+      id: '/_authenticated/admin/pricing'
+      path: '/pricing'
+      fullPath: '/admin/pricing'
+      preLoaderRoute: typeof AuthenticatedAdminPricingRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -546,12 +566,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
