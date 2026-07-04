@@ -695,7 +695,7 @@ export const adminGrantPoints = createServerFn({ method: "POST" })
     const { error } = await sb.rpc("admin_grant_points", {
       _company_id: data.company_id,
       _points: data.points,
-      _note: data.note ?? null,
+      _note: data.note ?? undefined,
     });
     if (error) throw new Error(error.message);
     return { ok: true };
