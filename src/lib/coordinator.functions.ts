@@ -2961,10 +2961,13 @@ export const aiDraftChatReplies = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, "ai_reply_drafter");
     await spendOrThrow(c.id, "ai_reply_drafter", "Chat reply drafts");
     const parsed = await callGemini(
-      `You draft short, polite chat replies for a transport coordinator to send to a client. Tone: ${data.tone}. Language: match the client message. Return JSON {"drafts":["...","...","..."]} with 3 options, each under 200 chars. Client message:\n"${data.last_message}"\nContext: ${data.context_summary ?? "n/a"}`,
+      await buildSystemPrompt(c.id,
+        `You draft short, polite chat replies for a transport coordinator to send to a client. Tone: ${data.tone}. Language: match the client message. Return JSON {"drafts":["...","...","..."]} with 3 options, each under 200 chars. Client message:\n"${data.last_message}"\nContext: ${data.context_summary ?? "n/a"}`,
+      ),
       "gemini-2.5-flash-lite",
       { maxOutputTokens: 400 },
     );
+
     const drafts = Array.isArray(parsed?.drafts) ? parsed.drafts.map(String).slice(0, 3) : [];
     return { drafts };
   });
