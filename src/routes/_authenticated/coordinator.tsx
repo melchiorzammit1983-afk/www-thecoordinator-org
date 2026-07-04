@@ -11,6 +11,7 @@ import { useMyCompany } from "@/hooks/use-coordinator";
 import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
+import { BrandLogo } from "@/components/branding/BrandLogo";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
