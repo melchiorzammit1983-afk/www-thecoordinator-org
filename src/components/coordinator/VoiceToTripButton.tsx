@@ -48,7 +48,8 @@ export function VoiceToTripButton({
   const enabled = useFeature("ai_voice_to_trip");
   const cost = useFeatureCost("ai_voice_to_trip");
   const remaining = usePointsRemaining();
-  const outOfPoints = remaining < cost;
+  const outOfPoints = remaining > 0 && remaining < cost;
+
 
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -91,11 +92,19 @@ export function VoiceToTripButton({
   useEffect(() => cleanup, []);
 
   const startRecording = async () => {
-    if (!enabled || outOfPoints || mut.isPending || disabled) return;
+    if (mut.isPending || disabled) return;
+    if (!enabled) { toast.error("Voice-to-trip isn't enabled on your plan"); return; }
+    if (outOfPoints) { toast.error(`Not enough points (needs ${cost})`); return; }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      toast.error("This browser can't record audio");
+      toast.error("This browser can't record audio — use the Voice file button instead");
       return;
     }
+    if (typeof MediaRecorder === "undefined") {
+      toast.error("Recording not supported here — use the Voice file button instead");
+      return;
+    }
+
+
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -147,7 +156,9 @@ export function VoiceToTripButton({
   };
 
   const onUpload = async (file: File) => {
-    if (!enabled || outOfPoints || mut.isPending) return;
+    if (mut.isPending) return;
+    if (!enabled) { toast.error("Voice-to-trip isn't enabled on your plan"); return; }
+    if (outOfPoints) { toast.error(`Not enough points (needs ${cost})`); return; }
     if (!file.type.startsWith("audio/")) {
       toast.error("Please choose an audio file");
       return;
@@ -156,6 +167,7 @@ export function VoiceToTripButton({
       toast.error("File is too large (max 20MB)");
       return;
     }
+
     try {
       const audio_base64 = await blobToBase64(file);
       mut.mutate({ audio_base64, mime_type: file.type.split(";")[0] });
@@ -205,7 +217,7 @@ export function VoiceToTripButton({
           size="sm"
           variant="outline"
           className="h-7"
-          disabled={!enabled || outOfPoints || busy || disabled}
+          disabled={busy || disabled}
           onClick={startRecording}
           title={tip}
         >
@@ -219,7 +231,7 @@ export function VoiceToTripButton({
         size="sm"
         variant="outline"
         className="h-7"
-        disabled={!enabled || outOfPoints || busy || recording || disabled}
+        disabled={busy || recording || disabled}
         onClick={() => fileInputRef.current?.click()}
         title={tip}
       >
