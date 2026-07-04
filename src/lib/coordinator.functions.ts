@@ -130,7 +130,7 @@ export const getMyCompany = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data, error } = await supabaseAdmin
       .from("companies")
-      .select("id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled")
+      .select("id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code")
       .eq("owner_user_id", context.userId)
       .maybeSingle();
     if (error) return null;
