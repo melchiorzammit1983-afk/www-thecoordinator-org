@@ -151,7 +151,9 @@ export function VoiceToTripButton({
   };
 
   const onUpload = async (file: File) => {
-    if (!enabled || outOfPoints || mut.isPending) return;
+    if (mut.isPending) return;
+    if (!enabled) { toast.error("Voice-to-trip isn't enabled on your plan"); return; }
+    if (outOfPoints) { toast.error(`Not enough points (needs ${cost})`); return; }
     if (!file.type.startsWith("audio/")) {
       toast.error("Please choose an audio file");
       return;
@@ -160,6 +162,7 @@ export function VoiceToTripButton({
       toast.error("File is too large (max 20MB)");
       return;
     }
+
     try {
       const audio_base64 = await blobToBase64(file);
       mut.mutate({ audio_base64, mime_type: file.type.split(";")[0] });
