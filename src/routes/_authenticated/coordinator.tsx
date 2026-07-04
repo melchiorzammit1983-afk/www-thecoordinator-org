@@ -29,6 +29,7 @@ const NAV = [
   { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" as const },
   { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" as const },
   { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: null },
+  { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
 ] as const;
 
 
