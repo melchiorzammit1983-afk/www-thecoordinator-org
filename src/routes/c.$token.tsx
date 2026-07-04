@@ -1,7 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { getCompanyByLink, submitClientBooking } from "@/lib/booking.functions";
@@ -53,13 +53,21 @@ function PublicBookingPage() {
   const [done, setDone] = useState(false);
   const submitFn = useServerFn(submitClientBooking);
 
+  // Promo carried in from the coordinator's advert (e.g. "20% off").
+  // Kept in state so the client sees it in the "Submitted" screen too.
+  const promo = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const p = new URLSearchParams(window.location.search).get("promo") ?? "";
+    return p.trim().slice(0, 200);
+  }, []);
+
   const [form, setForm] = useState({
     name: "", surname: "", client_email: "", room_number: "",
     from_location: "", to_location: "", time: "",
   });
 
   const mut = useMutation({
-    mutationFn: () => submitFn({ data: { token: params.token, ...form } }),
+    mutationFn: () => submitFn({ data: { token: params.token, ...form, promo_note: promo || undefined } as any }),
     onSuccess: () => { setDone(true); toast.success("Booking submitted"); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -70,6 +78,12 @@ function PublicBookingPage() {
 
   const logoUrl = (company as any)?.logo_url ?? null;
   useFavicon(logoUrl);
+  // Keep tab title reflective of the promo so the user sees it too.
+  useEffect(() => {
+    if (promo && typeof document !== "undefined") {
+      document.title = `${promo} — ${company.name}`;
+    }
+  }, [promo, company.name]);
 
   return (
     <div className="min-h-screen bg-muted/30 py-10 px-4">
@@ -79,6 +93,15 @@ function PublicBookingPage() {
           <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
           <h1 className="text-2xl font-semibold mt-1">{company.name}</h1>
         </div>
+        {promo && (
+          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">
+            <div className="text-[10px] uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-semibold">Promotion applied</div>
+            <div className="text-base font-semibold text-emerald-800 dark:text-emerald-200 mt-0.5">{promo}</div>
+            <div className="text-[11px] text-emerald-800/80 dark:text-emerald-200/80 mt-1">
+              This note will be attached to your booking so the operations team can apply it when billing.
+            </div>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Request transport</CardTitle>

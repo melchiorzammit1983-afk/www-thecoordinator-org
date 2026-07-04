@@ -7,6 +7,7 @@ export type BrandingInfo = {
   advert_url: string | null;
   advert_link: string | null;
   advert_caption: string | null;
+  booking_token?: string | null;
 } | null | undefined;
 
 /**
@@ -18,9 +19,19 @@ export type BrandingInfo = {
 export function BrandingBar({ branding }: { branding: BrandingInfo }) {
   const [dismissed, setDismissed] = useState(false);
   if (!branding) return null;
-  const { advert_url, advert_link, advert_caption, company_name } = branding;
+  const { advert_url, advert_link, advert_caption, company_name, booking_token } = branding;
   if (!advert_url) return null;
   if (dismissed) return null;
+
+  // Priority: coordinator's own booking page (carries the promo caption
+  // as ?promo=... so it lands on the booking as a billing reminder).
+  // Fall back to an external advert_link. Otherwise render the advert
+  // without a link.
+  const promo = (advert_caption ?? "").trim();
+  const clickHref = booking_token
+    ? `/c/${booking_token}${promo ? `?promo=${encodeURIComponent(promo)}` : ""}`
+    : (advert_link || null);
+  const clickTarget = clickHref && !booking_token ? "_blank" : undefined;
 
   const AdvertMedia = (
     <img
@@ -36,14 +47,16 @@ export function BrandingBar({ branding }: { branding: BrandingInfo }) {
       <div className="mx-auto max-w-3xl px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
         <div className="pointer-events-auto rounded-t-xl border border-b-0 bg-background/95 backdrop-blur shadow-lg flex items-center gap-3 pl-3 pr-2 py-2">
           <a
-            href={advert_link || undefined}
-            target={advert_link ? "_blank" : undefined}
+            href={clickHref || undefined}
+            target={clickTarget}
             rel="noreferrer"
             className="flex-1 flex items-center gap-3 min-w-0 no-underline text-foreground"
           >
             {AdvertMedia}
             <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sponsored</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                {booking_token ? "Tap to book" : "Sponsored"}
+              </div>
               <div className="text-xs truncate">{advert_caption ?? company_name ?? ""}</div>
             </div>
           </a>
