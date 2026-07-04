@@ -27,7 +27,7 @@ function DashboardPage() {
       <p className="text-sm text-muted-foreground mt-1">Live summary of your operations.</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
         {cards.map((c) => (
-          <Link key={c.label} to={c.to} className="rounded-lg border bg-card p-4 hover:bg-accent transition-colors">
+          <Link key={c.label} to={c.to} className={`rounded-lg border bg-card p-4 hover:bg-accent transition-colors ${c.pulse ? "ring-2 ring-emerald-500/60 animate-pulse" : ""}`}>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{c.label}</span>
               <c.icon className={`h-4 w-4 ${c.tone}`} />
