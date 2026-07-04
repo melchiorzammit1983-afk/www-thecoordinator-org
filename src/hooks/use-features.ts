@@ -57,13 +57,14 @@ export function useMyBilling() {
 export function useFeatureCost(key: string): number {
   const { data } = useMyBilling();
   if (!data) return 1;
-  return data.costs.find((c) => c.feature_key === key)?.points_cost ?? 1;
+  const raw = data.costs.find((c) => c.feature_key === key)?.points_cost;
+  return raw != null ? Number(raw) : 1;
 }
 
 export function usePointsRemaining(): number {
   const { data } = useMyBilling();
   if (!data) return 0;
-  const plan = data.subscription?.points_remaining_this_period ?? 0;
-  const balance = data.company?.points_balance ?? 0;
+  const plan = Number(data.subscription?.points_remaining_this_period ?? 0);
+  const balance = Number(data.company?.points_balance ?? 0);
   return plan + balance;
 }
