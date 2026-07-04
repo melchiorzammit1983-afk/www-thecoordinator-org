@@ -2147,6 +2147,12 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
         role: z.enum(["user", "model"]),
         text: z.string().min(1).max(20000),
       })).min(1).max(20),
+      attachments: z.array(z.object({
+        name: z.string().max(200),
+        mimeType: z.string().max(100),
+        dataBase64: z.string().max(15_000_000),
+      })).max(5).optional(),
+      urls: z.array(z.string().url().max(2000)).max(3).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -2158,8 +2164,47 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
 
+    // Validate attachments: images + PDF only, ~10MB max after decode.
+    const attachments = (data.attachments ?? []).filter((a) => {
+      if (!/^image\/(png|jpe?g|webp|heic|heif|gif)$|^application\/pdf$/i.test(a.mimeType)) return false;
+      const approxBytes = Math.floor((a.dataBase64.length * 3) / 4);
+      return approxBytes <= 10 * 1024 * 1024;
+    });
+    const urls = (data.urls ?? []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 3);
+
+    // Fetch URLs (best-effort, 6s timeout, cap 200KB raw / 8KB cleaned).
+    const fetchedPages: { url: string; text: string; error?: string }[] = [];
+    for (const u of urls) {
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 6000);
+        const r = await fetch(u, {
+          signal: ctrl.signal,
+          headers: { "user-agent": "Mozilla/5.0 CoordinatorAI/1.0" },
+        });
+        clearTimeout(to);
+        if (!r.ok) { fetchedPages.push({ url: u, text: "", error: `HTTP ${r.status}` }); continue; }
+        const raw = (await r.text()).slice(0, 200_000);
+        const cleaned = raw
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 8000);
+        fetchedPages.push({ url: u, text: cleaned });
+      } catch (e: any) {
+        fetchedPages.push({ url: u, text: "", error: String(e?.message || e).slice(0, 100) });
+      }
+    }
+
+    const hasMedia = attachments.length > 0 || fetchedPages.length > 0;
+    const model = hasMedia ? "gemini-2.5-flash" : "gemini-2.5-flash-lite";
+    const maxOutputTokens = hasMedia ? 1024 : 512;
+
     const today = new Date().toISOString().slice(0, 10);
     const systemInstruction = [
+      `You are a transport-coordinator data extractor. Sources may be text, images, PDFs, or web pages.`,
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
@@ -2167,13 +2212,23 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
     ].join("\n");
 
-    // Only send the last few turns — older context is not needed for extraction.
     const trimmed = data.messages.slice(-4);
-    const contents = trimmed.map((m) => ({
-      role: m.role, parts: [{ text: m.text }],
-    }));
+    const contents = trimmed.map((m, i) => {
+      const parts: any[] = [{ text: m.text }];
+      const isLastUser = i === trimmed.length - 1 && m.role === "user";
+      if (isLastUser) {
+        for (const a of attachments) {
+          parts.push({ inline_data: { mime_type: a.mimeType, data: a.dataBase64 } });
+        }
+        for (const p of fetchedPages) {
+          if (p.error) parts.push({ text: `\n[Could not fetch ${p.url}: ${p.error}]` });
+          else if (p.text) parts.push({ text: `\n---\nFrom ${new URL(p.url).hostname}:\n${p.text}` });
+        }
+      }
+      return { role: m.role, parts };
+    });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2183,7 +2238,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.1,
-          maxOutputTokens: 512,
+          maxOutputTokens,
         },
       }),
     });

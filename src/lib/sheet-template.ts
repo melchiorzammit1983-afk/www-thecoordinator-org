@@ -90,6 +90,24 @@ export function downloadGoogleSheetsTemplate() {
   triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), "crewchange-trips-template.csv");
 }
 
+// Read an uploaded .xlsx/.xls/.csv file and return a tab-separated string
+// that parseSheetPaste can consume directly. First non-empty sheet is used.
+export async function fileToSheetTsv(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+    const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, blankrows: false, raw: false });
+    if (!rows.length) continue;
+    return rows
+      .map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")).join("\t") : ""))
+      .filter((l) => l.trim().length > 0)
+      .join("\n");
+  }
+  return "";
+}
+
 // ---------- Paste parser (Excel / Google Sheets rows) ----------
 
 const HEADER_ALIASES: Record<string, string> = {
