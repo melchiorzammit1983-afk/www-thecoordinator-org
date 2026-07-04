@@ -32,6 +32,7 @@ import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
+import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 
@@ -161,6 +162,12 @@ const AuthenticatedCoordinatorBrandingRoute =
     path: '/branding',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorBillingRoute =
+  AuthenticatedCoordinatorBillingRouteImport.update({
+    id: '/billing',
+    path: '/billing',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminRequestsRoute =
   AuthenticatedAdminRequestsRouteImport.update({
     id: '/requests',
@@ -185,6 +192,7 @@ export interface FileRoutesByFullPath {
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -209,6 +217,7 @@ export interface FileRoutesByTo {
   '/t/$token': typeof TTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -237,6 +246,7 @@ export interface FileRoutesById {
   '/t/$token': typeof TTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
+  '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/admin/activity'
     | '/admin/requests'
+    | '/coordinator/billing'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -289,6 +300,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/admin/activity'
     | '/admin/requests'
+    | '/coordinator/billing'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -316,6 +328,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/requests'
+    | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/branding'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -507,6 +520,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorBrandingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/billing': {
+      id: '/_authenticated/coordinator/billing'
+      path: '/billing'
+      fullPath: '/coordinator/billing'
+      preLoaderRoute: typeof AuthenticatedCoordinatorBillingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/admin/requests': {
       id: '/_authenticated/admin/requests'
       path: '/requests'
@@ -540,6 +560,7 @@ const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
   AuthenticatedCoordinatorCollaborateRoute: typeof AuthenticatedCoordinatorCollaborateRoute
@@ -555,6 +576,7 @@ interface AuthenticatedCoordinatorRouteChildren {
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
     AuthenticatedCoordinatorBrandingRoute:
       AuthenticatedCoordinatorBrandingRoute,
     AuthenticatedCoordinatorCalendarRoute:
