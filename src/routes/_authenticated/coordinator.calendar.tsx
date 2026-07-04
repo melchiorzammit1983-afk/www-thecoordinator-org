@@ -132,6 +132,10 @@ type Job = {
   dispatch_status?: string | null;
   dispatch_chain_company_ids?: string[] | null;
   executor_company_id?: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+  pickup_shift_reason?: string | null;
 };
 
 
