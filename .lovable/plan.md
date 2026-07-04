@@ -1,46 +1,91 @@
-# Client location → chat link + live map in driver card
 
-Today the client's "Send my pin" and "Share live" buttons only write rows into `client_locations`; the driver never actually sees them. Wire both flows into the driver app:
+# Driver & partner price proposals (private, per-hop)
 
-- **Send my pin** posts a chat message in the driver↔client thread with a Google Maps deep-link. Tapping the link opens Google Maps navigation to that spot.
-- **Share live** streams updates; the driver's job card shows an embedded Google Map with a marker moving with the client, as long as fresh live points are arriving.
+Add an optional "propose a price" step before a driver (or a receiving coordinator in a dispatch chain) accepts a job. The sender sees a flashing notification and can **Accept**, **Counter**, or **Recall**. Prices are private to the two adjacent parties on that hop — upstream coordinators never see downstream numbers.
 
-## Server changes
+Currency: **EUR (€)** everywhere. If no price is proposed, existing accept flow is unchanged.
 
-`src/lib/coordinator-public.functions.ts`
-- `pushClientLocation` (called by the client portal for both modes) — when `mode === "pin"`, also insert into `trip_messages`:
-  - `sender_kind: "client"`, `sender_label: pax_name ?? "Passenger"`
-  - `thread_kind: "driver_client"` when an identity exists, else `"group"` (so unnamed passengers still surface it)
-  - `body`: `📍 <PaxName> shared their location — https://www.google.com/maps/search/?api=1&query=LAT,LNG` (URL-safe, six-decimal lat/lng)
-- New `getClientLiveLocationDriver` server fn (driver token):
-  - input: `{ token, job_id }`
-  - resolves via existing `loadDriverJob`, then returns the latest row from `client_locations` for that job (and its siblings when part of a group) where `mode = 'live'` and `captured_at >= now() - interval '3 minutes'`
-  - shape: `{ latitude, longitude, accuracy_m, captured_at, pax_name } | null`
+## Data model
 
-No schema/migration needed — `trip_messages` already accepts `driver_client`, `client_locations` already exists.
+New table `public.job_price_proposals`:
 
-## Driver UI
+- `job_id` (fk `jobs.id`)
+- `hop_id` (fk `job_dispatch_hops.id`, nullable — null when it's the driver↔executor hop)
+- `from_party_kind` `'driver' | 'company'`
+- `from_company_id`, `from_driver_id` (nullable, one set based on kind)
+- `to_company_id` (the receiver — always a company; the sender of the trip on that hop)
+- `amount_eur` numeric(10,2)
+- `status` `'proposed' | 'accepted' | 'countered' | 'recalled' | 'superseded'`
+- `parent_id` (fk self, for counter-offer chains)
+- `note` text nullable (short optional message)
+- `created_at`, `responded_at`, `responded_by_user_id`
 
-`src/routes/m.driver.$token.tsx` (inside `JobCard`)
-- Add a `useQuery` for `getClientLiveLocationDriver` with `refetchInterval: 8000`, enabled only for jobs whose status is one of `accepted | en_route | arrived | in_progress` (matches other live-share gating).
-- When the query returns a row and `Date.now() - captured_at < 90s`, render a new compact component `ClientLiveMiniMap` inside the card, above the action grid:
-  - Small header row: green pulsing dot + `"Live location — <PaxName> · <ageLabel>"`
-  - ~180px tall rounded map card with a single marker at the client's coords
-  - Button: "Open in Google Maps" → `https://www.google.com/maps/search/?api=1&query=LAT,LNG` (target `_blank`)
-- Hide the mini-map when the row is missing or stale (`>= 90s`).
+Indexes: `(job_id, status)`, `(to_company_id, status)`, `(from_driver_id, status)`.
 
-`src/components/trip/ClientLiveMiniMap.tsx` (new)
-- Reuses the Maps JS loader pattern currently in `DriverLiveMap.tsx`. Extract it into `src/lib/googleMaps.ts` and import from both places so we don't inject two script tags.
-- Renders a `google.maps.Map` (no `mapId`, no `AdvancedMarkerElement`) with a single `google.maps.Marker` for the client. On subsequent updates it repositions the marker and recenters the map smoothly (`panTo`) instead of rebuilding.
-- Handles `missing_browser_key` and `gmaps_load_failed` by falling back to a plain "Open in Google Maps" button.
+RLS: SELECT/INSERT allowed only when `auth.uid()` belongs to `from_company_id`, `to_company_id`, or is the linked user of `from_driver_id`. Admin bypass via `has_role`. Driver writes go through a token-gated server fn (no auth uid), so include a service-role path for the driver endpoint.
 
-## Chat rendering
+## Server functions
 
-The existing driver `TripChatDialog` renders `body` as plain text with `whitespace-pre-wrap`. Tapping "https://..." currently does nothing. Small enhancement so the pin message is actually tappable:
-- In `src/components/trip/TripChatDialog.tsx`, replace the raw body `<div>` with a helper that splits on URLs (`/(https?:\/\/[^\s]+)/g`) and renders each match as `<a target="_blank" rel="noreferrer" className="underline">`. Non-URL text stays as-is.
-- Same treatment on the client's chat panel in `t.$token.tsx` so the client also sees clickable links.
+`src/lib/coordinator-public.functions.ts` (driver token):
+- `proposeDriverPrice({ token, job_id, amount_eur, note? })` — inserts a `proposed` row with `from_party_kind='driver'`, `from_driver_id=<token driver>`, `to_company_id = executor_company_id ?? company_id`. Supersedes any prior open proposal from that driver on the same job. Job status stays `assigned` (not accepted).
+- `respondToDriverCounter({ token, proposal_id, action: 'accept' | 'recall_price' })` — driver-side response to a coordinator counter-offer.
+- `listMyDriverPriceThread({ token, job_id })` — returns the proposal chain visible to the driver.
+
+`src/lib/collab.functions.ts` (partner/coordinator, `requireSupabaseAuth`):
+- `proposePartnerPrice({ job_id, hop_id, amount_eur, note? })` — a receiving coordinator (downstream of another coordinator) proposes a price back up the chain. Sets `from_company_id = my company`, `to_company_id = previous hop's company`.
+- `respondToPriceProposal({ proposal_id, action: 'accept' | 'counter' | 'recall_assignment' | 'reject_price', counter_amount_eur? })`:
+  - `accept` → mark `accepted`, no side effect on job status.
+  - `counter` → insert new `proposed` row with sides swapped and `parent_id` set; original marked `countered`.
+  - `reject_price` → mark `recalled`; job stays assigned to the same party (see recall dialog below).
+  - `recall_assignment` → mark `recalled`; also unassign: if driver hop, clear `jobs.driver_id`; if partner hop, revert `executor_company_id` to the previous hop's company and mark that `job_dispatch_hops` row `revoked`.
+- `listPriceProposals({ job_id })` — returns only rows where my company is `from_company_id` or `to_company_id`.
+
+All fns validate `amount_eur > 0` and `< 100000`.
+
+## Driver app (`src/routes/m.driver.$token.tsx`)
+
+Inside each `JobCard`, when `status === 'assigned'` and no `accepted` proposal from this driver exists:
+
+- New button row above **Accept**: `€ Propose price` (opens a small dialog with a numeric input + optional note). While a proposal is `proposed` or `countered` from the coordinator, show a compact strip:
+  - "You proposed €45.00 — waiting for reply" (with **Withdraw** → sets `recalled`)
+  - Or "Coordinator counter-offer: €38.00" with **Accept** / **Withdraw** buttons.
+- **Accept** button stays as-is; if the driver clicks Accept while a proposal is open, treat it as implicit price withdrawal + accept.
+
+## Coordinator app
+
+`src/routes/_authenticated/coordinator.calendar.tsx` (job list):
+- Jobs with an open incoming proposal get a pulsing `€` badge (Tailwind `animate-pulse` on a small chip showing the amount).
+- New sidebar/nav item is **not** added — reuse the existing header bell area: a small popover "Price proposals (N)" surfacing all open proposals across jobs, click to open the trip.
+
+`src/components/coordinator/TripDetailsSheet.tsx`:
+- New section "Price proposals" (only rendered when `listPriceProposals` returns rows involving my company). Shows the chain most-recent-first. For an open proposal `to_company = me`:
+  - Buttons: **Accept**, **Counter €** (opens amount input), **Recall** (opens dialog: *Reject price only* vs *Recall assignment*).
+  - For driver-hop rows the "Recall assignment" button unassigns the driver; for partner-hop rows it reverts executor to previous company.
+- For rows where `from_company = me` and status is `proposed`, show "Waiting for {receiver name}" + **Withdraw**.
+
+`src/components/coordinator/DriverLiveMap.tsx` / dispatch UI: when forwarding a job to another partner, a downstream partner sees the same "Propose price" button in `TripDetailsSheet` targeting the upstream coordinator.
+
+## Privacy enforcement
+
+- RLS restricts row visibility to the two parties on that proposal only.
+- `listPriceProposals` additionally filters by my company for defense-in-depth.
+- Driver token fns only return rows where `from_driver_id` matches the token's driver.
+- No proposal data is included in the existing `getJob` / dispatch payloads.
+
+## Notifications
+
+- Coordinator: reuse the existing unread-badge polling in `use-coordinator.ts` — extend `getDashboardSummary` to also return `open_price_proposals` count for my company as `to_company_id`. The dashboard "Pending approvals" card gets a sibling **Price proposals** card with `animate-pulse` when count > 0.
+- Driver: the JobCard renders the pulsing strip inline (no push notification in this change).
+
+## Technical notes
+
+- Migration: create table + GRANTs (`GRANT SELECT, INSERT, UPDATE ON public.job_price_proposals TO authenticated; GRANT ALL ... TO service_role;`) + RLS policies + updated_at trigger.
+- Amount stored as `numeric`, displayed with `new Intl.NumberFormat('en-IE', { style:'currency', currency:'EUR' })`.
+- "Recall assignment" for a partner hop uses existing hop-revocation logic in `collab.functions.ts` (reuse the same helper if present, otherwise add one that only the current executor can call).
+- No changes to existing accept flow when no proposal exists — backwards compatible.
 
 ## Out of scope
 
-- No changes to the coordinator's live-driver map, SOS flow, or `client_locations` retention.
-- No push notifications when the pin lands — the driver relies on the chat unread badge that already exists.
+- Multi-currency, invoicing, payout tracking, price history analytics.
+- Auto-accept thresholds or price suggestions.
+- Push notifications.

@@ -114,7 +114,7 @@ export const getDashboardSummary = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const todayIso = new Date().toISOString().slice(0, 10);
-    const [{ count: pending }, { count: unassigned }, { count: todayJobs }, { count: driverCount }] = await Promise.all([
+    const [{ count: pending }, { count: unassigned }, { count: todayJobs }, { count: driverCount }, { count: priceProposals }] = await Promise.all([
       supabaseAdmin.from("client_bookings").select("id", { count: "exact", head: true })
         .eq("company_id", c.id).in("status", ["pending", "modification_pending"]),
       supabaseAdmin.from("jobs").select("id", { count: "exact", head: true })
@@ -123,6 +123,8 @@ export const getDashboardSummary = createServerFn({ method: "GET" })
         .eq("company_id", c.id).eq("date", todayIso),
       supabaseAdmin.from("drivers").select("id", { count: "exact", head: true })
         .eq("company_id", c.id),
+      supabaseAdmin.from("job_price_proposals").select("id", { count: "exact", head: true })
+        .eq("to_company_id", c.id).eq("status", "proposed"),
     ]);
     return {
       company: c,
@@ -130,6 +132,7 @@ export const getDashboardSummary = createServerFn({ method: "GET" })
       unassigned_jobs: unassigned ?? 0,
       today_jobs: todayJobs ?? 0,
       drivers: driverCount ?? 0,
+      open_price_proposals: priceProposals ?? 0,
     };
   });
 

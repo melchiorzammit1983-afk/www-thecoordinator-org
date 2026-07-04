@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardSummary } from "@/lib/coordinator.functions";
-import { CalendarDays, Inbox, Users, Truck } from "lucide-react";
+import { CalendarDays, Inbox, Users, Truck, Euro } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
   head: () => ({ meta: [{ title: "Dashboard — Coordinator" }] }),
@@ -14,10 +14,11 @@ function DashboardPage() {
   const { data } = useQuery({ queryKey: ["coord-summary"], queryFn: () => fn() });
 
   const cards = [
-    { to: "/coordinator/pending", label: "Pending approvals", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500" },
-    { to: "/coordinator/calendar", label: "Unassigned jobs", value: data?.unassigned_jobs ?? 0, icon: Truck, tone: "text-blue-500" },
-    { to: "/coordinator/calendar", label: "Today's trips", value: data?.today_jobs ?? 0, icon: CalendarDays, tone: "text-emerald-500" },
-    { to: "/coordinator/drivers", label: "Drivers", value: data?.drivers ?? 0, icon: Users, tone: "text-primary" },
+    { to: "/coordinator/pending", label: "Pending approvals", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500", pulse: false },
+    { to: "/coordinator/calendar", label: "Price proposals", value: data?.open_price_proposals ?? 0, icon: Euro, tone: "text-emerald-600", pulse: (data?.open_price_proposals ?? 0) > 0 },
+    { to: "/coordinator/calendar", label: "Unassigned jobs", value: data?.unassigned_jobs ?? 0, icon: Truck, tone: "text-blue-500", pulse: false },
+    { to: "/coordinator/calendar", label: "Today's trips", value: data?.today_jobs ?? 0, icon: CalendarDays, tone: "text-emerald-500", pulse: false },
+    { to: "/coordinator/drivers", label: "Drivers", value: data?.drivers ?? 0, icon: Users, tone: "text-primary", pulse: false },
   ];
 
   return (
@@ -26,7 +27,7 @@ function DashboardPage() {
       <p className="text-sm text-muted-foreground mt-1">Live summary of your operations.</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
         {cards.map((c) => (
-          <Link key={c.label} to={c.to} className="rounded-lg border bg-card p-4 hover:bg-accent transition-colors">
+          <Link key={c.label} to={c.to} className={`rounded-lg border bg-card p-4 hover:bg-accent transition-colors ${c.pulse ? "ring-2 ring-emerald-500/60 animate-pulse" : ""}`}>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{c.label}</span>
               <c.icon className={`h-4 w-4 ${c.tone}`} />

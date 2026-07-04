@@ -414,6 +414,212 @@ export const listJobChain = createServerFn({ method: "GET" })
       .eq("job_id", data.job_id)
       .order("hop_index", { ascending: true });
     if (error) throw new Error(error.message);
-    return { hops: hops ?? [], job };
   });
+
+// ---------- PRICE PROPOSALS (private per-hop) ----------
+
+// Get the previous coordinator in the chain (the one who dispatched to me).
+async function previousHopSender(supabaseAdmin: any, jobId: string, myCompanyId: string) {
+  const { data: hops } = await supabaseAdmin
+    .from("job_dispatch_hops")
+    .select("id, hop_index, from_company_id, to_company_id, status")
+    .eq("job_id", jobId)
+    .eq("to_company_id", myCompanyId)
+    .order("hop_index", { ascending: false })
+    .limit(1);
+  return hops?.[0] ?? null;
+}
+
+// A receiving coordinator proposes a price back to the sender (previous hop).
+export const proposePartnerPrice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      amount_eur: z.number().positive().max(99999.99),
+      note: z.string().trim().max(300).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const hop = await previousHopSender(supabaseAdmin, data.job_id, c.id);
+    if (!hop) throw new Error("No sender to propose price to");
+    // Supersede any prior open proposals from me to that sender on this job.
+    await supabaseAdmin.from("job_price_proposals")
+      .update({ status: "superseded", responded_at: new Date().toISOString() } as never)
+      .eq("job_id", data.job_id)
+      .eq("from_company_id", c.id)
+      .eq("to_company_id", hop.from_company_id)
+      .in("status", ["proposed", "countered"]);
+    const { data: row, error } = await supabaseAdmin.from("job_price_proposals").insert({
+      job_id: data.job_id,
+      hop_id: hop.id,
+      from_party_kind: "company",
+      from_company_id: c.id,
+      to_company_id: hop.from_company_id,
+      amount_eur: data.amount_eur,
+      status: "proposed",
+      note: data.note ?? null,
+    } as never).select("*").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+// Coordinator responds to any proposal on a job where they are a party.
+export const respondToPriceProposal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      proposal_id: z.string().uuid(),
+      action: z.enum(["accept", "counter", "reject_price", "recall_assignment", "withdraw"]),
+      counter_amount_eur: z.number().positive().max(99999.99).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: prop, error: readErr } = await supabaseAdmin.from("job_price_proposals")
+      .select("*").eq("id", data.proposal_id).maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!prop) throw new Error("Proposal not found");
+    const iAmFrom = prop.from_company_id === c.id;
+    const iAmTo = prop.to_company_id === c.id;
+    if (!iAmFrom && !iAmTo) throw new Error("forbidden");
+    if (!["proposed", "countered"].includes(prop.status)) throw new Error("Proposal already closed");
+    const now = new Date().toISOString();
+
+    if (data.action === "withdraw") {
+      if (!iAmFrom) throw new Error("Only the proposer can withdraw");
+      const { error } = await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled", responded_at: now, responded_by_user_id: context.userId,
+      } as never).eq("id", data.proposal_id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
+    if (!iAmTo) throw new Error("Only the receiver can act on this proposal");
+
+    if (data.action === "accept") {
+      const { error } = await supabaseAdmin.from("job_price_proposals").update({
+        status: "accepted", responded_at: now, responded_by_user_id: context.userId,
+      } as never).eq("id", data.proposal_id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
+    if (data.action === "reject_price") {
+      const { error } = await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled", responded_at: now, responded_by_user_id: context.userId,
+      } as never).eq("id", data.proposal_id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
+    if (data.action === "counter") {
+      if (!data.counter_amount_eur) throw new Error("counter_amount_eur required");
+      // Mark original as countered.
+      await supabaseAdmin.from("job_price_proposals").update({
+        status: "countered", responded_at: now, responded_by_user_id: context.userId,
+      } as never).eq("id", data.proposal_id);
+      // Insert new proposal from me back to them (driver or company).
+      const insertPayload: Record<string, unknown> = {
+        job_id: prop.job_id,
+        hop_id: prop.hop_id,
+        from_party_kind: "company",
+        from_company_id: c.id,
+        to_company_id: prop.from_party_kind === "company" ? prop.from_company_id : null,
+        to_driver_id: prop.from_party_kind === "driver" ? prop.from_driver_id : null,
+        amount_eur: data.counter_amount_eur,
+        status: "proposed",
+        parent_id: prop.id,
+      };
+      const { data: newRow, error } = await supabaseAdmin.from("job_price_proposals")
+        .insert(insertPayload as never).select("*").single();
+      if (error) throw new Error(error.message);
+      return { ok: true, proposal: newRow };
+    }
+
+    if (data.action === "recall_assignment") {
+      // Mark proposal recalled + unassign on the job.
+      await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled", responded_at: now, responded_by_user_id: context.userId,
+      } as never).eq("id", data.proposal_id);
+      if (prop.from_party_kind === "driver") {
+        // Clear the driver from the job (return to unassigned).
+        const { error } = await supabaseAdmin.from("jobs").update({
+          driver_id: null,
+          driver_accepted_at: null,
+        } as never).eq("id", prop.job_id);
+        if (error) throw new Error(error.message);
+      } else {
+        // Partner recall: revert executor to previous sender and remove the hop.
+        const { data: job } = await supabaseAdmin.from("jobs")
+          .select("id, dispatch_chain_company_ids").eq("id", prop.job_id).maybeSingle();
+        if (job && prop.hop_id) {
+          const { data: hopRow } = await supabaseAdmin.from("job_dispatch_hops")
+            .select("id, from_company_id, to_company_id").eq("id", prop.hop_id).maybeSingle();
+          if (hopRow) {
+            await supabaseAdmin.from("job_dispatch_hops").delete().eq("id", hopRow.id);
+            const chain: string[] = Array.isArray((job as any).dispatch_chain_company_ids)
+              ? (job as any).dispatch_chain_company_ids : [];
+            await supabaseAdmin.from("jobs").update({
+              executor_company_id: hopRow.from_company_id,
+              dispatch_status: "rejected",
+              dispatch_decided_at: now,
+              dispatch_chain_company_ids: chain.filter((id) => id !== hopRow.to_company_id),
+            } as never).eq("id", prop.job_id);
+          }
+        }
+      }
+      return { ok: true };
+    }
+    throw new Error("Unknown action");
+  });
+
+// Return all proposals on a job where my company is a party.
+export const listPriceProposals = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("job_price_proposals")
+      .select("id, from_party_kind, from_company_id, from_driver_id, to_company_id, to_driver_id, amount_eur, status, parent_id, note, created_at, responded_at, hop_id")
+      .eq("job_id", data.job_id)
+      .or(`from_company_id.eq.${c.id},to_company_id.eq.${c.id}`)
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    // Attach display names for parties (drivers + companies).
+    const driverIds = Array.from(new Set((rows ?? []).flatMap((r: any) => [r.from_driver_id, r.to_driver_id].filter(Boolean))));
+    const companyIds = Array.from(new Set((rows ?? []).flatMap((r: any) => [r.from_company_id, r.to_company_id].filter(Boolean))));
+    const [{ data: drvs }, { data: comps }] = await Promise.all([
+      driverIds.length ? supabaseAdmin.from("drivers").select("id,name").in("id", driverIds) : Promise.resolve({ data: [] as any[] }),
+      companyIds.length ? supabaseAdmin.from("companies").select("id,name").in("id", companyIds) : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const dName = new Map((drvs ?? []).map((d: any) => [d.id, d.name]));
+    const cName = new Map((comps ?? []).map((x: any) => [x.id, x.name]));
+    return (rows ?? []).map((r: any) => ({
+      ...r,
+      i_am_from: r.from_company_id === c.id,
+      i_am_to: r.to_company_id === c.id,
+      from_label: r.from_party_kind === "driver" ? (dName.get(r.from_driver_id) ?? "Driver") : (cName.get(r.from_company_id) ?? "Coordinator"),
+      to_label: r.to_driver_id ? (dName.get(r.to_driver_id) ?? "Driver") : (cName.get(r.to_company_id) ?? "Coordinator"),
+    }));
+  });
+
+// Count of open price proposals awaiting my response (dashboard flash).
+export const countOpenPriceProposals = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await myCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { count, error } = await supabaseAdmin.from("job_price_proposals")
+      .select("id", { count: "exact", head: true })
+      .eq("to_company_id", c.id)
+      .in("status", ["proposed"]);
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
 

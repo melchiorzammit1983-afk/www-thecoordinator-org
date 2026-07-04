@@ -9,6 +9,7 @@ import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
+import { PriceProposalsPanel } from "./PriceProposalsPanel";
 import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -267,6 +268,10 @@ export function TripDetailsSheet({
 
           {/* Pricing (coordinator-only) */}
           <TripPricingPanel jobId={job.id} />
+
+          {/* Private per-hop price proposals */}
+          <PriceProposalsPanel jobId={job.id} />
+
 
 
 

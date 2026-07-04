@@ -417,6 +417,15 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
       driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
     } as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+    // Withdraw any still-open price proposals from this driver on this job.
+    if (link.subject_id) {
+      await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled", responded_at: new Date().toISOString(),
+      } as never)
+        .eq("job_id", data.job_id)
+        .eq("from_driver_id", link.subject_id)
+        .in("status", ["proposed", "countered"]);
+    }
     return { ok: true };
   });
 
@@ -1397,3 +1406,99 @@ export const unsubscribeClientPush = createServerFn({ method: "POST" })
 export const getPushPublicKey = createServerFn({ method: "GET" }).handler(async () => {
   return { publicKey: process.env.VAPID_PUBLIC_KEY ?? null };
 });
+
+// ---------- Price proposals (driver side) ----------
+
+// A driver proposes a price to the coordinator currently holding the trip
+// (the executor company). The proposal is private to those two parties.
+export const proposeDriverPrice = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      amount_eur: z.number().positive().max(99999.99),
+      note: z.string().trim().max(300).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!link.subject_id) throw new Error("driver_only");
+    const toCompanyId = job.executor_company_id ?? job.company_id;
+    if (!toCompanyId) throw new Error("no_receiver");
+    // Supersede any prior open driver proposals for this job from this driver.
+    await supabaseAdmin.from("job_price_proposals")
+      .update({ status: "superseded", responded_at: new Date().toISOString() } as never)
+      .eq("job_id", data.job_id)
+      .eq("from_driver_id", link.subject_id)
+      .in("status", ["proposed", "countered"]);
+    const { data: row, error } = await supabaseAdmin.from("job_price_proposals").insert({
+      job_id: data.job_id,
+      from_party_kind: "driver",
+      from_driver_id: link.subject_id,
+      to_company_id: toCompanyId,
+      amount_eur: data.amount_eur,
+      status: "proposed",
+      note: data.note ?? null,
+    } as never).select("*").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+// Driver responds to a coordinator counter-offer.
+export const driverRespondToPrice = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      proposal_id: z.string().uuid(),
+      action: z.enum(["accept", "withdraw"]),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    if (!link.subject_id) throw new Error("driver_only");
+    const supabaseAdmin = await getAdminClient();
+    const { data: prop, error: readErr } = await supabaseAdmin.from("job_price_proposals")
+      .select("*").eq("id", data.proposal_id).maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!prop) throw new Error("proposal_not_found");
+    // Driver may accept a coordinator counter (to_company acts, from is company),
+    // or withdraw their own proposal (from_driver = them).
+    if (data.action === "accept") {
+      if (prop.from_party_kind !== "company") throw new Error("not_a_counter_offer");
+      if (prop.to_driver_id !== link.subject_id) throw new Error("forbidden");
+      if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
+      const { error } = await supabaseAdmin.from("job_price_proposals").update({
+        status: "accepted",
+        responded_at: new Date().toISOString(),
+      } as never).eq("id", data.proposal_id);
+      if (error) throw new Error(error.message);
+    } else {
+      if (prop.from_driver_id !== link.subject_id) throw new Error("forbidden");
+      if (!["proposed", "countered"].includes(prop.status)) throw new Error("already_closed");
+      const { error } = await supabaseAdmin.from("job_price_proposals").update({
+        status: "recalled",
+        responded_at: new Date().toISOString(),
+      } as never).eq("id", data.proposal_id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+// Returns the driver-side proposal thread for a job (only proposals visible
+// to this driver — theirs plus counter-offers directed at them).
+export const listMyDriverPriceThread = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!link.subject_id) return [];
+    const { data: rows, error } = await supabaseAdmin.from("job_price_proposals")
+      .select("id, from_party_kind, from_company_id, from_driver_id, to_company_id, to_driver_id, amount_eur, status, parent_id, note, created_at, responded_at")
+      .eq("job_id", data.job_id)
+      .or(`from_driver_id.eq.${link.subject_id},to_driver_id.eq.${link.subject_id}`)
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
