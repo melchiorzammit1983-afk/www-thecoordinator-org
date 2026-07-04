@@ -60,6 +60,9 @@ function Landing() {
       <HowItWorks />
       <Bento />
       <ClientExperience />
+      <HowPointsWork />
+      <TrustStrip />
+      <FaqSection />
       <FinalCta />
       <Footer />
     </div>
