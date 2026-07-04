@@ -48,7 +48,8 @@ export function VoiceToTripButton({
   const enabled = useFeature("ai_voice_to_trip");
   const cost = useFeatureCost("ai_voice_to_trip");
   const remaining = usePointsRemaining();
-  const outOfPoints = remaining < cost;
+  const outOfPoints = remaining > 0 && remaining < cost;
+
 
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
