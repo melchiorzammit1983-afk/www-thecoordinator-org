@@ -10,6 +10,32 @@ async function getAdminClient() {
   return supabaseAdmin;
 }
 
+/**
+ * Best-effort metering: deducts points for a feature but NEVER throws.
+ * Use for billable events that must not break core operations (trip creation,
+ * dispatch). Features with block_on_empty=true still deduct; overflow either
+ * hits the subscription pool or is allowed negative when block_on_empty=false.
+ */
+async function spendSoft(
+  companyId: string | null | undefined,
+  featureKey: string,
+  note: string,
+  jobId?: string,
+) {
+  if (!companyId) return;
+  try {
+    const sb = await getAdminClient();
+    await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: note,
+      _cost_override: undefined as unknown as number,
+    });
+  } catch {
+    // swallow — metering must never break the primary action
+  }
+
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
     const supabaseAdmin = await getAdminClient();
