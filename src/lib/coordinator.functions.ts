@@ -2161,6 +2161,26 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
     if (co) await assertFeatureEnabled(co.id, "ai_extraction");
 
+    // Meter: 1pt for text-only, 3pts when files/urls attached.
+    const willUseMedia = (data.attachments?.length ?? 0) > 0 || (data.urls?.length ?? 0) > 0;
+    if (co) {
+      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+        _company_id: co.id,
+        _feature_key: willUseMedia ? "ai_extraction_media" : "ai_extraction",
+        _job_id: undefined as unknown as string,
+        _note: willUseMedia ? "ai_extraction (media)" : "ai_extraction (text)",
+        _cost_override: undefined as unknown as number,
+      });
+      if (spendErr) {
+        const msg = spendErr.message || "";
+        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to continue.");
+        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for AI extraction.");
+        if (msg.includes("feature_disabled")) throw new Error("AI extraction has been disabled by the administrator.");
+        throw new Error(msg);
+      }
+    }
+
+
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
 
