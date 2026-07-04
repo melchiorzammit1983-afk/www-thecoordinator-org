@@ -714,7 +714,8 @@ export const approveBooking = createServerFn({ method: "POST" })
       date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
       time: b.time, pickup_at,
       clientcompanyname: `${b.name} ${b.surname}`.trim(),
-    }).select().single();
+      promo_note: (b as any).promo_note ?? null,
+    } as any).select().single();
     if (jErr) throw new Error(jErr.message);
     await supabaseAdmin.from("client_bookings")
       .update({ status: "accepted", job_id: job.id }).eq("id", data.id);
