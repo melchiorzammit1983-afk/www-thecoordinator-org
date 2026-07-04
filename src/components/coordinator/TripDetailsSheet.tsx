@@ -256,6 +256,12 @@ export function TripDetailsSheet({
             {job.clientcompanyname && (
               <SheetDescription>{job.clientcompanyname}</SheetDescription>
             )}
+            {job.promo_note && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-800 dark:text-emerald-200">
+                <span className="text-[10px] uppercase tracking-widest opacity-70">Promo · billing reminder</span>
+                <span>{job.promo_note}</span>
+              </div>
+            )}
           </SheetHeader>
 
           {/* Progress */}
