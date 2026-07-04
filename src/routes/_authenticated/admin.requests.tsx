@@ -99,6 +99,11 @@ function RequestsPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="font-medium">{r.full_name}</div>
+                    {r.kind === "demo" && (
+                      <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                        Demo
+                      </Badge>
+                    )}
                     <Badge variant="outline" className={STATUS_COLORS[r.status] ?? ""}>
                       {r.status}
                     </Badge>
