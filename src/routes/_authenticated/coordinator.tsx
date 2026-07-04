@@ -32,6 +32,7 @@ const NAV = [
   { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: null },
   { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
   { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
+  { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
 ] as const;
 
 
