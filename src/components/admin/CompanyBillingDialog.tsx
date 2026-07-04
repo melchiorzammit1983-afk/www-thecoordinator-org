@@ -184,6 +184,9 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
             </section>
 
 
+            {/* Per-company price overrides */}
+            <PriceOverridesSection companyId={company.id} />
+
             {/* Recent ledger */}
             <section>
               <h3 className="text-sm font-medium mb-2">Recent activity</h3>
@@ -192,7 +195,7 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
                   <div key={l.id} className="px-3 py-1.5 flex items-center gap-2">
                     <span className="text-muted-foreground min-w-[130px]">{new Date(l.created_at).toLocaleString()}</span>
                     <span className="font-mono flex-1 truncate">{l.feature_key ?? "—"}</span>
-                    <Badge variant="secondary" className="text-[10px]">{l.points_deducted > 0 ? `-${l.points_deducted}` : `+${Math.abs(l.points_deducted)}`}</Badge>
+                    <Badge variant="secondary" className="text-[10px]">{Number(l.points_deducted) > 0 ? `-${Number(l.points_deducted)}` : `+${Math.abs(Number(l.points_deducted))}`}</Badge>
                   </div>
                 ))}
                 {(billing?.ledger ?? []).length === 0 ? <div className="p-3 text-muted-foreground">No activity yet.</div> : null}
