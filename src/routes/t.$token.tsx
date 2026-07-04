@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
 import { BrandingBar } from "@/components/branding/BrandingBar";
+import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 
 
 export const Route = createFileRoute("/t/$token")({
