@@ -779,12 +779,159 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
 
 
 /**
+ * Info returned by `useLiveRoute` — the live traffic-aware routing snapshot
+ * for the driver's current leg. Everything is optional so the UI can render
+ * gracefully before the first response arrives.
+ */
+type LiveRouteInfo = {
+  polyline: string | null;
+  eta_sec: number | null;
+  distance_m: number | null;
+  next_instruction: string | null;
+  next_maneuver: string | null;
+  next_step_distance_m: number | null;
+  delay_sec: number;                  // traffic vs free-flow duration
+  reroute_available: boolean;         // an alternative saves >= 3 min AND >= 15%
+  reroute_saving_sec: number;
+  onAcceptReroute: () => void;
+  isLoading: boolean;
+};
+
+/**
+ * Polls the Routes API server-side every 30s while a driver has an active
+ * leg. Detects heavy traffic (primary duration >> staticDuration) and
+ * surfaces a faster alternative route the driver can accept in one tap.
+ */
+function useLiveRoute({
+  origin,
+  destination,
+  enabled,
+}: {
+  origin: { lat: number; lng: number } | null;
+  destination: string | null;
+  enabled: boolean;
+}): LiveRouteInfo {
+  const fn = useServerFn(computeDriverRoute);
+  const [acceptedAltIdx, setAcceptedAltIdx] = useState<number | null>(null);
+
+  // Coarse origin key so tiny GPS jitter doesn't hammer the API.
+  const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["driver-live-route", destination, originKey],
+    enabled: enabled && !!origin && !!destination,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    queryFn: () => fn({
+      data: {
+        origin: { latitude: origin!.lat, longitude: origin!.lng },
+        destination_address: destination!,
+      },
+    }) as Promise<{
+      primary: null | {
+        duration_sec: number | null;
+        static_duration_sec: number | null;
+        distance_m: number | null;
+        polyline: string | null;
+        next_instruction: string | null;
+        next_maneuver: string | null;
+        next_step_distance_m: number | null;
+      };
+      alternatives: Array<{
+        duration_sec: number | null;
+        static_duration_sec: number | null;
+        distance_m: number | null;
+        polyline: string | null;
+        next_instruction: string | null;
+        next_maneuver: string | null;
+        next_step_distance_m: number | null;
+      }>;
+    }>,
+  });
+
+  // Reset accepted alternative when the destination changes.
+  useEffect(() => { setAcceptedAltIdx(null); }, [destination]);
+
+  const primary = data?.primary ?? null;
+  const alternatives = data?.alternatives ?? [];
+  const active = acceptedAltIdx != null ? alternatives[acceptedAltIdx] ?? primary : primary;
+
+  const delay_sec = primary?.duration_sec != null && primary?.static_duration_sec != null
+    ? Math.max(0, primary.duration_sec - primary.static_duration_sec) : 0;
+
+  // "Meaningful" reroute: alternative is at least 3 minutes and 15% faster.
+  const bestAlt = alternatives
+    .map((a, i) => ({ a, i, saving: primary?.duration_sec != null && a.duration_sec != null
+      ? primary.duration_sec - a.duration_sec : 0 }))
+    .sort((x, y) => y.saving - x.saving)[0];
+  const reroute_available = !!bestAlt
+    && acceptedAltIdx == null
+    && bestAlt.saving >= 180
+    && !!primary?.duration_sec
+    && bestAlt.saving / primary.duration_sec >= 0.15;
+
+  return {
+    polyline: active?.polyline ?? null,
+    eta_sec: active?.duration_sec ?? null,
+    distance_m: active?.distance_m ?? null,
+    next_instruction: active?.next_instruction ?? null,
+    next_maneuver: active?.next_maneuver ?? null,
+    next_step_distance_m: active?.next_step_distance_m ?? null,
+    delay_sec,
+    reroute_available,
+    reroute_saving_sec: bestAlt?.saving ?? 0,
+    onAcceptReroute: () => { if (bestAlt) setAcceptedAltIdx(bestAlt.i); },
+    isLoading,
+  };
+}
+
+function formatEtaMin(sec: number | null): string {
+  if (sec == null) return "—";
+  const m = Math.max(1, Math.round(sec / 60));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return `${h}h ${r}m`;
+}
+
+function formatDistance(m: number | null): string {
+  if (m == null) return "—";
+  if (m < 950) return `${Math.round(m / 10) * 10} m`;
+  return `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`;
+}
+
+function ManeuverArrow({ maneuver, className }: { maneuver: string | null; className?: string }) {
+  const cls = className ?? "h-6 w-6";
+  switch (maneuver) {
+    case "TURN_LEFT":
+    case "TURN_SHARP_LEFT":
+      return <ArrowLeft className={cls} />;
+    case "TURN_SLIGHT_LEFT":
+      return <ArrowUpLeft className={cls} />;
+    case "TURN_RIGHT":
+    case "TURN_SHARP_RIGHT":
+      return <ArrowRight className={cls} />;
+    case "TURN_SLIGHT_RIGHT":
+      return <ArrowUpRight className={cls} />;
+    case "UTURN_LEFT":
+      return <CornerDownLeft className={cls} />;
+    case "UTURN_RIGHT":
+      return <CornerDownRight className={cls} />;
+    case "STRAIGHT":
+    case undefined:
+    case null:
+    default:
+      return <ArrowUp className={cls} />;
+  }
+}
+
+/**
  * Driving-safe hero: pinned above the manifest whenever the driver has an
  * active/accepted trip. Extra-large instruction text + a 64px+ primary
  * action so the button stays tappable while the phone is dashboard-mounted.
  */
-function NextInstructionCard({ job, token, onOpenSummary }: {
-  job: Job; token: string; onOpenSummary: () => void;
+function NextInstructionCard({ job, token, onOpenSummary, live }: {
+  job: Job; token: string; onOpenSummary: () => void; live: LiveRouteInfo;
 }) {
   const qc = useQueryClient();
   const statusFn = useServerFn(updateJobStatus);
@@ -797,22 +944,57 @@ function NextInstructionCard({ job, token, onOpenSummary }: {
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
   const next = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
 
+  const destination = job.status === "in_progress" ? job.to_location : job.from_location;
   const headline =
     job.status === "in_progress" ? `DRIVE TO ${job.to_location.toUpperCase()}`
     : job.status === "arrived"    ? `BOARD PASSENGERS AT ${job.from_location.toUpperCase()}`
     : job.status === "en_route"   ? `HEAD TO PICKUP · ${job.from_location.toUpperCase()}`
     :                                `NEXT TRIP · ${job.from_location.toUpperCase()}`;
 
-  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-    job.status === "in_progress" ? job.to_location : job.from_location
-  )}&travelmode=driving`;
+  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+
+  const showLive = job.status === "en_route" || job.status === "in_progress";
+  const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
 
   return (
     <section
       aria-label="Next driving instruction"
       className="rounded-3xl border-2 border-white/60 dark:border-white/10 shadow-2xl overflow-hidden"
-      style={{ background: "rgba(255,255,255,0.78)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
+      style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
     >
+      {/* Reroute alert — appears when live traffic finds a materially faster path */}
+      {showLive && live.reroute_available && (
+        <button
+          type="button"
+          onClick={live.onAcceptReroute}
+          className="w-full flex items-center gap-3 px-4 py-3 bg-amber-500 text-black font-bold text-left hover:bg-amber-400 transition"
+        >
+          <TrafficCone className="h-6 w-6 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm uppercase tracking-widest">Traffic ahead</div>
+            <div className="text-base leading-tight">
+              Faster route saves {formatEtaMin(live.reroute_saving_sec)} — tap to switch
+            </div>
+          </div>
+          <RouteIcon className="h-6 w-6 shrink-0" />
+        </button>
+      )}
+
+      {/* Live turn-by-turn strip */}
+      {showLive && stripInstruction && (
+        <div className="flex items-center gap-3 px-5 py-3 bg-primary text-primary-foreground">
+          <ManeuverArrow maneuver={live.next_maneuver} className="h-8 w-8 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] uppercase tracking-widest opacity-80">
+              In {formatDistance(live.next_step_distance_m)}
+            </div>
+            <div className="text-lg sm:text-xl font-bold leading-tight break-words">
+              {stripInstruction}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-5 pt-4 pb-3">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
           {job.status === "in_progress" ? "In progress" : job.status === "arrived" ? "At pickup" : "Next up"}
@@ -820,9 +1002,36 @@ function NextInstructionCard({ job, token, onOpenSummary }: {
         <h2 className="mt-1 text-2xl sm:text-3xl font-black leading-tight tracking-tight text-slate-900 dark:text-white break-words">
           {headline}
         </h2>
-        <div className="mt-1 text-sm text-muted-foreground truncate">
-          {job.status === "in_progress" ? `From ${job.from_location}` : `To ${job.to_location}`}
-        </div>
+
+        {/* Live ETA + remaining distance */}
+        {showLive && (live.eta_sec != null || live.distance_m != null) && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">ETA</div>
+              <div className="text-2xl font-black tabular-nums leading-none mt-0.5">
+                {formatEtaMin(live.eta_sec)}
+              </div>
+              {live.delay_sec >= 120 && (
+                <div className="text-[11px] font-semibold text-amber-700 mt-0.5">
+                  +{formatEtaMin(live.delay_sec)} in traffic
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Remaining</div>
+              <div className="text-2xl font-black tabular-nums leading-none mt-0.5">
+                {formatDistance(live.distance_m)}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">to {destination}</div>
+            </div>
+          </div>
+        )}
+
+        {!showLive && (
+          <div className="mt-1 text-sm text-muted-foreground truncate">
+            {job.status === "in_progress" ? `From ${job.from_location}` : `To ${job.to_location}`}
+          </div>
+        )}
       </div>
       <div className="px-4 pb-4 grid gap-2">
         {next && (
@@ -851,6 +1060,7 @@ function NextInstructionCard({ job, token, onOpenSummary }: {
     </section>
   );
 }
+
 
 function ProfileDialog({ open, onOpenChange, token, driver }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driver: Driver | null;
