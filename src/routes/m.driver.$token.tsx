@@ -1074,7 +1074,32 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
         } : null}
       />
 
+      {previewOpen && (
+        <NavigateFullscreen
+          mode="preview"
+          live={previewLive}
+          destination={job.from_location}
+          title={job.from_location}
+          externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
+          onExit={() => setPreviewOpen(false)}
+          onSpeak={null}
+          isSpeaking={false}
+          footerSlot={
+            <div className="flex gap-2 px-4 py-3 border-t border-white/40" style={{ background: "rgba(255,255,255,0.95)" }}>
+              <Button variant="outline" className="flex-1 h-12 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => { setPreviewOpen(false); setRejectOpen(true); }}>
+                <ThumbsDown className="h-4 w-4 mr-1.5" /> Decline
+              </Button>
+              <Button className="flex-1 h-12 text-base" disabled={acceptMut.isPending}
+                onClick={() => { acceptMut.mutate(); setPreviewOpen(false); }}>
+                {acceptMut.isPending ? "Accepting…" : "Accept trip"}
+              </Button>
+            </div>
+          }
+        />
+      )}
     </article>
+
   );
 
 }
