@@ -74,6 +74,7 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  */
 export function NavigateFullscreen({
   live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
+  mode = "navigate", footerSlot = null, title = null,
 }: {
   live: LiveRouteInfo;
   destination: string | null;
@@ -81,7 +82,12 @@ export function NavigateFullscreen({
   onSpeak: (() => void) | null;
   isSpeaking: boolean;
   externalNavUrl: string;
+  mode?: "navigate" | "preview";
+  footerSlot?: React.ReactNode;
+  title?: string | null;
 }) {
+  const isPreview = mode === "preview";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const meMarkerRef = useRef<any>(null);
