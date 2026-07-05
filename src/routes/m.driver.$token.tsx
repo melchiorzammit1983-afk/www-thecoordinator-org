@@ -1231,8 +1231,9 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
  * the map owns the rest of the screen. Only three data points: maneuver
  * arrow, distance-to-next-turn + ETA, and a massive Expand button.
  */
-function NavigateHud({ live, onExit }: {
+function NavigateHud({ live, onExit, onSpeak, isSpeaking }: {
   live: LiveRouteInfo; onExit: () => void;
+  onSpeak: (() => void) | null; isSpeaking: boolean;
 }) {
   const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
   return (
@@ -1271,6 +1272,21 @@ function NavigateHud({ live, onExit }: {
             )}
           </div>
         </div>
+        {onSpeak && (
+          <button
+            type="button"
+            onClick={onSpeak}
+            aria-label={isSpeaking ? "Stop speaking notification" : "Speak latest notification"}
+            aria-pressed={isSpeaking}
+            className={`shrink-0 min-h-16 min-w-16 grid place-items-center rounded-full font-bold shadow-lg active:scale-95 transition ${
+              isSpeaking
+                ? "bg-amber-500 text-black animate-pulse"
+                : "bg-white/90 text-primary border-2 border-primary/40"
+            }`}
+          >
+            {isSpeaking ? <VolumeX className="h-7 w-7" /> : <Volume2 className="h-7 w-7" />}
+          </button>
+        )}
         <button
           type="button"
           onClick={onExit}
@@ -1283,6 +1299,7 @@ function NavigateHud({ live, onExit }: {
     </div>
   );
 }
+
 
 
 
