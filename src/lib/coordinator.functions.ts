@@ -3237,7 +3237,8 @@ export async function runAutoCoordinate(companyId: string) {
   await assertFeatureEnabled(companyId, "ai_auto_coordinate");
 
   const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const [{ data: jobs }, { data: drivers }] = await Promise.all([
+  const historyCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const [{ data: jobs }, { data: drivers }, { data: history }] = await Promise.all([
     sb.from("jobs")
       .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
       .eq("company_id", companyId)
@@ -3250,7 +3251,15 @@ export async function runAutoCoordinate(companyId: string) {
       .eq("company_id", companyId)
       .neq("status", "offline")
       .limit(60),
+    sb.from("jobs")
+      .select("from_location, to_location, pickup_at, time, name, surname, driver_id, drivers:driver_id(name)")
+      .eq("company_id", companyId)
+      .eq("status", "completed")
+      .gte("created_at", historyCutoff)
+      .order("pickup_at", { ascending: false, nullsFirst: false })
+      .limit(300),
   ]);
+
 
   const list = jobs ?? [];
   const drv = drivers ?? [];
@@ -3271,15 +3280,31 @@ export async function runAutoCoordinate(companyId: string) {
   ).join("\n");
   const driverLines = drv.map((d: any) => `${d.id}: ${d.name ?? ""}`).join("\n") || "(no free drivers)";
 
+  // Compact 30-day completed-trip reference so the AI can spot recurring
+  // monthly patterns (regular clients, repeat routes, habitual drivers).
+  const historyList = (history ?? []).map((h: any) => ({
+    pickup: h.from_location ?? "",
+    dropoff: h.to_location ?? "",
+    time: h.pickup_at ?? (h.time ?? ""),
+    client: `${h.name ?? ""} ${h.surname ?? ""}`.trim(),
+    driver: h.drivers?.name ?? "",
+  }));
+  const historyBlock = historyList.length
+    ? `PAST_30D_COMPLETED (${historyList.length}):\n${historyList
+        .map((r) => `${r.time} | ${r.pickup} → ${r.dropoff} | ${r.client} | drv:${r.driver}`)
+        .join("\n")}`
+    : "PAST_30D_COMPLETED: (none)";
+
   const parsed = await callGemini(
     await buildSystemPrompt(companyId,
       `You are a transport dispatch autopilot. Look at the ENTIRE unassigned backlog and propose the minimum set of actions that clears it.\n` +
+      `Use PAST_30D_COMPLETED as reference memory to recognize recurring monthly patterns — regular clients, repeat routes, and drivers habitually paired with them — when grouping or assigning.\n` +
       `Return JSON: {"proposals":[\n` +
       `  {"kind":"group","trip_ids":["uuid",...],"reason":"..."},\n` +
       `  {"kind":"assign","trip_ids":["uuid",...],"driver_id":"uuid","reason":"..."}\n` +
       `]}\n` +
       `Rules: only real groups (2+ trips, same/near pickup within 30min AND overlapping routes). Only propose assignments when a specific driver clearly fits. Do NOT invent trip_ids or driver_ids — use only the IDs listed below.\n\n` +
-      `TRIPS:\n${tripLines}\n\nDRIVERS:\n${driverLines}`,
+      `TRIPS:\n${tripLines}\n\nDRIVERS:\n${driverLines}\n\n${historyBlock}`,
     ),
     "gemini-2.5-flash",
     { maxOutputTokens: 2000 },
@@ -3287,6 +3312,7 @@ export async function runAutoCoordinate(companyId: string) {
 
   const tripIdSet = new Set(list.map((j: any) => j.id));
   const driverIdSet = new Set(drv.map((d: any) => d.id));
+
   const raw = Array.isArray(parsed?.proposals) ? parsed.proposals : [];
   const proposals: CoordProposal[] = [];
   for (const p of raw) {
