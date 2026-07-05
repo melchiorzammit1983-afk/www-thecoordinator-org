@@ -1316,6 +1316,8 @@ export const getClientLiveLocationDriver = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    // Hide live client pin as soon as the trip is over.
+    if (job.status === "completed" || job.status === "cancelled") return null;
     const since = new Date(Date.now() - 3 * 60_000).toISOString();
     const { data: row, error } = await supabaseAdmin.from("client_locations")
       .select("latitude, longitude, accuracy_m, captured_at, pax_name, mode")
