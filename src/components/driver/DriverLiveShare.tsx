@@ -180,7 +180,15 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
       if (last && dt < MIN_INTERVAL_MS && dm < MIN_DISTANCE_M) return;
       lastPosRef.current = cur;
       setStatus("live"); setError(null); setLastAt(now);
-      queueRef.current.push(p);
+      const m = metaRef.current;
+      const enriched: QueuedPoint = m ? {
+        ...p,
+        eta_sec: m.eta_sec,
+        distance_m: m.distance_m,
+        next_instruction: m.next_instruction,
+        destination_label: m.destination_label,
+      } : p;
+      queueRef.current.push(enriched);
       writeQueue(queueRef.current);
     };
 
