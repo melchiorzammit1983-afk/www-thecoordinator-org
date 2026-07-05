@@ -196,8 +196,15 @@ function DriverManifest() {
     enabled: !!activeJob && !!driverPos && !!routeDestination,
   });
 
+  // Navigate Mode — maximizes the map and collapses UI to a slim HUD.
+  // Only available while the vehicle is In Motion; auto-exits otherwise.
+  const [navigateMode, setNavigateMode] = useState(false);
+  useEffect(() => {
+    if (!inMotion && navigateMode) setNavigateMode(false);
+  }, [inMotion, navigateMode]);
+
   return (
-    <div className="relative min-h-screen pb-28">
+    <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
       <DriverDashboardMap
         activeJob={mapJob}
@@ -205,111 +212,124 @@ function DriverManifest() {
         onDriverPosition={setDriverPos}
       />
 
-      <header
-        className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
-        style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
-      >
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "D"} />
-            <div className="min-w-0">
-              <div className="text-[10px] text-primary font-semibold uppercase tracking-widest truncate">
-                {branding?.company_name ?? "Driver Manifest"}
-              </div>
-              <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
-              {driver && !inMotion && (
-                <div className="text-[11px] text-muted-foreground truncate">
-                  {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
-                  {driver.availability_note ?? "No availability set"}
+      {!navigateMode && (
+        <header
+          className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
+          style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
+        >
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "D"} />
+              <div className="min-w-0">
+                <div className="text-[10px] text-primary font-semibold uppercase tracking-widest truncate">
+                  {branding?.company_name ?? "Driver Manifest"}
                 </div>
-              )}
-              {inMotion && (
-                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
-                  <span>In motion · menu locked for safety</span>
-                  {wake.held && (
-                    <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
-                      ☀ Screen awake
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          {inMotion ? (
-            <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {driver && (
-                  <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-                    <User className="h-4 w-4 mr-2" /> Edit profile
-                  </DropdownMenuItem>
+                <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
+                {driver && !inMotion && (
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
+                    {driver.availability_note ?? "No availability set"}
+                  </div>
                 )}
-                <DropdownMenuItem onClick={() => setStatementOpen(true)}>
-                  <FileText className="h-4 w-4 mr-2" /> Download statement
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </header>
-
-      <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
-        {activeJob && (
-          <NextInstructionCard
-            job={activeJob}
-            token={token}
-            onOpenSummary={() => setOpenJob(activeJob)}
-            live={live}
-          />
-        )}
-        <DriverLiveShare
-          token={token}
-          hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
-        />
-
-        {jobs.length === 0 && archivedJobs.length === 0 && (
-          <div className="text-center py-20">
-            <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
-              <MapPin className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div className="font-medium">No trips yet</div>
-            <div className="text-sm text-muted-foreground mt-1">Your coordinator hasn't assigned trips.</div>
-          </div>
-        )}
-        {jobs.length === 0 && archivedJobs.length > 0 && (
-          <div className="text-center py-6 text-sm text-muted-foreground">
-            No active trips — archived trips are shown below.
-          </div>
-        )}
-        {jobs.map((j) => (
-          <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
-        ))}
-
-        {archivedJobs.length > 0 && (
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => setShowArchived((v) => !v)}
-              className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
-            >
-              {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
-            </button>
-            {showArchived && (
-              <div className="space-y-3 mt-3 opacity-75">
-                {archivedJobs.map((j) => (
-                  <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
-                ))}
+                {inMotion && (
+                  <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
+                    <span>In motion · menu locked for safety</span>
+                    {wake.held && (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
+                        ☀ Screen awake
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+            </div>
+            {inMotion ? (
+              <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {driver && (
+                    <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                      <User className="h-4 w-4 mr-2" /> Edit profile
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setStatementOpen(true)}>
+                    <FileText className="h-4 w-4 mr-2" /> Download statement
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
-        )}
-      </main>
+        </header>
+      )}
+
+      {navigateMode && activeJob ? (
+        <NavigateHud
+          job={activeJob}
+          live={live}
+          onExit={() => setNavigateMode(false)}
+        />
+      ) : (
+        <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
+          {activeJob && (
+            <NextInstructionCard
+              job={activeJob}
+              token={token}
+              onOpenSummary={() => setOpenJob(activeJob)}
+              live={live}
+              canEnterNavigate={inMotion}
+              onEnterNavigate={() => setNavigateMode(true)}
+            />
+          )}
+          <DriverLiveShare
+            token={token}
+            hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
+          />
+
+          {jobs.length === 0 && archivedJobs.length === 0 && (
+            <div className="text-center py-20">
+              <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
+                <MapPin className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div className="font-medium">No trips yet</div>
+              <div className="text-sm text-muted-foreground mt-1">Your coordinator hasn't assigned trips.</div>
+            </div>
+          )}
+          {jobs.length === 0 && archivedJobs.length > 0 && (
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              No active trips — archived trips are shown below.
+            </div>
+          )}
+          {jobs.map((j) => (
+            <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+          ))}
+
+          {archivedJobs.length > 0 && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
+              >
+                {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
+              </button>
+              {showArchived && (
+                <div className="space-y-3 mt-3 opacity-75">
+                  {archivedJobs.map((j) => (
+                    <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      )}
+
 
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} token={token} driver={driver} />
