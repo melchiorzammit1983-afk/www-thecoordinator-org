@@ -397,6 +397,15 @@ function rowsToTsv(rows: AiRow[]): string {
   return [header, ...body].join("\n");
 }
 
+function recomputeTripErrors(t: ParsedTrip): ParsedTrip {
+  const errors: string[] = [];
+  if (!t.date?.trim()) errors.push("Missing date");
+  if (!t.time?.trim()) errors.push("Missing time");
+  if (!t.from_location?.trim()) errors.push("Missing pickup");
+  if (!t.to_location?.trim()) errors.push("Missing delivery");
+  return { ...t, errors };
+}
+
 type Attachment = { name: string; mimeType: string; size: number; dataBase64: string };
 
 const MAX_FILES = 5;
