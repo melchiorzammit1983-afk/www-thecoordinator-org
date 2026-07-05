@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +9,7 @@ import { formatMaltaDateTime } from "@/lib/time";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
-  Pencil, Sparkles, AlertTriangle, Search, X as XIcon, GitMerge,
+  Pencil, Sparkles, AlertTriangle, Search, X as XIcon, GitMerge, Image as ImageIcon,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner, recallPartnerDispatch,
@@ -1911,6 +1911,11 @@ function TripMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onOpenClone}>
           <Copy className="h-4 w-4 mr-2" /> Clone…
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/coordinator/board-creator" search={{ jobId: job.id }}>
+            <ImageIcon className="h-4 w-4 mr-2" /> 🪧 Create Sign Board
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onOpenDispatch}>
           <Send className="h-4 w-4 mr-2" /> Dispatch to partner…

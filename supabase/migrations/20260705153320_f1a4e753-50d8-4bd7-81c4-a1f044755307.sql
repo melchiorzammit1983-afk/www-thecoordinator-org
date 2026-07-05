@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.charge_extra_logos_weekly() FROM PUBLIC, anon, authenticated;

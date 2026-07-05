@@ -34,6 +34,7 @@ import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
+import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedCoordinatorAiCenterRouteImport } from './routes/_authenticated/coordinator.ai-center'
 import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
@@ -182,6 +183,12 @@ const AuthenticatedCoordinatorBrandingRoute =
     path: '/branding',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorBoardCreatorRoute =
+  AuthenticatedCoordinatorBoardCreatorRouteImport.update({
+    id: '/board-creator',
+    path: '/board-creator',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorBillingRoute =
   AuthenticatedCoordinatorBillingRouteImport.update({
     id: '/billing',
@@ -260,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
+  '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -294,6 +302,7 @@ export interface FileRoutesByTo {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
+  '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -332,6 +341,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/_authenticated/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
+  '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
   '/_authenticated/coordinator/collaborate': typeof AuthenticatedCoordinatorCollaborateRoute
@@ -370,6 +380,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/ai-center'
     | '/coordinator/billing'
+    | '/coordinator/board-creator'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -404,6 +415,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/ai-center'
     | '/coordinator/billing'
+    | '/coordinator/board-creator'
     | '/coordinator/branding'
     | '/coordinator/calendar'
     | '/coordinator/collaborate'
@@ -441,6 +453,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/topups'
     | '/_authenticated/coordinator/ai-center'
     | '/_authenticated/coordinator/billing'
+    | '/_authenticated/coordinator/board-creator'
     | '/_authenticated/coordinator/branding'
     | '/_authenticated/coordinator/calendar'
     | '/_authenticated/coordinator/collaborate'
@@ -654,6 +667,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorBrandingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/board-creator': {
+      id: '/_authenticated/coordinator/board-creator'
+      path: '/board-creator'
+      fullPath: '/coordinator/board-creator'
+      preLoaderRoute: typeof AuthenticatedCoordinatorBoardCreatorRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/billing': {
       id: '/_authenticated/coordinator/billing'
       path: '/billing'
@@ -751,6 +771,7 @@ const AuthenticatedAdminRouteWithChildren =
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
   AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
+  AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
   AuthenticatedCoordinatorCollaborateRoute: typeof AuthenticatedCoordinatorCollaborateRoute
@@ -770,6 +791,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorAiCenterRoute:
       AuthenticatedCoordinatorAiCenterRoute,
     AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
+    AuthenticatedCoordinatorBoardCreatorRoute:
+      AuthenticatedCoordinatorBoardCreatorRoute,
     AuthenticatedCoordinatorBrandingRoute:
       AuthenticatedCoordinatorBrandingRoute,
     AuthenticatedCoordinatorCalendarRoute:
@@ -828,13 +851,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
