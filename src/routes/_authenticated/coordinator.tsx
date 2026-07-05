@@ -145,8 +145,6 @@ function CoordinatorLayout() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-muted/30 w-full">
-  return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-muted/30 w-full">
       {/* Mobile-only auto-hiding top bar + bottom tab bar. */}
       <MobileHeader
         logoUrl={(company as any).logo_url ?? null}
