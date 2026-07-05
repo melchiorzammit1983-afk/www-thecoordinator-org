@@ -101,6 +101,7 @@ export function DriverDashboardMap({
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        onDriverPosition?.(p);
         if (!meMarkerRef.current) {
           meMarkerRef.current = new gmaps.Marker({
             map: mapRef.current,
