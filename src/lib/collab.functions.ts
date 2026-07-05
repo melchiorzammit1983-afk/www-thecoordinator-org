@@ -405,12 +405,25 @@ export const respondToDispatch = createServerFn({ method: "POST" })
       if (data.decision === "accepted") {
         // Keep company_id = creator so the trip stays owned by A across the chain.
         // executor_company_id already points to the accepting partner.
+        // partner_accepted_at unlocks the "assign a driver" trigger for this trip.
         const { error: updateError } = await supabaseAdmin.from("jobs").update({
           dispatch_status: "accepted",
           dispatch_decided_at: decidedAt,
           dispatch_note: data.note ?? null,
-        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+          partner_accepted_at: decidedAt,
+          partner_declined_at: null,
+          partner_decline_reason: null,
+        } as never).eq("id", data.job_id).eq("executor_company_id", c.id);
         if (updateError) throw updateError;
+        // Auto system message so the coordinator chat has an audit trail.
+        await supabaseAdmin.from("trip_messages").insert({
+          job_id: data.job_id,
+          company_id: job.company_id,
+          sender_kind: "system",
+          sender_label: "System",
+          body: `✅ ${c.name ?? "Partner"} accepted this dispatch. Now assigning a driver.`,
+          thread_kind: "driver_coord",
+        } as never);
       } else {
         const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
         const { error: updateError } = await supabaseAdmin.from("jobs").update({
@@ -419,8 +432,18 @@ export const respondToDispatch = createServerFn({ method: "POST" })
           dispatch_decided_at: decidedAt,
           dispatch_note: data.note ?? null,
           dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
-        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+          partner_declined_at: decidedAt,
+          partner_decline_reason: data.note ?? null,
+        } as never).eq("id", data.job_id).eq("executor_company_id", c.id);
         if (updateError) throw updateError;
+        await supabaseAdmin.from("trip_messages").insert({
+          job_id: data.job_id,
+          company_id: job.company_id,
+          sender_kind: "system",
+          sender_label: "System",
+          body: `⚠️ ${c.name ?? "Partner"} declined this dispatch${data.note ? ` — ${data.note}` : ""}. Returning to previous coordinator.`,
+          thread_kind: "driver_coord",
+        } as never);
       }
     } catch {
       // Compensation: revert the hop back to pending so operator state is coherent.
