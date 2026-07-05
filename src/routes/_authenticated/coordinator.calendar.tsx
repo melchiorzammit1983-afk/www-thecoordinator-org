@@ -918,6 +918,7 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
               </div>
               {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
               {j.clientcompanyname && <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>}
+              <TripFlagBadges job={j} ctx={ctx} />
               <div className="flex gap-1.5 pt-1">
                 <Button size="sm" className="flex-1 h-7" disabled={busy === j.id} onClick={() => approve(j.id)}>
                   Approve
@@ -926,6 +927,7 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
                   Reject
                 </Button>
               </div>
+
             </div>
           );
         })}
