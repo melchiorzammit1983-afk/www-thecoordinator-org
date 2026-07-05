@@ -6,7 +6,7 @@ const CHANNEL_ID = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_I
 type GMaps = any;
 let mapsLoader: Promise<GMaps> | null = null;
 
-function loadGoogleMaps(): Promise<GMaps> {
+export function loadGoogleMaps(): Promise<GMaps> {
   if (typeof window === "undefined") return Promise.reject(new Error("no_window"));
   if ((window as any).google?.maps) return Promise.resolve((window as any).google.maps);
   if (mapsLoader) return mapsLoader;
