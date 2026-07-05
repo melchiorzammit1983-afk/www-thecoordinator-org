@@ -3028,22 +3028,106 @@ async function spendOrThrow(
   }
 }
 
+// Best-effort refund when a paid AI call fails after metering. Uses spend_points
+// with a negative _cost_override; if the RPC rejects negatives, we swallow and log.
+async function refundPoints(
+  companyId: string,
+  featureKey: string,
+  note: string,
+  jobId?: string,
+) {
+  try {
+    const sb = await getAdminClient();
+    const { data: costRow } = await sb.from("ai_feature_costs")
+      .select("points_cost").eq("feature_key", featureKey).maybeSingle();
+    const cost = Number(costRow?.points_cost ?? 0);
+    if (!cost) return;
+    const { error } = await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: `REFUND: ${note}`,
+      _cost_override: -cost as unknown as number,
+    });
+    if (error) console.warn("[refundPoints] failed:", error.message);
+  } catch (e) {
+    console.warn("[refundPoints] threw:", (e as Error).message);
+  }
+}
+
+// Shared shapes for Gemini extraction — always tolerate missing keys.
+const tripRowSchema = z.object({
+  pickupDate: z.string().default(""),
+  pickupTime: z.string().default(""),
+  pickupAddress: z.string().default(""),
+  deliveryAddress: z.string().default(""),
+  customerName: z.string().default(""),
+  contactNumber: z.string().default(""),
+  transportType: z.string().default(""),
+  quantity: z.string().default("1"),
+}).passthrough();
+
+function normalizeTripRow(r: unknown) {
+  const src: any = (r && typeof r === "object") ? r : {};
+  const parsed = tripRowSchema.safeParse(src);
+  const row = parsed.success ? parsed.data : {
+    pickupDate: String(src.pickupDate ?? ""),
+    pickupTime: String(src.pickupTime ?? ""),
+    pickupAddress: String(src.pickupAddress ?? ""),
+    deliveryAddress: String(src.deliveryAddress ?? ""),
+    customerName: String(src.customerName ?? ""),
+    contactNumber: String(src.contactNumber ?? ""),
+    transportType: String(src.transportType ?? ""),
+    quantity: String(src.quantity ?? "1"),
+  };
+  return {
+    pickupDate: String(row.pickupDate ?? ""),
+    pickupTime: String(row.pickupTime ?? ""),
+    pickupAddress: String(row.pickupAddress ?? ""),
+    deliveryAddress: String(row.deliveryAddress ?? ""),
+    customerName: String(row.customerName ?? ""),
+    contactNumber: String(row.contactNumber ?? ""),
+    transportType: String(row.transportType ?? ""),
+    quantity: String(row.quantity || "1"),
+  };
+}
+
+// Strip common Gemini "```json ... ```" wrappers that leak through despite responseMimeType.
+function safeJsonParse(text: string): unknown {
+  const trimmed = text.trim();
+  try { return JSON.parse(trimmed); } catch { /* fallthrough */ }
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* fallthrough */ } }
+  const firstBrace = trimmed.search(/[{[]/);
+  const lastBrace = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    try { return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)); } catch { /* fallthrough */ }
+  }
+  throw new Error("AI returned invalid JSON");
+}
+
 async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: opts?.temperature ?? 0.2,
+      maxOutputTokens: opts?.maxOutputTokens ?? 800,
+    },
+  });
+  const doFetch = () => fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: opts?.temperature ?? 0.2,
-        maxOutputTokens: opts?.maxOutputTokens ?? 800,
-      },
-    }),
+    body,
   });
+  let res = await doFetch();
+  if (!res.ok && res.status >= 500 && res.status < 600) {
+    await new Promise((r) => setTimeout(r, 400));
+    res = await doFetch();
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
@@ -3052,7 +3136,7 @@ async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?
   const json = await res.json() as any;
   const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
   if (!text) throw new Error("AI returned empty response");
-  try { return JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+  return safeJsonParse(text);
 }
 
 // ---------- AI: Auto-Coordinate (propose-only autopilot) ----------
