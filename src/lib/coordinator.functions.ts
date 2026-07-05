@@ -3563,24 +3563,37 @@ export const runAiCommand = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, featureKey);
     await spendOrThrow(c.id, featureKey, `AI command (${data.mode}): ${data.prompt.slice(0, 60)}`);
 
-    // Build lightweight context — today's jobs + free drivers
-    const today = new Date().toISOString().slice(0, 10);
+    // Dynamic date context. Widen the window to include yesterday so commands
+    // like "shift yesterday's trips to today" can reference real rows.
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const today = iso(now);
+    const yesterday = iso(new Date(now.getTime() - 24 * 3600 * 1000));
+    const tomorrow = iso(new Date(now.getTime() + 24 * 3600 * 1000));
+    const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
+    const nowIso = now.toISOString();
+
     const [{ data: jobs }, { data: drivers }] = await Promise.all([
       sb.from("jobs")
         .select("id, name, surname, from_location, to_location, pickup_at, time, date, driver_id, status")
         .eq("company_id", c.id)
-        .gte("date", today)
+        .gte("date", yesterday)
         .order("date", { ascending: true }).order("time", { ascending: true })
-        .limit(80),
+        .limit(120),
       sb.from("drivers").select("id, name, status").eq("company_id", c.id).limit(40),
     ]);
 
     const baseSys = [
       "You are the AI operations assistant for a transport dispatch coordinator.",
-      `Mode: ${data.mode}. In read mode you answer questions and suggest actions. In execute mode you also propose a JSON action list the app can run.`,
-      "Return JSON: {\"response\":\"markdown answer\",\"actions\":[{\"type\":\"assign\"|\"unassign\"|\"reschedule\"|\"note\",\"job_id\":\"uuid\",\"driver_id\":\"uuid?\",\"pickup_at\":\"iso?\",\"note\":\"?\"}]}",
-      "Only reference job_id and driver_id values from the CONTEXT below. Never fabricate ids.",
+      `Today's current date is ${today} (${dayOfWeek}). Yesterday was ${yesterday}. Tomorrow is ${tomorrow}. Current time (UTC): ${nowIso}.`,
+      "RELATIVE DATES: When the user says 'today', 'yesterday', 'tomorrow', 'this week', 'next Monday', etc., resolve to concrete YYYY-MM-DD dates using the values above before choosing rows. Never guess — compute from these anchors.",
+      `Mode: ${data.mode}. In read mode you answer questions and suggest actions. In execute mode you also propose a JSON action list the app will run server-side.`,
+      "Return JSON exactly: {\"response\":\"markdown answer\",\"actions\":[{\"type\":\"assign\"|\"unassign\"|\"reschedule\"|\"note\",\"job_id\":\"uuid\",\"driver_id\":\"uuid|null\",\"date\":\"YYYY-MM-DD|null\",\"time\":\"HH:MM|null\",\"pickup_at\":\"ISO|null\",\"note\":\"string|null\"}]}",
+      "ALWAYS include every key in each action object. If a field doesn't apply, use null (or empty string for note). Never omit a key.",
+      "DATE FORMAT: The jobs table stores `date` as YYYY-MM-DD and `time` as HH:MM. For reschedule actions ALWAYS provide both `date` (YYYY-MM-DD) and `time` (HH:MM). Also provide `pickup_at` as an ISO timestamp when possible.",
+      "Only reference job_id and driver_id values from the CONTEXT below. Never fabricate ids. If a request would touch trips not in the context, say so in `response` and leave actions empty.",
       "If a request would touch more than 5 jobs, list them under actions but set response to explain that confirmation is required.",
+      "If no matching trips exist for the requested date/filter, return actions:[] and set response to a helpful message like: \"I searched for trips on {DATE}, but found 0 records to move.\"",
     ].join("\n");
     const sys = await buildSystemPrompt(c.id, baseSys);
 
@@ -3601,22 +3614,77 @@ ${(drivers ?? []).map((d: any) => `- ${d.id} | ${d.name ?? ""} | ${d.status ?? "
       errMsg = e?.message ?? "AI error";
     }
 
-    const actions = Array.isArray(parsed?.actions) ? parsed.actions : [];
+    // Filter and normalize actions against real ids so hallucinations can't
+    // leak through to the executor.
+    const jobIdSet = new Set((jobs ?? []).map((j: any) => j.id));
+    const driverIdSet = new Set((drivers ?? []).map((d: any) => d.id));
+    const rawActions = Array.isArray(parsed?.actions) ? parsed.actions : [];
+    const actions = rawActions.filter((a: any) => a && typeof a === "object" && jobIdSet.has(a.job_id) && ["assign", "unassign", "reschedule", "note"].includes(a.type));
+    let response = String(parsed?.response ?? "");
+
     if (data.mode === "execute" && actions.length > 5) status = "awaiting_confirm";
+
+    // Execute server-side when mode=execute and within the confirmation limit.
+    let executed = 0;
+    let affected = 0;
+    const executionNotes: string[] = [];
+    if (status === "ok" && data.mode === "execute" && actions.length > 0) {
+      for (const a of actions) {
+        try {
+          if (a.type === "assign") {
+            if (!driverIdSet.has(a.driver_id)) { executionNotes.push(`assign skipped for ${String(a.job_id).slice(0, 8)}: driver not in context`); continue; }
+            const { data: rows, error } = await sb.from("jobs")
+              .update({ driver_id: a.driver_id }).eq("id", a.job_id).eq("company_id", c.id).select("id");
+            if (error) throw error;
+            if (rows?.length) { affected += rows.length; executed++; }
+          } else if (a.type === "unassign") {
+            const { data: rows, error } = await sb.from("jobs")
+              .update({ driver_id: null }).eq("id", a.job_id).eq("company_id", c.id).select("id");
+            if (error) throw error;
+            if (rows?.length) { affected += rows.length; executed++; }
+          } else if (a.type === "reschedule") {
+            const patch: { date?: string; time?: string; pickup_at?: string } = {};
+            if (typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date)) patch.date = a.date;
+            if (typeof a.time === "string" && /^\d{2}:\d{2}$/.test(a.time)) patch.time = a.time;
+            if (typeof a.pickup_at === "string" && !Number.isNaN(Date.parse(a.pickup_at))) patch.pickup_at = a.pickup_at;
+            if (Object.keys(patch).length === 0) { executionNotes.push(`reschedule skipped for ${String(a.job_id).slice(0, 8)}: no valid date/time`); continue; }
+            const { data: rows, error } = await sb.from("jobs")
+              .update(patch).eq("id", a.job_id).eq("company_id", c.id).select("id");
+            if (error) throw error;
+            if (rows?.length) { affected += rows.length; executed++; }
+          } else if (a.type === "note") {
+            // Notes aren't persisted in a job field here — just surface in response.
+            executionNotes.push(`note ${String(a.job_id).slice(0, 8)}: ${String(a.note ?? "").slice(0, 140)}`);
+          }
+        } catch (e: any) {
+          executionNotes.push(`action failed for ${String(a.job_id).slice(0, 8)}: ${(e?.message ?? "unknown").slice(0, 140)}`);
+        }
+      }
+    }
+
+    // Helpful 0-row feedback when the AI returned no actions or nothing landed.
+    if (status === "ok" && data.mode === "execute" && actions.length === 0) {
+      if (!response.trim()) response = `I searched today (${today}) and yesterday (${yesterday}), but found 0 matching trips to change.`;
+    } else if (status === "ok" && data.mode === "execute" && actions.length > 0 && affected === 0) {
+      response = `${response}\n\n_No trips were changed — 0 rows affected. The referenced trips may have moved or already match the requested state._`.trim();
+    } else if (status === "ok" && data.mode === "execute" && affected > 0) {
+      response = `${response}\n\n_Applied ${executed} of ${actions.length} action(s); ${affected} trip(s) updated._`.trim();
+    }
+    if (executionNotes.length > 0) response = `${response}\n\n${executionNotes.map((n) => `- ${n}`).join("\n")}`.trim();
 
     await sb.from("ai_command_log").insert({
       company_id: c.id,
       actor_user_id: context.userId,
       mode: data.mode,
       prompt: data.prompt,
-      response: String(parsed?.response ?? ""),
+      response,
       actions,
       status,
       error: errMsg,
     });
 
     if (status === "error") throw new Error(errMsg ?? "AI error");
-    return { response: String(parsed?.response ?? ""), actions, status };
+    return { response, actions, status, affected, executed };
   });
 
 export const listAiCommandHistory = createServerFn({ method: "GET" })
