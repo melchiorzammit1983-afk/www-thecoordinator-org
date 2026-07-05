@@ -1274,6 +1274,10 @@ export const pushClientLocation = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadJobByClientToken(data.token);
+    // Refuse writes once the trip is terminal so stale watchers can't leak points.
+    if (job.status === "completed" || job.status === "cancelled") {
+      return { ok: true, inserted: 0, reason: "trip_ended" as const };
+    }
     const { data: id } = await supabaseAdmin.from("client_link_identities")
       .select("id, pax_id, pax_name").eq("token", data.token).eq("device_id", data.device_id).maybeSingle();
     const { error } = await supabaseAdmin.from("client_locations").insert({
