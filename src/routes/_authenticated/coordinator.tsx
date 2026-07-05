@@ -196,6 +196,17 @@ function CoordinatorLayout() {
         </div>
       </aside>
       <main className="flex-1 min-w-0">
+        {disabledBanner && (
+          <div className="flex items-start gap-2 border-b bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-4 py-2 text-sm">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <strong>{disabledBanner}</strong> was just disabled by your administrator. This page will be unavailable next time you navigate away.
+            </div>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => navigate({ to: "/coordinator" })}>
+              Go to dashboard
+            </Button>
+          </div>
+        )}
         <Outlet />
       </main>
       {mustChangePw && <ChangePasswordDialog onDone={() => setMustChangePw(false)} />}
