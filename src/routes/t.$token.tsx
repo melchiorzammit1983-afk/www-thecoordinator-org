@@ -285,8 +285,8 @@ function ClientTripPortal() {
             ) : (
               <p className="text-sm text-muted-foreground">Driver not yet assigned. You can already chat with the coordinator.</p>
             )}
-            {driver && <EtaPill token={token} />}
-            {data.driverLocations?.[0] && (
+            {driver && (data as any)?.features?.client_eta !== false && <EtaPill token={token} />}
+            {data.driverLocations?.[0] && (data as any)?.features?.live_tracking !== false && (
               <ClientTripMap
                 driver={{ lat: data.driverLocations[0].latitude, lng: data.driverLocations[0].longitude, name: driver?.name ?? "Driver" }}
                 pickup={job.from_location}
@@ -296,7 +296,9 @@ function ClientTripPortal() {
           </section>
 
           {/* Alerts opt-in */}
-          <PushOptIn token={token} deviceId={deviceId} />
+          {(data as any)?.features?.client_push_notifications !== false && (
+            <PushOptIn token={token} deviceId={deviceId} />
+          )}
 
           {/* Share my location */}
           <ShareLocation token={token} deviceId={deviceId} />
@@ -319,7 +321,9 @@ function ClientTripPortal() {
           )}
 
           {/* Emergency SOS */}
-          <SosButton token={token} deviceId={deviceId} />
+          {(data as any)?.features?.client_sos !== false && (
+            <SosButton token={token} deviceId={deviceId} />
+          )}
         </div>
       )}
 
