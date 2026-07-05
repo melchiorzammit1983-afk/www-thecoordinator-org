@@ -1,29 +1,38 @@
-## Goal
+## Navigate Mode for Driver Dashboard
 
-Keep the driver's screen awake for the full duration of a live trip so the always-on map stays visible while they drive.
+Add a driver-controlled "Navigate Mode" that hides all non-essential UI, letting the map fill the screen and collapsing the job card to a bottom HUD banner with only the three driving-critical data points.
 
-## Approach
+### Scope
 
-Add a small `useWakeLock` hook that requests `navigator.wakeLock.request('screen')` whenever a driver has an active in-motion trip, and releases it when the trip finishes, the tab goes to background, or the component unmounts.
+Frontend/presentation only in `src/routes/m.driver.$token.tsx` and `src/components/driver/DriverDashboardMap.tsx`. No changes to routing logic, job state, wake lock, or server functions.
 
-Trip is considered "in motion" (wake-lock ON) when the active job's status is `en_route`, `arrived`, or `in_progress` — i.e. from the moment the driver taps "On the way to pickup" until they tap "Trip finished". This maps exactly to the user's "Start Trip → Complete Trip" window and reuses the `inMotion` flag we already compute in `src/routes/m.driver.$token.tsx`.
+### Behavior
 
-## Behaviour
+- New client state `navigateMode: boolean`, only enabled while `inMotion` is true (i.e. status `en_route` or `in_progress`). If the trip leaves motion, auto-exit Navigate Mode.
+- Trigger: the existing large "Navigate" button in `NextInstructionCard` toggles Navigate Mode instead of (or in addition to) opening Google Maps externally. We'll relabel it to "Navigate Mode" while active and add a secondary tiny "Open in Google Maps" link for the external handoff so we don't lose that capability.
+- Transition uses Tailwind transitions (`transition-all duration-300 ease-out`) on height/opacity/translate — no new animation libraries.
 
-- Request the lock when `inMotion` becomes true.
-- Release the lock (and clear our reference) when `inMotion` becomes false, when the driver closes the window, or when the manifest unmounts.
-- Re-acquire the lock automatically after `visibilitychange` returns to visible — the browser drops screen wake locks whenever the tab hides, per spec.
-- Fail silently on unsupported browsers (older iOS Safari) and on `NotAllowedError`; no toast spam.
-- Show a subtle "Screen kept awake" indicator in the header while the lock is held, so the driver knows why their phone isn't dimming.
+### Layout changes
 
-## Files
+1. **Fullscreen map**: `DriverDashboardMap` already uses `position: fixed; inset: 0`. In Navigate Mode we hide the header, trip list, and all floating cards except the HUD banner, so the map visually fills 100vh.
+2. **HUD banner** (new component `NavigateHud`): fixed to bottom, `max-height: 20vh`, glassmorphism styling matching existing cards (`bg-white/80 backdrop-blur-xl`). Contents, left → right:
+   - Giant maneuver arrow icon (reuses the `iconFor(maneuver)` mapping already in `NextInstructionCard`) at ~56–64px.
+   - Big text block: distance to next turn on top (`text-3xl font-bold`), ETA + remaining distance underneath (`text-base text-muted-foreground`).
+   - Massive "Expand" button (min-h-16, `w-20`) with a chevron-up icon that exits Navigate Mode and restores the full floating card.
+3. **Traffic alert banner** (existing amber "Traffic ahead" strip) stays visible above the HUD banner in Navigate Mode since it is safety-critical.
+4. **Header + menu**: already locked while `inMotion`; in Navigate Mode we hide the header entirely (not just disable the menu).
 
-- **New:** `src/hooks/use-wake-lock.ts` — `useWakeLock(active: boolean): { supported: boolean; held: boolean }` hook encapsulating request/release/visibility-rebind logic.
-- **Edit:** `src/routes/m.driver.$token.tsx` — call `useWakeLock(inMotion)` inside `DriverManifest` and render a tiny "Screen awake" pill in the header while `held` is true.
+### Files touched
 
-## Technical notes
+- `src/routes/m.driver.$token.tsx`
+  - Add `navigateMode` state + auto-reset effect when `inMotion` flips false.
+  - Pass `navigateMode` and `onExitNavigate` down; hide header, active-job header card, and pax/details sections when true.
+  - Update `NextInstructionCard`: when `navigateMode` is false render as today; when true render the new compact `NavigateHud`. The primary "Navigate" button toggles the mode.
+- `src/components/driver/DriverDashboardMap.tsx`
+  - Accept optional `hudMode?: boolean` prop; when true, hide the small badge/overlay chips the map renders (if any) so the map is unobstructed. No changes to routing/polyline logic.
 
-- `navigator.wakeLock` is only available in secure contexts (HTTPS or localhost). The driver dashboard is served over HTTPS in preview and prod, so this is fine.
-- The Wake Lock Sentinel is auto-released when the page is hidden; the hook listens for `document.visibilitychange` and re-requests when the page becomes visible again while `active` is still true.
-- No third-party dependency, no background worker, no changes to the map or routing code.
-- No SSR concern — the hook only touches `navigator` inside `useEffect`.
+### Non-goals
+
+- No changes to routing calculations, wake lock, chat, or job status flow.
+- No new external dependencies.
+- External "Open in Google Maps" handoff is preserved as a secondary link, not removed.
