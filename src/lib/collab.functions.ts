@@ -389,32 +389,47 @@ export const respondToDispatch = createServerFn({ method: "POST" })
     const hop = hops?.[0];
     if (!hop) throw new Error("No pending dispatch found");
     const decidedAt = new Date().toISOString();
-    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").update({
+    // Concurrency guard: only transition the hop if it's still pending.
+    // Prevents double-accept from two tabs and accept-vs-recall races.
+    const { data: hopUpdated, error: hopError } = await supabaseAdmin.from("job_dispatch_hops").update({
       status: data.decision,
       decided_at: decidedAt,
       note: data.note ?? null,
-    }).eq("id", hop.id);
-    if (hopError) throw new Error(hopError.message);
-    if (data.decision === "accepted") {
-      // Keep company_id = creator so the trip stays owned by A across the chain.
-      // executor_company_id already points to the accepting partner.
-      const { error: updateError } = await supabaseAdmin.from("jobs").update({
-        dispatch_status: "accepted",
-        dispatch_decided_at: decidedAt,
-        dispatch_note: data.note ?? null,
-      }).eq("id", data.job_id);
-      if (updateError) throw new Error(updateError.message);
-    } else {
-      const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
-      const { error: updateError } = await supabaseAdmin.from("jobs").update({
-        executor_company_id: hop.from_company_id,
-        dispatch_status: "rejected",
-        dispatch_decided_at: decidedAt,
-        dispatch_note: data.note ?? null,
-        dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
-      }).eq("id", data.job_id);
-      if (updateError) throw new Error(updateError.message);
+    }).eq("id", hop.id).eq("status", "pending").select("id");
+    if (hopError) throw new Error("Couldn't record your response — please try again");
+    if (!hopUpdated || hopUpdated.length === 0) {
+      throw new Error("This hand-off was already resolved — refresh to see the latest state");
     }
+
+    try {
+      if (data.decision === "accepted") {
+        // Keep company_id = creator so the trip stays owned by A across the chain.
+        // executor_company_id already points to the accepting partner.
+        const { error: updateError } = await supabaseAdmin.from("jobs").update({
+          dispatch_status: "accepted",
+          dispatch_decided_at: decidedAt,
+          dispatch_note: data.note ?? null,
+        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+        if (updateError) throw updateError;
+      } else {
+        const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
+        const { error: updateError } = await supabaseAdmin.from("jobs").update({
+          executor_company_id: hop.from_company_id,
+          dispatch_status: "rejected",
+          dispatch_decided_at: decidedAt,
+          dispatch_note: data.note ?? null,
+          dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
+        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+        if (updateError) throw updateError;
+      }
+    } catch {
+      // Compensation: revert the hop back to pending so operator state is coherent.
+      await supabaseAdmin.from("job_dispatch_hops").update({
+        status: "pending", decided_at: null,
+      }).eq("id", hop.id);
+      throw new Error("Couldn't complete the hand-off — please refresh and retry");
+    }
+
     const { data: acceptedRow } = await supabaseAdmin
       .from("jobs").select("id, date").eq("id", data.job_id).maybeSingle();
     return { ok: true, id: data.job_id, date: acceptedRow?.date ?? null, decision: data.decision };
