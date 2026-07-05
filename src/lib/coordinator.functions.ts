@@ -3106,7 +3106,7 @@ function safeJsonParse(text: string): unknown {
   throw new Error("AI returned invalid JSON");
 }
 
-async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }) {
+async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }): Promise<any> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
