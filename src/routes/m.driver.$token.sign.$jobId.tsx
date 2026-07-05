@@ -295,13 +295,14 @@ function SignBoardPage() {
   );
 }
 
-function AutoScaleLine({ text, totalLines }: { text: string; totalLines: number }) {
+function AutoScaleLine({ text, totalLines, landscape = false }: { text: string; totalLines: number; landscape?: boolean }) {
   // Font size scales inversely with number of lines AND character length so
-  // long names shrink automatically instead of overflowing. Uses clamp on
-  // both viewport axes so it works landscape + portrait, phone + tablet.
-  const base = totalLines === 1 ? 18 : totalLines === 2 ? 12 : 9; // vmin
+  // long names shrink automatically instead of overflowing. In landscape
+  // there's more horizontal room, so we scale up.
+  const baseLines = totalLines === 1 ? 18 : totalLines === 2 ? 12 : 9;
+  const base = landscape ? baseLines * 1.4 : baseLines; // vmin
   const len = Math.max(text.length, 6);
-  const shrink = Math.min(1, 18 / len); // long text → smaller
+  const shrink = Math.min(1, 18 / len);
   const vmin = base * shrink;
   return (
     <div
