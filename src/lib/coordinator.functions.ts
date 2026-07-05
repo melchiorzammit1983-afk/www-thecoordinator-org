@@ -3237,7 +3237,8 @@ export async function runAutoCoordinate(companyId: string) {
   await assertFeatureEnabled(companyId, "ai_auto_coordinate");
 
   const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const [{ data: jobs }, { data: drivers }] = await Promise.all([
+  const historyCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const [{ data: jobs }, { data: drivers }, { data: history }] = await Promise.all([
     sb.from("jobs")
       .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
       .eq("company_id", companyId)
@@ -3250,7 +3251,15 @@ export async function runAutoCoordinate(companyId: string) {
       .eq("company_id", companyId)
       .neq("status", "offline")
       .limit(60),
+    sb.from("jobs")
+      .select("from_location, to_location, pickup_at, time, name, surname, driver_id, drivers:driver_id(name)")
+      .eq("company_id", companyId)
+      .eq("status", "completed")
+      .gte("created_at", historyCutoff)
+      .order("pickup_at", { ascending: false, nullsFirst: false })
+      .limit(300),
   ]);
+
 
   const list = jobs ?? [];
   const drv = drivers ?? [];
