@@ -175,7 +175,7 @@ export function NavigateFullscreen({
         } else {
           meMarkerRef.current.setPosition(p);
         }
-        if (followRef.current && mapRef.current) {
+        if (!isPreview && followRef.current && mapRef.current) {
           suppressPanRef.current = true;
           mapRef.current.panTo(p);
           if ((mapRef.current.getZoom() ?? 0) < 17) mapRef.current.setZoom(18);
@@ -183,7 +183,6 @@ export function NavigateFullscreen({
             if (headingRef.current != null) mapRef.current.setHeading(headingRef.current);
             mapRef.current.setTilt(45);
           } catch { /* raster map: tilt/heading unsupported */ }
-          // Keep the marker arrow pointing along heading, relative to map rotation (0 = up).
           const marker = meMarkerRef.current;
           const cur = marker.getIcon?.();
           if (cur) marker.setIcon({ ...cur, rotation: 0 });
@@ -192,6 +191,7 @@ export function NavigateFullscreen({
           const cur = meMarkerRef.current.getIcon?.();
           if (cur && headingRef.current != null) meMarkerRef.current.setIcon({ ...cur, rotation: headingRef.current });
         }
+
       },
       () => { /* handled by DriverLiveShare */ },
       { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
