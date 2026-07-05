@@ -667,6 +667,18 @@ function CalendarPage() {
         />
       )}
 
+      {mergeTarget && (
+        <MergeTripsDialog
+          open={!!mergeTarget}
+          onOpenChange={(v) => !v && setMergeTarget(null)}
+          current={mergeTarget.current}
+          duplicates={mergeTarget.duplicates}
+          onMerged={() => refetch()}
+        />
+      )}
+
+
+
       {selected.size > 0 && (
         <>
           <div aria-hidden className="h-16" />
