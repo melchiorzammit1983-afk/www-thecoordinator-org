@@ -2510,12 +2510,22 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const rawPayload = parsed?.payload;
     const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
     const isData = parsed?.type === "data" || Array.isArray(rawPayload);
-    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
-      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
-    }
     if (isData && Array.isArray(rawPayload)) {
       const rows = rawPayload.map(normalizeTripRow);
-      return { type: "data" as const, payload: rows };
+      // Server-side confidence: trust the model's flag, but also flip to true
+      // when any row is missing a mandatory field (pickup date/address, delivery address).
+      const modelFlag = parsed?.is_low_confidence === true;
+      const missingMandatory = rows.some(
+        (r) => !r.pickupDate?.trim() || !r.pickupAddress?.trim() || !r.deliveryAddress?.trim(),
+      );
+      return {
+        type: "data" as const,
+        payload: rows,
+        is_low_confidence: modelFlag || missingMandatory,
+      };
+    }
+    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
+      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
     }
     if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction unrecognized shape");
     throw new Error("AI response was unreadable — please rephrase and try again");
