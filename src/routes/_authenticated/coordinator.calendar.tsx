@@ -867,7 +867,7 @@ function OutboundBoard() {
 }
 
 /* ---------- Pending Client Approval ---------- */
-function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
+function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
   const approveFn = useServerFn(approveClientJob);
   const rejectFn = useServerFn(rejectClientJob);
   const [busy, setBusy] = useState<string | null>(null);
