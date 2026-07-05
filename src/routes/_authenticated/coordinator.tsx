@@ -77,14 +77,25 @@ function CoordinatorLayout() {
     }
   }, [company, identity?.isAdmin, isLoading, navigate]);
 
+  // If admin turned off the feature that owns the route the user is looking at,
+  // bounce them back to the dashboard so disabled surfaces stay unreachable.
+  useEffect(() => {
+    if (!features) return;
+    const match = NAV.find((n) => n.feature && (n.exact ? pathname === n.to : pathname.startsWith(n.to)));
+    if (match && match.feature && features[match.feature] === false) {
+      navigate({ to: "/coordinator", replace: true });
+    }
+    if (pathname.startsWith("/coordinator/ai-center") && !AI_FEATURE_KEYS.some((k) => features[k] !== false)) {
+      navigate({ to: "/coordinator", replace: true });
+    }
+  }, [features, pathname, navigate]);
 
-  if (isLoading || (!company && identityLoading)) {
-    return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
-  }
-  if (!company && identity?.isAdmin) {
-    return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Opening admin…</div>;
-  }
-  if (error || !company) {
+  const anyAiEnabled = !features || AI_FEATURE_KEYS.some((k) => features[k] !== false);
+  const visibleNav = NAV.filter((item) => {
+    if (item.to === "/coordinator/ai-center") return anyAiEnabled;
+    if (!item.feature) return true;
+    return features?.[item.feature] !== false;
+  });
     return (
       <div className="min-h-screen grid place-items-center px-4">
         <div className="max-w-md text-center">
