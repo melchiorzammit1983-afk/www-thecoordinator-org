@@ -459,7 +459,9 @@ export function NavigateFullscreen({
             </button>
           )}
         </div>
+        {footerSlot}
       </div>
+
     </div>
   );
 }
