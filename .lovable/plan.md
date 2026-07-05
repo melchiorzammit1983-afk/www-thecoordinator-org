@@ -1,64 +1,43 @@
-# Pre-Acceptance Route Preview
+# Stop All Live Tracking When Trip Completes
 
-## Goal
+## Problem
 
-Before the driver accepts a pending trip, show — right on the trip card and expandable to full screen — the route from **their current location → pickup**, with live ETA, distance, blue path polyline, and turn-by-turn steps, just like Google Maps trip preview. Accept / Reject buttons stay visible; nothing writes to the database until they tap Accept.
+When a driver marks a trip **completed** (or the coordinator cancels it):
 
-## What the driver sees
+1. **Driver side** — `DriverLiveShare` already unmounts because `hasActiveTrip` only includes `en_route | arrived | in_progress`. ✅ Already correct.
+2. **Coordinator dashboard** — `listActiveDriverLocations` returns the latest `driver_locations` row for any job assigned to the company within the last 30 min. It does **not** filter by job status, so a just-completed trip keeps a stale driver pin/ETA/next-instruction on the coordinator's map for up to 30 min.
+3. **Client portal** — `ShareLocation` on `t.$token.tsx` is a manual toggle. If the passenger left "Share live" on, the browser keeps posting `pushClientLocation` after the trip is over. `pushClientLocation` accepts the write regardless of job status, and `getClientLiveLocationDriver` returns the last 3 min of client points.
+4. **Driver's view of client live pin** — `getClientLiveLocationDriver` doesn't check job status either.
 
-### 1. Inline strip on every pending `JobCard`
-Under the pickup line, a compact live chip:
+## Fix
 
-```
-🚗  12 min · 8.4 km to pickup     [ Preview route ▸ ]
-```
+Two-layer defense: (a) client-side auto-stop when the job status is terminal, (b) server-side refusal so stale watchers can't leak points.
 
-- ETA + distance auto-computed from driver GPS → `job.from_location`.
-- Refreshes every 60 s (pending trips aren't time-critical yet).
-- If GPS unavailable → shows `Enable location to preview route`.
-- If routing fails → hides silently (accept flow unaffected).
+### 1. `src/lib/coordinator.functions.ts` — `listActiveDriverLocations`
+Add a status filter: only include jobs with `status IN ('en_route','arrived','in_progress')`. Completed / cancelled / accepted-but-not-started jobs disappear from the coordinator's live map immediately.
 
-### 2. "Preview route" opens a full-screen preview
-Reuses `NavigateFullscreen` in a new **preview mode**:
+### 2. `src/lib/coordinator-public.functions.ts`
+- **`pushClientLocation`**: after `loadJobByClientToken`, if `job.status ∈ ('completed','cancelled')`, return `{ ok: true, inserted: 0, reason: 'trip_ended' }` (no insert). Prevents stale watchers from writing new rows.
+- **`getClientLiveLocationDriver`**: return `null` when `job.status ∈ ('completed','cancelled')`, in addition to the 3-min freshness gate.
+- **`pushDriverLocation`**: tighten the fallback so the driver's watcher can't post after a trip completes — remove the "next assigned job" fallback and only accept pings when there's an active job in `('en_route','arrived','in_progress')`. Return `{ ok:true, inserted:0, reason:'no_active_trip' }` otherwise. (The driver client already stops the watcher; this closes a small race.)
 
-- Blue polyline from driver → pickup, with **step list** rendered on the map.
-- Top banner: first maneuver + distance, same visual as live navigation.
-- Bottom HUD: ETA + total distance + "Then …" preview.
-- **No** step-advance tracker, **no** wake-lock, **no** camera tilt-follow — this is a static preview, not active navigation.
-- Two big buttons overlaid at the bottom: **Accept trip** / **Decline** — tapping Accept fires the existing `driverAcceptJob` mutation and closes the preview.
-- Exit "X" returns to the dashboard without changes.
+### 3. `src/routes/t.$token.tsx` — `ShareLocation`
+- Accept the `status` from the parent portal payload.
+- Add a `useEffect` that watches `status` and, when it becomes `completed` or `cancelled`, calls `navigator.geolocation.clearWatch`, resets `sharing`, and shows a toast: `Trip ended — live sharing stopped`.
+- Disable the "Share live" / "Send my pin" buttons once the trip is terminal.
 
-## Technical changes
-
-### `src/components/driver/NavigateFullscreen.tsx`
-- Add prop `mode?: "navigate" | "preview"` (default `"navigate"`).
-- In `"preview"` mode:
-  - Skip `watchPosition` step-advance / camera-tilt / heading-follow.
-  - Fit map bounds to the full route polyline once loaded.
-  - Hide the top blue "next maneuver" banner's live-distance ticker; instead show `steps[0]` maneuver + its step distance.
-  - Render an optional `footerSlot` prop so the caller can inject Accept / Decline buttons above the ETA bar.
-  - Hide "Recenter" FAB in preview.
-  - Skip Fullscreen API request (keeps normal browser chrome — safer for a modal).
-
-### `src/routes/m.driver.$token.tsx`
-- New small hook `usePreviewRoute({ origin, pickup, enabled })` — thin wrapper over the same `computeDriverRoute` server function, keyed by `pickup` + coarse origin, `staleTime: 60_000`, `refetchInterval: 60_000`. Returns the same `LiveRouteInfo` shape (`steps`, `eta_sec`, etc.) so `NavigateFullscreen` accepts it unchanged.
-- Pass `driverPos` from the existing route-level state down to `JobCard` (add `driverPos` prop).
-- In `JobCard`:
-  - When `!accepted && driverPos && job.from_location`, mount `usePreviewRoute` and render the inline chip.
-  - Add local state `previewOpen`; a "Preview route" button on pending cards opens `NavigateFullscreen` in preview mode.
-  - Pass `footerSlot` with Accept / Decline actions bound to the existing `acceptMut` / `rejectMut`.
-
-### No server / DB changes
-- No new tables, no new server functions — reuses `computeDriverRoute`.
-- No new migrations.
+### 4. `src/components/coordinator/TripDetailsSheet.tsx` (defensive)
+The live-map hook already uses `listActiveDriverLocations`; after the server-side filter above, the last driver pin, ETA chip, and next-instruction disappear on the next poll (≤ ~8 s). No new client code needed here — just verify by opening a completed trip.
 
 ## Out of scope
 
-- Live tracking / step-advance in preview (only in the post-accept Navigate Mode).
-- Comparing preview ETA to dispatched ETA / SLA checks.
-- Preview from a coordinator's side.
+- Deleting historical `driver_locations` / `client_locations` rows. Those stay for audit / replay. Only *live* display is gated.
+- Client-side "pin" (single-shot) drops when trip is done — server refusal above already blocks new ones; no need to hide historical chat messages.
 
-## Files changed
+## Files Changed
 
-- `src/components/driver/NavigateFullscreen.tsx` — add `mode` + `footerSlot` props, guard tracking behaviors.
-- `src/routes/m.driver.$token.tsx` — add `usePreviewRoute`, pass `driverPos` to `JobCard`, render inline chip + preview trigger + full-screen preview modal with Accept/Decline footer.
+- `src/lib/coordinator.functions.ts`
+- `src/lib/coordinator-public.functions.ts`
+- `src/routes/t.$token.tsx`
+
+No migrations, no new tables.
