@@ -591,7 +591,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     ? "border-destructive/60 ring-1 ring-destructive/40"
     : accepted
     ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
-    : "border-border";
+    : "border-amber-500/70 ring-2 ring-amber-500/40";
 
   const dateLabel = job.pickup_at
     ? formatMaltaDateTime(job.pickup_at, { weekday: "short", day: "2-digit", month: "short" })
@@ -612,6 +612,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
 
   return (
     <article
+      id={`job-card-${job.id}`}
       className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
