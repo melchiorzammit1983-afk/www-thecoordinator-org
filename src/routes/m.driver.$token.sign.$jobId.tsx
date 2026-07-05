@@ -84,7 +84,48 @@ function SignBoardPage() {
     return { background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" } as const;
   }, [boardCfg, data?.logos]);
 
-  const anchorLogo = data?.anchor_logo_url ?? null;
+  // Light/dark toggle — starts dark, driver can flip in bright sun.
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const themeStyle =
+    theme === "light"
+      ? { color: "#0f172a", textShadowColor: "rgba(255,255,255,0.6)" }
+      : { color: "#ffffff", textShadowColor: "rgba(0,0,0,0.55)" };
+  const lightOverride =
+    theme === "light" ? { background: "#ffffff", backgroundImage: "none" } : {};
+
+  // Landscape detection for logo-left layout (tablets held sideways)
+  const [landscape, setLandscape] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: landscape) and (min-width: 640px)");
+    const apply = () => setLandscape(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  // Fullscreen API on open (best-effort — iOS Safari ignores; that's fine)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const req = (el as any).requestFullscreen?.bind(el) || (el as any).webkitRequestFullscreen?.bind(el);
+    if (!req) return;
+    const tryEnter = () => { try { req().catch?.(() => {}); } catch { /* ignore */ } };
+    tryEnter();
+    // Retry on first user gesture (browsers require it)
+    const retry = () => {
+      tryEnter();
+      document.removeEventListener("touchstart", retry);
+      document.removeEventListener("click", retry);
+    };
+    document.addEventListener("touchstart", retry, { once: true });
+    document.addEventListener("click", retry, { once: true });
+    return () => {
+      document.removeEventListener("touchstart", retry);
+      document.removeEventListener("click", retry);
+    };
+  }, []);
+
 
   const lines = useMemo(() => {
     if (!job) return [] as string[];
