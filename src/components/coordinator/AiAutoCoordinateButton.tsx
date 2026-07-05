@@ -65,6 +65,7 @@ export function AiAutoCoordinateButton() {
     toast.success("Applied all proposals");
   };
 
+  if (!enabled) return null;
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => { setOpen(true); runMut.mutate(); }}>
