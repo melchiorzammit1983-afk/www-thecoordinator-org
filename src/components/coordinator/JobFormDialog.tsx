@@ -482,6 +482,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
   const aiFn = useServerFn(extractTripsFromText);
+  const logAiFn = useServerFn(logAiTrainingSample);
 
   const aiMut = useMutation({
     mutationFn: (payload: { messages: ChatMsg[]; attachments?: Omit<Attachment, "size">[]; urls?: string[] }) =>
