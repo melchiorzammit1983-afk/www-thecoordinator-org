@@ -312,9 +312,19 @@ export const recallPartnerDispatch = createServerFn({ method: "POST" })
     if (!latest) throw new Error("No hand-off to recall");
     if (latest.status !== "pending") throw new Error("Only pending hand-offs can be recalled");
 
-    const { error: delError } = await supabaseAdmin
-      .from("job_dispatch_hops").delete().eq("id", latest.id);
-    if (delError) throw new Error(delError.message);
+    // Concurrency guard: only delete the hop if it's still pending.
+    // If the partner accepted/rejected between our read and this delete, the
+    // filter matches zero rows and we surface a clear message instead of
+    // silently orphaning the partner's decision.
+    const { data: deletedHops, error: delError } = await supabaseAdmin
+      .from("job_dispatch_hops").delete()
+      .eq("id", latest.id)
+      .eq("status", "pending")
+      .select("id");
+    if (delError) throw new Error("Couldn't recall the hand-off — please try again");
+    if (!deletedHops || deletedHops.length === 0) {
+      throw new Error("The partner already responded — recall no longer possible");
+    }
 
     const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
     const nextChain = chain.filter((id) => id !== latest.to_company_id);
@@ -324,7 +334,10 @@ export const recallPartnerDispatch = createServerFn({ method: "POST" })
       dispatch_decided_at: new Date().toISOString(),
       dispatch_chain_company_ids: nextChain.length ? nextChain : [job.company_id],
     }).eq("id", data.job_id);
-    if (updateError) throw new Error(updateError.message);
+    if (updateError) {
+      // Hop is already gone; best we can do is report and let the operator refresh.
+      throw new Error("Recall partially applied — please refresh to check the trip state");
+    }
     return { ok: true };
   });
 
