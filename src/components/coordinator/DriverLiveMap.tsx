@@ -15,6 +15,10 @@ export type LivePoint = {
   heading: number | null;
   speed_mps: number | null;
   captured_at: string;
+  eta_sec?: number | null;
+  distance_m?: number | null;
+  next_instruction?: string | null;
+  destination_label?: string | null;
 };
 
 type GMaps = any;
