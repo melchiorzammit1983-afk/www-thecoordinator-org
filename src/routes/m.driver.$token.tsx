@@ -156,9 +156,25 @@ function DriverManifest() {
 
   const driver = data.driver;
 
+  // Active trip drives the fullscreen map focus + the "next instruction" hero.
+  const liveStatuses = new Set(["en_route", "arrived", "in_progress"]);
+  const activeJob: Job | null =
+    jobs.find((j) => !!j.driver_accepted_at && liveStatuses.has(j.status ?? ""))
+    ?? jobs.find((j) => !!j.driver_accepted_at && j.status !== "completed")
+    ?? null;
+  const mapJob: DriverMapJob | null = activeJob
+    ? { id: activeJob.id, from_location: activeJob.from_location, to_location: activeJob.to_location, is_active: true }
+    : null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background pb-28">
-      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
+    <div className="relative min-h-screen pb-28">
+      {/* Always-on map canvas — never unmounts while the dashboard is open. */}
+      <DriverDashboardMap activeJob={mapJob} />
+
+      <header
+        className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
+        style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
+      >
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "D"} />
@@ -193,11 +209,13 @@ function DriverManifest() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-3 space-y-3 pb-24">
+      <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
+        {activeJob && <NextInstructionCard job={activeJob} token={token} onOpenSummary={() => setOpenJob(activeJob)} />}
         <DriverLiveShare
           token={token}
           hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
         />
+
         {jobs.length === 0 && archivedJobs.length === 0 && (
           <div className="text-center py-20">
             <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
