@@ -502,6 +502,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const unhideFn = useServerFn(unhideJobForDriver);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
   const [confirmDelOpen, setConfirmDelOpen] = useState(false);
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
