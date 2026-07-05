@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
-import { FeatureGate } from "@/components/billing/FeatureGate";
+import { useFeature } from "@/hooks/use-features";
 
 type Proposal =
   | { kind: "group"; trip_ids: string[]; reason: string }
@@ -16,6 +16,7 @@ type Proposal =
 type PlanResponse = { proposals: Proposal[]; metering_mode: string; considered: number };
 
 export function AiAutoCoordinateButton() {
+  const enabled = useFeature("ai_auto_coordinate");
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [done, setDone] = useState<Set<number>>(new Set());
@@ -64,6 +65,7 @@ export function AiAutoCoordinateButton() {
     toast.success("Applied all proposals");
   };
 
+  if (!enabled) return null;
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => { setOpen(true); runMut.mutate(); }}>
@@ -76,7 +78,7 @@ export function AiAutoCoordinateButton() {
               <Sparkles className="h-4 w-4" /> AI Auto-Coordinate
             </DialogTitle>
           </DialogHeader>
-          <FeatureGate feature="ai_auto_coordinate">
+          <>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto">
               {runMut.isPending && <p className="text-sm text-muted-foreground">Planning the whole backlog…</p>}
               {!runMut.isPending && plan && plan.proposals.length === 0 && (
@@ -113,7 +115,7 @@ export function AiAutoCoordinateButton() {
                 </div>
               ))}
             </div>
-          </FeatureGate>
+          </>
           <DialogFooter className="flex-wrap gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Close</Button>
             <Button variant="secondary" onClick={() => runMut.mutate()} disabled={runMut.isPending}>Re-run</Button>

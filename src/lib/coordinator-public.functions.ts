@@ -39,6 +39,31 @@ async function loadCompanyBranding(companyId: string) {
   };
 }
 
+/**
+ * Returns the company's feature map (same shape as `getMyFeatures`) so public
+ * portals can hide widgets when admin toggles a feature off. Defaults every
+ * catalog key to `true`; entries in `company_feature_entitlements` override.
+ */
+async function loadCompanyFeatures(companyId: string): Promise<Record<string, boolean>> {
+  const supabaseAdmin = await getAdminClient();
+  const { FEATURE_KEYS } = await import("@/lib/features");
+  const features: Record<string, boolean> = {};
+  for (const k of FEATURE_KEYS) features[k] = true;
+  const { data: rows } = await supabaseAdmin
+    .from("company_feature_entitlements")
+    .select("feature, enabled, expires_at")
+    .eq("company_id", companyId);
+  const now = Date.now();
+  for (const r of rows ?? []) {
+    const expired = r.expires_at ? new Date(r.expires_at).getTime() <= now : false;
+    features[r.feature as string] = !!r.enabled && !expired;
+  }
+  return features;
+}
+
+
+
+
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
   const supabaseAdmin = await getAdminClient();
@@ -134,8 +159,11 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       }, {});
     }
     const jobsWithUnread = (jobs ?? []).map((j: { id: string }) => ({ ...j, unread_messages: unread[j.id] ?? 0 }));
-    const branding = await loadCompanyBranding(link.company_id);
-    return { link, jobs: jobsWithUnread, driver, branding };
+    const [branding, features] = await Promise.all([
+      loadCompanyBranding(link.company_id),
+      loadCompanyFeatures(link.company_id),
+    ]);
+    return { link, jobs: jobsWithUnread, driver, branding, features };
   });
 
 // ---------- Trip messages (driver side) ----------
@@ -1059,7 +1087,10 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(5);
 
-    const branding = await loadCompanyBranding(job.company_id);
+    const [branding, features] = await Promise.all([
+      loadCompanyBranding(job.company_id),
+      loadCompanyFeatures(job.company_id),
+    ]);
 
     return {
       job: {
@@ -1087,6 +1118,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       identity,
       openSos: openSos ?? [],
       branding,
+      features,
     };
   });
 

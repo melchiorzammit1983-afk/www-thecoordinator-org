@@ -56,6 +56,7 @@ import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
 import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
 import { useFeature } from "@/hooks/use-features";
+import { IfFeature } from "@/components/billing/IfFeature";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
@@ -1755,9 +1756,11 @@ function TripMenu({
         <DropdownMenuItem onClick={() => ctx.onPax(job)}>
           <Users className="h-4 w-4 mr-2" /> Passengers
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => ctx.onChat(job)}>
-          <MessagesSquare className="h-4 w-4 mr-2" /> Chat
-        </DropdownMenuItem>
+        <IfFeature feature="chat">
+          <DropdownMenuItem onClick={() => ctx.onChat(job)}>
+            <MessagesSquare className="h-4 w-4 mr-2" /> Chat
+          </DropdownMenuItem>
+        </IfFeature>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
@@ -2018,6 +2021,7 @@ function DetailsSheetHost({
 /* ------------------------------ Live map panel ------------------------------ */
 
 function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
+  const liveTrackingEnabled = useFeature("live_tracking");
   const [open, setOpen] = useState(initialOpen);
   const fn = useServerFn(listActiveDriverLocations);
   const sosFn = useServerFn(listActiveSosPoints);
@@ -2062,6 +2066,7 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
   const sosPoints = sosData ?? [];
   const liveCount = points.filter((p) => Date.now() - new Date(p.captured_at).getTime() < 30_000).length;
 
+  if (!liveTrackingEnabled) return null;
   return (
     <section className={`rounded-lg border bg-card ${sosPoints.length ? "ring-2 ring-red-500/60" : ""}`}>
       <button
