@@ -43,6 +43,7 @@ import {
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 
 
 
