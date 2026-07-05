@@ -1,83 +1,78 @@
-# Full App Map — Product Deep-Dive + Technical Blueprint
+# Security & Error-Handling Audit: AI + B2B Collaboration
 
-I'll produce **two Markdown files** in `/mnt/documents/` you can paste into any AI, and preview both inline. Real DB snapshots (already fetched) are embedded so the AI reasons on truth, not assumptions.
+Two files, three targeted hardening passes. No behavior change to happy paths — only more graceful degradation under messy input and race conditions.
 
----
+## 1. `src/lib/coordinator.functions.ts` — AI handlers
 
-## Deliverable 1 — `crew-change-product-map.md` (~20 pages)
+### `extractTripsFromText` (lines 2356–2511)
+**Problem today:** the response is parsed with `JSON.parse` + ad-hoc `String(r?.x ?? "")` coercion. If Gemini drops a key, we get empty strings; if it returns a partially-shaped envelope (no `type`, or `payload` as string instead of array), we throw `AI returned unexpected shape` and lose the whole call (points already spent).
 
-Written for a **product analyst AI**. No code — pure product model.
+**Changes:**
+- Introduce a shared Zod schema module (inline, at top of AI section):
+  ```ts
+  const tripRowSchema = z.object({
+    pickupDate: z.string().default(""),
+    pickupTime: z.string().default(""),
+    pickupAddress: z.string().default(""),
+    deliveryAddress: z.string().default(""),
+    customerName: z.string().default(""),
+    contactNumber: z.string().default(""),
+    transportType: z.string().default(""),
+    quantity: z.string().default("1"),
+  }).passthrough().transform(r => ({ ...r, quantity: r.quantity || "1" }));
 
-**Sections**
-1. **What the app is** — one-paragraph description, target user (dispatch coordinators for transport companies in Malta), value proposition, primary jobs-to-be-done.
-2. **User roles & personas** — Platform Admin · Company Owner/Coordinator · Sub-Coordinator · Driver (via magic link, no account) · Client (via magic link or public booking form). What each can/can't do.
-3. **Feature catalog (all 22 features)** — for each: name, what it does, who touches it, screen it lives on, points cost, plan availability. Marked "AI feature" where relevant.
-4. **Complete user journeys** (step-by-step):
-   - Company signup → admin approval → first login → change password → add drivers → create first trip
-   - Coordinator creates trip via 5 paths: manual form, bulk paste, XLSX import, AI extraction (text/file/URL), voice note
-   - Driver receives job → accepts/rejects → status transitions → pax boarding → completion → statement
-   - Client books via public link → coordinator approves → trip runs → client tracks live → SOS
-   - Multi-hop B2B dispatch (Company A → B → C) with price negotiation
-   - Monthly billing cycle: plan → included points → top-up → rollover
-5. **Business rules & constraints** — 2-hour rule (late edits become modifications), hop immutability, driver self-update rules, single-admin enforcement, Malta timezone.
-6. **Pricing model — LIVE VALUES**:
-   - **Plans**: Starter €0/mo (50 pts, 5 features) · Pro €49/mo (500 pts, 13 features) · Business €149/mo (2 000 pts, 22 features)
-   - **Point packs**: Small 100pts/€9 · Medium 500/€39 · Large 2 000/€129 · Mega 10 000/€499
-   - **AI costs** (per action, points): auto-assign 2 · auto-coordinate 2 · command read 2 / execute 3 · daily plan 5 · extraction text 2 / media 3 · reply drafter 1 · voice-to-trip 2
-   - **Core costs**: trip_created 1 · trip_dispatched 1.5 · client_link_sent 0.25 · flight_status 0.1 · route_traffic 0.1
-7. **Current state snapshot** (real numbers): 3 companies · 1 admin · 4 drivers · 14 jobs · 26 ledger entries · 6 AI commands · 3 magic links · 2 pending access requests · 0 client bookings · 0 partner connections · 0 dispatch hops · 1 top-up request.
-8. **Feature entitlement mechanics** — how admin toggles work, opt-out default, realtime hide within ~seconds, deep-link redirect + inline banner (recently added).
-9. **Product analysis hooks** — a checklist of open questions the AI should probe: activation funnel, feature discoverability, points anxiety, dispatch chain UX, mobile parity, empty-state coverage, upgrade prompts, retention loops.
-10. **Known gaps & inconsistencies** (I found while mapping):
-    - Two overlapping cost tables: `ai_feature_costs.feature_key` (text, 15 rows) vs `feature_costs.feature_name` (enum, 10 rows). Server code reads `ai_feature_costs` — `feature_costs` looks orphaned/legacy.
-    - `plans.feature_keys` array duplicates entitlement info held in `company_feature_entitlements`. Which wins on conflict is not obvious.
-    - `LOVABLE_API_KEY` + `ai-gateway.server.ts` present but unused — all AI still goes through raw Gemini REST.
-    - No unit or e2e tests exist.
-    - `client_bookings=0` and `coordinator_connections=0` in production — flagship features have never been used in the real DB.
+  const aiEnvelopeSchema = z.union([
+    z.object({ type: z.literal("question"), payload: z.string().min(1).max(500) }),
+    z.object({ type: z.literal("data"), payload: z.array(z.unknown()) }),
+  ]);
+  ```
+- Replace the manual `parsed?.type` branching with `aiEnvelopeSchema.safeParse(parsed)`. On failure, fall back to best-effort recovery: if `parsed.payload` is an array, treat as data; if it's a string, treat as question; otherwise throw a friendly `"AI response was unreadable — please rephrase and try again"` (no raw shape leaking).
+- Each row → `tripRowSchema.safeParse(r)`; skip only rows where `success===false` AND no fields recoverable, instead of failing the batch.
+- Tighten system prompt (line 2440–2447): add explicit fallback instruction:
+  > "Return ALL 8 keys for every row. If a value is unknown, use empty string `""` (or `"1"` for quantity) — never omit a key. If mandatory pickup fields cannot be inferred, use the question envelope instead of a partial data row."
 
----
+### `callGemini` (line 3031)
+**Problem today:** any JSON parse failure throws `"AI returned invalid JSON"` and callers have no way to retry with a stricter reminder.
+**Changes:**
+- Wrap the `JSON.parse` in try/catch that first attempts a fenced-code recovery (strip ` ```json … ``` ` wrappers Gemini occasionally emits despite `responseMimeType: json`).
+- On 5xx from Gemini, do one automatic retry after 400ms.
+- Add optional `schema?: z.ZodSchema` param; when supplied, run `safeParse` and return `{ data, warnings: string[] }` shape so callers can distinguish "bad shape" from "bad transport".
 
-## Deliverable 2 — `crew-change-technical-blueprint.md` (~50 pages)
+### `aiVoiceNoteToTrip` (line 3282)
+**Problem today:** same brittle `String(r?.x ?? "")` coercion; no size/duration guardrails beyond byte cap; `spendOrThrow` runs BEFORE Gemini, so a Gemini 5xx leaves the user charged with no result.
+**Changes:**
+- Reuse `tripRowSchema` + a `voiceEnvelopeSchema = z.object({ transcript: z.string().default(""), trips: z.array(z.unknown()).default([]) }).passthrough()`.
+- Extend the prompt to require the same "always return all 8 keys, empty string for unknowns" rule.
+- Wrap the Gemini fetch in try/catch; on any failure AFTER spend, refund via a new small helper `refundPoints(companyId, feature, note, jobId?)` calling `sb.rpc("spend_points", { ..., _cost_override: -N })`. If refund RPC not available, log a `console.warn` (still return the user-facing error). Keep the current "empty trips" toast path as-is.
+- Add explicit `if (!text) throw new Error("AI returned an empty transcript — recording may be silent")` before parse.
 
-Written for a **code-analyst AI**. Extends the earlier blueprint with exhaustive detail.
+## 2. `src/lib/collab.functions.ts` — B2B hop concurrency
 
-**Sections**
-1. **Tech stack** (full `package.json` breakdown with versions)
-2. **Routes** — every URL + file + purpose (already have this)
-3. **Components** — every file, grouped by folder
-4. **Server functions catalog** — every export from `admin.functions.ts`, `coordinator.functions.ts`, `coordinator-public.functions.ts`, `billing.functions.ts`, `booking.functions.ts`, `collab.functions.ts` with signature, auth requirement, points spend, and description
-5. **Database — full schema dump**: every column, type, nullability, default; every RLS policy verbatim; every trigger; every RPC. (I already pulled the raw data — 46 tables, 83 policies, 20 DB functions.)
-6. **Auth & security model** — Supabase session flow, `attachSupabaseAuth` middleware, `requireSupabaseAuth`, `is_admin` / `is_company_owner` / `company_of` helpers in `private` schema, magic-link validation, public-endpoint rules.
-7. **Realtime channels** — every `supabase.channel(...)` call in the codebase, table filter, and consumer.
-8. **AI pipeline** — `callGemini` helper, model routing (`gemini-2.5-flash` vs `flash-lite`), `buildSystemPrompt` composition, `company_ai_rules` injection, per-feature spend contract.
-9. **Points & billing engine** — `spend_points` RPC walkthrough, `company_subscriptions` vs `companies.points_balance` fallback, block-on-empty semantics, monthly cap, rollover.
-10. **Email queue** — pgmq structure, `email_queue_wake` advisory-lock arm/disarm dance, TTL and retry semantics, DLQ.
-11. **Multi-hop dispatch state machine** — jobs/hops table invariants, `enforce_hop_immutable_fields`, `enforce_jobs_partner_update`, `enforce_driver_assign_by_executor` triggers.
-12. **Environment variables** — full matrix (browser vs server, required vs optional, purpose).
-13. **Build & deploy** — TanStack Start on Cloudflare Workers via `@lovable.dev/vite-tanstack-config`; SSR vs `_authenticated` (ssr:false) split; Capacitor build path.
-14. **Extension points & refactor candidates** — the code smells the AI should investigate first.
+### The race
+Recall (creator side) and accept/reject (partner side) both read the "latest pending hop" and update `jobs`. Two scenarios today:
+1. Partner accepts at the same moment creator recalls → recall deletes the hop AFTER partner updated `status=accepted`; job ends up with `executor=creator` but no pending hop, silently orphaning the acceptance.
+2. Partner accepts twice from two tabs → both pass the pending check, second UPDATE overwrites with the same values but spends `dispatch_decided_at` again (minor) — the real risk is if we later add side effects here.
 
----
+### Changes
+- **Guard the mutating UPDATE with a `.eq("status", "pending")` filter** (optimistic concurrency) in all three handlers:
+  - `respondToDispatch`: change the hop UPDATE to include `.eq("id", hop.id).eq("status", "pending")` and use `.select("id")` so we can detect zero rows. If zero rows updated → throw a friendly `"This hand-off was already resolved — refresh to see the latest state"`.
+  - `recallPartnerDispatch`: change the hop DELETE to `.eq("id", latest.id).eq("status", "pending").select("id")`. If zero rows → `"The partner already responded — recall no longer possible"`.
+  - `dispatchJobToPartner`: after the hop insert, wrap the `jobs.update` with a precondition `.eq("dispatch_status", job.dispatch_status ?? null)` on the previous value (read one extra column earlier). On zero rows → roll back by deleting the just-inserted hop and throw `"Trip state changed — please retry"`.
+- **Wrap each handler body in try/catch** around the state-mutation section (hop write → job write). If the second write fails, attempt a best-effort compensation (delete inserted hop / restore previous `dispatch_status`) and rethrow with a clear message. Catch-all fallback: `"Couldn't complete the hand-off — no changes were saved"`.
+- **Standardize error messages** (short, user-facing, no DB error leakage). The message strings above are what will surface in the existing `toast.error(e.message)` handlers in the UI — no client changes needed.
 
-## Sample excerpt (so you see the shape)
+## Out of scope (explicitly not touched)
+- No changes to `aiAutoCoordinate` / `applyAutoCoordinateProposal` (already validates IDs against known sets).
+- No DB migration. Concurrency is enforced with `.eq()` preconditions on existing columns; no advisory locks or triggers added.
+- No client/UI changes — existing toasts render the new error strings.
+- No changes to points pricing or `spend_points` RPC.
 
-> **Feature: AI voice-to-trip**
-> **File:** `src/components/coordinator/VoiceToTripButton.tsx` → server fn `aiVoiceNoteToTrip` in `src/lib/coordinator.functions.ts:3282`
-> **Model:** `gemini-2.5-flash` (multimodal, base64 audio inline)
-> **Auth:** `requireSupabaseAuth`
-> **Gate:** `assertFeatureEnabled(companyId, "ai_voice_to_trip")` → default enabled on Business plan
-> **Cost:** 2 points via `spendOrThrow` → `spend_points` RPC → `points_ledger`
-> **Flow:** Browser `MediaRecorder` → base64 → server fn → Gemini → JSON trips → coordinator confirms → `createJobsBulk`
-> **Known issue:** No UI cap on recording length; a 60-second recording is still 1 spend.
+## Technical notes
+- All schema additions are local `z.` declarations in `coordinator.functions.ts`; no new exports, no shared file.
+- `refundPoints` helper is defined near `spendOrThrow` in the same file, private.
+- Zero-row detection uses PostgREST `.select("id")` after mutation and checks `data?.length`, avoiding a second round-trip.
+- Prompt changes only affect Gemini calls, not stored data.
 
----
-
-## Delivery
-
-On approval I will:
-1. Write `/mnt/documents/crew-change-product-map.md`
-2. Write `/mnt/documents/crew-change-technical-blueprint.md`
-3. Embed both real-value snapshots (plans, packs, AI costs, current-state counts).
-4. Preview both files inline in the chat with `<presentation-artifact>` download tags.
-
-Approve to generate.
+## Files touched
+- `src/lib/coordinator.functions.ts` (extractTripsFromText, callGemini, aiVoiceNoteToTrip, +refundPoints helper)
+- `src/lib/collab.functions.ts` (dispatchJobToPartner, recallPartnerDispatch, respondToDispatch)
