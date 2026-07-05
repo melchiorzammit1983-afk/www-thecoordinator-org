@@ -96,6 +96,14 @@ function CoordinatorLayout() {
     if (!item.feature) return true;
     return features?.[item.feature] !== false;
   });
+
+  if (isLoading || (!company && identityLoading)) {
+    return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
+  }
+  if (!company && identity?.isAdmin) {
+    return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Opening admin…</div>;
+  }
+  if (error || !company) {
     return (
       <div className="min-h-screen grid place-items-center px-4">
         <div className="max-w-md text-center">
