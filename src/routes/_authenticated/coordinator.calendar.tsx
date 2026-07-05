@@ -698,7 +698,9 @@ type CardCtx = {
     unread_client: number; unread_driver: number;
     client_change: boolean; sos_open: boolean; driver_status_new: boolean; rejected?: boolean;
   }>;
-
+  tripFlags?: Record<string, TripFlagInfo>;
+  onDismissFlag?: (jobId: string, kind: "duplicate" | "suspicious") => void;
+  onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
