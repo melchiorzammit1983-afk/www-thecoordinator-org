@@ -146,19 +146,7 @@ function DriverManifest() {
   const branding = data?.branding;
   useFavicon(branding?.logo_url ?? null);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen grid place-items-center">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <div className="text-sm">Loading manifest…</div>
-        </div>
-      </div>
-    );
-  }
-  if (!data) return <NotFound />;
-
-  const driver = data.driver;
+  const driver = data?.driver ?? null;
 
   // Active trip drives the fullscreen map focus + the "next instruction" hero.
   const liveStatuses = new Set(["en_route", "arrived", "in_progress"]);
@@ -179,12 +167,9 @@ function DriverManifest() {
     : activeJob ? activeJob.from_location
     : null;
 
-  // "In Motion" = the vehicle is actively moving on this trip. We hide
-  // secondary menus while this is true so the driver keeps eyes on the road.
+  // "In Motion" = the vehicle is actively moving on this trip.
   const inMotion = activeJob?.status === "en_route" || activeJob?.status === "in_progress";
 
-  // Keep the phone screen awake for the whole live-trip window (from
-  // "on the way" through to "trip finished") so the map stays visible.
   const wakeActive =
     activeJob?.status === "en_route"
     || activeJob?.status === "arrived"
@@ -197,8 +182,6 @@ function DriverManifest() {
     enabled: !!activeJob && !!driverPos && !!routeDestination,
   });
 
-  // Navigate Mode — maximizes the map and collapses UI to a slim HUD.
-  // Only available while the vehicle is In Motion; auto-exits otherwise.
   const [navigateMode, setNavigateMode] = useState(false);
   useEffect(() => {
     if (!inMotion && navigateMode) setNavigateMode(false);
@@ -216,7 +199,6 @@ function DriverManifest() {
     const prevIds = knownJobIdsRef.current;
     const prevUnread = unreadCountsRef.current;
 
-    // First pass — seed refs without firing chimes.
     if (prevIds === null || prevUnread === null) {
       knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
       const seed = new Map<string, number>();
@@ -225,7 +207,6 @@ function DriverManifest() {
       return;
     }
 
-    // New trip(s) → dispatch chime.
     const newJobs = currentJobs.filter((j) => !prevIds.has(j.id));
     if (newJobs.length > 0) {
       audio.playChime("dispatch");
@@ -238,7 +219,6 @@ function DriverManifest() {
       if (audio.autoRead) audio.speak(text);
     }
 
-    // Increased unread messages on any job → message chime.
     const nextUnread = new Map<string, number>();
     let bumpedJob: Job | null = null;
     for (const j of currentJobs) {
@@ -260,16 +240,13 @@ function DriverManifest() {
     unreadCountsRef.current = nextUnread;
   }, [data, audio]);
 
-  // Cancel speech when leaving motion or unmounting.
   useEffect(() => {
     if (!inMotion) audio.cancelSpeech();
   }, [inMotion, audio]);
 
-  // Compose an on-demand announcement for the Speak emblem.
   const speakLatest = useCallback(() => {
     if (audio.isSpeaking) { audio.cancelSpeech(); return; }
     if (lastAnnouncement) { audio.speak(lastAnnouncement); return; }
-    // Fallback: read the current driving status.
     if (activeJob) {
       const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
       const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
@@ -281,6 +258,20 @@ function DriverManifest() {
       audio.speak(parts.join(". "));
     }
   }, [audio, lastAnnouncement, activeJob, live.eta_sec, live.next_instruction]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen grid place-items-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="text-sm">Loading manifest…</div>
+        </div>
+      </div>
+    );
+  }
+  if (!data) return <NotFound />;
+
+
 
 
   return (
