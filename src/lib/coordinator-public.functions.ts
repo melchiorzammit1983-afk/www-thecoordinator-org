@@ -971,6 +971,10 @@ const pointSchema = z.object({
   heading: z.number().nullable().optional(),
   speed_mps: z.number().nullable().optional(),
   captured_at: z.string().datetime(),
+  eta_sec: z.number().int().nonnegative().max(86400).nullable().optional(),
+  distance_m: z.number().int().nonnegative().max(10_000_000).nullable().optional(),
+  next_instruction: z.string().max(500).nullable().optional(),
+  destination_label: z.string().max(500).nullable().optional(),
 });
 
 export const pushDriverLocation = createServerFn({ method: "POST" })
