@@ -59,6 +59,10 @@ async function loadCompanyFeatures(companyId: string): Promise<Record<string, bo
     features[r.feature as string] = !!r.enabled && !expired;
   }
   return features;
+}
+
+
+
 
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
