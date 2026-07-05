@@ -824,6 +824,44 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
 
         {!accepted && !job.deletion_requested_at && (
           <>
+            {/* Route preview strip */}
+            {previewEnabled && (
+              <div className="col-span-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3">
+                <div className="h-10 w-10 grid place-items-center rounded-full bg-primary/15 text-primary shrink-0">
+                  <Navigation className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">To pickup</div>
+                  {previewPrimary ? (
+                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight">
+                      {(() => {
+                        const s = previewPrimary.duration_sec;
+                        if (s == null) return "—";
+                        const m = Math.max(1, Math.round(s / 60));
+                        return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                      })()}
+                      <span className="text-muted-foreground font-medium ml-2">
+                        {previewPrimary.distance_m != null
+                          ? (previewPrimary.distance_m < 950
+                              ? `${Math.round(previewPrimary.distance_m / 10) * 10} m`
+                              : `${(previewPrimary.distance_m / 1000).toFixed(previewPrimary.distance_m < 10_000 ? 1 : 0)} km`)
+                          : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Calculating route…</div>
+                  )}
+                </div>
+                <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setPreviewOpen(true)}>
+                  Preview route
+                </Button>
+              </div>
+            )}
+            {!previewEnabled && isPending && !driverPos && (
+              <div className="col-span-2 rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
+                Enable location to preview the route to pickup
+              </div>
+            )}
             <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
               {acceptMut.isPending ? "Accepting…" : "Accept trip"}
             </Button>
@@ -833,6 +871,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             </Button>
           </>
         )}
+
         {accepted && !job.deletion_requested_at && (
           <>
             <Button className="col-span-2 h-11" onClick={onOpen}>
