@@ -192,29 +192,47 @@ function DriverManifest() {
   const [lastAnnouncement, setLastAnnouncement] = useState<string | null>(null);
   const knownJobIdsRef = useRef<Set<string> | null>(null);
   const unreadCountsRef = useRef<Map<string, number> | null>(null);
+  const pendingIdsRef = useRef<Set<string> | null>(null);
+
+  // Any assigned trip that hasn't been accepted yet requires the driver's consent.
+  const pendingJobs = useMemo(
+    () => jobs.filter((j) => !j.driver_accepted_at && !j.deletion_requested_at),
+    [jobs],
+  );
 
   useEffect(() => {
     if (!data) return;
     const currentJobs = data.jobs;
     const prevIds = knownJobIdsRef.current;
     const prevUnread = unreadCountsRef.current;
+    const prevPending = pendingIdsRef.current;
+    const currentPending = new Set(
+      currentJobs.filter((j) => !j.driver_accepted_at && !j.deletion_requested_at).map((j) => j.id),
+    );
 
-    if (prevIds === null || prevUnread === null) {
+    if (prevIds === null || prevUnread === null || prevPending === null) {
       knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
       const seed = new Map<string, number>();
       for (const j of currentJobs) seed.set(j.id, j.unread_messages ?? 0);
       unreadCountsRef.current = seed;
+      pendingIdsRef.current = currentPending;
       return;
     }
 
     const newJobs = currentJobs.filter((j) => !prevIds.has(j.id));
-    if (newJobs.length > 0) {
+    // Newly pending = brand-new job OR existing job that a coordinator just (re)assigned.
+    const newlyPending = currentJobs.filter(
+      (j) => currentPending.has(j.id) && !prevPending.has(j.id),
+    );
+    if (newlyPending.length > 0) {
       audio.playChime("dispatch");
-      const j = newJobs[0];
-      const pickupLabel = j.pickup_at
-        ? ` at ${formatMaltaTime(j.pickup_at)}`
-        : "";
-      const text = `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}`;
+      try { if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.([180, 80, 180]); } catch { /* ignore */ }
+      const j = newlyPending[0];
+      const pickupLabel = j.pickup_at ? ` at ${formatMaltaTime(j.pickup_at)}` : "";
+      const isReassign = !newJobs.some((nj) => nj.id === j.id);
+      const text = isReassign
+        ? `Trip reassigned to you: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`
+        : `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
@@ -238,6 +256,7 @@ function DriverManifest() {
 
     knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
     unreadCountsRef.current = nextUnread;
+    pendingIdsRef.current = currentPending;
   }, [data, audio]);
 
   useEffect(() => {
