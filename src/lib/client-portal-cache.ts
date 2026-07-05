@@ -8,8 +8,9 @@ export type PortalCacheEntry = {
 };
 
 export function readPortalCache(token: string): PortalCacheEntry | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(KEY_PREFIX + token);
+    const raw = window.localStorage.getItem(KEY_PREFIX + token);
     if (!raw) return null;
     return JSON.parse(raw) as PortalCacheEntry;
   } catch {
@@ -18,8 +19,9 @@ export function readPortalCache(token: string): PortalCacheEntry | null {
 }
 
 export function writePortalCache(token: string, data: unknown) {
+  if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(
+    window.localStorage.setItem(
       KEY_PREFIX + token,
       JSON.stringify({ at: Date.now(), data } satisfies PortalCacheEntry),
     );
