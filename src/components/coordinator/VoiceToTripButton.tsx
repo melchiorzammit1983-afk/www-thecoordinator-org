@@ -185,6 +185,8 @@ export function VoiceToTripButton({
   const busy = mut.isPending;
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+  if (!enabled) return null;
+
   return (
     <div className="flex items-center gap-2">
       <input
