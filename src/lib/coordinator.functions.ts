@@ -2444,6 +2444,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
       "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
       'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
+      'FALLBACK RULES: Always return ALL 8 keys for every trip row. If a value is unknown, use an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown". If mandatory pickup fields cannot be inferred from the input, use the {"type":"question",...} envelope instead of returning partial data rows.',
     ].join("\n");
     const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
 
@@ -2465,49 +2466,59 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     });
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents,
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-          maxOutputTokens,
-        },
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+            maxOutputTokens,
+          },
+        }),
+      });
+    } catch (e: any) {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction transport failure");
+      throw new Error("AI is temporarily unreachable — please try again");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", `AI extraction ${res.status}`);
       if (res.status === 429) throw new Error("AI is rate limited — try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
     }
     const json = await res.json() as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
-    if (!text) throw new Error("Empty response from AI");
+    if (!text) {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction empty");
+      throw new Error("AI returned an empty response — please try again");
+    }
 
     let parsed: any;
-    try { parsed = JSON.parse(text); }
-    catch { throw new Error("AI returned invalid JSON"); }
-
-    if (parsed?.type === "question" && typeof parsed.payload === "string") {
-      return { type: "question" as const, payload: parsed.payload };
+    try { parsed = safeJsonParse(text); }
+    catch {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction invalid JSON");
+      throw new Error("AI response was unreadable — please rephrase and try again");
     }
-    if (parsed?.type === "data" && Array.isArray(parsed.payload)) {
-      const rows = parsed.payload.map((r: any) => ({
-        pickupDate: String(r?.pickupDate ?? ""),
-        pickupTime: String(r?.pickupTime ?? ""),
-        pickupAddress: String(r?.pickupAddress ?? ""),
-        deliveryAddress: String(r?.deliveryAddress ?? ""),
-        customerName: String(r?.customerName ?? ""),
-        contactNumber: String(r?.contactNumber ?? ""),
-        transportType: String(r?.transportType ?? ""),
-        quantity: String(r?.quantity ?? "1"),
-      }));
+
+    // Best-effort envelope recovery: accept the documented shape, then fall back
+    // to inspecting payload shape when `type` is missing/wrong.
+    const rawPayload = parsed?.payload;
+    const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
+    const isData = parsed?.type === "data" || Array.isArray(rawPayload);
+    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
+      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
+    }
+    if (isData && Array.isArray(rawPayload)) {
+      const rows = rawPayload.map(normalizeTripRow);
       return { type: "data" as const, payload: rows };
     }
-    throw new Error("AI returned unexpected shape");
+    if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction unrecognized shape");
+    throw new Error("AI response was unreadable — please rephrase and try again");
   });
 
 // ---------- Group / Ungroup (reversible link, keeps trip details) ----------
