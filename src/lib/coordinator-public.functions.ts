@@ -1087,7 +1087,10 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(5);
 
-    const branding = await loadCompanyBranding(job.company_id);
+    const [branding, features] = await Promise.all([
+      loadCompanyBranding(job.company_id),
+      loadCompanyFeatures(job.company_id),
+    ]);
 
     return {
       job: {
