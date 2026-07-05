@@ -78,7 +78,7 @@ export function AiAutoCoordinateButton() {
               <Sparkles className="h-4 w-4" /> AI Auto-Coordinate
             </DialogTitle>
           </DialogHeader>
-          <FeatureGate feature="ai_auto_coordinate">
+          <>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto">
               {runMut.isPending && <p className="text-sm text-muted-foreground">Planning the whole backlog…</p>}
               {!runMut.isPending && plan && plan.proposals.length === 0 && (
