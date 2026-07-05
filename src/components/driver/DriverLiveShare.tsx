@@ -16,8 +16,9 @@ type QueuedPoint = {
 
 const STORAGE_KEY = "driverLiveShareOn";
 const QUEUE_KEY = "driverLiveQueue";
-const MIN_DISTANCE_M = 25;
-const MIN_INTERVAL_MS = 8_000;
+// Battery-friendly cadence: emit at most every ~12s OR every 20m moved.
+const MIN_DISTANCE_M = 20;
+const MIN_INTERVAL_MS = 12_000;
 const FLUSH_INTERVAL_MS = 10_000;
 
 function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
@@ -166,7 +167,14 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
 
     if (native) {
       // Native background geolocation.
+      // The plugin manages permission prompts natively when
+      // `requestPermissions: true` is passed. On Android 10+ it first asks
+      // for foreground location, then escalates to "Allow all the time"
+      // (background). On iOS it asks for "When in Use", then upgrades to
+      // "Always" the first time a background location is delivered. A
+      // NOT_AUTHORIZED error in the callback means the user declined.
       let cancelled = false;
+      let watcherId: string | null = null;
       (async () => {
         try {
           const { registerPlugin } = await import("@capacitor/core");
@@ -212,8 +220,11 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
               });
             },
           );
+          watcherId = id;
           if (cancelled) {
-            await BackgroundGeolocation.removeWatcher({ id });
+            // Effect was torn down (trip completed) before addWatcher resolved.
+            try { await BackgroundGeolocation.removeWatcher({ id }); } catch { /* ignore */ }
+            nativeWatcherRef.current = null;
           } else {
             nativeWatcherRef.current = id;
           }
@@ -222,7 +233,25 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
           setError(e?.message ?? "Failed to start background tracking");
         }
       })();
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        // Guaranteed teardown when the driver marks the trip completed
+        // (or turns the toggle off). Stops the foreground service on
+        // Android and releases the "Always" location hold on iOS so the
+        // battery isn't drained after the trip.
+        if (watcherId) {
+          (async () => {
+            try {
+              const { registerPlugin } = await import("@capacitor/core");
+              const BackgroundGeolocation = registerPlugin<{
+                removeWatcher(o: { id: string }): Promise<void>;
+              }>("BackgroundGeolocation");
+              await BackgroundGeolocation.removeWatcher({ id: watcherId! });
+            } catch { /* ignore */ }
+            nativeWatcherRef.current = null;
+          })();
+        }
+      };
     }
 
     // ------------ Web fallback ------------
