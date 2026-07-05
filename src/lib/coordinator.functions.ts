@@ -982,6 +982,13 @@ const bulkTripInput = z.object({
     pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   })).min(1).max(50),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
+  // Dynamic billing flags from the AI extraction step. Pass through unchanged
+  // so the coordinator can't tamper with pricing client-side beyond what the
+  // AI accuracy score already justified.
+  billing_flags: z.object({
+    is_half_price: z.boolean().optional(),
+    accuracy_score: z.number().min(0).max(1).optional(),
+  }).optional(),
 });
 
 export const createJobsBulk = createServerFn({ method: "POST" })
@@ -991,6 +998,28 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     await assertFeatureEnabled(c.id, "bulk_paste");
     const supabaseAdmin = await getAdminClient();
+
+    // Half-price applies to the per-trip processing fee when the AI's initial
+    // accuracy was under 75%. Resolve the effective base cost once (company
+    // override falls back to the global feature cost) and halve it.
+    const isHalfPrice = data.billing_flags?.is_half_price === true;
+    let halfCostOverride: number | undefined;
+    if (isHalfPrice) {
+      const { data: overrideRow } = await supabaseAdmin
+        .from("company_feature_price_overrides")
+        .select("points_cost")
+        .eq("company_id", c.id)
+        .eq("feature_key", "trip_created")
+        .maybeSingle();
+      const { data: baseRow } = await supabaseAdmin
+        .from("ai_feature_costs")
+        .select("points_cost")
+        .eq("feature_key", "trip_created")
+        .maybeSingle();
+      const baseCost = Number(overrideRow?.points_cost ?? baseRow?.points_cost ?? 1);
+      halfCostOverride = Math.round(baseCost * 0.5 * 100) / 100;
+    }
+
     const created: string[] = [];
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
@@ -1015,9 +1044,23 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
-      await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
+      if (isHalfPrice) {
+        // Bypass spendSoft (which uses default pricing) so we can apply the
+        // 50% cost_override. Still never throws — metering must not break saves.
+        try {
+          await supabaseAdmin.rpc("spend_points", {
+            _company_id: c.id,
+            _feature_key: "trip_created",
+            _job_id: job.id,
+            _note: `Trip created (bulk, 50% AI-accuracy discount, score=${(data.billing_flags?.accuracy_score ?? 0).toFixed(2)})`,
+            _cost_override: halfCostOverride as unknown as number,
+          });
+        } catch { /* ignore metering errors */ }
+      } else {
+        await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
+      }
     }
-    return { created };
+    return { created, billing: { is_half_price: isHalfPrice, accuracy_score: data.billing_flags?.accuracy_score ?? null } };
   });
 
 // ---------- FLIGHT STATUS ----------
