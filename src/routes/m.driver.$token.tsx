@@ -513,7 +513,7 @@ function DriverManifest() {
   );
 }
 
-function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOpen: () => void; onChat: () => void }) {
+function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
