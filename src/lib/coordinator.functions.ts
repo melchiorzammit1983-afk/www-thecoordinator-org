@@ -3643,7 +3643,7 @@ ${(drivers ?? []).map((d: any) => `- ${d.id} | ${d.name ?? ""} | ${d.status ?? "
             if (error) throw error;
             if (rows?.length) { affected += rows.length; executed++; }
           } else if (a.type === "reschedule") {
-            const patch: Record<string, unknown> = {};
+            const patch: { date?: string; time?: string; pickup_at?: string } = {};
             if (typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date)) patch.date = a.date;
             if (typeof a.time === "string" && /^\d{2}:\d{2}$/.test(a.time)) patch.time = a.time;
             if (typeof a.pickup_at === "string" && !Number.isNaN(Date.parse(a.pickup_at))) patch.pickup_at = a.pickup_at;
