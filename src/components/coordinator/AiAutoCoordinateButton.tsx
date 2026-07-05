@@ -16,6 +16,7 @@ type Proposal =
 type PlanResponse = { proposals: Proposal[]; metering_mode: string; considered: number };
 
 export function AiAutoCoordinateButton() {
+  const enabled = useFeature("ai_auto_coordinate");
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [done, setDone] = useState<Set<number>>(new Set());
