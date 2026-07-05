@@ -1001,6 +1001,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
  * for the driver's current leg. Everything is optional so the UI can render
  * gracefully before the first response arrives.
  */
+type RouteStep = {
+  maneuver: string | null;
+  instruction: string | null;
+  distance_m: number | null;
+  polyline: string | null;
+  end: { lat: number; lng: number };
+};
+
 type LiveRouteInfo = {
   polyline: string | null;
   eta_sec: number | null;
@@ -1013,7 +1021,9 @@ type LiveRouteInfo = {
   reroute_saving_sec: number;
   onAcceptReroute: () => void;
   isLoading: boolean;
+  steps: RouteStep[];
 };
+
 
 /**
  * Polls the Routes API server-side every 30s while a driver has an active
@@ -1032,8 +1042,9 @@ function useLiveRoute({
   const fn = useServerFn(computeDriverRoute);
   const [acceptedAltIdx, setAcceptedAltIdx] = useState<number | null>(null);
 
-  // Coarse origin key so tiny GPS jitter doesn't hammer the API.
-  const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
+  // Finer origin key (~11m) so route refetches as the driver actually moves.
+  const originKey = origin ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : null;
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["driver-live-route", destination, originKey],
@@ -1054,6 +1065,7 @@ function useLiveRoute({
         next_instruction: string | null;
         next_maneuver: string | null;
         next_step_distance_m: number | null;
+        steps: RouteStep[];
       };
       alternatives: Array<{
         duration_sec: number | null;
@@ -1063,6 +1075,7 @@ function useLiveRoute({
         next_instruction: string | null;
         next_maneuver: string | null;
         next_step_distance_m: number | null;
+        steps: RouteStep[];
       }>;
     }>,
   });
@@ -1100,8 +1113,10 @@ function useLiveRoute({
     reroute_saving_sec: bestAlt?.saving ?? 0,
     onAcceptReroute: () => { if (bestAlt) setAcceptedAltIdx(bestAlt.i); },
     isLoading,
+    steps: active?.steps ?? [],
   };
 }
+
 
 function formatEtaMin(sec: number | null): string {
   if (sec == null) return "—";

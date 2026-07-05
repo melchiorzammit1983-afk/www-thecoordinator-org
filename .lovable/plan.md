@@ -1,56 +1,49 @@
+# Google-Maps-Style Turn-by-Turn in Navigate Mode
+
 ## Problem
 
-Tapping **Navigate Mode** today:
+Navigate Mode currently draws the full route polyline and shows the *first* step of the route as the "next maneuver". As the driver moves, the arrow, instruction, and distance-to-next-turn never advance — because the server only returns the first step and the client never tracks progress along the step list. It looks like a static route line, not turn-by-turn navigation.
 
-1. Replaces the trip card with a slim bottom HUD only — **no actual map/navigation is drawn**, so the driver sees nothing to navigate by.
-2. Unmounts `DriverLiveShare` (it lives inside the card), which **stops the geolocation watcher, clears the wake lock, and halts pings to the coordinator**.
-3. Computes ETA client-side only — the coordinator never sees it. `driver_locations` gets pings (when tracking runs) but no ETA/next-instruction is stored on the trip.
+Also: route only refetches every 30s and origin is coarsened to ~110 m, so the map does not feel "live". No camera tilt/heading follow, no travelled-portion trimming.
 
-## Goal
+## What "Turn-by-Turn like Google Maps" means here
 
-Navigate Mode becomes an **in-app, full-screen turn-by-turn view** (Google-Maps-like, same window), while live location and ETA continue streaming to the coordinator without interruption.
+1. Full step list (not just the first) is returned by the server.
+2. Client tracks driver position against the step polylines: as the driver passes each step's end point, the "current step" advances.
+3. HUD shows: current step's maneuver arrow, live distance from driver → end of current step, current instruction, and a small "then …" preview of the following step.
+4. Route polyline is split into a grey "already travelled" portion and a bright blue "ahead" portion.
+5. Camera follows driver, tilted 45°, rotated to heading (so the road points up), zoomed close (18–19).
+6. Faster refresh cadence for the driver marker (already ~1 s from `watchPosition`), and only refetch the full Routes API when the driver deviates from the corridor or every 60 s as a safety refresh.
 
-## Changes
+## Technical Changes
 
-### 1. Keep tracking alive across Navigate Mode
-- Lift `<DriverLiveShare>` out of the conditional branch in `m.driver.$token.tsx` so it mounts on the driver page regardless of `navigateMode`. Render it visually only when the card is expanded; keep the component mounted (hidden) in Navigate Mode so `watchPosition`, wake lock, and flush loop keep running.
-- Result: entering Navigate Mode no longer tears down tracking.
+### 1. `src/lib/routing.functions.ts`
+- Extend `normalize()` to return the **full step list** (`steps: Array<{ maneuver, instruction, distance_m, polyline, end: {lat,lng} }>`) in addition to the aggregate fields.
+- Add `routes.legs.steps.navigationInstruction.maneuver` and existing fields (already in mask).
 
-### 2. Full-screen embedded navigation view
-Replace the current bottom-only `NavigateHud` with a new `NavigateFullscreen` component:
+### 2. `src/routes/m.driver.$token.tsx` — `useLiveRoute`
+- Widen the result type to include `steps` for the active route.
+- Pass `steps` through in the returned `LiveRouteInfo`.
+- Keep 30 s polling, but bump origin key resolution to `toFixed(4)` (~11 m) so it refetches when driver actually moves between polls.
 
-- Full-viewport Google Map (`google.maps.Map`, reusing `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY` and the existing `initMap` loader pattern from `DriverDashboardMap.tsx`).
-- Draws the active route polyline from `useLiveRoute().polyline` (decoded via `google.maps.geometry.encoding.decodePath`).
-- Driver marker (car icon) that follows `watchPosition` updates, auto-recenters and rotates to heading (follow-mode on by default, with a "recenter" FAB when the user pans away).
-- Destination marker at the current smart target (pickup if not yet picked-up, else dropoff).
-- Bottom HUD (existing content) overlaid: maneuver arrow, next-turn distance, ETA, and the current step instruction.
-- Top-left "Exit" button (returns to card) — clearly distinct from the current minimize icon.
-- Optional "Open in Google Maps" fallback link kept in the exit menu.
-- Uses Fullscreen API on entry (already partially done) and locks portrait via CSS only.
+### 3. `src/components/driver/NavigateFullscreen.tsx` (main work)
+- Accept `steps` on `live` prop.
+- **Step tracker**: on every geolocation update, compute distance from driver to each step's end point. Advance `currentStepIdx` when driver is within ~25 m of the step's end (or has clearly passed it — dot product against step direction). Never regress.
+- **HUD**: drive `next_maneuver`, `next_instruction`, and distance-to-next-turn from `steps[currentStepIdx]` instead of the server's cached "first step". Add a small "Then <arrow>" line showing `steps[currentStepIdx+1]`.
+- **Split polyline**: render two polylines — travelled (grey, thin) from route start to driver's projected point on the path, and ahead (blue, thick) from that point to destination. Use `geometry.spherical.computeDistanceBetween` + a simple nearest-point projection per segment.
+- **Camera**: when in follow mode, `map.setHeading(gpsHeading)`, `map.setTilt(45)`, `map.setZoom(18)`. Fall back to `tilt: 0` if the map type doesn't support tilt (vector maps only — degrade gracefully in a try/catch).
+- **Off-route detection**: if driver is > 40 m from the nearest polyline segment for 5 s, invalidate the route query so `useLiveRoute` refetches from the new origin.
 
-### 3. Push ETA + next instruction to coordinator
-- Extend `pushDriverLocation` server fn (in `coordinator-public.functions.ts`) to accept optional `eta_sec`, `distance_m`, `next_instruction`, `destination_label` on each ping, and store them on the newest `driver_locations` row (add nullable columns via migration: `eta_sec int`, `distance_m int`, `next_instruction text`, `destination_label text`).
-- On the driver client, whenever `useLiveRoute` returns fresh data, attach the latest ETA/distance/instruction to the next queued point so the coordinator's live view (`TripDetailsSheet`, coordinator calendar map) can display "ETA 12 min · Turn left onto X" alongside the moving pin.
-- Coordinator UI (`TripDetailsSheet` live section): show ETA badge + last instruction under the driver pin. No new pages.
+### 4. `DriverLiveShare.tsx`
+- No shape change. The `liveEta` prop already carries eta / instruction / distance; those now come from the *current* step, so the coordinator's live chip advances turn-by-turn automatically.
 
-### 4. Card no longer "minimises silently"
-- The Navigate Mode entry is now an explicit fullscreen route view; exiting returns to the same expanded card scroll position. No collapse animation on the underlying manifest.
+## Out of Scope
 
-## Technical notes
+- Native voice guidance (TTS of each maneuver) — the existing speak button covers manual playback.
+- Lane guidance, speed-limit overlays, junction 3D views (require paid Google Nav SDK).
+- Rendering vector 3D buildings.
 
-- New migration: `alter table public.driver_locations add column eta_sec int, add column distance_m int, add column next_instruction text, add column destination_label text;` (nullable, no GRANT changes needed — existing policies cover it).
-- No new secrets; Google Maps browser + gateway keys already present.
-- Files touched:
-  - `src/routes/m.driver.$token.tsx` — lift `DriverLiveShare`, swap HUD for `NavigateFullscreen`, pass live ETA into the tracker.
-  - `src/components/driver/NavigateFullscreen.tsx` — new component (map + polyline + follow-me + HUD overlay).
-  - `src/components/driver/DriverLiveShare.tsx` — accept `liveEta` prop, include in each ping payload.
-  - `src/lib/coordinator-public.functions.ts` — extend `pushDriverLocation` input + insert.
-  - `src/components/coordinator/TripDetailsSheet.tsx` — render ETA + next-turn under driver marker.
-  - New Supabase migration for the 4 columns.
-- Zero business-logic changes to job status, dispatch, or acceptance flows.
-
-## Out of scope
-
-- Native voice guidance (browser TTS already exists via `onSpeak`).
-- Lane guidance / speed-limit overlays (Google restricts these).
-- Offline navigation.
+## Files Changed
+- `src/lib/routing.functions.ts`
+- `src/routes/m.driver.$token.tsx`
+- `src/components/driver/NavigateFullscreen.tsx`

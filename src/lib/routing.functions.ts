@@ -91,7 +91,20 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
       s && s.endsWith("s") ? Number(s.slice(0, -1)) : null;
 
     const normalize = (r: (typeof routes)[number]) => {
-      const firstStep = r.legs?.[0]?.steps?.[0];
+      const stepsRaw = r.legs?.[0]?.steps ?? [];
+      const steps = stepsRaw
+        .map((s) => {
+          const end = s.endLocation?.latLng;
+          return {
+            maneuver: s.navigationInstruction?.maneuver ?? null,
+            instruction: s.navigationInstruction?.instructions ?? null,
+            distance_m: s.distanceMeters ?? null,
+            polyline: s.polyline?.encodedPolyline ?? null,
+            end: end ? { lat: end.latitude, lng: end.longitude } : null,
+          };
+        })
+        .filter((s) => s.end != null);
+      const firstStep = stepsRaw[0];
       return {
         duration_sec: toSec(r.duration),
         static_duration_sec: toSec(r.staticDuration),
@@ -100,6 +113,7 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
         next_instruction: firstStep?.navigationInstruction?.instructions ?? null,
         next_maneuver: firstStep?.navigationInstruction?.maneuver ?? null,
         next_step_distance_m: firstStep?.distanceMeters ?? null,
+        steps,
       };
     };
 
@@ -108,3 +122,4 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
       alternatives: routes.slice(1, 3).map(normalize),
     };
   });
+
