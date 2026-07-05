@@ -253,13 +253,6 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
         }
       };
     }
-        } catch (e: any) {
-          setStatus("error");
-          setError(e?.message ?? "Failed to start background tracking");
-        }
-      })();
-      return () => { cancelled = true; };
-    }
 
     // ------------ Web fallback ------------
     if (!("geolocation" in navigator)) {
