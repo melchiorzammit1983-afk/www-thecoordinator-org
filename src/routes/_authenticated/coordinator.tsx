@@ -14,6 +14,8 @@ import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
 import { BrandLogo } from "@/components/branding/BrandLogo";
 import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
+import { MobileTabBar } from "@/components/mobile/MobileTabBar";
+import { MobileHeader } from "@/components/mobile/MobileHeader";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
@@ -143,39 +145,31 @@ function CoordinatorLayout() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-muted/30 w-full">
-      <aside className="md:w-64 md:min-h-screen md:border-r bg-background flex md:flex-col">
-        <div className="px-4 py-4 md:py-6 border-b flex items-center gap-3">
+      {/* Mobile-only auto-hiding top bar + bottom tab bar. */}
+      <MobileHeader
+        logoUrl={(company as any).logo_url ?? null}
+        name={company.name}
+        onChangePassword={() => setShowChangePw(true)}
+      />
+
+      {/* Desktop-only sidebar. Hidden on mobile — replaced by MobileTabBar. */}
+      <aside className="hidden md:flex md:w-64 md:min-h-screen md:border-r bg-background md:flex-col">
+        <div className="px-4 py-6 border-b flex items-center gap-3">
           <BrandLogo logoUrl={(company as any).logo_url ?? null} name={company.name} />
-          <div className="hidden md:block min-w-0 flex-1">
+          <div className="min-w-0 flex-1">
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
           </div>
-          <div className="md:hidden ml-auto">
-            <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
-          </div>
-          <div className="md:hidden">
-            <Button variant="ghost" size="icon" onClick={() => setShowChangePw(true)} className="h-8 w-8" aria-label="Change password">
-              <KeyRound className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="md:hidden">
-            <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 h-8 px-2">
-              <LogOut className="h-4 w-4" />
-              <span className="text-xs">Sign out</span>
-            </Button>
-          </div>
-          <div className="hidden md:block">
-            <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
-          </div>
+          <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
         </div>
-        <nav className="flex md:flex-col md:p-3 overflow-x-auto md:overflow-visible">
+        <nav className="flex flex-col p-3">
           {visibleNav.map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             return (
               <Link
                 key={item.to} to={item.to}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3 md:py-2 md:my-0.5 text-sm rounded-none md:rounded-md whitespace-nowrap transition-colors",
+                  "flex items-center gap-3 px-4 py-2 my-0.5 text-sm rounded-md whitespace-nowrap transition-colors",
                   active ? "bg-primary/10 text-primary font-medium"
                          : "text-foreground/70 hover:bg-muted hover:text-foreground",
                 )}
@@ -186,7 +180,7 @@ function CoordinatorLayout() {
             );
           })}
         </nav>
-        <div className="hidden md:block mt-auto p-3 border-t space-y-1">
+        <div className="mt-auto p-3 border-t space-y-1">
           <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setShowChangePw(true)}>
             <KeyRound className="h-4 w-4" /> Change password
           </Button>
@@ -195,7 +189,8 @@ function CoordinatorLayout() {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 min-w-0">
+
+      <main className="flex-1 min-w-0 pb-tabbar md:pb-0">
         {disabledBanner && (
           <div className="flex items-start gap-2 border-b bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-4 py-2 text-sm">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -209,6 +204,9 @@ function CoordinatorLayout() {
         )}
         <Outlet />
       </main>
+
+      <MobileTabBar onOpenChangePassword={() => setShowChangePw(true)} />
+
       {mustChangePw && <ChangePasswordDialog onDone={() => setMustChangePw(false)} />}
       {showChangePw && !mustChangePw && (
         <ChangePasswordDialog mode="voluntary" onDone={() => setShowChangePw(false)} onCancel={() => setShowChangePw(false)} />

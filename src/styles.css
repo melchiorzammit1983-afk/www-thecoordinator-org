@@ -217,4 +217,31 @@
   animation: trip-flash 1.6s ease-in-out infinite;
 }
 
+/* ------- Mobile shell helpers ------- */
+
+/* Safe-area padding utilities for iOS notch + home indicator. */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+/* Reserve space so fixed bottom tab bar (56px) + safe-area doesn't cover
+   the last row of content on mobile. Applied to <main> on mobile. */
+@utility pb-tabbar {
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
+}
+
+/* Bump body text slightly on small phones so labels stay legible. */
+@media (max-width: 480px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+
 
