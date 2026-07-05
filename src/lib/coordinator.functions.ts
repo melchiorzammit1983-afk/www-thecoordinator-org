@@ -2270,8 +2270,9 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     // Find all jobs the caller can see (owner / executor / origin / chain) that
     // have any driver activity recently. Then pull the latest point per driver.
     const { data: jobs, error: jobsErr } = await supabaseAdmin.from("jobs")
-      .select("id, driver_id, from_location, to_location, drivers(id,name)")
+      .select("id, driver_id, from_location, to_location, status, drivers(id,name)")
       .not("driver_id", "is", null)
+      .in("status", ["en_route", "arrived", "in_progress"])
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
     if (jobsErr) throw new Error(jobsErr.message);
     const jobIds = (jobs ?? []).map((j: any) => j.id);

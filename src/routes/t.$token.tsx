@@ -308,7 +308,7 @@ function ClientTripPortal() {
           )}
 
           {/* Share my location */}
-          <ShareLocation token={token} deviceId={deviceId} />
+          <ShareLocation token={token} deviceId={deviceId} status={job.status} />
 
           {/* Group siblings */}
           {isGroup && (
@@ -626,11 +626,12 @@ function IdentityPickerDialog({ open, onOpenChange, token, deviceId, pax, allowS
 
 /* ---------------- Share location ---------------- */
 
-function ShareLocation({ token, deviceId }: { token: string; deviceId: string }) {
+function ShareLocation({ token, deviceId, status }: { token: string; deviceId: string; status?: string | null }) {
   const pushFn = useServerFn(pushClientLocation);
   const [sharing, setSharing] = useState(false);
   const [lastAt, setLastAt] = useState<string | null>(null);
   const watchId = useRef<number | null>(null);
+  const tripEnded = status === "completed" || status === "cancelled";
 
   const send = async (mode: "live" | "pin", coords: GeolocationCoordinates) => {
     try {
@@ -644,6 +645,7 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
   };
 
   const dropPin = () => {
+    if (tripEnded) return;
     if (!navigator.geolocation) return toast.error("Location not supported");
     navigator.geolocation.getCurrentPosition(
       (pos) => { send("pin", pos.coords); toast.success("Location shared"); },
@@ -653,6 +655,7 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
   };
 
   const toggleLive = () => {
+    if (tripEnded) return;
     if (sharing) {
       if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null; setSharing(false); return;
@@ -667,6 +670,19 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
     toast.success("Live sharing on");
   };
 
+  // Auto-stop sharing the moment the trip becomes terminal.
+  useEffect(() => {
+    if (!tripEnded) return;
+    if (watchId.current != null) {
+      navigator.geolocation.clearWatch(watchId.current);
+      watchId.current = null;
+    }
+    if (sharing) {
+      setSharing(false);
+      toast.message("Trip ended — live sharing stopped");
+    }
+  }, [tripEnded, sharing]);
+
   useEffect(() => () => {
     if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current);
   }, []);
@@ -675,14 +691,18 @@ function ShareLocation({ token, deviceId }: { token: string; deviceId: string })
     <section className="rounded-2xl bg-white p-4 shadow-sm border">
       <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Share your location</div>
       <div className="grid grid-cols-2 gap-2">
-        <Button variant={sharing ? "default" : "outline"} onClick={toggleLive}>
+        <Button variant={sharing ? "default" : "outline"} onClick={toggleLive} disabled={tripEnded}>
           <LocateFixed className="h-4 w-4 mr-2" /> {sharing ? "Sharing…" : "Share live"}
         </Button>
-        <Button variant="outline" onClick={dropPin}>
+        <Button variant="outline" onClick={dropPin} disabled={tripEnded}>
           <Share2 className="h-4 w-4 mr-2" /> Send my pin
         </Button>
       </div>
-      {lastAt && <p className="mt-2 text-xs text-muted-foreground">Last sent at {lastAt}</p>}
+      {tripEnded ? (
+        <p className="mt-2 text-xs text-muted-foreground">Trip ended — sharing disabled.</p>
+      ) : lastAt ? (
+        <p className="mt-2 text-xs text-muted-foreground">Last sent at {lastAt}</p>
+      ) : null}
     </section>
   );
 }
