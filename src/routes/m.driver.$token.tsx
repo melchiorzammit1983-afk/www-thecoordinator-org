@@ -1001,6 +1001,14 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
  * for the driver's current leg. Everything is optional so the UI can render
  * gracefully before the first response arrives.
  */
+type RouteStep = {
+  maneuver: string | null;
+  instruction: string | null;
+  distance_m: number | null;
+  polyline: string | null;
+  end: { lat: number; lng: number };
+};
+
 type LiveRouteInfo = {
   polyline: string | null;
   eta_sec: number | null;
@@ -1013,7 +1021,9 @@ type LiveRouteInfo = {
   reroute_saving_sec: number;
   onAcceptReroute: () => void;
   isLoading: boolean;
+  steps: RouteStep[];
 };
+
 
 /**
  * Polls the Routes API server-side every 30s while a driver has an active
