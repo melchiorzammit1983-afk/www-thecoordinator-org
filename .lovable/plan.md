@@ -1,70 +1,81 @@
-## Goal
-Add a smart backend verification engine that flags duplicate and suspicious trips across all trips in the next 7 days, with inline badges and Dismiss / Merge quick-actions on coordinator cards.
+# Board Creator + Multi-Logo Billing
 
-## 1. Backend — flag computation
+## 1. Database migration
 
-New server function `computeTripFlags` in `src/lib/coordinator.functions.ts` (auth-scoped to caller's `company_id`).
+**`company-logos` storage bucket** (public, RLS on `storage.objects`):
+- Path convention: `{company_id}/{uuid}.{ext}`.
+- Coordinators can INSERT/UPDATE/DELETE only under their own `company_id` folder; everyone can SELECT (bucket is public).
 
-Input: none — server pulls the caller's window itself.
+**`company_logos` table**
+- `company_id` (fk companies), `storage_path` (text), `public_url` (text), `label` (text, optional), `is_primary` (bool), `sort_order` (int), timestamps.
+- RLS: coordinator can CRUD rows for their own company; admin full access.
+- Grants: `SELECT, INSERT, UPDATE, DELETE` to `authenticated`; `ALL` to `service_role`.
+- Trigger: when a row is deleted, best-effort remove the storage object (via trigger calling a security-definer function).
 
-Scope: all jobs in caller's company with `date` from today through +7 days, excluding `status in ('cancelled','rejected','completed')` and excluding kinds already listed in `jobs.dismissed_flags`.
+**`jobs.board_config jsonb`** — nullable column for saved board state.
 
-Rules (per user selection):
-- **Potential Duplicate**: same normalized first pax name + same `date` + pickup times within ±60 min. Route match is a bonus signal (raises confidence label) but not required.
-- **Suspicious Pattern (Verify Flight Numbers)**: fires when EITHER
-  - same pax + same date + ≥2 trips where `from_location` or `to_location` matches `%airport%` / IATA-like tokens (3-letter codes) at times ≥90 min apart, OR
-  - same pax + same date + ≥2 trips whose `flight_number` values are both present and differ.
+**`ai_feature_costs` seed row**
+- `feature_key = 'extra_company_logos_weekly'`, default `points_cost = 20`, `enabled = true`. Editable from the existing Admin AI & Features Pricing panel with no UI changes.
 
-Returns: `Record<jobId, { duplicates: {id, time, route}[]; suspicious: {id, time, flight_number}[] }>` — sibling ids so the UI can render "Merge with…" and "Verify against…".
+**Weekly flat overage billing**
+- `public.charge_extra_logos_weekly()` (security definer): for every company with `count(company_logos) > 5`, call `spend_points(company_id, 'extra_company_logos_weekly', null, 'weekly extra-logos fee (flat)')` — flat single deduction regardless of overage count. Skips silently on `insufficient_points`.
+- Scheduled via `pg_cron`: Monday 03:00 UTC. Cron uses the SQL-only pattern (no HTTP call needed).
 
-One batched SQL fetch per company (single `SELECT` over the 7-day window), grouped in memory. ~80-line handler.
+## 2. Server functions (`src/lib/coordinator.functions.ts`)
 
-## 2. Backend — dismiss + merge actions
+- `listMyLogos()` — returns rows for caller's company.
+- `getLogoUploadUrl({ filename, contentType })` — returns a Supabase Storage signed upload URL scoped to `{company_id}/{uuid}.{ext}` (uses `supabaseAdmin` inside the handler after `requireSupabaseAuth`).
+- `registerUploadedLogo({ storage_path, label? })` — inserts row with resolved public URL; returns `{ id, total, over_free_limit: bool, weekly_cost: number }`.
+- `deleteMyLogo({ id })` — deletes row + storage object.
+- `setPrimaryLogo({ id })` — mark one primary.
+- `getBoardTripContext({ jobId })` — returns `{ id, name, surname, flight_number, pickup_at, from_location, to_location, board_config, public_tracking_url }` for caller's company.
+- `saveTripBoardConfig({ jobId, board_config })` — writes `jobs.board_config`.
 
-Two new server functions:
+All under `requireSupabaseAuth`.
 
-- `dismissTripFlag({ job_id, kind: "duplicate" | "suspicious" })` — appends the kind to `jobs.dismissed_flags text[]`. Company-scoped.
-- `mergeTrips({ keep_job_id, drop_job_ids: string[] })` — coordinator explicitly picks which trip survives. Verifies all rows belong to caller's company, copies any missing pax rows from dropped jobs onto the kept job (dedup by name), then soft-cancels dropped rows (`status='cancelled'`, internal note `merged into <keep_job_id>`). No hard delete.
+## 3. New route: `src/routes/_authenticated/coordinator.board-creator.tsx`
 
-Requires **one migration**:
+Path `/coordinator/board-creator`, optional search `?jobId=<uuid>`.
 
-```text
-ALTER TABLE public.jobs
-  ADD COLUMN dismissed_flags text[] NOT NULL DEFAULT '{}';
+**Left column — Full editor** (`react-rnd` for drag/resize; `qrcode.react` for the QR):
+- Canvas 720×1280 (portrait phone). Elements stored as `{ id, type, x, y, w, h, rotation, z, props }`:
+  - **Text blocks** (multiple): content, fontFamily (system-safe list), size, weight, color, align, shadow. Default seed when jobId is present: "Welcome" + "NAME SURNAME" + flight/pickup line.
+  - **Logo block**: select from uploaded logos, size, position. Toggle to show/hide.
+  - **Background image**: upload (goes through the same storage flow, tagged as background so it's not counted against the 5-logo limit) or solid/gradient color.
+  - **QR block**: encodes the trip's public tracking URL. Auto-hidden when no jobId.
+- Left rail: layers list with reorder, duplicate, delete.
+- Top bar: Undo/Redo, Save, Export PNG (via `html-to-image`), "Back to trip".
+
+**Right column — Live preview**
+- iPhone-frame device mockup (rounded, notch, shadow) at 375×667 scaled from the canvas. Live re-renders on every edit.
+
+**Persistence**
+- `Save` writes `board_config` to `jobs.board_config` when `jobId` present. Auto-save every 5s while dirty.
+- Without `jobId`: preview only + "Save as template" button stored per-user in `localStorage` (no schema change).
+
+**Extra-logo banner**
+- When `count > 5`: persistent amber alert:
+  > "You have {N} logos. 5 are free — one flat weekly fee of {cost} points applies while you have more than 5. Next charge: next Monday."
+- Deleting back to ≤5 removes the banner immediately.
+
+## 4. Trip Card quick-action
+
+In `src/routes/_authenticated/coordinator.calendar.tsx` — in the existing `TripCard` action row (next to Merge/Dismiss), add a **"🪧 Create Sign Board"** button that navigates:
+```tsx
+<Link to="/coordinator/board-creator" search={{ jobId: trip.id }}>Create Sign Board</Link>
 ```
+Same button on the pink `PendingClientApprovalBoard` cards.
 
-Existing `jobs` RLS covers the column.
+## 5. Admin panel
 
-## 3. UI — badges + quick actions
+The flat weekly cost is `ai_feature_costs.extra_company_logos_weekly`. It shows up automatically in the existing "AI & Features Pricing" card grid with a 0–50 slider — no admin UI changes needed.
 
-Extend two surfaces in `src/routes/_authenticated/coordinator.calendar.tsx`:
-
-- **`PendingClientApprovalBoard`** (the pink/amber draft cards).
-- **`UnassignedColumn`** cards for any job in the 7-day window.
-
-Shared behavior:
-- One `useQuery(["trip-flags"], computeTripFlags)` at the page level, refetch every 30s and on job list changes.
-- For each card whose id has flags, render:
-  - `⚠️ Potential Duplicate Trip` badge (destructive) when `duplicates.length > 0`.
-  - `🔍 Suspicious Pattern: Verify Flight Numbers` badge (amber) when `suspicious.length > 0`.
-  - Compact action row under existing buttons:
-    - `Dismiss` (icon-only on small cards) → calls `dismissTripFlag` for the shown kind, refetches.
-    - `Merge…` (only when duplicates exist) → opens a small dialog listing this trip + each duplicate sibling (date, time, route, pax); coordinator radio-picks the trip to keep, confirms, and `mergeTrips` runs.
-- Badges disappear once dismissed or after merge (cache invalidated for `trip-flags` and `jobs`).
-- No change to Approve / Go-Ahead behavior — flags are advisory only.
-
-New tiny component: `src/components/coordinator/MergeTripsDialog.tsx` (single file, ~80 lines).
-
-## 4. Files touched
-
-- `src/lib/coordinator.functions.ts` — add `computeTripFlags`, `dismissTripFlag`, `mergeTrips`.
-- `src/routes/_authenticated/coordinator.calendar.tsx` — page-level query + render badges/actions in `PendingClientApprovalBoard` and `UnassignedColumn`.
-- `src/components/coordinator/MergeTripsDialog.tsx` — new.
-- 1 migration adding `jobs.dismissed_flags`.
+## Packages to add
+- `react-rnd` (drag/resize)
+- `qrcode.react` (QR)
+- `html-to-image` (PNG export)
 
 ## Out of scope
-
-- Cross-company duplicate detection.
-- Automatic auto-merge without confirmation.
-- Flagging past / completed trips.
-- Editing the flag rules from the UI (thresholds are constants; can be exposed later).
+- Rendering the saved board inside the driver's mobile app (this ships the coordinator side + persistence; the driver read is a separate task).
+- Editing per-logo billing thresholds from the UI (admin panel already handles cost; free-limit `5` is a constant).
+- Full font upload; text uses system-safe fonts only in v1.
