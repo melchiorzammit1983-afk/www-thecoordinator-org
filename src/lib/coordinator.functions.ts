@@ -518,11 +518,14 @@ export const assignDriver = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: job } = await supabaseAdmin.from("jobs")
-      .select("id, company_id, group_id" as any)
+      .select("id, company_id, group_id, driver_id" as any)
       .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
     if (!job) throw new Error("Job not found");
     const gid = (job as any).group_id as string | null;
-    let q = supabaseAdmin.from("jobs").update({ driver_id: data.driver_id }).eq("company_id", c.id);
+    // Any driver change (assign, reassign, unassign) requires fresh consent from
+    // the new driver, so we clear driver_accepted_at on every assignment write.
+    const patch = { driver_id: data.driver_id, driver_accepted_at: null } as never;
+    let q = supabaseAdmin.from("jobs").update(patch).eq("company_id", c.id);
     q = gid ? q.eq("group_id" as any, gid) : q.eq("id", data.job_id);
     const { error } = await q;
     if (error) throw new Error(error.message);

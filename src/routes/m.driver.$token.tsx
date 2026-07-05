@@ -48,6 +48,15 @@ import { useDriverAudio } from "@/hooks/use-driver-audio";
 
 
 
+const REJECT_REASONS = [
+  "Unavailable — not free at that time",
+  "Too far / outside my area",
+  "Vehicle issue",
+  "Double-booked with another trip",
+  "Personal emergency",
+  "Other",
+] as const;
+
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
@@ -192,29 +201,47 @@ function DriverManifest() {
   const [lastAnnouncement, setLastAnnouncement] = useState<string | null>(null);
   const knownJobIdsRef = useRef<Set<string> | null>(null);
   const unreadCountsRef = useRef<Map<string, number> | null>(null);
+  const pendingIdsRef = useRef<Set<string> | null>(null);
+
+  // Any assigned trip that hasn't been accepted yet requires the driver's consent.
+  const pendingJobs = useMemo(
+    () => jobs.filter((j) => !j.driver_accepted_at && !j.deletion_requested_at),
+    [jobs],
+  );
 
   useEffect(() => {
     if (!data) return;
     const currentJobs = data.jobs;
     const prevIds = knownJobIdsRef.current;
     const prevUnread = unreadCountsRef.current;
+    const prevPending = pendingIdsRef.current;
+    const currentPending = new Set(
+      currentJobs.filter((j) => !j.driver_accepted_at && !j.deletion_requested_at).map((j) => j.id),
+    );
 
-    if (prevIds === null || prevUnread === null) {
+    if (prevIds === null || prevUnread === null || prevPending === null) {
       knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
       const seed = new Map<string, number>();
       for (const j of currentJobs) seed.set(j.id, j.unread_messages ?? 0);
       unreadCountsRef.current = seed;
+      pendingIdsRef.current = currentPending;
       return;
     }
 
     const newJobs = currentJobs.filter((j) => !prevIds.has(j.id));
-    if (newJobs.length > 0) {
+    // Newly pending = brand-new job OR existing job that a coordinator just (re)assigned.
+    const newlyPending = currentJobs.filter(
+      (j) => currentPending.has(j.id) && !prevPending.has(j.id),
+    );
+    if (newlyPending.length > 0) {
       audio.playChime("dispatch");
-      const j = newJobs[0];
-      const pickupLabel = j.pickup_at
-        ? ` at ${formatMaltaTime(j.pickup_at)}`
-        : "";
-      const text = `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}`;
+      try { if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.([180, 80, 180]); } catch { /* ignore */ }
+      const j = newlyPending[0];
+      const pickupLabel = j.pickup_at ? ` at ${formatMaltaTime(j.pickup_at)}` : "";
+      const isReassign = !newJobs.some((nj) => nj.id === j.id);
+      const text = isReassign
+        ? `Trip reassigned to you: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`
+        : `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
@@ -238,6 +265,7 @@ function DriverManifest() {
 
     knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
     unreadCountsRef.current = nextUnread;
+    pendingIdsRef.current = currentPending;
   }, [data, audio]);
 
   useEffect(() => {
@@ -393,6 +421,31 @@ function DriverManifest() {
             hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
           />
 
+          {pendingJobs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById(`job-card-${pendingJobs[0].id}`);
+                el?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="w-full text-left rounded-lg border-2 border-amber-500/70 bg-amber-500/10 p-3 flex items-center gap-3 animate-pulse"
+              aria-label={`${pendingJobs.length} trip${pendingJobs.length === 1 ? "" : "s"} awaiting your response`}
+            >
+              <div className="h-9 w-9 rounded-full bg-amber-500 text-white grid place-items-center shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-sm">
+                  {pendingJobs.length} trip{pendingJobs.length === 1 ? "" : "s"} awaiting your response
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  Tap to review — accept or decline before it's locked in.
+                </div>
+              </div>
+              <Badge className="bg-amber-600 hover:bg-amber-600 text-white">{pendingJobs.length}</Badge>
+            </button>
+          )}
+
           {jobs.length === 0 && archivedJobs.length === 0 && (
             <div className="text-center py-20">
               <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
@@ -458,6 +511,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
   const unhideFn = useServerFn(unhideJobForDriver);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
   const [confirmDelOpen, setConfirmDelOpen] = useState(false);
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
@@ -547,7 +601,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     ? "border-destructive/60 ring-1 ring-destructive/40"
     : accepted
     ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
-    : "border-border";
+    : "border-amber-500/70 ring-2 ring-amber-500/40";
 
   const dateLabel = job.pickup_at
     ? formatMaltaDateTime(job.pickup_at, { weekday: "short", day: "2-digit", month: "short" })
@@ -568,6 +622,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
 
   return (
     <article
+      id={`job-card-${job.id}`}
       className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
@@ -797,31 +852,41 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </div>
       </div>
 
-      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) setRejectReason(""); }}>
+      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) { setRejectReason(""); setRejectNote(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject this trip?</DialogTitle>
+            <DialogTitle>Decline this trip?</DialogTitle>
             <DialogDescription>
-              The trip returns to your coordinator's Unassigned list and they'll get a message with your reason.
+              The coordinator needs to know why — please pick a reason. The trip returns to their Unassigned list.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Reason (optional but recommended)</Label>
-            <Textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="e.g. Vehicle breakdown, already assigned another trip, ran late…" />
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {["Vehicle issue","Double-booked","Personal emergency","Too far","Running late"].map((r) => (
-                <button key={r} type="button"
-                  className="text-[11px] rounded-full border px-2 py-0.5 hover:bg-muted"
-                  onClick={() => setRejectReason(r)}>{r}</button>
-              ))}
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Reason (required)</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {REJECT_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRejectReason(r)}
+                    className={`text-left text-sm rounded-md border px-3 py-2 transition ${rejectReason === r ? "border-destructive bg-destructive/10 font-medium" : "border-border hover:bg-muted"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Extra details (optional)</Label>
+              <Textarea rows={2} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)}
+                placeholder="Anything the coordinator should know…" maxLength={300} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
-            <Button variant="destructive" disabled={rejectMut.isPending}
-              onClick={() => rejectMut.mutate(rejectReason)}>
-              {rejectMut.isPending ? "Sending…" : "Reject trip"}
+            <Button variant="destructive" disabled={rejectMut.isPending || !rejectReason}
+              onClick={() => rejectMut.mutate(rejectNote ? `${rejectReason} — ${rejectNote.trim()}` : rejectReason)}>
+              {rejectMut.isPending ? "Sending…" : "Decline trip"}
             </Button>
           </DialogFooter>
         </DialogContent>
