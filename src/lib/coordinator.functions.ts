@@ -2278,7 +2278,7 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     if (jobIds.length === 0) return [] as any[];
 
     const { data: pts, error: ptsErr } = await supabaseAdmin.from("driver_locations")
-      .select("driver_id, job_id, latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
+      .select("driver_id, job_id, latitude, longitude, accuracy_m, heading, speed_mps, captured_at, eta_sec, distance_m, next_instruction, destination_label")
       .in("job_id", jobIds)
       .gte("captured_at", sinceIso)
       .order("captured_at", { ascending: false })
@@ -2306,6 +2306,10 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
           heading: p.heading ?? null,
           speed_mps: p.speed_mps ?? null,
           captured_at: p.captured_at,
+          eta_sec: (p as any).eta_sec ?? null,
+          distance_m: (p as any).distance_m ?? null,
+          next_instruction: (p as any).next_instruction ?? null,
+          destination_label: (p as any).destination_label ?? null,
         });
       }
     }

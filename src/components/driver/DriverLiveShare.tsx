@@ -12,6 +12,17 @@ type QueuedPoint = {
   heading: number | null;
   speed_mps: number | null;
   captured_at: string;
+  eta_sec?: number | null;
+  distance_m?: number | null;
+  next_instruction?: string | null;
+  destination_label?: string | null;
+};
+
+export type LiveShareMeta = {
+  eta_sec: number | null;
+  distance_m: number | null;
+  next_instruction: string | null;
+  destination_label: string | null;
 };
 
 const STORAGE_KEY = "driverLiveShareOn";
@@ -91,7 +102,12 @@ async function writeQueue(q: QueuedPoint[]) {
   if (typeof localStorage !== "undefined") localStorage.setItem(QUEUE_KEY, s);
 }
 
-export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasActiveTrip: boolean }) {
+export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
+  token: string;
+  hasActiveTrip: boolean;
+  liveMeta?: LiveShareMeta | null;
+  hidden?: boolean;
+}) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<"idle" | "live" | "paused" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +118,10 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
   const wakeLockRef = useRef<any>(null);
   const queueRef = useRef<QueuedPoint[]>([]);
   const lastPosRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+  const metaRef = useRef<LiveShareMeta | null>(liveMeta ?? null);
   const pushFn = useServerFn(pushDriverLocation);
+
+  useEffect(() => { metaRef.current = liveMeta ?? null; }, [liveMeta]);
 
   // Restore persisted queue + toggle on mount.
   useEffect(() => {
@@ -161,7 +180,15 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
       if (last && dt < MIN_INTERVAL_MS && dm < MIN_DISTANCE_M) return;
       lastPosRef.current = cur;
       setStatus("live"); setError(null); setLastAt(now);
-      queueRef.current.push(p);
+      const m = metaRef.current;
+      const enriched: QueuedPoint = m ? {
+        ...p,
+        eta_sec: m.eta_sec,
+        distance_m: m.distance_m,
+        next_instruction: m.next_instruction,
+        destination_label: m.destination_label,
+      } : p;
+      queueRef.current.push(enriched);
       writeQueue(queueRef.current);
     };
 
@@ -337,7 +364,11 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
   }, [enabled, lastAt, native]);
 
   return (
-    <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+    <div
+      className="rounded-lg border bg-card p-3 flex items-center gap-3"
+      style={hidden ? { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", pointerEvents: "none", opacity: 0 } : undefined}
+      aria-hidden={hidden ? true : undefined}
+    >
       <div className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${
         status === "live" ? "bg-emerald-500/15 text-emerald-600"
           : status === "paused" ? "bg-amber-500/15 text-amber-600"

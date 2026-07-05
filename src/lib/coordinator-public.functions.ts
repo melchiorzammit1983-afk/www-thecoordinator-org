@@ -971,6 +971,10 @@ const pointSchema = z.object({
   heading: z.number().nullable().optional(),
   speed_mps: z.number().nullable().optional(),
   captured_at: z.string().datetime(),
+  eta_sec: z.number().int().nonnegative().max(86400).nullable().optional(),
+  distance_m: z.number().int().nonnegative().max(10_000_000).nullable().optional(),
+  next_instruction: z.string().max(500).nullable().optional(),
+  destination_label: z.string().max(500).nullable().optional(),
 });
 
 export const pushDriverLocation = createServerFn({ method: "POST" })
@@ -1017,6 +1021,10 @@ export const pushDriverLocation = createServerFn({ method: "POST" })
       heading: p.heading ?? null,
       speed_mps: p.speed_mps ?? null,
       captured_at: p.captured_at,
+      eta_sec: p.eta_sec ?? null,
+      distance_m: p.distance_m ?? null,
+      next_instruction: p.next_instruction ?? null,
+      destination_label: p.destination_label ?? null,
     }));
     const { error } = await supabaseAdmin.from("driver_locations").insert(rows as never);
     if (error) throw new Error(error.message);

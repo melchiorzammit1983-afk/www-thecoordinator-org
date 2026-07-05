@@ -737,6 +737,13 @@ function TripLiveLocation({
   const state: "live" | "paused" | "offline" | "none" =
     !p ? "none" : ageSec! < 30 ? "live" : ageSec! < 120 ? "paused" : "offline";
 
+  const etaLabel = p?.eta_sec != null
+    ? (p.eta_sec < 60 ? "<1 min" : p.eta_sec < 3600
+        ? `${Math.max(1, Math.round(p.eta_sec / 60))} min`
+        : `${Math.floor(p.eta_sec / 3600)}h ${Math.round((p.eta_sec % 3600) / 60)}m`)
+    : null;
+  const nextInstr = p?.next_instruction?.trim() || null;
+
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
@@ -756,6 +763,17 @@ function TripLiveLocation({
           </Badge>
         )}
       </div>
+      {(etaLabel || nextInstr) && (
+        <div className="rounded-md border bg-primary/5 px-2.5 py-1.5 text-xs flex items-center gap-2 flex-wrap">
+          {etaLabel && (
+            <span className="font-semibold text-primary tabular-nums">ETA {etaLabel}</span>
+          )}
+          {etaLabel && nextInstr && <span className="text-muted-foreground">·</span>}
+          {nextInstr && (
+            <span className="truncate text-muted-foreground">{nextInstr}</span>
+          )}
+        </div>
+      )}
       {state === "none" && sosPoints.length === 0 ? (
         <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
           Driver hasn't shared location yet. They can enable it from their manifest.
@@ -767,6 +785,7 @@ function TripLiveLocation({
     </section>
   );
 }
+
 
 function FlightStatusPill({ status }: { status: string | null | undefined }) {
   const s = status ?? "unknown";
