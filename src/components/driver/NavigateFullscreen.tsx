@@ -408,7 +408,7 @@ export function NavigateFullscreen({
 
       {/* Bottom HUD: ETA + next step preview */}
       <div className="absolute inset-x-0 bottom-0 z-10">
-        {live.reroute_available && (
+        {!isPreview && live.reroute_available && (
           <button
             type="button"
             onClick={live.onAcceptReroute}
@@ -420,6 +420,7 @@ export function NavigateFullscreen({
             </span>
           </button>
         )}
+
         <div
           className="flex items-center gap-3 px-4 py-3 border-t-2 border-white/60 shadow-2xl"
           style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
