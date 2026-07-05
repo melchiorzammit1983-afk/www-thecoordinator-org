@@ -129,7 +129,7 @@ export function DriverDashboardMap({
     return () => navigator.geolocation.clearWatch(watchId);
   }, [ready]);
 
-  // Draw pickup + drop-off + route for the active job
+  // Draw pickup + drop-off markers and fit the map around them.
   useEffect(() => {
     if (!ready) return;
     const gmaps = (window as any).google?.maps;
@@ -137,13 +137,11 @@ export function DriverDashboardMap({
     const geocoder = geocoderRef.current;
     if (!gmaps || !map || !geocoder) return;
 
-    // clear old
+    // clear old markers
     pickupMarkerRef.current?.setMap(null);
     dropoffMarkerRef.current?.setMap(null);
-    routeRef.current?.setMap(null);
     pickupMarkerRef.current = null;
     dropoffMarkerRef.current = null;
-    routeRef.current = null;
 
     if (!activeJob) return;
 
@@ -181,15 +179,6 @@ export function DriverDashboardMap({
         });
         bounds.extend(to);
       }
-      if (from && to) {
-        routeRef.current = new gmaps.Polyline({
-          map,
-          path: [from, to],
-          strokeColor: "#2563eb",
-          strokeOpacity: 0.85,
-          strokeWeight: 5,
-        });
-      }
       if (!bounds.isEmpty()) {
         // Leave generous padding so floating cards do not cover the endpoints.
         map.fitBounds(bounds, { top: 220, bottom: 320, left: 40, right: 40 });
@@ -197,6 +186,33 @@ export function DriverDashboardMap({
     })();
     return () => { cancelled = true; };
   }, [ready, activeJob?.id, activeJob?.from_location, activeJob?.to_location]);
+
+  // Draw the live traffic-aware route polyline whenever it changes.
+  useEffect(() => {
+    if (!ready) return;
+    const gmaps = (window as any).google?.maps;
+    const map = mapRef.current;
+    if (!gmaps || !map) return;
+
+    routeRef.current?.setMap(null);
+    routeRef.current = null;
+
+    if (!routeEncodedPolyline || !gmaps.geometry?.encoding?.decodePath) return;
+    let path: any[] = [];
+    try { path = gmaps.geometry.encoding.decodePath(routeEncodedPolyline); }
+    catch { return; }
+    if (!path.length) return;
+
+    routeRef.current = new gmaps.Polyline({
+      map,
+      path,
+      strokeColor: "#2563eb",
+      strokeOpacity: 0.9,
+      strokeWeight: 6,
+    });
+  }, [ready, routeEncodedPolyline]);
+
+
 
   return (
     <div
