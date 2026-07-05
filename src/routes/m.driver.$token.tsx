@@ -382,6 +382,8 @@ function DriverManifest() {
         <NavigateHud
           live={live}
           onExit={() => setNavigateMode(false)}
+          onSpeak={audio.speechSupported ? speakLatest : null}
+          isSpeaking={audio.isSpeaking}
         />
       ) : (
         <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
