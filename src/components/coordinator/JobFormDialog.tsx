@@ -613,16 +613,24 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
     .sort()[0];
 
   const mut = useMutation({
-    mutationFn: () => bulkFn({ data: { trips: valid.map((t) => ({
-      from_location: t.from_location, to_location: t.to_location,
-      date: t.date, time: t.time,
-      flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
-      from_flight: t.from_flight, to_flight: t.to_flight,
-      contact_phone: t.contact_phone,
-      pax: t.pax,
-    })), label_ids: labelIds } }),
-    onSuccess: (res: { created: string[] }) => {
-      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
+    mutationFn: () => bulkFn({ data: {
+      trips: valid.map((t) => ({
+        from_location: t.from_location, to_location: t.to_location,
+        date: t.date, time: t.time,
+        flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
+        from_flight: t.from_flight, to_flight: t.to_flight,
+        contact_phone: t.contact_phone,
+        pax: t.pax,
+      })),
+      label_ids: labelIds,
+      billing_flags: aiBilling ? {
+        is_half_price: aiBilling.is_half_price,
+        accuracy_score: aiBilling.accuracy_score,
+      } : undefined,
+    } }),
+    onSuccess: (res: { created: string[]; billing?: { is_half_price: boolean; accuracy_score: number | null } }) => {
+      const discountNote = res.billing?.is_half_price ? " (50% AI-accuracy discount applied)" : "";
+      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}${discountNote}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       // Learning loop — fire-and-forget capture of AI draft vs. final human data.
       if (aiOriginalText && aiInitialOutput && aiInitialOutput.length) {
@@ -634,6 +642,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         setAiOriginalText(null);
         setAiInitialOutput(null);
       }
+      setAiBilling(null);
       if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
