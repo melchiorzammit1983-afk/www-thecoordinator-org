@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
+import { DriverDashboardMap, type DriverMapJob } from "@/components/driver/DriverDashboardMap";
 import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
@@ -155,9 +156,25 @@ function DriverManifest() {
 
   const driver = data.driver;
 
+  // Active trip drives the fullscreen map focus + the "next instruction" hero.
+  const liveStatuses = new Set(["en_route", "arrived", "in_progress"]);
+  const activeJob: Job | null =
+    jobs.find((j) => !!j.driver_accepted_at && liveStatuses.has(j.status ?? ""))
+    ?? jobs.find((j) => !!j.driver_accepted_at && j.status !== "completed")
+    ?? null;
+  const mapJob: DriverMapJob | null = activeJob
+    ? { id: activeJob.id, from_location: activeJob.from_location, to_location: activeJob.to_location, is_active: true }
+    : null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background pb-28">
-      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 px-4 py-3">
+    <div className="relative min-h-screen pb-28">
+      {/* Always-on map canvas — never unmounts while the dashboard is open. */}
+      <DriverDashboardMap activeJob={mapJob} />
+
+      <header
+        className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
+        style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
+      >
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <BrandLogo logoUrl={branding?.logo_url ?? null} name={branding?.company_name ?? data.link.subject_label ?? "D"} />
@@ -192,11 +209,13 @@ function DriverManifest() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-3 space-y-3 pb-24">
+      <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
+        {activeJob && <NextInstructionCard job={activeJob} token={token} onOpenSummary={() => setOpenJob(activeJob)} />}
         <DriverLiveShare
           token={token}
           hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
         />
+
         {jobs.length === 0 && archivedJobs.length === 0 && (
           <div className="text-center py-20">
             <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
@@ -369,7 +388,10 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     : undefined;
 
   return (
-    <article className={`rounded-2xl border-2 bg-card shadow-sm overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}>
+    <article
+      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
+      style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
+    >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
       {/* Header strip */}
       <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
@@ -712,6 +734,80 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
 
 }
 
+
+/**
+ * Driving-safe hero: pinned above the manifest whenever the driver has an
+ * active/accepted trip. Extra-large instruction text + a 64px+ primary
+ * action so the button stays tappable while the phone is dashboard-mounted.
+ */
+function NextInstructionCard({ job, token, onOpenSummary }: {
+  job: Job; token: string; onOpenSummary: () => void;
+}) {
+  const qc = useQueryClient();
+  const statusFn = useServerFn(updateJobStatus);
+  const statusMut = useMutation({
+    mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
+    onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
+  const next = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
+
+  const headline =
+    job.status === "in_progress" ? `DRIVE TO ${job.to_location.toUpperCase()}`
+    : job.status === "arrived"    ? `BOARD PASSENGERS AT ${job.from_location.toUpperCase()}`
+    : job.status === "en_route"   ? `HEAD TO PICKUP · ${job.from_location.toUpperCase()}`
+    :                                `NEXT TRIP · ${job.from_location.toUpperCase()}`;
+
+  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+    job.status === "in_progress" ? job.to_location : job.from_location
+  )}&travelmode=driving`;
+
+  return (
+    <section
+      aria-label="Next driving instruction"
+      className="rounded-3xl border-2 border-white/60 dark:border-white/10 shadow-2xl overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.78)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
+    >
+      <div className="px-5 pt-4 pb-3">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+          {job.status === "in_progress" ? "In progress" : job.status === "arrived" ? "At pickup" : "Next up"}
+        </div>
+        <h2 className="mt-1 text-2xl sm:text-3xl font-black leading-tight tracking-tight text-slate-900 dark:text-white break-words">
+          {headline}
+        </h2>
+        <div className="mt-1 text-sm text-muted-foreground truncate">
+          {job.status === "in_progress" ? `From ${job.from_location}` : `To ${job.to_location}`}
+        </div>
+      </div>
+      <div className="px-4 pb-4 grid gap-2">
+        {next && (
+          <Button
+            className="w-full min-h-16 text-lg font-bold rounded-2xl shadow-md"
+            disabled={statusMut.isPending}
+            onClick={() => {
+              if (next.value === "completed") onOpenSummary();
+              else statusMut.mutate(next.value);
+            }}
+          >
+            {statusMut.isPending ? "Updating…" : next.label.toUpperCase()}
+          </Button>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <Button asChild variant="secondary" className="min-h-16 text-base font-semibold rounded-2xl">
+            <a href={navUrl} target="_blank" rel="noreferrer">
+              <Navigation className="h-5 w-5 mr-2" /> Navigate
+            </a>
+          </Button>
+          <Button variant="outline" className="min-h-16 text-base font-semibold rounded-2xl" onClick={onOpenSummary}>
+            <QrCode className="h-5 w-5 mr-2" /> Trip details
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function ProfileDialog({ open, onOpenChange, token, driver }: {
   open: boolean; onOpenChange: (v: boolean) => void; token: string; driver: Driver | null;
