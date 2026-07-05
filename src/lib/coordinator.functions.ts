@@ -2286,6 +2286,14 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
       .limit(2000);
     if (ptsErr) throw new Error(ptsErr.message);
 
+    // Which of these active jobs currently have an open waiting session?
+    const { data: openWaits } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("job_id, started_at")
+      .in("job_id", jobIds)
+      .is("ended_at", null);
+    const waitByJob = new Map<string, string>();
+    for (const w of (openWaits ?? []) as any[]) waitByJob.set(w.job_id, w.started_at);
+
     const jobMap = new Map<string, any>();
     for (const j of jobs ?? []) jobMap.set(j.id, j);
 
@@ -2311,10 +2319,68 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
           distance_m: (p as any).distance_m ?? null,
           next_instruction: (p as any).next_instruction ?? null,
           destination_label: (p as any).destination_label ?? null,
+          wait_started_at: waitByJob.get(p.job_id) ?? null,
         });
       }
     }
     return Array.from(latest.values());
+  });
+
+// ---------- WAITING SESSIONS + ADJUSTMENTS (coordinator view) ----------
+
+export const listOpenWaitSessions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: jobs, error: jerr } = await supabaseAdmin.from("jobs")
+      .select("id, from_location, to_location, driver_id, drivers(id,name)")
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
+    if (jerr) throw new Error(jerr.message);
+    const jobIds = (jobs ?? []).map((j: any) => j.id);
+    if (jobIds.length === 0) return [] as any[];
+
+    const { data: waits, error: werr } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("id, job_id, driver_id, started_at, source")
+      .in("job_id", jobIds)
+      .is("ended_at", null)
+      .order("started_at", { ascending: true });
+    if (werr) throw new Error(werr.message);
+    const jmap = new Map<string, any>();
+    for (const j of jobs ?? []) jmap.set(j.id, j);
+    const now = Date.now();
+    return ((waits ?? []) as any[]).map((w) => {
+      const j = jmap.get(w.job_id);
+      return {
+        session_id: w.id,
+        job_id: w.job_id,
+        driver_id: w.driver_id,
+        driver_name: j?.drivers?.name ?? "Driver",
+        started_at: w.started_at,
+        elapsed_sec: Math.max(0, Math.round((now - new Date(w.started_at).getTime()) / 1000)),
+        source: w.source,
+        from_location: j?.from_location ?? null,
+        to_location: j?.to_location ?? null,
+      };
+    });
+  });
+
+export const listJobAdjustments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin.from("job_adjustments" as any)
+      .select("id, kind, label, amount, currency, driver_note, created_at, wait_session_id, driver_id")
+      .eq("job_id", data.job_id)
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    const { data: waits } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("id, started_at, ended_at, agreed_amount, source, driver_note")
+      .eq("job_id", data.job_id)
+      .order("started_at", { ascending: true });
+    return { adjustments: (rows ?? []) as any[], wait_sessions: (waits ?? []) as any[] };
   });
 
 // ---------- DATA NORMALIZATION ----------

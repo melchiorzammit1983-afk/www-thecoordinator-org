@@ -19,7 +19,7 @@ import {
 
 import {
   listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations,
+  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations, listOpenWaitSessions,
   getCardSignalsCoord, markJobViewedCoord,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
   listActiveSosPoints, acknowledgeSosCoord, acknowledgeAllSosForJob,
@@ -535,6 +535,12 @@ function CalendarPage() {
           <AutoRefreshToggle jobs={jobs ?? []} />
         </div>
       </header>
+
+      {/* Drivers currently on waiting time */}
+      <WaitingNowStrip onJump={(jobId) => {
+        const j = (jobs ?? []).find((x: any) => x.id === jobId);
+        if (j) setDetailsJob(j as any);
+      }} />
 
       {/* Live driver map */}
       <LiveMapPanel />
@@ -2221,3 +2227,60 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
   );
 }
 
+
+/* ------------------------------ Waiting-now strip ------------------------------ */
+function WaitingNowStrip({ onJump }: { onJump: (jobId: string) => void }) {
+  const fn = useServerFn(listOpenWaitSessions);
+  const { data } = useQuery({
+    queryKey: ["open-wait-sessions"],
+    queryFn: () => fn() as Promise<Array<{
+      session_id: string; job_id: string; driver_name: string;
+      started_at: string; elapsed_sec: number; from_location: string | null; to_location: string | null;
+    }>>,
+    refetchInterval: 5_000,
+  });
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [data]);
+  if (!data || data.length === 0) return null;
+  return (
+    <section className="rounded-md border-2 border-amber-400 bg-amber-50/60 dark:bg-amber-950/20 p-2.5 space-y-1.5">
+      <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-800 dark:text-amber-300">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-600" />
+        </span>
+        Drivers waiting now
+      </div>
+      <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {data.map((w) => {
+          const elapsed = Math.max(0, Math.floor((nowMs - new Date(w.started_at).getTime()) / 1000));
+          const h = Math.floor(elapsed / 3600);
+          const m = Math.floor((elapsed % 3600) / 60);
+          const s = elapsed % 60;
+          const label = h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}:${String(s).padStart(2, "0")}`;
+          return (
+            <li key={w.session_id}>
+              <button
+                type="button"
+                onClick={() => onJump(w.job_id)}
+                className="w-full text-left rounded-md bg-white/70 dark:bg-background/70 border border-amber-300/70 px-2.5 py-1.5 hover:bg-amber-100/60 transition"
+              >
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="font-medium truncate">{w.driver_name}</div>
+                  <div className="font-mono text-amber-700 dark:text-amber-300 shrink-0">⏱ {label}</div>
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {(w.from_location ?? "")}{w.to_location ? ` → ${w.to_location}` : ""}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}

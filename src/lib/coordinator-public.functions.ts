@@ -1790,3 +1790,154 @@ export const getDriverSignBoard = createServerFn({ method: "GET" })
       logos,
     };
   });
+
+// ============================================================
+// WAITING TIME + DRIVER-ADDED TRIP ADJUSTMENTS
+// ============================================================
+
+const activeStatuses = ["arrived", "in_progress"] as const;
+
+export const startWaitSession = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      source: z.enum(["manual", "auto_stopped", "auto_airport"]).default("manual"),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!activeStatuses.includes(job.status as any)) throw new Error("trip_not_active");
+
+    // Refuse if there's already an open session (partial unique index also guards).
+    const { data: open } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("id").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+    if (open) return { ok: true, session_id: (open as any).id, already_open: true };
+
+    const { data: row, error } = await supabaseAdmin.from("job_wait_sessions" as any).insert({
+      job_id: job.id,
+      driver_id: job.driver_id,
+      company_id: job.executor_company_id ?? job.company_id,
+      source: data.source,
+    } as never).select("id, started_at").maybeSingle();
+    if (error) throw new Error(error.message);
+    return { ok: true, session_id: (row as any).id, started_at: (row as any).started_at };
+  });
+
+export const stopWaitSession = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      agreed_amount: z.number().min(0).max(100000),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: open } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("id, started_at").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+    if (!open) throw new Error("no_open_wait_session");
+
+    const endedAt = new Date().toISOString();
+    const { error: upErr } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .update({
+        ended_at: endedAt,
+        agreed_amount: data.agreed_amount,
+        driver_note: data.note ?? null,
+      } as never)
+      .eq("id", (open as any).id);
+    if (upErr) throw new Error(upErr.message);
+
+    // Log the waiting charge as an adjustment line item.
+    const startedMs = new Date((open as any).started_at).getTime();
+    const minutes = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+    const { error: adjErr } = await supabaseAdmin.from("job_adjustments" as any).insert({
+      job_id: job.id,
+      driver_id: job.driver_id,
+      company_id: job.executor_company_id ?? job.company_id,
+      kind: "waiting",
+      label: `Waiting time (${minutes} min)`,
+      amount: data.agreed_amount,
+      wait_session_id: (open as any).id,
+      driver_note: data.note ?? null,
+    } as never);
+    if (adjErr) throw new Error(adjErr.message);
+
+    return { ok: true, minutes, amount: data.agreed_amount };
+  });
+
+export const addTripAdjustment = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      kind: z.enum(["extra_stop", "toll", "other"]),
+      amount: z.number().min(0).max(100000),
+      label: z.string().trim().max(80).optional(),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (job.status === "cancelled") throw new Error("trip_cancelled");
+    const { data: row, error } = await supabaseAdmin.from("job_adjustments" as any).insert({
+      job_id: job.id,
+      driver_id: job.driver_id,
+      company_id: job.executor_company_id ?? job.company_id,
+      kind: data.kind,
+      label: data.label ?? null,
+      amount: data.amount,
+      driver_note: data.note ?? null,
+    } as never).select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    return { ok: true, id: (row as any).id };
+  });
+
+export const deleteTripAdjustment = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      adjustment_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (job.status === "completed" || job.status === "cancelled") throw new Error("trip_locked");
+    const { data: row } = await supabaseAdmin.from("job_adjustments" as any)
+      .select("id, kind, wait_session_id, driver_id")
+      .eq("id", data.adjustment_id).eq("job_id", job.id).maybeSingle();
+    if (!row) throw new Error("adjustment_not_found");
+    if ((row as any).driver_id !== job.driver_id) throw new Error("not_your_adjustment");
+    if ((row as any).kind === "waiting" && (row as any).wait_session_id) {
+      throw new Error("waiting_adjustments_are_locked");
+    }
+    const { error } = await supabaseAdmin.from("job_adjustments" as any)
+      .delete().eq("id", data.adjustment_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getDriverJobPricing = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: adj } = await supabaseAdmin.from("job_adjustments" as any)
+      .select("id, kind, label, amount, driver_note, created_at, wait_session_id")
+      .eq("job_id", job.id).order("created_at", { ascending: true });
+    const { data: openWait } = await supabaseAdmin.from("job_wait_sessions" as any)
+      .select("id, started_at, source").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+    const base = Number((job as any).price ?? (job as any).base_price ?? 0);
+    const adjustments = (adj ?? []) as any[];
+    const total = adjustments.reduce((s, a) => s + Number(a.amount ?? 0), base);
+    return {
+      base_price: base,
+      currency: (job as any).currency ?? "EUR",
+      adjustments,
+      open_wait: openWait ?? null,
+      total,
+    };
+  });

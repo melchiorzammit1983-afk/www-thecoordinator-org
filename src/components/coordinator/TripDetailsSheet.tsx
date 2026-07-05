@@ -11,7 +11,7 @@ import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -290,6 +290,9 @@ export function TripDetailsSheet({
 
           {/* Pricing (coordinator-only) */}
           <TripPricingPanel jobId={job.id} />
+
+          {/* Waiting + driver-added adjustments */}
+          <TripWaitAdjustmentsPanel jobId={job.id} />
 
           {/* Private per-hop price proposals */}
           <PriceProposalsPanel jobId={job.id} />
@@ -931,6 +934,86 @@ function TripPricingPanel({ jobId }: { jobId: string }) {
             <div className="col-span-2 rounded bg-muted/60 p-2 text-[11px] italic">"{data.driver_note}"</div>
           )}
         </div>
+      )}
+    </section>
+  );
+}
+
+function fmtElapsedShort(sec: number) {
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m`
+              : `${m}:${String(ss).padStart(2, "0")}`;
+}
+
+function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
+  const listFn = useServerFn(listJobAdjustments);
+  const openFn = useServerFn(listOpenWaitSessions);
+  const { data } = useQuery({
+    queryKey: ["trip-adjustments", jobId],
+    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<{ adjustments: any[]; wait_sessions: any[] }>,
+    refetchInterval: 10_000,
+  });
+  const { data: openWaits } = useQuery({
+    queryKey: ["open-wait-sessions"],
+    queryFn: () => openFn() as Promise<any[]>,
+    refetchInterval: 5_000,
+  });
+  const openHere = (openWaits ?? []).find((w) => w.job_id === jobId) ?? null;
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!openHere) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [openHere]);
+  const elapsedSec = openHere ? Math.floor((nowMs - new Date(openHere.started_at).getTime()) / 1000) : 0;
+
+  const adjustments = data?.adjustments ?? [];
+  const totalAdj = adjustments.reduce((s: number, a: any) => s + Number(a.amount ?? 0), 0);
+
+  if (!openHere && adjustments.length === 0) return null;
+
+  return (
+    <section className="rounded-md border p-3 space-y-2 bg-amber-50/60 dark:bg-amber-950/10 border-amber-500/40">
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-800 dark:text-amber-300">
+          <MapPin className="h-3 w-3" /> Waiting & driver adjustments
+        </div>
+        {openHere && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white text-[11px] px-2 py-0.5 font-mono">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+            </span>
+            Waiting {fmtElapsedShort(elapsedSec)}
+          </span>
+        )}
+      </div>
+
+      {adjustments.length === 0 ? (
+        <div className="text-xs text-muted-foreground">Driver is waiting — no charges saved yet.</div>
+      ) : (
+        <ul className="divide-y text-xs">
+          {adjustments.map((a: any) => (
+            <li key={a.id} className="flex items-center justify-between py-1.5">
+              <div className="min-w-0">
+                <div className="capitalize">
+                  <span className="font-medium">{a.kind.replace("_", " ")}</span>
+                  {a.label && <span className="text-muted-foreground"> — {a.label}</span>}
+                </div>
+                {a.driver_note && <div className="text-[11px] text-muted-foreground truncate">"{a.driver_note}"</div>}
+              </div>
+              <div className="font-mono">{(a.currency ?? "EUR")} {Number(a.amount).toFixed(2)}</div>
+            </li>
+          ))}
+          <li className="flex items-center justify-between pt-1.5 text-xs font-semibold">
+            <span>Adjustments total</span>
+            <span className="font-mono">EUR {totalAdj.toFixed(2)}</span>
+          </li>
+        </ul>
       )}
     </section>
   );

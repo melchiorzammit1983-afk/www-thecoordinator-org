@@ -19,6 +19,7 @@ export type LivePoint = {
   distance_m?: number | null;
   next_instruction?: string | null;
   destination_label?: string | null;
+  wait_started_at?: string | null;
 };
 
 type GMaps = any;
@@ -216,35 +217,43 @@ export function DriverLiveMap({
     for (const p of points) {
       seen.add(p.driver_id);
       const state = freshness(p.captured_at);
-      const color = colorFor(state);
+      const waiting = !!p.wait_started_at;
+      const color = waiting ? "#d97706" : colorFor(state);
       const existing = markersRef.current.get(p.driver_id);
       const position = { lat: p.latitude, lng: p.longitude };
       const icon = {
         path: gmaps.SymbolPath.CIRCLE,
-        scale: 9,
+        scale: waiting ? 12 : 9,
         fillColor: color,
         fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
+        strokeColor: waiting ? "#fde68a" : "#ffffff",
+        strokeWeight: waiting ? 5 : 2,
       };
+      const waitLabel = p.wait_started_at
+        ? (() => {
+            const mins = Math.max(0, Math.floor((Date.now() - new Date(p.wait_started_at as string).getTime()) / 60000));
+            return `⏱ Waiting ${mins}m`;
+          })()
+        : null;
       const contentHtml = `
         <div style="font: 12px system-ui; min-width: 160px">
           <div style="font-weight:600;margin-bottom:2px">${escapeHtml(p.driver_name)}</div>
           ${p.from_location || p.to_location
             ? `<div style="color:#555;margin-bottom:4px">${escapeHtml(p.from_location ?? "")} → ${escapeHtml(p.to_location ?? "")}</div>`
             : ""}
+          ${waitLabel ? `<div style="color:#b45309;font-weight:600;margin-bottom:2px">${waitLabel}</div>` : ""}
           <div style="color:${color};font-weight:600">
-            ${state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
+            ${waiting ? "Waiting" : state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
             <span style="color:#666;font-weight:400"> · ${ageLabel(p.captured_at)}</span>
           </div>
         </div>`;
       if (existing) {
         existing.marker.setPosition(position);
         existing.marker.setIcon(icon);
-        existing.marker.setTitle(p.driver_name);
+        existing.marker.setTitle(waitLabel ? `${p.driver_name} · ${waitLabel}` : p.driver_name);
         existing.info.setContent(contentHtml);
       } else {
-        const marker = new gmaps.Marker({ map, position, icon, title: p.driver_name });
+        const marker = new gmaps.Marker({ map, position, icon, title: waitLabel ? `${p.driver_name} · ${waitLabel}` : p.driver_name });
         const info = new gmaps.InfoWindow({ content: contentHtml });
         marker.addListener("click", () => info.open({ anchor: marker, map }));
         markersRef.current.set(p.driver_id, { marker, info });

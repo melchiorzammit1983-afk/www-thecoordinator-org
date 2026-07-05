@@ -33,6 +33,7 @@ import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
+import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
@@ -407,6 +408,15 @@ function DriverManifest() {
               live={live}
               canEnterNavigate={inMotion}
               onEnterNavigate={() => setNavigateMode(true)}
+            />
+          )}
+          {activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") && (
+            <DriverWaitingPanel
+              token={token}
+              jobId={activeJob.id}
+              status={activeJob.status ?? null}
+              fromLocation={activeJob.from_location ?? null}
+              toLocation={activeJob.to_location ?? null}
             />
           )}
           <DriverLiveShare
