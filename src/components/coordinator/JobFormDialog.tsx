@@ -113,8 +113,8 @@ export function JobFormDialog({
 }
 
 function ManualForm({
-  drivers, job, prefill, onSaved,
-}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void }) {
+  drivers, job, prefill, onSaved, onCancel,
+}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
