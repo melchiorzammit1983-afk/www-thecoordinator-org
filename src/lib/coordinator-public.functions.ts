@@ -39,6 +39,27 @@ async function loadCompanyBranding(companyId: string) {
   };
 }
 
+/**
+ * Returns the company's feature map (same shape as `getMyFeatures`) so public
+ * portals can hide widgets when admin toggles a feature off. Defaults every
+ * catalog key to `true`; entries in `company_feature_entitlements` override.
+ */
+async function loadCompanyFeatures(companyId: string): Promise<Record<string, boolean>> {
+  const supabaseAdmin = await getAdminClient();
+  const { FEATURE_KEYS } = await import("@/lib/features");
+  const features: Record<string, boolean> = {};
+  for (const k of FEATURE_KEYS) features[k] = true;
+  const { data: rows } = await supabaseAdmin
+    .from("company_feature_entitlements")
+    .select("feature, enabled, expires_at")
+    .eq("company_id", companyId);
+  const now = Date.now();
+  for (const r of rows ?? []) {
+    const expired = r.expires_at ? new Date(r.expires_at).getTime() <= now : false;
+    features[r.feature as string] = !!r.enabled && !expired;
+  }
+  return features;
+
 
 async function resolveToken(token: string, expectedKind: "driver" | "client") {
   const supabaseAdmin = await getAdminClient();
