@@ -428,8 +428,12 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
     () => (looksLikeSheetPaste(raw) ? parseSheetPaste(raw) : parseTrips(raw)),
     [raw],
   );
-  const valid = parsed.filter((t) => t.errors.length === 0);
-  const incomplete = parsed.filter((t) => t.errors.length > 0);
+  // Editable overrides — mirror `parsed` and let coordinators tweak fields in place.
+  const [edited, setEdited] = useState<ParsedTrip[]>(parsed);
+  useEffect(() => { setEdited(parsed); }, [parsed]);
+  const withErrors = useMemo(() => edited.map(recomputeTripErrors), [edited]);
+  const valid = withErrors.filter((t) => t.errors.length === 0);
+  const incomplete = withErrors.filter((t) => t.errors.length > 0);
   const aiEnabled = useFeature("ai_extraction");
 
   // Chat state for the "Understand with AI" mini-chat
