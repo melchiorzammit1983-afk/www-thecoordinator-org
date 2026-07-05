@@ -34,13 +34,14 @@ export const Route = createFileRoute("/t/$token")({
 });
 
 function getDeviceId(): string {
+  if (typeof window === "undefined") return "";
   const KEY = "cc.client_device_id";
-  let v = localStorage.getItem(KEY);
+  let v = window.localStorage.getItem(KEY);
   if (!v) {
     const bytes = new Uint8Array(12);
     crypto.getRandomValues(bytes);
     v = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    localStorage.setItem(KEY, v);
+    window.localStorage.setItem(KEY, v);
   }
   return v;
 }
