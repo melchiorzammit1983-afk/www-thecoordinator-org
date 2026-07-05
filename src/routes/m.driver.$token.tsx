@@ -1042,8 +1042,9 @@ function useLiveRoute({
   const fn = useServerFn(computeDriverRoute);
   const [acceptedAltIdx, setAcceptedAltIdx] = useState<number | null>(null);
 
-  // Coarse origin key so tiny GPS jitter doesn't hammer the API.
-  const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
+  // Finer origin key (~11m) so route refetches as the driver actually moves.
+  const originKey = origin ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : null;
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["driver-live-route", destination, originKey],
