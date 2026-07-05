@@ -1021,6 +1021,10 @@ export const pushDriverLocation = createServerFn({ method: "POST" })
       heading: p.heading ?? null,
       speed_mps: p.speed_mps ?? null,
       captured_at: p.captured_at,
+      eta_sec: p.eta_sec ?? null,
+      distance_m: p.distance_m ?? null,
+      next_instruction: p.next_instruction ?? null,
+      destination_label: p.destination_label ?? null,
     }));
     const { error } = await supabaseAdmin.from("driver_locations").insert(rows as never);
     if (error) throw new Error(error.message);
