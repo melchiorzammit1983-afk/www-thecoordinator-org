@@ -18,7 +18,12 @@ function loadGoogleMaps(): Promise<GMaps> {
       finally { delete (window as any)[cbName]; }
     };
     const s = document.createElement("script");
-    const params = new URLSearchParams({ key: BROWSER_KEY, loading: "async", callback: cbName });
+    const params = new URLSearchParams({
+      key: BROWSER_KEY,
+      loading: "async",
+      callback: cbName,
+      libraries: "geometry",
+    });
     if (CHANNEL_ID) params.set("channel", CHANNEL_ID);
     s.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
     s.async = true; s.defer = true;
@@ -38,8 +43,20 @@ export type DriverMapJob = {
 /**
  * Fullscreen, always-on Google Map that sits as the canvas underneath the
  * driver dashboard UI. Floating cards render on top with z-index >= 10.
+ *
+ * When a `routeEncodedPolyline` is supplied (produced server-side by the
+ * Routes API), the map decodes and draws that live traffic-aware path
+ * instead of a straight A→B line.
  */
-export function DriverDashboardMap({ activeJob }: { activeJob: DriverMapJob | null }) {
+export function DriverDashboardMap({
+  activeJob,
+  routeEncodedPolyline = null,
+  onDriverPosition,
+}: {
+  activeJob: DriverMapJob | null;
+  routeEncodedPolyline?: string | null;
+  onDriverPosition?: (pos: { lat: number; lng: number }) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const meMarkerRef = useRef<any>(null);
