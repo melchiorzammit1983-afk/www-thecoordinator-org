@@ -219,6 +219,20 @@ function CalendarPage() {
     queryKey: ["drivers"], queryFn: () => driversFn() as Promise<Driver[]>,
   });
 
+  const flagsFn = useServerFn(computeTripFlags);
+  const { data: tripFlags } = useQuery({
+    queryKey: ["trip-flags"],
+    queryFn: () => flagsFn() as Promise<Record<string, TripFlagInfo>>,
+    refetchInterval: 30_000,
+  });
+  const dismissFlagFn = useServerFn(dismissTripFlag);
+  const dismissFlagMut = useMutation({
+    mutationFn: (v: { job_id: string; kind: "duplicate" | "suspicious" }) => dismissFlagFn({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["trip-flags"] }); toast.success("Alert dismissed"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const [mergeTarget, setMergeTarget] = useState<{ current: MergeCandidate; duplicates: MergeCandidate[] } | null>(null);
+
   const assignFn = useServerFn(assignDriver);
   const assignMut = useMutation({
     mutationFn: (v: { job_id: string; driver_id: string | null }) => assignFn({ data: v }),
