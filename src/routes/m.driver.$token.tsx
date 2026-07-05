@@ -398,15 +398,7 @@ function DriverManifest() {
         </header>
       )}
 
-      {navigateMode && activeJob ? (
-        <NavigateHud
-          live={live}
-          onExit={() => setNavigateMode(false)}
-          onSpeak={audio.speechSupported ? speakLatest : null}
-          isSpeaking={audio.isSpeaking}
-        />
-      ) : (
-        <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
+      <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
           {activeJob && (
             <NextInstructionCard
               job={activeJob}
@@ -420,7 +412,15 @@ function DriverManifest() {
           <DriverLiveShare
             token={token}
             hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
+            hidden={navigateMode}
+            liveMeta={{
+              eta_sec: live.eta_sec,
+              distance_m: live.distance_m,
+              next_instruction: live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null,
+              destination_label: routeDestination,
+            }}
           />
+
 
           {pendingJobs.length > 0 && (
             <button
