@@ -216,11 +216,11 @@ export function NavigateFullscreen({
 
   // Advance step index as driver approaches / passes the current step's end.
   useEffect(() => {
+    if (isPreview) return;
     const gmaps = (window as any).google?.maps;
     if (!gmaps || !drvPos || decodedSteps.length === 0) return;
     const here = new gmaps.LatLng(drvPos.lat, drvPos.lng);
     let i = stepIdxRef.current;
-    // Never regress. Advance while within 25m of end, up to end of list.
     while (i < decodedSteps.length - 1) {
       const end = decodedSteps[i].end;
       const endLL = new gmaps.LatLng(end.lat, end.lng);
@@ -232,7 +232,6 @@ export function NavigateFullscreen({
       stepIdxRef.current = i;
       setStepIdx(i);
     }
-    // Live distance to end of current step
     const endCur = decodedSteps[i]?.end;
     if (endCur) {
       const d = gmaps.geometry.spherical.computeDistanceBetween(
@@ -240,7 +239,8 @@ export function NavigateFullscreen({
       );
       setDistToStepEnd(Math.round(d));
     }
-  }, [drvPos, decodedSteps]);
+  }, [drvPos, decodedSteps, isPreview]);
+
 
   // Draw / update polylines (travelled vs ahead) + destination marker.
   useEffect(() => {
