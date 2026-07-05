@@ -1,38 +1,58 @@
-## Navigate Mode for Driver Dashboard
+## Audio + TTS layer for Driver Dashboard
 
-Add a driver-controlled "Navigate Mode" that hides all non-essential UI, letting the map fill the screen and collapsing the job card to a bottom HUD banner with only the three driving-critical data points.
+Hands-free audio cues and voice readouts for new trips and chat messages, using only browser APIs (no server-side TTS, no audio files).
 
 ### Scope
 
-Frontend/presentation only in `src/routes/m.driver.$token.tsx` and `src/components/driver/DriverDashboardMap.tsx`. No changes to routing logic, job state, wake lock, or server functions.
+Frontend only. Files:
+- New: `src/hooks/use-driver-audio.ts` — chimes + speech synthesis helpers.
+- Edit: `src/routes/m.driver.$token.tsx` — detect new-trip / new-chat events, play the right chime, expose the "Speak" emblem in `NavigateHud` and a smaller version in the normal card header, add a per-driver "auto-read" toggle.
 
-### Behavior
+No changes to routing, wake lock, server functions, or backend.
 
-- New client state `navigateMode: boolean`, only enabled while `inMotion` is true (i.e. status `en_route` or `in_progress`). If the trip leaves motion, auto-exit Navigate Mode.
-- Trigger: the existing large "Navigate" button in `NextInstructionCard` toggles Navigate Mode instead of (or in addition to) opening Google Maps externally. We'll relabel it to "Navigate Mode" while active and add a secondary tiny "Open in Google Maps" link for the external handoff so we don't lose that capability.
-- Transition uses Tailwind transitions (`transition-all duration-300 ease-out`) on height/opacity/translate — no new animation libraries.
+### 1. Chimes (Web Audio API, generated on the fly)
 
-### Layout changes
+Inside `use-driver-audio.ts`:
+- Lazy-init a single `AudioContext`; first user interaction (any click on the dashboard) `resume()`s it so autoplay policy doesn't swallow the first chime.
+- Two named chimes built from short oscillator envelopes — no asset files:
+  - `dispatch` — sharp urgent double-beep (two 880 → 1320 Hz square/triangle blips, ~180 ms total, higher gain).
+  - `message` — soft single ding (660 Hz sine with quick attack + gentle decay ~350 ms, lower gain).
+- Exported API: `playChime("dispatch" | "message")`, `speak(text, opts?)`, `cancelSpeech()`, `isSpeaking`, `supported`, `autoRead`, `setAutoRead`.
 
-1. **Fullscreen map**: `DriverDashboardMap` already uses `position: fixed; inset: 0`. In Navigate Mode we hide the header, trip list, and all floating cards except the HUD banner, so the map visually fills 100vh.
-2. **HUD banner** (new component `NavigateHud`): fixed to bottom, `max-height: 20vh`, glassmorphism styling matching existing cards (`bg-white/80 backdrop-blur-xl`). Contents, left → right:
-   - Giant maneuver arrow icon (reuses the `iconFor(maneuver)` mapping already in `NextInstructionCard`) at ~56–64px.
-   - Big text block: distance to next turn on top (`text-3xl font-bold`), ETA + remaining distance underneath (`text-base text-muted-foreground`).
-   - Massive "Expand" button (min-h-16, `w-20`) with a chevron-up icon that exits Navigate Mode and restores the full floating card.
-3. **Traffic alert banner** (existing amber "Traffic ahead" strip) stays visible above the HUD banner in Navigate Mode since it is safety-critical.
-4. **Header + menu**: already locked while `inMotion`; in Navigate Mode we hide the header entirely (not just disable the menu).
+### 2. Speech synthesis (Web Speech API)
 
-### Files touched
+- Uses `window.speechSynthesis` + `SpeechSynthesisUtterance`.
+- `speak(text)` cancels any in-flight utterance first, so back-to-back events don't queue up minutes of speech.
+- Voice/lang: default (`en-US`), rate 1.0, volume 1.0. No voice picker in this pass.
+- `autoRead` preference persisted in `localStorage` under `driver:auto-read:<token>` (default off, per the user's "should not force them to read" requirement).
+- Fail silently on unsupported browsers (`'speechSynthesis' in window` guard).
 
-- `src/routes/m.driver.$token.tsx`
-  - Add `navigateMode` state + auto-reset effect when `inMotion` flips false.
-  - Pass `navigateMode` and `onExitNavigate` down; hide header, active-job header card, and pax/details sections when true.
-  - Update `NextInstructionCard`: when `navigateMode` is false render as today; when true render the new compact `NavigateHud`. The primary "Navigate" button toggles the mode.
-- `src/components/driver/DriverDashboardMap.tsx`
-  - Accept optional `hudMode?: boolean` prop; when true, hide the small badge/overlay chips the map renders (if any) so the map is unobstructed. No changes to routing/polyline logic.
+### 3. Event detection in `DriverManifest`
+
+Uses existing manifest polling — no new realtime channels. On each `data` change:
+- Track previous `jobs[].id` set in a ref. Any newly present job (not in previous set) → `playChime("dispatch")` and, if it's marked urgent (see below) or `autoRead` is on, `speak(...)`.
+  - "Urgent" heuristic: no `driver_accepted_at` AND pickup time is within 60 minutes; otherwise treat as a normal new-trip chime with lower priority (still dispatch chime, but no auto-speak unless autoRead).
+- Track previous `unread_messages` counts by job id. On increase → `playChime("message")` and, if `autoRead` is on, `speak("New message on trip to <destination>")`. We don't have the message body in the manifest payload, so we announce the arrival, not the content, in this pass.
+- First render seeds the refs without firing chimes (no false alerts on load).
+
+### 4. UI: the "Speak" emblem
+
+Two placements, both wired to the same handler:
+
+- **Navigate Mode HUD** (`NavigateHud`): add a large circular Speak button (min 64×64, `rounded-full`, high-contrast primary color, `Volume2` icon from lucide-react while idle, `VolumeX` while speaking to allow tap-to-stop). Positioned to the left of the existing Expand button. Announces the most recent pending event — a small `lastAnnouncement` string ref holds the composed text (e.g. `"New trip: airport pickup at 14:30"` or `"New message on trip to Valletta"`). If nothing is pending, tapping it re-reads the current live instruction + ETA.
+- **Normal driver view**: a smaller icon toggle in the header row (only when `inMotion`) that (a) taps to speak the same `lastAnnouncement`, and (b) long-press/secondary menu item toggles `autoRead` on/off with a toast.
+
+Both use `aria-label` and `aria-pressed` for accessibility. Buttons are `type="button"` and don't submit forms.
+
+### 5. Safety + edge cases
+
+- All Web Audio + speechSynthesis calls happen inside effects / event handlers — never during SSR (`typeof window !== 'undefined'` guards).
+- On unmount and on `inMotion` flipping false, call `cancelSpeech()` so speech doesn't continue after leaving the dashboard.
+- If the tab is hidden, still play the chime (browsers allow this) but skip speech (some browsers suspend `speechSynthesis` when hidden — cancel + drop rather than queue).
 
 ### Non-goals
 
-- No changes to routing calculations, wake lock, chat, or job status flow.
-- No new external dependencies.
-- External "Open in Google Maps" handoff is preserved as a secondary link, not removed.
+- No provider TTS, no server round-trip, no audio uploads.
+- No push notifications or background service worker.
+- No voice-command input (mic listening) — this pass is output only.
+- No new dependencies.

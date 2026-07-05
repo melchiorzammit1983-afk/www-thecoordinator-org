@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -39,11 +39,12 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
-  Timer, UserX, Maximize2, Minimize2,
+  Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import { useDriverAudio } from "@/hooks/use-driver-audio";
 
 
 
@@ -203,6 +204,85 @@ function DriverManifest() {
     if (!inMotion && navigateMode) setNavigateMode(false);
   }, [inMotion, navigateMode]);
 
+  // Hands-free audio layer: dispatch/message chimes + Web Speech readouts.
+  const audio = useDriverAudio({ storageKey: `driver:auto-read:${token}` });
+  const [lastAnnouncement, setLastAnnouncement] = useState<string | null>(null);
+  const knownJobIdsRef = useRef<Set<string> | null>(null);
+  const unreadCountsRef = useRef<Map<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const currentJobs = data.jobs;
+    const prevIds = knownJobIdsRef.current;
+    const prevUnread = unreadCountsRef.current;
+
+    // First pass — seed refs without firing chimes.
+    if (prevIds === null || prevUnread === null) {
+      knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
+      const seed = new Map<string, number>();
+      for (const j of currentJobs) seed.set(j.id, j.unread_messages ?? 0);
+      unreadCountsRef.current = seed;
+      return;
+    }
+
+    // New trip(s) → dispatch chime.
+    const newJobs = currentJobs.filter((j) => !prevIds.has(j.id));
+    if (newJobs.length > 0) {
+      audio.playChime("dispatch");
+      const j = newJobs[0];
+      const pickupLabel = j.pickup_at
+        ? ` at ${formatMaltaTime(j.pickup_at)}`
+        : "";
+      const text = `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}`;
+      setLastAnnouncement(text);
+      if (audio.autoRead) audio.speak(text);
+    }
+
+    // Increased unread messages on any job → message chime.
+    const nextUnread = new Map<string, number>();
+    let bumpedJob: Job | null = null;
+    for (const j of currentJobs) {
+      const cur = j.unread_messages ?? 0;
+      nextUnread.set(j.id, cur);
+      const before = prevUnread.get(j.id) ?? 0;
+      if (cur > before && !newJobs.some((nj) => nj.id === j.id)) {
+        bumpedJob = j;
+      }
+    }
+    if (bumpedJob) {
+      audio.playChime("message");
+      const text = `New message on trip to ${bumpedJob.to_location}`;
+      setLastAnnouncement(text);
+      if (audio.autoRead) audio.speak(text);
+    }
+
+    knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
+    unreadCountsRef.current = nextUnread;
+  }, [data, audio]);
+
+  // Cancel speech when leaving motion or unmounting.
+  useEffect(() => {
+    if (!inMotion) audio.cancelSpeech();
+  }, [inMotion, audio]);
+
+  // Compose an on-demand announcement for the Speak emblem.
+  const speakLatest = useCallback(() => {
+    if (audio.isSpeaking) { audio.cancelSpeech(); return; }
+    if (lastAnnouncement) { audio.speak(lastAnnouncement); return; }
+    // Fallback: read the current driving status.
+    if (activeJob) {
+      const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
+      const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
+      const parts = [
+        activeJob.status === "in_progress" ? `Driving to ${dest}` : `Heading to pickup at ${dest}`,
+        etaMin ? `ETA ${etaMin} minute${etaMin === 1 ? "" : "s"}` : null,
+        live.next_instruction ? `Next: ${live.next_instruction.replace(/<[^>]+>/g, "").trim()}` : null,
+      ].filter(Boolean);
+      audio.speak(parts.join(". "));
+    }
+  }, [audio, lastAnnouncement, activeJob, live.eta_sec, live.next_instruction]);
+
+
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
@@ -243,27 +323,57 @@ function DriverManifest() {
                 )}
               </div>
             </div>
-            {inMotion ? (
-              <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {driver && (
-                    <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-                      <User className="h-4 w-4 mr-2" /> Edit profile
+            <div className="flex items-center gap-2">
+              {audio.speechSupported && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={audio.isSpeaking ? "default" : "outline"}
+                  aria-label={audio.isSpeaking ? "Stop speaking" : "Speak latest notification"}
+                  aria-pressed={audio.isSpeaking}
+                  onClick={speakLatest}
+                >
+                  {audio.isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+              )}
+              {inMotion ? (
+                <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {driver && (
+                      <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                        <User className="h-4 w-4 mr-2" /> Edit profile
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setStatementOpen(true)}>
+                      <FileText className="h-4 w-4 mr-2" /> Download statement
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => setStatementOpen(true)}>
-                    <FileText className="h-4 w-4 mr-2" /> Download statement
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                    {audio.speechSupported && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            const next = !audio.autoRead;
+                            audio.setAutoRead(next);
+                            toast.success(next ? "Auto-read on: new alerts will be spoken" : "Auto-read off");
+                          }}
+                        >
+                          <Megaphone className="h-4 w-4 mr-2" />
+                          {audio.autoRead ? "Turn off auto-read" : "Turn on auto-read"}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+
           </div>
         </header>
       )}
@@ -272,6 +382,8 @@ function DriverManifest() {
         <NavigateHud
           live={live}
           onExit={() => setNavigateMode(false)}
+          onSpeak={audio.speechSupported ? speakLatest : null}
+          isSpeaking={audio.isSpeaking}
         />
       ) : (
         <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
@@ -1119,8 +1231,9 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
  * the map owns the rest of the screen. Only three data points: maneuver
  * arrow, distance-to-next-turn + ETA, and a massive Expand button.
  */
-function NavigateHud({ live, onExit }: {
+function NavigateHud({ live, onExit, onSpeak, isSpeaking }: {
   live: LiveRouteInfo; onExit: () => void;
+  onSpeak: (() => void) | null; isSpeaking: boolean;
 }) {
   const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
   return (
@@ -1159,6 +1272,21 @@ function NavigateHud({ live, onExit }: {
             )}
           </div>
         </div>
+        {onSpeak && (
+          <button
+            type="button"
+            onClick={onSpeak}
+            aria-label={isSpeaking ? "Stop speaking notification" : "Speak latest notification"}
+            aria-pressed={isSpeaking}
+            className={`shrink-0 min-h-16 min-w-16 grid place-items-center rounded-full font-bold shadow-lg active:scale-95 transition ${
+              isSpeaking
+                ? "bg-amber-500 text-black animate-pulse"
+                : "bg-white/90 text-primary border-2 border-primary/40"
+            }`}
+          >
+            {isSpeaking ? <VolumeX className="h-7 w-7" /> : <Volume2 className="h-7 w-7" />}
+          </button>
+        )}
         <button
           type="button"
           onClick={onExit}
@@ -1171,6 +1299,7 @@ function NavigateHud({ live, onExit }: {
     </div>
   );
 }
+
 
 
 
