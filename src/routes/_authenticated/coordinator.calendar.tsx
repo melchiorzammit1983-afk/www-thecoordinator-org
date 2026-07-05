@@ -428,6 +428,9 @@ function CalendarPage() {
     clientPortalEnabled,
     clientPresence: clientPresence ?? {},
     signals: cardSignals ?? {},
+    tripFlags: tripFlags ?? {},
+    onDismissFlag: (job_id, kind) => dismissFlagMut.mutate({ job_id, kind }),
+    onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
   };
 
 
