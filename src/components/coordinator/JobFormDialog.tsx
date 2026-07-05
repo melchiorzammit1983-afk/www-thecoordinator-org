@@ -464,6 +464,11 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   // AI confidence — true when Gemini flags the extraction as fuzzy / partial.
   const [aiLowConfidence, setAiLowConfidence] = useState(false);
 
+  // Learning-loop capture: remember the exact text + first AI draft so we
+  // can compare it against the coordinator's final edits on save.
+  const [aiOriginalText, setAiOriginalText] = useState<string | null>(null);
+  const [aiInitialOutput, setAiInitialOutput] = useState<AiRow[] | null>(null);
+
   const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
     setRaw((prev) => {
       const tsv = rowsToTsv(trips);
