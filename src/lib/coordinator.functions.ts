@@ -2442,9 +2442,9 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
-      "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
-      'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
-      'FALLBACK RULES: Always return ALL 8 keys for every trip row. If a value is unknown, use an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown". If mandatory pickup fields cannot be inferred from the input, use the {"type":"question",...} envelope instead of returning partial data rows.',
+      'Output JSON only, no markdown. Prefer the data envelope: {"type":"data","payload":[{...8 keys...}],"is_low_confidence":false}. Use the question envelope {"type":"question","payload":"..."} ONLY when the input is completely unreadable or empty — never as a substitute for a partial row.',
+      'BEST-EFFORT RULE: Always return a data row for anything that looks like a trip, even when unsure. Fill in as many of the 8 keys as you reasonably can. Leave any unknown value as an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown", never invent fake data.',
+      'CONFIDENCE FLAG: Set "is_low_confidence": true on the envelope when ANY of the following is true: you left one or more mandatory fields (pickupDate, pickupAddress, deliveryAddress) blank on any row, you had to guess a value, the source text was ambiguous/fragmented, or you were forced to skip fields. Otherwise set it to false.',
     ].join("\n");
     const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
 
@@ -2510,12 +2510,22 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const rawPayload = parsed?.payload;
     const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
     const isData = parsed?.type === "data" || Array.isArray(rawPayload);
-    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
-      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
-    }
     if (isData && Array.isArray(rawPayload)) {
       const rows = rawPayload.map(normalizeTripRow);
-      return { type: "data" as const, payload: rows };
+      // Server-side confidence: trust the model's flag, but also flip to true
+      // when any row is missing a mandatory field (pickup date/address, delivery address).
+      const modelFlag = parsed?.is_low_confidence === true;
+      const missingMandatory = rows.some(
+        (r) => !r.pickupDate?.trim() || !r.pickupAddress?.trim() || !r.deliveryAddress?.trim(),
+      );
+      return {
+        type: "data" as const,
+        payload: rows,
+        is_low_confidence: modelFlag || missingMandatory,
+      };
+    }
+    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
+      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
     }
     if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction unrecognized shape");
     throw new Error("AI response was unreadable — please rephrase and try again");
