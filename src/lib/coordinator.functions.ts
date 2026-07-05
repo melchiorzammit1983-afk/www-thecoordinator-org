@@ -2444,6 +2444,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
       "Mandatory: pickupDate, pickupAddress, deliveryAddress. If any missing, reply with a ~5-word question.",
       'Output JSON only, no markdown. Either {"type":"question","payload":"..."} or {"type":"data","payload":[{...8 keys...}]}.',
+      'FALLBACK RULES: Always return ALL 8 keys for every trip row. If a value is unknown, use an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown". If mandatory pickup fields cannot be inferred from the input, use the {"type":"question",...} envelope instead of returning partial data rows.',
     ].join("\n");
     const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
 
@@ -2465,49 +2466,59 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     });
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents,
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-          maxOutputTokens,
-        },
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+            maxOutputTokens,
+          },
+        }),
+      });
+    } catch (e: any) {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction transport failure");
+      throw new Error("AI is temporarily unreachable — please try again");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", `AI extraction ${res.status}`);
       if (res.status === 429) throw new Error("AI is rate limited — try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
     }
     const json = await res.json() as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
-    if (!text) throw new Error("Empty response from AI");
+    if (!text) {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction empty");
+      throw new Error("AI returned an empty response — please try again");
+    }
 
     let parsed: any;
-    try { parsed = JSON.parse(text); }
-    catch { throw new Error("AI returned invalid JSON"); }
-
-    if (parsed?.type === "question" && typeof parsed.payload === "string") {
-      return { type: "question" as const, payload: parsed.payload };
+    try { parsed = safeJsonParse(text); }
+    catch {
+      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction invalid JSON");
+      throw new Error("AI response was unreadable — please rephrase and try again");
     }
-    if (parsed?.type === "data" && Array.isArray(parsed.payload)) {
-      const rows = parsed.payload.map((r: any) => ({
-        pickupDate: String(r?.pickupDate ?? ""),
-        pickupTime: String(r?.pickupTime ?? ""),
-        pickupAddress: String(r?.pickupAddress ?? ""),
-        deliveryAddress: String(r?.deliveryAddress ?? ""),
-        customerName: String(r?.customerName ?? ""),
-        contactNumber: String(r?.contactNumber ?? ""),
-        transportType: String(r?.transportType ?? ""),
-        quantity: String(r?.quantity ?? "1"),
-      }));
+
+    // Best-effort envelope recovery: accept the documented shape, then fall back
+    // to inspecting payload shape when `type` is missing/wrong.
+    const rawPayload = parsed?.payload;
+    const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
+    const isData = parsed?.type === "data" || Array.isArray(rawPayload);
+    if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
+      return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
+    }
+    if (isData && Array.isArray(rawPayload)) {
+      const rows = rawPayload.map(normalizeTripRow);
       return { type: "data" as const, payload: rows };
     }
-    throw new Error("AI returned unexpected shape");
+    if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction unrecognized shape");
+    throw new Error("AI response was unreadable — please rephrase and try again");
   });
 
 // ---------- Group / Ungroup (reversible link, keeps trip details) ----------
@@ -3028,22 +3039,106 @@ async function spendOrThrow(
   }
 }
 
-async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }) {
+// Best-effort refund when a paid AI call fails after metering. Uses spend_points
+// with a negative _cost_override; if the RPC rejects negatives, we swallow and log.
+async function refundPoints(
+  companyId: string,
+  featureKey: string,
+  note: string,
+  jobId?: string,
+) {
+  try {
+    const sb = await getAdminClient();
+    const { data: costRow } = await sb.from("ai_feature_costs")
+      .select("points_cost").eq("feature_key", featureKey).maybeSingle();
+    const cost = Number(costRow?.points_cost ?? 0);
+    if (!cost) return;
+    const { error } = await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: `REFUND: ${note}`,
+      _cost_override: -cost as unknown as number,
+    });
+    if (error) console.warn("[refundPoints] failed:", error.message);
+  } catch (e) {
+    console.warn("[refundPoints] threw:", (e as Error).message);
+  }
+}
+
+// Shared shapes for Gemini extraction — always tolerate missing keys.
+const tripRowSchema = z.object({
+  pickupDate: z.string().default(""),
+  pickupTime: z.string().default(""),
+  pickupAddress: z.string().default(""),
+  deliveryAddress: z.string().default(""),
+  customerName: z.string().default(""),
+  contactNumber: z.string().default(""),
+  transportType: z.string().default(""),
+  quantity: z.string().default("1"),
+}).passthrough();
+
+function normalizeTripRow(r: unknown) {
+  const src: any = (r && typeof r === "object") ? r : {};
+  const parsed = tripRowSchema.safeParse(src);
+  const row = parsed.success ? parsed.data : {
+    pickupDate: String(src.pickupDate ?? ""),
+    pickupTime: String(src.pickupTime ?? ""),
+    pickupAddress: String(src.pickupAddress ?? ""),
+    deliveryAddress: String(src.deliveryAddress ?? ""),
+    customerName: String(src.customerName ?? ""),
+    contactNumber: String(src.contactNumber ?? ""),
+    transportType: String(src.transportType ?? ""),
+    quantity: String(src.quantity ?? "1"),
+  };
+  return {
+    pickupDate: String(row.pickupDate ?? ""),
+    pickupTime: String(row.pickupTime ?? ""),
+    pickupAddress: String(row.pickupAddress ?? ""),
+    deliveryAddress: String(row.deliveryAddress ?? ""),
+    customerName: String(row.customerName ?? ""),
+    contactNumber: String(row.contactNumber ?? ""),
+    transportType: String(row.transportType ?? ""),
+    quantity: String(row.quantity || "1"),
+  };
+}
+
+// Strip common Gemini "```json ... ```" wrappers that leak through despite responseMimeType.
+function safeJsonParse(text: string): unknown {
+  const trimmed = text.trim();
+  try { return JSON.parse(trimmed); } catch { /* fallthrough */ }
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* fallthrough */ } }
+  const firstBrace = trimmed.search(/[{[]/);
+  const lastBrace = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    try { return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)); } catch { /* fallthrough */ }
+  }
+  throw new Error("AI returned invalid JSON");
+}
+
+async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?: { temperature?: number; maxOutputTokens?: number }): Promise<any> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: opts?.temperature ?? 0.2,
+      maxOutputTokens: opts?.maxOutputTokens ?? 800,
+    },
+  });
+  const doFetch = () => fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: opts?.temperature ?? 0.2,
-        maxOutputTokens: opts?.maxOutputTokens ?? 800,
-      },
-    }),
+    body,
   });
+  let res = await doFetch();
+  if (!res.ok && res.status >= 500 && res.status < 600) {
+    await new Promise((r) => setTimeout(r, 400));
+    res = await doFetch();
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
@@ -3052,7 +3147,7 @@ async function callGemini(prompt: string, model = "gemini-2.5-flash-lite", opts?
   const json = await res.json() as any;
   const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
   if (!text) throw new Error("AI returned empty response");
-  try { return JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+  return safeJsonParse(text);
 }
 
 // ---------- AI: Auto-Coordinate (propose-only autopilot) ----------
@@ -3297,43 +3392,55 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
 
     // Transcribe + extract in a single Gemini multimodal call.
     const today = new Date().toISOString().slice(0, 10);
-    const baseVoicePrompt = `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.`;
+    const baseVoicePrompt = [
+      `Transcribe the audio, then extract transport trips. Today=${today}.`,
+      `Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}.`,
+      `Dates YYYY-MM-DD, times HH:MM.`,
+      `FALLBACK RULES: Always include ALL 8 keys per trip row. If a value is unknown, use "" (or "1" for quantity) — never omit a key, never use null. If nothing sounds like a trip, return {"transcript":"...","trips":[]}.`,
+    ].join(" ");
     const sysPrompt = await buildSystemPrompt(c.id, baseVoicePrompt);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: sysPrompt }] },
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: sysPrompt }] },
 
-        contents: [{ role: "user", parts: [
-          { text: "Extract trips from this voice note." },
-          { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
-        ] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
-      }),
-    });
+          contents: [{ role: "user", parts: [
+            { text: "Extract trips from this voice note." },
+            { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
+          ] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+        }),
+      });
+    } catch {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note transport failure");
+      throw new Error("AI is temporarily unreachable — please try again");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      await refundPoints(c.id, "ai_voice_to_trip", `Voice note ${res.status}`);
+      if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
       throw new Error(`AI error ${res.status}: ${body.slice(0, 200)}`);
     }
     const json = await res.json() as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    if (!text) {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note empty response");
+      throw new Error("AI returned an empty transcript — recording may be silent");
+    }
     let parsed: any;
-    try { parsed = JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+    try { parsed = safeJsonParse(text); }
+    catch {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note invalid JSON");
+      throw new Error("AI response was unreadable — please try again");
+    }
     const trips = Array.isArray(parsed?.trips) ? parsed.trips : [];
     return {
       transcript: String(parsed?.transcript ?? ""),
-      trips: trips.map((r: any) => ({
-        pickupDate: String(r?.pickupDate ?? ""),
-        pickupTime: String(r?.pickupTime ?? ""),
-        pickupAddress: String(r?.pickupAddress ?? ""),
-        deliveryAddress: String(r?.deliveryAddress ?? ""),
-        customerName: String(r?.customerName ?? ""),
-        contactNumber: String(r?.contactNumber ?? ""),
-        transportType: String(r?.transportType ?? ""),
-        quantity: String(r?.quantity ?? "1"),
-      })),
+      trips: trips.map(normalizeTripRow),
     };
   });
 

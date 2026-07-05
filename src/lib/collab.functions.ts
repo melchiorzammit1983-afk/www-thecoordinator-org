@@ -227,7 +227,7 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status")
       .eq("id", data.job_id)
       .maybeSingle();
     if (jobError) throw new Error(jobError.message);
@@ -246,16 +246,21 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       .limit(1);
     if (hopReadError) throw new Error(hopReadError.message);
     const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
-    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").insert({
+    const { data: insertedHop, error: hopError } = await supabaseAdmin.from("job_dispatch_hops").insert({
       job_id: data.job_id,
       hop_index: nextIndex,
       from_company_id: c.id,
       to_company_id: data.partner_company_id,
       status: "pending",
       note: data.note ?? "",
-    });
+    }).select("id").maybeSingle();
     if (hopError) throw new Error(hopError.message);
-    const { error: updateError } = await supabaseAdmin.from("jobs").update({
+
+    // Optimistic-concurrency guard: only update if dispatch_status hasn't shifted
+    // (a concurrent recall/respond would have changed it). On mismatch we roll
+    // back the hop insert we just made to keep the state consistent.
+    const prevStatus = job.dispatch_status ?? null;
+    let updateQuery = supabaseAdmin.from("jobs").update({
       origin_company_id: job.origin_company_id ?? job.company_id,
       executor_company_id: data.partner_company_id,
       dispatch_status: "pending",
@@ -264,7 +269,17 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       dispatch_note: data.note ?? "",
       dispatch_chain_company_ids: [...chain, data.partner_company_id],
     }).eq("id", data.job_id);
-    if (updateError) throw new Error(updateError.message);
+    updateQuery = prevStatus === null
+      ? updateQuery.is("dispatch_status", null)
+      : updateQuery.eq("dispatch_status", prevStatus);
+    const { data: updatedRows, error: updateError } = await updateQuery.select("id");
+    if (updateError || !updatedRows || updatedRows.length === 0) {
+      if (insertedHop?.id) {
+        await supabaseAdmin.from("job_dispatch_hops").delete().eq("id", insertedHop.id);
+      }
+      if (updateError) throw new Error("Couldn't complete the hand-off — no changes were saved");
+      throw new Error("Trip state changed — please refresh and retry");
+    }
     await spendSoft(c.id, "trip_dispatched", "Trip dispatched to partner", data.job_id);
     return { ok: true };
   });
@@ -297,9 +312,19 @@ export const recallPartnerDispatch = createServerFn({ method: "POST" })
     if (!latest) throw new Error("No hand-off to recall");
     if (latest.status !== "pending") throw new Error("Only pending hand-offs can be recalled");
 
-    const { error: delError } = await supabaseAdmin
-      .from("job_dispatch_hops").delete().eq("id", latest.id);
-    if (delError) throw new Error(delError.message);
+    // Concurrency guard: only delete the hop if it's still pending.
+    // If the partner accepted/rejected between our read and this delete, the
+    // filter matches zero rows and we surface a clear message instead of
+    // silently orphaning the partner's decision.
+    const { data: deletedHops, error: delError } = await supabaseAdmin
+      .from("job_dispatch_hops").delete()
+      .eq("id", latest.id)
+      .eq("status", "pending")
+      .select("id");
+    if (delError) throw new Error("Couldn't recall the hand-off — please try again");
+    if (!deletedHops || deletedHops.length === 0) {
+      throw new Error("The partner already responded — recall no longer possible");
+    }
 
     const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
     const nextChain = chain.filter((id) => id !== latest.to_company_id);
@@ -309,7 +334,10 @@ export const recallPartnerDispatch = createServerFn({ method: "POST" })
       dispatch_decided_at: new Date().toISOString(),
       dispatch_chain_company_ids: nextChain.length ? nextChain : [job.company_id],
     }).eq("id", data.job_id);
-    if (updateError) throw new Error(updateError.message);
+    if (updateError) {
+      // Hop is already gone; best we can do is report and let the operator refresh.
+      throw new Error("Recall partially applied — please refresh to check the trip state");
+    }
     return { ok: true };
   });
 
@@ -361,32 +389,47 @@ export const respondToDispatch = createServerFn({ method: "POST" })
     const hop = hops?.[0];
     if (!hop) throw new Error("No pending dispatch found");
     const decidedAt = new Date().toISOString();
-    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").update({
+    // Concurrency guard: only transition the hop if it's still pending.
+    // Prevents double-accept from two tabs and accept-vs-recall races.
+    const { data: hopUpdated, error: hopError } = await supabaseAdmin.from("job_dispatch_hops").update({
       status: data.decision,
       decided_at: decidedAt,
       note: data.note ?? null,
-    }).eq("id", hop.id);
-    if (hopError) throw new Error(hopError.message);
-    if (data.decision === "accepted") {
-      // Keep company_id = creator so the trip stays owned by A across the chain.
-      // executor_company_id already points to the accepting partner.
-      const { error: updateError } = await supabaseAdmin.from("jobs").update({
-        dispatch_status: "accepted",
-        dispatch_decided_at: decidedAt,
-        dispatch_note: data.note ?? null,
-      }).eq("id", data.job_id);
-      if (updateError) throw new Error(updateError.message);
-    } else {
-      const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
-      const { error: updateError } = await supabaseAdmin.from("jobs").update({
-        executor_company_id: hop.from_company_id,
-        dispatch_status: "rejected",
-        dispatch_decided_at: decidedAt,
-        dispatch_note: data.note ?? null,
-        dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
-      }).eq("id", data.job_id);
-      if (updateError) throw new Error(updateError.message);
+    }).eq("id", hop.id).eq("status", "pending").select("id");
+    if (hopError) throw new Error("Couldn't record your response — please try again");
+    if (!hopUpdated || hopUpdated.length === 0) {
+      throw new Error("This hand-off was already resolved — refresh to see the latest state");
     }
+
+    try {
+      if (data.decision === "accepted") {
+        // Keep company_id = creator so the trip stays owned by A across the chain.
+        // executor_company_id already points to the accepting partner.
+        const { error: updateError } = await supabaseAdmin.from("jobs").update({
+          dispatch_status: "accepted",
+          dispatch_decided_at: decidedAt,
+          dispatch_note: data.note ?? null,
+        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+        if (updateError) throw updateError;
+      } else {
+        const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [];
+        const { error: updateError } = await supabaseAdmin.from("jobs").update({
+          executor_company_id: hop.from_company_id,
+          dispatch_status: "rejected",
+          dispatch_decided_at: decidedAt,
+          dispatch_note: data.note ?? null,
+          dispatch_chain_company_ids: chain.filter((id) => id !== c.id),
+        }).eq("id", data.job_id).eq("executor_company_id", c.id);
+        if (updateError) throw updateError;
+      }
+    } catch {
+      // Compensation: revert the hop back to pending so operator state is coherent.
+      await supabaseAdmin.from("job_dispatch_hops").update({
+        status: "pending", decided_at: null,
+      }).eq("id", hop.id);
+      throw new Error("Couldn't complete the hand-off — please refresh and retry");
+    }
+
     const { data: acceptedRow } = await supabaseAdmin
       .from("jobs").select("id, date").eq("id", data.job_id).maybeSingle();
     return { ok: true, id: data.job_id, date: acceptedRow?.date ?? null, decision: data.decision };
