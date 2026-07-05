@@ -1912,6 +1912,11 @@ function TripMenu({
         <DropdownMenuItem onClick={onOpenClone}>
           <Copy className="h-4 w-4 mr-2" /> Clone…
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/coordinator/board-creator" search={{ jobId: job.id }}>
+            <ImageIcon className="h-4 w-4 mr-2" /> 🪧 Create Sign Board
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={onOpenDispatch}>
           <Send className="h-4 w-4 mr-2" /> Dispatch to partner…
         </DropdownMenuItem>
