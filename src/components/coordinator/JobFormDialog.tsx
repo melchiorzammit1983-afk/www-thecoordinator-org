@@ -383,7 +383,9 @@ type AiRow = {
   customerName: string; contactNumber: string;
   transportType: string; quantity: string;
 };
-type AiResp = { type: "question"; payload: string } | { type: "data"; payload: AiRow[] };
+type AiResp =
+  | { type: "question"; payload: string }
+  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean };
 type ChatMsg = { role: "user" | "model"; text: string };
 
 function rowsToTsv(rows: AiRow[]): string {
