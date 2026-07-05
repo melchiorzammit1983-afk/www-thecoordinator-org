@@ -1675,3 +1675,103 @@ export const listMyDriverPriceThread = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
+
+// ---------- Driver Sign Board (mobile/tablet greeting screen) ----------
+
+/**
+ * Returns everything the driver's fullscreen "Sign Board" needs for a given
+ * job, scoped to the driver token. Includes the trip fields the driver can
+ * one-tap onto the board (passenger, flight, client company), the
+ * coordinator's saved `board_config` if present, and signed URLs for every
+ * logo referenced (plus the company's primary logo as an anchor).
+ */
+export const getDriverSignBoard = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("Invalid or expired driver link");
+    const supabaseAdmin = await getAdminClient();
+
+    const { data: job, error } = await supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, company_id, executor_company_id, driver_id, from_flight, to_flight, flightorship, clientcompanyname, board_config, pax(id, name)",
+      )
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (error || !job) throw new Error("Trip not found");
+
+    // Token-scoped access: driver token can only see jobs assigned to that
+    // driver row (or, for company-wide tokens, jobs within the same company).
+    if (link.subject_id) {
+      if ((job as any).driver_id !== link.subject_id) {
+        throw new Error("Not authorized for this trip");
+      }
+    } else {
+      const owners = [
+        (job as any).company_id,
+        (job as any).executor_company_id,
+      ].filter(Boolean);
+      if (!owners.includes(link.company_id)) {
+        throw new Error("Not authorized for this trip");
+      }
+    }
+
+    const flightNumber =
+      (job as any).from_flight ||
+      (job as any).to_flight ||
+      (job as any).flightorship ||
+      "";
+    const paxNames = ((job as any).pax ?? [])
+      .map((p: any) => p.name)
+      .filter(Boolean) as string[];
+
+    const branding = await loadCompanyBranding(link.company_id);
+
+    // Company logos (private bucket → signed URLs). Anchor logo = is_primary
+    // then first available. board_config may reference logos by id, so we
+    // sign every logo the company has and let the client map by id.
+    const { data: logoRows } = await supabaseAdmin
+      .from("company_logos")
+      .select("id, storage_path, is_primary, is_background, label")
+      .eq("company_id", link.company_id);
+
+    const logos = await Promise.all(
+      (logoRows ?? []).map(async (r: any) => {
+        const { data: s } = await supabaseAdmin.storage
+          .from("company-logos")
+          .createSignedUrl(r.storage_path, 60 * 60 * 2);
+        return {
+          id: r.id as string,
+          url: s?.signedUrl ?? "",
+          is_primary: !!r.is_primary,
+          is_background: !!r.is_background,
+          label: (r.label as string | null) ?? null,
+        };
+      }),
+    );
+
+    const anchorLogo =
+      logos.find((l) => l.is_primary && !l.is_background) ||
+      logos.find((l) => !l.is_background) ||
+      null;
+
+    return {
+      job: {
+        id: (job as any).id as string,
+        passenger_name: paxNames[0] ?? "",
+        passenger_names: paxNames,
+        flight_number: flightNumber as string,
+        client_company_name: ((job as any).clientcompanyname as string | null) ?? "",
+      },
+      board_config: (job as any).board_config ?? null,
+      company_name: branding?.company_name ?? "",
+      anchor_logo_url: anchorLogo?.url ?? branding?.logo_url ?? null,
+      logos,
+    };
+  });
