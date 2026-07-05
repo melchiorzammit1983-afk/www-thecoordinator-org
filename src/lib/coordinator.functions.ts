@@ -3880,3 +3880,202 @@ export const logAiTrainingSample = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+
+// ---------- TRIP VERIFICATION (duplicate & suspicious pattern detection) ----------
+
+type TripFlag = {
+  duplicates: { id: string; date: string | null; time: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+  suspicious: { id: string; date: string | null; time: string | null; flight_number: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+};
+
+function normalizeName(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function timeToMinutes(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function isAirportLocation(loc: string | null | undefined): boolean {
+  if (!loc) return false;
+  const s = loc.toLowerCase();
+  if (s.includes("airport") || s.includes("terminal") || s.includes("aeroport") || s.includes("aeropuerto")) return true;
+  // IATA-like 3-letter codes in parens or bracketed
+  if (/\b[a-z]{3}\b/i.test(loc) && /\(|\[/.test(loc)) return true;
+  return false;
+}
+
+function flightNumberOf(j: any): string | null {
+  const raw = j.from_flight || j.to_flight || j.flightorship;
+  if (!raw) return null;
+  return String(raw).trim().toUpperCase().replace(/\s+/g, "") || null;
+}
+
+export const computeTripFlags = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const today = new Date();
+    const from = today.toISOString().slice(0, 10);
+    const to = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("jobs")
+      .select("id, date, time, pickup_at, from_location, to_location, from_flight, to_flight, flightorship, status, dismissed_flags, pax(name)")
+      .eq("company_id", (c as any).id)
+      .gte("date", from)
+      .lte("date", to)
+      .not("status", "in", "(cancelled,rejected,completed)");
+    if (error) throw new Error(error.message);
+
+    const jobs = (rows ?? []).map((j: any) => {
+      const pax_names: string[] = (j.pax ?? []).map((p: any) => normalizeName(p.name)).filter(Boolean);
+      return {
+        ...j,
+        _pax_names: pax_names,
+        _primary_pax: pax_names[0] ?? "",
+        _minutes: timeToMinutes(j.time),
+        _flight: flightNumberOf(j),
+        _dismissed: new Set<string>(j.dismissed_flags ?? []),
+      };
+    });
+
+    // Bucket by date + primary pax name for fast comparisons.
+    const byKey = new Map<string, typeof jobs>();
+    for (const j of jobs) {
+      if (!j._primary_pax || !j.date) continue;
+      const key = `${j.date}::${j._primary_pax}`;
+      const arr = byKey.get(key) ?? [];
+      arr.push(j);
+      byKey.set(key, arr);
+    }
+
+    const result: Record<string, TripFlag> = {};
+    const getEntry = (id: string): TripFlag => {
+      let e = result[id];
+      if (!e) { e = { duplicates: [], suspicious: [] }; result[id] = e; }
+      return e;
+    };
+    const asSibling = (j: any) => ({
+      id: j.id, date: j.date, time: j.time,
+      from_location: j.from_location, to_location: j.to_location,
+      pax_names: j._pax_names,
+      flight_number: j._flight,
+    });
+
+    for (const group of byKey.values()) {
+      if (group.length < 2) continue;
+      for (let i = 0; i < group.length; i++) {
+        for (let k = i + 1; k < group.length; k++) {
+          const a = group[i]; const b = group[k];
+          const am = a._minutes; const bm = b._minutes;
+          const dtMin = am != null && bm != null ? Math.abs(am - bm) : null;
+
+          // DUPLICATE: same date + same pax + within 60 min
+          if (dtMin != null && dtMin <= 60) {
+            if (!a._dismissed.has("duplicate")) getEntry(a.id).duplicates.push(asSibling(b));
+            if (!b._dismissed.has("duplicate")) getEntry(b.id).duplicates.push(asSibling(a));
+          }
+
+          // SUSPICIOUS: airport trips ≥ 90 min apart, OR different flight numbers on file
+          const bothAirport =
+            (isAirportLocation(a.from_location) || isAirportLocation(a.to_location)) &&
+            (isAirportLocation(b.from_location) || isAirportLocation(b.to_location));
+          const airportSpread = bothAirport && dtMin != null && dtMin >= 90;
+          const flightMismatch = !!a._flight && !!b._flight && a._flight !== b._flight;
+          if (airportSpread || flightMismatch) {
+            if (!a._dismissed.has("suspicious")) getEntry(a.id).suspicious.push(asSibling(b));
+            if (!b._dismissed.has("suspicious")) getEntry(b.id).suspicious.push(asSibling(a));
+          }
+        }
+      }
+    }
+    return result;
+  });
+
+export const dismissTripFlag = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      kind: z.enum(["duplicate", "suspicious"]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row, error: rErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, dismissed_flags")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (rErr) throw new Error(rErr.message);
+    if (!row || (row as any).company_id !== (c as any).id) throw new Error("not_found");
+    const cur: string[] = (row as any).dismissed_flags ?? [];
+    if (cur.includes(data.kind)) return { ok: true };
+    const next = [...cur, data.kind];
+    const { error } = await supabaseAdmin
+      .from("jobs")
+      .update({ dismissed_flags: next })
+      .eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const mergeTrips = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      keep_job_id: z.string().uuid(),
+      drop_job_ids: z.array(z.string().uuid()).min(1).max(10),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const allIds = [data.keep_job_id, ...data.drop_job_ids];
+    const { data: rows, error } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, driver_note")
+      .in("id", allIds);
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length !== allIds.length) throw new Error("not_found");
+    for (const r of rows) {
+      if ((r as any).company_id !== (c as any).id) throw new Error("forbidden");
+    }
+
+    // Copy pax rows from dropped → kept, dedup by lower(name).
+    const { data: keepPax } = await supabaseAdmin.from("pax").select("name").eq("job_id", data.keep_job_id);
+    const have = new Set<string>((keepPax ?? []).map((p: any) => normalizeName(p.name)));
+    const { data: dropPax } = await supabaseAdmin.from("pax").select("name").in("job_id", data.drop_job_ids);
+    const toAdd = (dropPax ?? [])
+      .filter((p: any) => p.name && !have.has(normalizeName(p.name)))
+      .filter((p: any, i: number, arr: any[]) => arr.findIndex((q) => normalizeName(q.name) === normalizeName(p.name)) === i)
+      .map((p: any) => ({ job_id: data.keep_job_id, name: p.name }));
+    if (toAdd.length > 0) {
+      const { error: pErr } = await supabaseAdmin.from("pax").insert(toAdd);
+      if (pErr) throw new Error(pErr.message);
+    }
+
+    // Clear duplicate flag on kept row.
+    await supabaseAdmin
+      .from("jobs")
+      .update({ dismissed_flags: [] })
+      .eq("id", data.keep_job_id);
+
+    // Soft-cancel dropped rows with a merge note.
+    const noteSuffix = `\n[merged into ${data.keep_job_id}]`;
+    for (const id of data.drop_job_ids) {
+      const cur = (rows.find((r: any) => r.id === id) as any)?.driver_note ?? "";
+      await supabaseAdmin
+        .from("jobs")
+        .update({ status: "cancelled" as any, driver_note: (cur || "") + noteSuffix })
+        .eq("id", id);
+    }
+    return { ok: true, merged_pax: toAdd.length, cancelled: data.drop_job_ids.length };
+  });
