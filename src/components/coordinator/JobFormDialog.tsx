@@ -376,6 +376,7 @@ function ManualForm({
         )}
       </div>
       <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
       </DialogFooter>
     </form>
