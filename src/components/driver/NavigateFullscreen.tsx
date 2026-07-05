@@ -289,10 +289,19 @@ export function NavigateFullscreen({
     destMarkerRef.current = new gmaps.Marker({
       map, position: end, title: destination ?? "Destination", zIndex: 500,
     });
-  }, [ready, decodedSteps, stepIdx, destination, live.polyline]);
 
-  // Fullscreen API on mount
+    // Preview mode: fit bounds to the full route (+ driver) so the whole path is visible.
+    if (isPreview) {
+      const bounds = new gmaps.LatLngBounds();
+      for (const pt of full) bounds.extend(pt);
+      if (drvPosRef.current) bounds.extend(new gmaps.LatLng(drvPosRef.current.lat, drvPosRef.current.lng));
+      try { map.fitBounds(bounds, { top: 96, bottom: 220, left: 40, right: 40 }); } catch { /* ignore */ }
+    }
+  }, [ready, decodedSteps, stepIdx, destination, live.polyline, isPreview]);
+
+  // Fullscreen API on mount (navigate mode only)
   useEffect(() => {
+    if (isPreview) return;
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => { /* ignore */ });
     return () => {
@@ -300,7 +309,8 @@ export function NavigateFullscreen({
         document.exitFullscreen().catch(() => { /* ignore */ });
       }
     };
-  }, []);
+  }, [isPreview]);
+
 
   const current: RouteStep | null = steps[stepIdx] ?? null;
   const upcoming: RouteStep | null = steps[stepIdx + 1] ?? null;
