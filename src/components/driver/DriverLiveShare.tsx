@@ -167,7 +167,14 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
 
     if (native) {
       // Native background geolocation.
+      // The plugin manages permission prompts natively when
+      // `requestPermissions: true` is passed. On Android 10+ it first asks
+      // for foreground location, then escalates to "Allow all the time"
+      // (background). On iOS it asks for "When in Use", then upgrades to
+      // "Always" the first time a background location is delivered. A
+      // NOT_AUTHORIZED error in the callback means the user declined.
       let cancelled = false;
+      let watcherId: string | null = null;
       (async () => {
         try {
           const { registerPlugin } = await import("@capacitor/core");
