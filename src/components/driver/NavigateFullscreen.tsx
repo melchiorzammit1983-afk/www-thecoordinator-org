@@ -74,6 +74,7 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  */
 export function NavigateFullscreen({
   live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
+  mode = "navigate", footerSlot = null, title = null,
 }: {
   live: LiveRouteInfo;
   destination: string | null;
@@ -81,7 +82,12 @@ export function NavigateFullscreen({
   onSpeak: (() => void) | null;
   isSpeaking: boolean;
   externalNavUrl: string;
+  mode?: "navigate" | "preview";
+  footerSlot?: React.ReactNode;
+  title?: string | null;
 }) {
+  const isPreview = mode === "preview";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const meMarkerRef = useRef<any>(null);
@@ -169,7 +175,7 @@ export function NavigateFullscreen({
         } else {
           meMarkerRef.current.setPosition(p);
         }
-        if (followRef.current && mapRef.current) {
+        if (!isPreview && followRef.current && mapRef.current) {
           suppressPanRef.current = true;
           mapRef.current.panTo(p);
           if ((mapRef.current.getZoom() ?? 0) < 17) mapRef.current.setZoom(18);
@@ -177,7 +183,6 @@ export function NavigateFullscreen({
             if (headingRef.current != null) mapRef.current.setHeading(headingRef.current);
             mapRef.current.setTilt(45);
           } catch { /* raster map: tilt/heading unsupported */ }
-          // Keep the marker arrow pointing along heading, relative to map rotation (0 = up).
           const marker = meMarkerRef.current;
           const cur = marker.getIcon?.();
           if (cur) marker.setIcon({ ...cur, rotation: 0 });
@@ -186,6 +191,7 @@ export function NavigateFullscreen({
           const cur = meMarkerRef.current.getIcon?.();
           if (cur && headingRef.current != null) meMarkerRef.current.setIcon({ ...cur, rotation: headingRef.current });
         }
+
       },
       () => { /* handled by DriverLiveShare */ },
       { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
@@ -210,11 +216,11 @@ export function NavigateFullscreen({
 
   // Advance step index as driver approaches / passes the current step's end.
   useEffect(() => {
+    if (isPreview) return;
     const gmaps = (window as any).google?.maps;
     if (!gmaps || !drvPos || decodedSteps.length === 0) return;
     const here = new gmaps.LatLng(drvPos.lat, drvPos.lng);
     let i = stepIdxRef.current;
-    // Never regress. Advance while within 25m of end, up to end of list.
     while (i < decodedSteps.length - 1) {
       const end = decodedSteps[i].end;
       const endLL = new gmaps.LatLng(end.lat, end.lng);
@@ -226,7 +232,6 @@ export function NavigateFullscreen({
       stepIdxRef.current = i;
       setStepIdx(i);
     }
-    // Live distance to end of current step
     const endCur = decodedSteps[i]?.end;
     if (endCur) {
       const d = gmaps.geometry.spherical.computeDistanceBetween(
@@ -234,7 +239,8 @@ export function NavigateFullscreen({
       );
       setDistToStepEnd(Math.round(d));
     }
-  }, [drvPos, decodedSteps]);
+  }, [drvPos, decodedSteps, isPreview]);
+
 
   // Draw / update polylines (travelled vs ahead) + destination marker.
   useEffect(() => {
@@ -283,10 +289,19 @@ export function NavigateFullscreen({
     destMarkerRef.current = new gmaps.Marker({
       map, position: end, title: destination ?? "Destination", zIndex: 500,
     });
-  }, [ready, decodedSteps, stepIdx, destination, live.polyline]);
 
-  // Fullscreen API on mount
+    // Preview mode: fit bounds to the full route (+ driver) so the whole path is visible.
+    if (isPreview) {
+      const bounds = new gmaps.LatLngBounds();
+      for (const pt of full) bounds.extend(pt);
+      if (drvPosRef.current) bounds.extend(new gmaps.LatLng(drvPosRef.current.lat, drvPosRef.current.lng));
+      try { map.fitBounds(bounds, { top: 96, bottom: 220, left: 40, right: 40 }); } catch { /* ignore */ }
+    }
+  }, [ready, decodedSteps, stepIdx, destination, live.polyline, isPreview]);
+
+  // Fullscreen API on mount (navigate mode only)
   useEffect(() => {
+    if (isPreview) return;
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => { /* ignore */ });
     return () => {
@@ -294,7 +309,8 @@ export function NavigateFullscreen({
         document.exitFullscreen().catch(() => { /* ignore */ });
       }
     };
-  }, []);
+  }, [isPreview]);
+
 
   const current: RouteStep | null = steps[stepIdx] ?? null;
   const upcoming: RouteStep | null = steps[stepIdx + 1] ?? null;
@@ -333,7 +349,7 @@ export function NavigateFullscreen({
       <button
         type="button"
         onClick={onExit}
-        aria-label="Exit navigate mode"
+        aria-label={isPreview ? "Close preview" : "Exit navigate mode"}
         className="absolute top-4 left-4 z-10 min-h-12 min-w-12 grid place-items-center rounded-full bg-white/95 text-slate-900 shadow-lg active:scale-95 transition"
       >
         <X className="h-6 w-6" />
@@ -350,8 +366,17 @@ export function NavigateFullscreen({
         <ExternalLink className="h-5 w-5" />
       </a>
 
-      {/* Top-center: current instruction banner (Google-Maps-style) */}
-      {displayInstruction && (
+      {/* Preview mode: destination title chip */}
+      {isPreview && title && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[60%]">
+          <div className="rounded-full bg-white/95 px-4 py-2 shadow-lg text-sm font-semibold text-slate-900 truncate">
+            To {title}
+          </div>
+        </div>
+      )}
+
+      {/* Top-center: next-maneuver banner (navigate mode) */}
+      {!isPreview && displayInstruction && (
         <div className="absolute top-4 left-20 right-20 z-[9] mx-auto max-w-md">
           <div
             className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
@@ -368,8 +393,8 @@ export function NavigateFullscreen({
         </div>
       )}
 
-      {/* Recenter FAB */}
-      {!follow && (
+      {/* Recenter FAB — navigate mode only */}
+      {!isPreview && !follow && (
         <button
           type="button"
           onClick={recenter}
@@ -380,9 +405,10 @@ export function NavigateFullscreen({
         </button>
       )}
 
+
       {/* Bottom HUD: ETA + next step preview */}
       <div className="absolute inset-x-0 bottom-0 z-10">
-        {live.reroute_available && (
+        {!isPreview && live.reroute_available && (
           <button
             type="button"
             onClick={live.onAcceptReroute}
@@ -394,6 +420,7 @@ export function NavigateFullscreen({
             </span>
           </button>
         )}
+
         <div
           className="flex items-center gap-3 px-4 py-3 border-t-2 border-white/60 shadow-2xl"
           style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
@@ -432,7 +459,9 @@ export function NavigateFullscreen({
             </button>
           )}
         </div>
+        {footerSlot}
       </div>
+
     </div>
   );
 }

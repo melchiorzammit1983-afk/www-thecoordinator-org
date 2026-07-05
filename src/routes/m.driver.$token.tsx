@@ -462,8 +462,9 @@ function DriverManifest() {
             </div>
           )}
           {jobs.map((j) => (
-            <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
+
 
           {archivedJobs.length > 0 && (
             <div className="pt-2">
@@ -477,7 +478,7 @@ function DriverManifest() {
               {showArchived && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
-                    <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
                   ))}
                 </div>
               )}
@@ -512,7 +513,7 @@ function DriverManifest() {
   );
 }
 
-function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOpen: () => void; onChat: () => void }) {
+function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
@@ -544,6 +545,50 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     } | null>,
   });
   const liveFresh = clientLive && (Date.now() - new Date(clientLive.captured_at).getTime()) < 90_000;
+
+  // --- Pre-acceptance route preview (driver → pickup) ---
+  const isPending = !job.driver_accepted_at && !job.deletion_requested_at;
+  const previewEnabled = !!isPending && !!driverPos && !!job.from_location;
+  const routeFn = useServerFn(computeDriverRoute);
+  const previewOriginKey = driverPos ? `${driverPos.lat.toFixed(3)},${driverPos.lng.toFixed(3)}` : null;
+  const { data: previewData } = useQuery({
+    queryKey: ["driver-preview-route", job.id, job.from_location, previewOriginKey],
+    enabled: previewEnabled,
+    refetchInterval: 60_000,
+    staleTime: 45_000,
+    queryFn: () => routeFn({
+      data: {
+        origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
+        destination_address: job.from_location,
+      },
+    }) as Promise<{
+      primary: null | {
+        duration_sec: number | null; static_duration_sec: number | null; distance_m: number | null;
+        polyline: string | null; next_instruction: string | null; next_maneuver: string | null;
+        next_step_distance_m: number | null;
+        steps: Array<{ maneuver: string | null; instruction: string | null; distance_m: number | null; polyline: string | null; end: { lat: number; lng: number } }>;
+      };
+      alternatives: unknown[];
+    }>,
+  });
+  const previewPrimary = previewData?.primary ?? null;
+  const previewLive: LiveRouteInfo = {
+    polyline: previewPrimary?.polyline ?? null,
+    eta_sec: previewPrimary?.duration_sec ?? null,
+    distance_m: previewPrimary?.distance_m ?? null,
+    next_instruction: previewPrimary?.next_instruction ?? null,
+    next_maneuver: previewPrimary?.next_maneuver ?? null,
+    next_step_distance_m: previewPrimary?.next_step_distance_m ?? null,
+    delay_sec: 0,
+    reroute_available: false,
+    reroute_saving_sec: 0,
+    onAcceptReroute: () => { /* no-op in preview */ },
+    isLoading: false,
+    steps: previewPrimary?.steps ?? [],
+  };
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+
 
   const lateMut = useMutation({
     mutationFn: () => lateFn({ data: { token, job_id: job.id, minutes: lateMinutes, note: lateNote || undefined } }),
@@ -779,6 +824,44 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
 
         {!accepted && !job.deletion_requested_at && (
           <>
+            {/* Route preview strip */}
+            {previewEnabled && (
+              <div className="col-span-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3">
+                <div className="h-10 w-10 grid place-items-center rounded-full bg-primary/15 text-primary shrink-0">
+                  <Navigation className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">To pickup</div>
+                  {previewPrimary ? (
+                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight">
+                      {(() => {
+                        const s = previewPrimary.duration_sec;
+                        if (s == null) return "—";
+                        const m = Math.max(1, Math.round(s / 60));
+                        return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                      })()}
+                      <span className="text-muted-foreground font-medium ml-2">
+                        {previewPrimary.distance_m != null
+                          ? (previewPrimary.distance_m < 950
+                              ? `${Math.round(previewPrimary.distance_m / 10) * 10} m`
+                              : `${(previewPrimary.distance_m / 1000).toFixed(previewPrimary.distance_m < 10_000 ? 1 : 0)} km`)
+                          : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Calculating route…</div>
+                  )}
+                </div>
+                <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setPreviewOpen(true)}>
+                  Preview route
+                </Button>
+              </div>
+            )}
+            {!previewEnabled && isPending && !driverPos && (
+              <div className="col-span-2 rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
+                Enable location to preview the route to pickup
+              </div>
+            )}
             <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
               {acceptMut.isPending ? "Accepting…" : "Accept trip"}
             </Button>
@@ -788,6 +871,7 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
             </Button>
           </>
         )}
+
         {accepted && !job.deletion_requested_at && (
           <>
             <Button className="col-span-2 h-11" onClick={onOpen}>
@@ -990,7 +1074,32 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         } : null}
       />
 
+      {previewOpen && (
+        <NavigateFullscreen
+          mode="preview"
+          live={previewLive}
+          destination={job.from_location}
+          title={job.from_location}
+          externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
+          onExit={() => setPreviewOpen(false)}
+          onSpeak={null}
+          isSpeaking={false}
+          footerSlot={
+            <div className="flex gap-2 px-4 py-3 border-t border-white/40" style={{ background: "rgba(255,255,255,0.95)" }}>
+              <Button variant="outline" className="flex-1 h-12 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => { setPreviewOpen(false); setRejectOpen(true); }}>
+                <ThumbsDown className="h-4 w-4 mr-1.5" /> Decline
+              </Button>
+              <Button className="flex-1 h-12 text-base" disabled={acceptMut.isPending}
+                onClick={() => { acceptMut.mutate(); setPreviewOpen(false); }}>
+                {acceptMut.isPending ? "Accepting…" : "Accept trip"}
+              </Button>
+            </div>
+          }
+        />
+      )}
     </article>
+
   );
 
 }
