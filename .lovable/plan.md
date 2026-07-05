@@ -1,81 +1,86 @@
-# Board Creator + Multi-Logo Billing
+# Driver-Consent Flow — Round 2
 
-## 1. Database migration
+Building on the enforcement work already shipped (assignments always require a fresh `driver_accepted_at`, pending banner + amber card border, required decline reason, chime/vibration on reassignment).
 
-**`company-logos` storage bucket** (public, RLS on `storage.objects`):
-- Path convention: `{company_id}/{uuid}.{ext}`.
-- Coordinators can INSERT/UPDATE/DELETE only under their own `company_id` folder; everyone can SELECT (bucket is public).
+## 1. Coordinator visibility
 
-**`company_logos` table**
-- `company_id` (fk companies), `storage_path` (text), `public_url` (text), `label` (text, optional), `is_primary` (bool), `sort_order` (int), timestamps.
-- RLS: coordinator can CRUD rows for their own company; admin full access.
-- Grants: `SELECT, INSERT, UPDATE, DELETE` to `authenticated`; `ALL` to `service_role`.
-- Trigger: when a row is deleted, best-effort remove the storage object (via trigger calling a security-definer function).
+**Data source**: `driver_id IS NOT NULL AND driver_accepted_at IS NULL` = pending. Already selected in `listJobs` / calendar / board queries — no schema work needed.
 
-**`jobs.board_config jsonb`** — nullable column for saved board state.
+- **Card badge**: amber "Awaiting driver" pill on every trip card in the board, calendar, incoming, and TripDetailsSheet. Sits next to the existing status badge; colored to match the driver-side amber.
+- **Board filter chip**: add "Awaiting acceptance (N)" quick-filter to the coordinator board toolbar so a coordinator can see at a glance what's stuck.
+- **Auto system message in trip chat**: when `assignDriver` sets a new driver, insert a `trip_messages` row (`sender_kind='system'`, `thread_kind='driver_coord'`) — "🕓 Waiting on {driver name} to accept this trip." When the driver accepts, insert "✅ {driver} accepted." When they decline, the existing decline message already posts.
+- **Time-based escalation**: derived client-side from `pickup_at - now()`. Rules:
+  - Pending + pickup > 2h away → amber pill.
+  - Pending + pickup ≤ 2h away → red pulsing pill + card ring; coordinator dashboard shows a top toast "1 trip near pickup still not accepted."
+  - Pending + pickup passed → red "Overdue acceptance" pill.
 
-**`ai_feature_costs` seed row**
-- `feature_key = 'extra_company_logos_weekly'`, default `points_cost = 20`, `enabled = true`. Editable from the existing Admin AI & Features Pricing panel with no UI changes.
+No new tables — the color/text is a pure function of the two fields.
 
-**Weekly flat overage billing**
-- `public.charge_extra_logos_weekly()` (security definer): for every company with `count(company_logos) > 5`, call `spend_points(company_id, 'extra_company_logos_weekly', null, 'weekly extra-logos fee (flat)')` — flat single deduction regardless of overage count. Skips silently on `insufficient_points`.
-- Scheduled via `pg_cron`: Monday 03:00 UTC. Cron uses the SQL-only pattern (no HTTP call needed).
+## 2. Driver web-push (VAPID)
 
-## 2. Server functions (`src/lib/coordinator.functions.ts`)
-
-- `listMyLogos()` — returns rows for caller's company.
-- `getLogoUploadUrl({ filename, contentType })` — returns a Supabase Storage signed upload URL scoped to `{company_id}/{uuid}.{ext}` (uses `supabaseAdmin` inside the handler after `requireSupabaseAuth`).
-- `registerUploadedLogo({ storage_path, label? })` — inserts row with resolved public URL; returns `{ id, total, over_free_limit: bool, weekly_cost: number }`.
-- `deleteMyLogo({ id })` — deletes row + storage object.
-- `setPrimaryLogo({ id })` — mark one primary.
-- `getBoardTripContext({ jobId })` — returns `{ id, name, surname, flight_number, pickup_at, from_location, to_location, board_config, public_tracking_url }` for caller's company.
-- `saveTripBoardConfig({ jobId, board_config })` — writes `jobs.board_config`.
-
-All under `requireSupabaseAuth`.
-
-## 3. New route: `src/routes/_authenticated/coordinator.board-creator.tsx`
-
-Path `/coordinator/board-creator`, optional search `?jobId=<uuid>`.
-
-**Left column — Full editor** (`react-rnd` for drag/resize; `qrcode.react` for the QR):
-- Canvas 720×1280 (portrait phone). Elements stored as `{ id, type, x, y, w, h, rotation, z, props }`:
-  - **Text blocks** (multiple): content, fontFamily (system-safe list), size, weight, color, align, shadow. Default seed when jobId is present: "Welcome" + "NAME SURNAME" + flight/pickup line.
-  - **Logo block**: select from uploaded logos, size, position. Toggle to show/hide.
-  - **Background image**: upload (goes through the same storage flow, tagged as background so it's not counted against the 5-logo limit) or solid/gradient color.
-  - **QR block**: encodes the trip's public tracking URL. Auto-hidden when no jobId.
-- Left rail: layers list with reorder, duplicate, delete.
-- Top bar: Undo/Redo, Save, Export PNG (via `html-to-image`), "Back to trip".
-
-**Right column — Live preview**
-- iPhone-frame device mockup (rounded, notch, shadow) at 375×667 scaled from the canvas. Live re-renders on every edit.
-
-**Persistence**
-- `Save` writes `board_config` to `jobs.board_config` when `jobId` present. Auto-save every 5s while dirty.
-- Without `jobId`: preview only + "Save as template" button stored per-user in `localStorage` (no schema change).
-
-**Extra-logo banner**
-- When `count > 5`: persistent amber alert:
-  > "You have {N} logos. 5 are free — one flat weekly fee of {cost} points applies while you have more than 5. Next charge: next Monday."
-- Deleting back to ≤5 removes the banner immediately.
-
-## 4. Trip Card quick-action
-
-In `src/routes/_authenticated/coordinator.calendar.tsx` — in the existing `TripCard` action row (next to Merge/Dismiss), add a **"🪧 Create Sign Board"** button that navigates:
-```tsx
-<Link to="/coordinator/board-creator" search={{ jobId: trip.id }}>Create Sign Board</Link>
+**New table `driver_push_subs`** (mirrors `client_push_subs`):
 ```
-Same button on the pink `PendingClientApprovalBoard` cards.
+id, driver_id, endpoint (unique), p256dh, auth, user_agent,
+created_at, last_used_at
+```
+RLS: no client access (writes happen through token-scoped server fns, reads only from the admin client). Standard GRANTs.
 
-## 5. Admin panel
+**New secret**: `VAPID_PRIVATE_KEY` (generated). `VAPID_PUBLIC_KEY` already implied by the existing `getPushVapidPublicKey` fn — will reuse.
 
-The flat weekly cost is `ai_feature_costs.extra_company_logos_weekly`. It shows up automatically in the existing "AI & Features Pricing" card grid with a 0–50 slider — no admin UI changes needed.
+**Server fns (token-scoped, same pattern as client push)** in `coordinator-public.functions.ts`:
+- `driverSubscribePush({ token, endpoint, p256dh, auth, user_agent })` — upserts by endpoint under the driver's token.
+- `driverUnsubscribePush({ token, endpoint })`.
+- `sendDriverPushForJob(job_id, kind)` — server-only helper (not exposed). Uses `web-push` npm package on the Worker.
 
-## Packages to add
-- `react-rnd` (drag/resize)
-- `qrcode.react` (QR)
-- `html-to-image` (PNG export)
+**Wiring**:
+- In `assignDriver` (and any code path that sets `driver_id`), fire-and-forget `sendDriverPushForJob(job_id, "assigned")` after the update succeeds.
+- Payload: `{ title: "New trip — tap to accept", body: "{from} → {to} at {time}", url: "/m/driver/{token}#job-{id}" }`. Token resolved from `driver.linked_user_id` via the driver's active magic link (falls back to skipping push if no live token, so nothing crashes).
+- On click, service worker (`public/sw.js`) opens the URL, focusing an existing tab if the token matches.
 
-## Out of scope
-- Rendering the saved board inside the driver's mobile app (this ships the coordinator side + persistence; the driver read is a separate task).
-- Editing per-logo billing thresholds from the UI (admin panel already handles cost; free-limit `5` is a constant).
-- Full font upload; text uses system-safe fonts only in v1.
+**Driver dashboard**:
+- Small "Enable trip alerts" banner near the pending banner when `Notification.permission === 'default'` and push is supported. One tap requests permission + subscribes.
+- Menu item "Push notifications: on / off" to unsubscribe.
+
+**Fallback**: everything else (chime, vibration, in-app banner) still works when push is denied or unsupported (iOS < 16.4 in non-PWA context).
+
+## 3. Cross-company: partner coordinator accepts first
+
+**New job column** `partner_accepted_at TIMESTAMPTZ` — nullable, defaults null.
+
+**Trigger `enforce_partner_accept_before_driver_assign`** on `jobs`: if a coordinator from company X sets `driver_id` to a driver whose `company_id != company_of(actor)` OR the job's `executor_company_id` was just set to a partner company, and `partner_accepted_at IS NULL`, raise `partner_must_accept_first`. Server fns catch this and return a clean error.
+
+**Provider-dispatch server fns** (in `collab.functions.ts` / new `dispatch.functions.ts`):
+- `dispatchToPartner({ job_id, partner_company_id })` — the sending coordinator picks a connected provider company; sets `executor_company_id = partner_company_id`, appends to `dispatch_chain_company_ids`, leaves `partner_accepted_at = null` and `driver_id = null`. Auto-posts trip-chat system message "📩 Dispatched to {partner name} — awaiting their acceptance."
+- `partnerAcceptDispatch({ job_id })` — middleware `requireSupabaseAuth`; verifies actor's company = current `executor_company_id`; sets `partner_accepted_at = now()`; posts "✅ {partner} accepted — now assigning driver."
+- `partnerRejectDispatch({ job_id, reason })` — required reason from same short list; reverts `executor_company_id` to the previous hop (or origin), pops the chain, posts a system message with the reason.
+
+**Coordinator UI** — new page `/coordinator/incoming` already exists; extend it:
+- Two tabs: "Pending dispatches" (jobs where I am current executor and `partner_accepted_at IS NULL`) and "My open trips."
+- Each pending row: Accept / Decline (reason picker), just like the driver flow.
+- Trip cards in the sending coordinator's board show a purple "With {partner} — awaiting acceptance" badge.
+
+**Driver visibility on a partner-dispatched trip**: driver only sees it in their manifest once `partner_accepted_at IS NOT NULL` AND `driver_id = them`. The `getDriverManifest` query already filters by `driver_id`, so this is automatic — driver never sees a job until their coordinator has said yes.
+
+## 4. Escalation & fallback details
+
+- If a partner coordinator sits on a pending dispatch for > 30 min, the sending coordinator's card flips to red with a "Nudge" button that posts a chat prod and re-sends the push (planned for a follow-up if time allows).
+- All new server fns validate input with Zod and use `requireSupabaseAuth` where a session is needed.
+- Auto-approve chain: an in-house driver assignment (same company) still auto-nulls `driver_accepted_at` — no coord-level accept required, only the driver's. That matches option 1 from the user's earlier answer ("all new assignments" get driver accept, but cross-company also adds a coordinator-accept layer).
+
+## Technical notes
+
+- No changes to auto-generated files (`types.ts`, `client.ts`, `routeTree.gen.ts` regenerates itself).
+- `web-push` package: verify Cloudflare Workers compatibility before install; fall back to raw Web Crypto VAPID + fetch if not compatible (same approach used by existing client push if present).
+- All new tables get GRANT + RLS + service_role in one migration; policies deny anon writes.
+- Trigger and column changes ship in a single migration alongside a backfill: `UPDATE jobs SET partner_accepted_at = now() WHERE executor_company_id IS NULL OR executor_company_id = company_id` so existing in-house jobs aren't blocked.
+- I'll wire the push send inline in `assignDriver` behind a try/catch so a push failure never blocks the assignment itself.
+
+## What ships in this pass
+
+1. Migration: `partner_accepted_at` column + trigger + backfill; `driver_push_subs` table.
+2. Coordinator badges + escalation colors + auto system messages (no new tables).
+3. Push subscribe/unsubscribe fns + service worker handler + `sendDriverPushForJob` helper + wiring in `assignDriver`.
+4. Partner accept/decline fns + `/coordinator/incoming` extension.
+5. Secret: generate `VAPID_PRIVATE_KEY`.
+
+Confirm and I'll execute.
