@@ -1118,6 +1118,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       identity,
       openSos: openSos ?? [],
       branding,
+      features,
     };
   });
 
