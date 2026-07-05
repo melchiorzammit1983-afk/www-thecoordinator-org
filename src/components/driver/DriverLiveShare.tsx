@@ -220,11 +220,39 @@ export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasAc
               });
             },
           );
+          watcherId = id;
           if (cancelled) {
-            await BackgroundGeolocation.removeWatcher({ id });
+            // Effect was torn down (trip completed) before addWatcher resolved.
+            try { await BackgroundGeolocation.removeWatcher({ id }); } catch { /* ignore */ }
+            nativeWatcherRef.current = null;
           } else {
             nativeWatcherRef.current = id;
           }
+        } catch (e: any) {
+          setStatus("error");
+          setError(e?.message ?? "Failed to start background tracking");
+        }
+      })();
+      return () => {
+        cancelled = true;
+        // Guaranteed teardown when the driver marks the trip completed
+        // (or turns the toggle off). Stops the foreground service on
+        // Android and releases the "Always" location hold on iOS so the
+        // battery isn't drained after the trip.
+        if (watcherId) {
+          (async () => {
+            try {
+              const { registerPlugin } = await import("@capacitor/core");
+              const BackgroundGeolocation = registerPlugin<{
+                removeWatcher(o: { id: string }): Promise<void>;
+              }>("BackgroundGeolocation");
+              await BackgroundGeolocation.removeWatcher({ id: watcherId! });
+            } catch { /* ignore */ }
+            nativeWatcherRef.current = null;
+          })();
+        }
+      };
+    }
         } catch (e: any) {
           setStatus("error");
           setError(e?.message ?? "Failed to start background tracking");
