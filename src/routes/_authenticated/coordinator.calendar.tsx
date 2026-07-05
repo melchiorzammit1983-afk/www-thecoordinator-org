@@ -2018,6 +2018,7 @@ function DetailsSheetHost({
 /* ------------------------------ Live map panel ------------------------------ */
 
 function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
+  const liveTrackingEnabled = useFeature("live_tracking");
   const [open, setOpen] = useState(initialOpen);
   const fn = useServerFn(listActiveDriverLocations);
   const sosFn = useServerFn(listActiveSosPoints);
