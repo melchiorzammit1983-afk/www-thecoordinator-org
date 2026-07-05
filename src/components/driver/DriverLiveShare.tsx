@@ -364,7 +364,11 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
   }, [enabled, lastAt, native]);
 
   return (
-    <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+    <div
+      className="rounded-lg border bg-card p-3 flex items-center gap-3"
+      style={hidden ? { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", pointerEvents: "none", opacity: 0 } : undefined}
+      aria-hidden={hidden ? true : undefined}
+    >
       <div className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${
         status === "live" ? "bg-emerald-500/15 text-emerald-600"
           : status === "paused" ? "bg-amber-500/15 text-amber-600"
