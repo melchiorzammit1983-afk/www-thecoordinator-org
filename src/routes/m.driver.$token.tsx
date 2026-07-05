@@ -39,7 +39,7 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
-  Timer, UserX,
+  Timer, UserX, Maximize2, Minimize2,
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
