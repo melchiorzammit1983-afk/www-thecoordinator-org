@@ -553,6 +553,17 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
       driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
     } as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
+    // Only announce on the first acceptance, not on idempotent re-taps.
+    if (!job.driver_accepted_at) {
+      await supabaseAdmin.from("trip_messages").insert({
+        job_id: data.job_id,
+        company_id: job.company_id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `✅ ${link.subject_label ?? "Driver"} accepted this trip.`,
+        thread_kind: "driver_coord",
+      } as never);
+    }
     // Withdraw any still-open price proposals from this driver on this job.
     if (link.subject_id) {
       await supabaseAdmin.from("job_price_proposals").update({
