@@ -1083,6 +1083,47 @@ export type Database = {
           },
         ]
       }
+      driver_push_subs: {
+        Row: {
+          auth: string
+          created_at: string
+          driver_id: string
+          endpoint: string
+          id: string
+          last_used_at: string
+          p256dh: string
+          user_agent: string | null
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          driver_id: string
+          endpoint: string
+          id?: string
+          last_used_at?: string
+          p256dh: string
+          user_agent?: string | null
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          driver_id?: string
+          endpoint?: string
+          id?: string
+          last_used_at?: string
+          p256dh?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_push_subs_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_status_updates: {
         Row: {
           created_at: string
@@ -1805,6 +1846,9 @@ export type Database = {
           leave_by_at: string | null
           origin_company_id: string | null
           parent_job_id: string | null
+          partner_accepted_at: string | null
+          partner_decline_reason: string | null
+          partner_declined_at: string | null
           payment_method: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
@@ -1881,6 +1925,9 @@ export type Database = {
           leave_by_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
+          partner_accepted_at?: string | null
+          partner_decline_reason?: string | null
+          partner_declined_at?: string | null
           payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
@@ -1957,6 +2004,9 @@ export type Database = {
           leave_by_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
+          partner_accepted_at?: string | null
+          partner_decline_reason?: string | null
+          partner_declined_at?: string | null
           payment_method?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
