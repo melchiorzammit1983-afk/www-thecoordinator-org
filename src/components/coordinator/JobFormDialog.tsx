@@ -615,6 +615,16 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      // Learning loop — fire-and-forget capture of AI draft vs. final human data.
+      if (aiOriginalText && aiInitialOutput && aiInitialOutput.length) {
+        logAiFn({ data: {
+          original_text: aiOriginalText,
+          ai_initial_output: aiInitialOutput,
+          human_corrected_output: valid,
+        } }).catch(() => { /* silent — must not block save */ });
+        setAiOriginalText(null);
+        setAiInitialOutput(null);
+      }
       if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
