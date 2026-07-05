@@ -778,38 +778,96 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
 
 
       </div>
-      {parsed.length > 0 && (
-        <div className="space-y-2 max-h-64 overflow-auto rounded-md border p-2">
-          {parsed.map((t, i) => (
-            <div key={i} className={`rounded p-2 text-xs ${t.errors.length ? "bg-destructive/10 border border-destructive/30" : "bg-muted/40"}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-medium">
-                    {t.from_location || "?"} → {t.to_location || "?"}
-                    <span className="text-muted-foreground"> · {t.date || "?"} {t.time || "?"} · {t.pax.length} pax</span>
+      {aiLowConfidence && withErrors.length > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+          <div className="font-medium">⚠ The AI had trouble reading parts of this request.</div>
+          <div className="mt-0.5">Please review and complete the fields below before creating trips.</div>
+        </div>
+      )}
+      {withErrors.length > 0 && (
+        <div className="space-y-2 max-h-[380px] overflow-auto rounded-md border p-2">
+          {withErrors.map((t, i) => {
+            const patch = (u: Partial<ParsedTrip>) =>
+              setEdited((prev) => prev.map((r, j) => (j === i ? { ...r, ...u } : r)));
+            const bad = t.errors.length > 0;
+            return (
+              <div key={i} className={`rounded p-2 text-xs space-y-2 ${bad ? "bg-destructive/5 border border-destructive/30" : "bg-muted/40"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Trip {i + 1}
+                    {bad && <span className="ml-2 text-destructive normal-case tracking-normal">Missing: {t.errors.map((e) => e.replace("Missing ", "")).join(", ")}</span>}
                   </div>
-                  {(t.from_flight || t.to_flight) && (
-                    <div className="text-muted-foreground">✈ {t.from_flight || t.to_flight}</div>
-                  )}
-                  {t.clientcompanyname && <div className="text-muted-foreground">🏢 {t.clientcompanyname}</div>}
-                  {t.pax.length > 0 && (
-                    <details className="mt-1"><summary className="cursor-pointer text-muted-foreground">Names</summary>
-                      <ul className="pl-4 mt-1 list-disc">{t.pax.map((n, j) => <li key={j}>{n}</li>)}</ul>
-                    </details>
-                  )}
-                  {t.errors.length > 0 && (
-                    <div className="text-destructive mt-1">Missing: {t.errors.map((e) => e.replace("Missing ", "")).join(", ")}</div>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {t.errors.length > 0 && (
+                      <Button type="button" size="sm" variant="ghost" className="h-7"
+                        onClick={() => onComplete(t)} title="Open in Manual form for full editing">
+                        <PencilLine className="h-3 w-3 mr-1" /> Manual
+                      </Button>
+                    )}
+                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7"
+                      onClick={() => setEdited((prev) => prev.filter((_, j) => j !== i))}
+                      title="Remove this trip">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
-                {t.errors.length > 0 && (
-                  <Button type="button" size="sm" variant="outline" className="h-7 shrink-0"
-                    onClick={() => onComplete(t)}>
-                    <PencilLine className="h-3 w-3 mr-1" /> Complete
-                  </Button>
-                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Date</span>
+                    <Input type="date" value={t.date} className="h-7 text-xs"
+                      onChange={(e) => patch({ date: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Time</span>
+                    <Input type="time" value={t.time} className="h-7 text-xs"
+                      onChange={(e) => patch({ time: e.target.value })} />
+                  </label>
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-[10px] text-muted-foreground">Pickup</span>
+                    <Input value={t.from_location} className="h-7 text-xs"
+                      placeholder="Pickup address"
+                      onChange={(e) => patch({ from_location: e.target.value })} />
+                  </label>
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-[10px] text-muted-foreground">Delivery</span>
+                    <Input value={t.to_location} className="h-7 text-xs"
+                      placeholder="Delivery address"
+                      onChange={(e) => patch({ to_location: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Company</span>
+                    <Input value={t.clientcompanyname} className="h-7 text-xs"
+                      placeholder="Client / company"
+                      onChange={(e) => patch({ clientcompanyname: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Contact phone</span>
+                    <Input value={t.contact_phone} className="h-7 text-xs"
+                      placeholder="+…"
+                      onChange={(e) => patch({ contact_phone: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Flight (from)</span>
+                    <Input value={t.from_flight} className="h-7 text-xs"
+                      placeholder="e.g. KM101"
+                      onChange={(e) => patch({ from_flight: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Flight (to)</span>
+                    <Input value={t.to_flight} className="h-7 text-xs"
+                      placeholder="e.g. KM102"
+                      onChange={(e) => patch({ to_flight: e.target.value })} />
+                  </label>
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-[10px] text-muted-foreground">Passengers (one per line)</span>
+                    <Textarea rows={2} value={t.pax.join("\n")} className="text-xs font-mono"
+                      placeholder="One name per line"
+                      onChange={(e) => patch({ pax: e.target.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) })} />
+                  </label>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
