@@ -484,12 +484,17 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
       const rows = res.payload ?? [];
       if (!rows.length) { toast.error("AI could not find any trips"); return; }
       setRaw(rowsToTsv(rows));
+      setAiLowConfidence(res.is_low_confidence === true);
       setChatOpen(false);
       setChat([]);
       setPendingQuestion(null);
       setReply("");
       setAttachments([]);
-      toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
+      if (res.is_low_confidence) {
+        toast.warning("AI extracted trips, but confidence is low — please review.");
+      } else {
+        toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
