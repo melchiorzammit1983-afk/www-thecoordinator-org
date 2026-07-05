@@ -249,6 +249,44 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_training_logs: {
+        Row: {
+          ai_initial_output: Json
+          company_id: string | null
+          created_at: string
+          human_corrected_output: Json
+          id: string
+          original_text: string
+          user_id: string | null
+        }
+        Insert: {
+          ai_initial_output: Json
+          company_id?: string | null
+          created_at?: string
+          human_corrected_output: Json
+          id?: string
+          original_text: string
+          user_id?: string | null
+        }
+        Update: {
+          ai_initial_output?: Json
+          company_id?: string | null
+          created_at?: string
+          human_corrected_output?: Json
+          id?: string
+          original_text?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_training_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_booking_modifications: {
         Row: {
           acknowledged_at: string | null

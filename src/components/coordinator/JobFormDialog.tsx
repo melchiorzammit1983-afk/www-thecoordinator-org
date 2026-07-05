@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
@@ -464,6 +464,11 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   // AI confidence — true when Gemini flags the extraction as fuzzy / partial.
   const [aiLowConfidence, setAiLowConfidence] = useState(false);
 
+  // Learning-loop capture: remember the exact text + first AI draft so we
+  // can compare it against the coordinator's final edits on save.
+  const [aiOriginalText, setAiOriginalText] = useState<string | null>(null);
+  const [aiInitialOutput, setAiInitialOutput] = useState<AiRow[] | null>(null);
+
   const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
     setRaw((prev) => {
       const tsv = rowsToTsv(trips);
@@ -477,6 +482,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
   const aiFn = useServerFn(extractTripsFromText);
+  const logAiFn = useServerFn(logAiTrainingSample);
 
   const aiMut = useMutation({
     mutationFn: (payload: { messages: ChatMsg[]; attachments?: Omit<Attachment, "size">[]; urls?: string[] }) =>
@@ -489,6 +495,11 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       }
       const rows = res.payload ?? [];
       if (!rows.length) { toast.error("AI could not find any trips"); return; }
+      // Capture the first AI draft + the raw text that produced it so we
+      // can compare against the coordinator's final edits on save.
+      const firstUserMsg = aiMut.variables?.messages?.find((m) => m.role === "user")?.text ?? raw;
+      setAiOriginalText(firstUserMsg);
+      setAiInitialOutput(rows);
       setRaw(rowsToTsv(rows));
       setAiLowConfidence(res.is_low_confidence === true);
       setChatOpen(false);
@@ -604,6 +615,16 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
     onSuccess: (res: { created: string[] }) => {
       toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      // Learning loop — fire-and-forget capture of AI draft vs. final human data.
+      if (aiOriginalText && aiInitialOutput && aiInitialOutput.length) {
+        logAiFn({ data: {
+          original_text: aiOriginalText,
+          ai_initial_output: aiInitialOutput,
+          human_corrected_output: valid,
+        } }).catch(() => { /* silent — must not block save */ });
+        setAiOriginalText(null);
+        setAiInitialOutput(null);
+      }
       if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
