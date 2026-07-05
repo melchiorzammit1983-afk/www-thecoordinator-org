@@ -148,10 +148,18 @@ function SignBoardPage() {
     );
   }
 
+  const textClass = theme === "light" ? "text-slate-900" : "text-white";
+  const subtleClass = theme === "light" ? "text-slate-500" : "text-white/60";
+  const iconBtnClass =
+    theme === "light"
+      ? "text-slate-700 hover:text-slate-900 hover:bg-slate-900/10"
+      : "text-white/80 hover:text-white hover:bg-white/10";
+
   return (
     <div
-      className="fixed inset-0 flex flex-col overflow-hidden text-white select-none"
-      style={bg}
+      ref={rootRef}
+      className={`fixed inset-0 flex flex-col overflow-hidden select-none ${textClass}`}
+      style={{ ...bg, ...lightOverride }}
     >
       {/* Silent video fallback — visually hidden, keeps screen awake on iOS */}
       <video
@@ -164,90 +172,126 @@ function SignBoardPage() {
         className="pointer-events-none absolute h-px w-px opacity-0"
       />
 
-      {/* Top bar (auto-hides after a few seconds could be added; keep static) */}
+      {/* Top bar */}
       <div className="flex items-center justify-between px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 z-10">
-        <Button
-          asChild
-          size="sm"
-          variant="ghost"
-          className="text-white/80 hover:text-white hover:bg-white/10"
-        >
+        <Button asChild size="sm" variant="ghost" className={iconBtnClass}>
           <Link to="/m/driver/$token" params={{ token }}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
           </Link>
         </Button>
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button size="sm" variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10">
-              <Settings2 className="h-4 w-4 mr-1" /> Choose
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-2xl">
-            <SheetHeader>
-              <SheetTitle>Show on sign</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 space-y-3">
-              <FieldRow
-                label="Passenger name"
-                value={job?.passenger_name}
-                checked={selected.passenger}
-                onChange={(v) => setSelected((s) => ({ ...s, passenger: v }))}
-              />
-              <FieldRow
-                label="Flight number"
-                value={job?.flight_number}
-                checked={selected.flight}
-                onChange={(v) => setSelected((s) => ({ ...s, flight: v }))}
-              />
-              <FieldRow
-                label="Client company"
-                value={job?.client_company_name}
-                checked={selected.company}
-                onChange={(v) => setSelected((s) => ({ ...s, company: v }))}
-              />
-              <p className="text-xs text-muted-foreground pt-2">
-                Screen will stay awake while the sign board is open.
-              </p>
-            </div>
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={iconBtnClass}
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            aria-label="Toggle light/dark"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={iconBtnClass}
+            onClick={() => {
+              const el = rootRef.current as any;
+              const req = el?.requestFullscreen?.bind(el) || el?.webkitRequestFullscreen?.bind(el);
+              try { req?.().catch?.(() => {}); } catch { /* ignore */ }
+            }}
+            aria-label="Fullscreen"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </Button>
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetTrigger asChild>
+              <Button size="sm" variant="ghost" className={iconBtnClass}>
+                <Settings2 className="h-4 w-4 mr-1" /> Choose
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-2xl">
+              <SheetHeader>
+                <SheetTitle>Show on sign</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-3">
+                <FieldRow
+                  label="Passenger name"
+                  value={job?.passenger_name}
+                  checked={selected.passenger}
+                  onChange={(v) => setSelected((s) => ({ ...s, passenger: v }))}
+                />
+                <FieldRow
+                  label="Flight number"
+                  value={job?.flight_number}
+                  checked={selected.flight}
+                  onChange={(v) => setSelected((s) => ({ ...s, flight: v }))}
+                />
+                <FieldRow
+                  label="Client company"
+                  value={job?.client_company_name}
+                  checked={selected.company}
+                  onChange={(v) => setSelected((s) => ({ ...s, company: v }))}
+                />
+                <p className="text-xs text-muted-foreground pt-2">
+                  Screen will stay awake while the sign board is open.
+                </p>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
 
-      {/* Anchored dispatcher logo */}
-      {anchorLogo && (
-        <div className="flex justify-center pt-2 pb-1 z-10">
-          <img
-            src={anchorLogo}
-            alt={data.company_name || "Dispatcher"}
-            className="h-[10vh] max-h-24 min-h-12 w-auto object-contain drop-shadow-lg"
-          />
-        </div>
-      )}
-
-      {/* Main text area — auto-scaled with clamp() + viewport units */}
-      <div className="flex-1 grid place-items-center px-[4vw] pb-[calc(env(safe-area-inset-bottom)+1rem)] z-10 min-h-0">
-        {lines.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => setSheetOpen(true)}
-            className="text-center text-white/60 text-[clamp(1rem,3vw,1.5rem)] leading-snug"
-          >
-            Tap <span className="underline">Choose</span> to display trip info
-          </button>
-        ) : (
+      {/* Content area — portrait = logo top + text below; landscape = logo left + text right */}
+      <div
+        className={`flex-1 z-10 min-h-0 px-[3vw] pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
+          landscape ? "grid grid-cols-[minmax(0,32%)_minmax(0,1fr)] items-center gap-[3vw]" : "flex flex-col"
+        }`}
+      >
+        {anchorLogo && (
           <div
-            className="grid gap-[2vh] w-full text-center font-bold tracking-tight leading-[1.05]"
-            style={{
-              gridAutoRows: "1fr",
-            }}
+            className={
+              landscape
+                ? "flex items-center justify-center h-full min-w-0"
+                : "flex justify-center pt-2 pb-1 shrink-0"
+            }
           >
-            {lines.map((text, i) => (
-              <AutoScaleLine key={i} text={text} totalLines={lines.length} />
-            ))}
+            <img
+              src={anchorLogo}
+              alt={data.company_name || "Dispatcher"}
+              className={
+                landscape
+                  ? "max-h-[80vh] max-w-full w-auto object-contain drop-shadow-lg"
+                  : "h-[10vh] max-h-24 min-h-12 w-auto object-contain drop-shadow-lg"
+              }
+            />
           </div>
         )}
+
+        <div
+          className={`grid place-items-center min-w-0 ${landscape ? "h-full" : "flex-1"}`}
+          style={{ textShadow: `0 2px 8px ${themeStyle.textShadowColor}` }}
+        >
+          {lines.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className={`text-center ${subtleClass} text-[clamp(1rem,3vw,1.5rem)] leading-snug`}
+            >
+              Tap <span className="underline">Choose</span> to display trip info
+            </button>
+          ) : (
+            <div
+              className="grid gap-[2vh] w-full text-center font-bold tracking-tight leading-[1.05]"
+              style={{ gridAutoRows: "1fr" }}
+            >
+              {lines.map((text, i) => (
+                <AutoScaleLine key={i} text={text} totalLines={lines.length} landscape={landscape} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
+
   );
 }
 
