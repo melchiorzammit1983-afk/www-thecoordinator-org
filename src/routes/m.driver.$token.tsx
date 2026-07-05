@@ -1065,6 +1065,7 @@ function useLiveRoute({
         next_instruction: string | null;
         next_maneuver: string | null;
         next_step_distance_m: number | null;
+        steps: RouteStep[];
       };
       alternatives: Array<{
         duration_sec: number | null;
@@ -1074,6 +1075,7 @@ function useLiveRoute({
         next_instruction: string | null;
         next_maneuver: string | null;
         next_step_distance_m: number | null;
+        steps: RouteStep[];
       }>;
     }>,
   });
@@ -1111,8 +1113,10 @@ function useLiveRoute({
     reroute_saving_sec: bestAlt?.saving ?? 0,
     onAcceptReroute: () => { if (bestAlt) setAcceptedAltIdx(bestAlt.i); },
     isLoading,
+    steps: active?.steps ?? [],
   };
 }
+
 
 function formatEtaMin(sec: number | null): string {
   if (sec == null) return "—";
