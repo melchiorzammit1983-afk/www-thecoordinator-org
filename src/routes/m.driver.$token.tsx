@@ -1120,7 +1120,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
  * the map owns the rest of the screen. Only three data points: maneuver
  * arrow, distance-to-next-turn + ETA, and a massive Expand button.
  */
-function NavigateHud({ job, live, onExit }: {
+function NavigateHud({ live, onExit }: {
   job: Job; live: LiveRouteInfo; onExit: () => void;
 }) {
   const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
