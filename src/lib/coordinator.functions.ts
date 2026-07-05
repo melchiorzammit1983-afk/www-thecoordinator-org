@@ -3759,3 +3759,36 @@ export const listMyReferrals = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return { code: (c as any).referral_code as string, requests: data ?? [] };
   });
+
+// ---------- AI TRAINING LOG (learning loop) ----------
+// Called after coordinator saves AI-extracted trips so we can compare the
+// initial AI draft against the final human-corrected version.
+export const logAiTrainingSample = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      original_text: z.string().min(1).max(200000),
+      ai_initial_output: z.any(),
+      human_corrected_output: z.any(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    let companyId: string | null = null;
+    try {
+      const c = await resolveCompany(context);
+      companyId = (c as any)?.id ?? null;
+    } catch {
+      companyId = null;
+    }
+    const { error } = await context.supabase
+      .from("ai_training_logs")
+      .insert({
+        user_id: context.userId,
+        company_id: companyId,
+        original_text: data.original_text,
+        ai_initial_output: data.ai_initial_output,
+        human_corrected_output: data.human_corrected_output,
+      });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
