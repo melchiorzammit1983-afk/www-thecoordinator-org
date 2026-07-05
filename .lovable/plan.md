@@ -1,62 +1,70 @@
-## Redesign the Super Admin "AI & Features Pricing" panel
+## Goal
+Add a smart backend verification engine that flags duplicate and suspicious trips across all trips in the next 7 days, with inline badges and Dismiss / Merge quick-actions on coordinator cards.
 
-Focused rework of `src/routes/_authenticated/admin.pricing.tsx` (Feature Costs section) plus a new companion Wallets section. Plans and Point Packs sections stay as-is — this pass targets the two things the request calls out: feature pricing UX and the wallet overview.
+## 1. Backend — flag computation
 
-### 1. Feature cost cards (replaces the current dense table)
+New server function `computeTripFlags` in `src/lib/coordinator.functions.ts` (auth-scoped to caller's `company_id`).
 
-Replace the `FeatureCostsCard` table layout with a responsive grid of cards (1 col mobile, 2 cols md, 3 cols xl). One card per feature, grouped by category (Core / AI / Comms / Data) with a subtle section header per group.
+Input: none — server pulls the caller's window itself.
 
-Each card shows, from top to bottom:
-- Feature label (large) + monospaced `feature_key` (muted, small).
-- A big current price pill: `X.XX pts / use`.
-- A **range slider** (shadcn `Slider`, `min=0 max=50 step=0.5`) bound to a local `points` state. The slider is the primary control; the numeric value updates live above it. Values above the slider max (legacy rows already priced higher) auto-widen the slider max to `Math.max(50, currentValue)` so nothing gets clamped.
-- A tiny numeric `Input` under the slider for precise entry (keeps decimals + values >50 reachable).
-- **Usage this month** label: `Used 1,284× this month across N companies` (dimmed muted-foreground line, with a small `Activity` icon).
-- Two toggle chips in a row: `Enabled` / `Disabled` and `Hard stop` / `Allow negative`.
-- A `Save` button in the card footer — enabled only when dirty, uses the same `adminSetFeatureCost` mutation already wired.
+Scope: all jobs in caller's company with `date` from today through +7 days, excluding `status in ('cancelled','rejected','completed')` and excluding kinds already listed in `jobs.dismissed_flags`.
 
-Visual polish: subtle border, `bg-card`, hover elevates shadow slightly, dirty state adds a `ring-1 ring-primary/40` so admins see which cards have unsaved edits.
+Rules (per user selection):
+- **Potential Duplicate**: same normalized first pax name + same `date` + pickup times within ±60 min. Route match is a bonus signal (raises confidence label) but not required.
+- **Suspicious Pattern (Verify Flight Numbers)**: fires when EITHER
+  - same pax + same date + ≥2 trips where `from_location` or `to_location` matches `%airport%` / IATA-like tokens (3-letter codes) at times ≥90 min apart, OR
+  - same pax + same date + ≥2 trips whose `flight_number` values are both present and differ.
 
-### 2. Usage metrics data source
+Returns: `Record<jobId, { duplicates: {id, time, route}[]; suspicious: {id, time, flight_number}[] }>` — sibling ids so the UI can render "Merge with…" and "Verify against…".
 
-Add a new server function `adminFeatureUsageThisMonth` in `src/lib/admin.functions.ts`:
-- Guarded by `assertAdmin`.
-- Reads `points_ledger` where `created_at >= date_trunc('month', now())`.
-- Groups by `feature_key`, returning `{ feature_key, uses, companies }` where `uses = count(*)` and `companies = count(distinct company_id)`.
-- Cached in the client via `useQuery` alongside the existing `listAiFeatureCosts` query.
+One batched SQL fetch per company (single `SELECT` over the 7-day window), grouped in memory. ~80-line handler.
 
-The Feature Costs section joins the two datasets in memory and passes `{ uses, companies }` into each card. Missing entries render as `Used 0× this month`.
+## 2. Backend — dismiss + merge actions
 
-### 3. Total Wallet Overview (new section, above Plans)
+Two new server functions:
 
-New `WalletsCard` above `PlansCard` inside `PricingAdmin`:
-- Header: "Company wallets" + subtitle "Live point balances across all companies."
-- A compact right-aligned summary strip: `Total balance: 12,430 pts · N companies · M topped up this month`.
-- A search input to filter by company name.
-- Table columns: **Company** (name + created_at muted), **Plan** (badge from active subscription), **Balance** (large mono, color-coded: `text-emerald-600` >0, `text-amber-600` low <20, `text-destructive` ≤0), **Last activity** (relative time from most recent `points_ledger` entry), **Actions**.
-- Actions column reuses the existing `<CompanyBillingDialog />` component (already imported in `admin.index.tsx`) as the "Top up" quick-action — clicking opens the same dialog that handles grant/plan/entitlements, so we don't duplicate business logic.
+- `dismissTripFlag({ job_id, kind: "duplicate" | "suspicious" })` — appends the kind to `jobs.dismissed_flags text[]`. Company-scoped.
+- `mergeTrips({ keep_job_id, drop_job_ids: string[] })` — coordinator explicitly picks which trip survives. Verifies all rows belong to caller's company, copies any missing pax rows from dropped jobs onto the kept job (dedup by name), then soft-cancels dropped rows (`status='cancelled'`, internal note `merged into <keep_job_id>`). No hard delete.
 
-Data comes from a new server function `adminListCompanyWallets` in `admin.functions.ts`:
-- Reads `companies (id, name, created_at, points_balance)`.
-- Left-joins `company_subscriptions (plan_id, plans(name))`.
-- For "last activity", one small `points_ledger` query grouped by `company_id` with `max(created_at)`.
-- Returns a single flat array so the table doesn't do N+1 fetches.
-
-### 4. Section ordering after the change
+Requires **one migration**:
 
 ```text
-Pricing (page title)
-├── Company wallets            ← NEW, top of page
-├── Feature point costs        ← redesigned as cards + sliders + usage
-├── Plans                      ← unchanged
-└── Point packs                ← unchanged
+ALTER TABLE public.jobs
+  ADD COLUMN dismissed_flags text[] NOT NULL DEFAULT '{}';
 ```
 
-### Technical notes
+Existing `jobs` RLS covers the column.
 
-- Slider: `import { Slider } from "@/components/ui/slider"` (already in the shadcn set per file listing). Two-way bound with a numeric input; both write to the same local state.
-- Category grouping stays keyed by `CATEGORIES` constant already in the file.
-- Server functions follow the existing `createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).handler(...)` shape and go under the existing `// ---------- COMPANY ...` sections in `admin.functions.ts`.
-- No schema changes, no new RLS work — all reads use `supabaseAdmin` inside admin-gated server functions, same pattern as the existing admin fetches.
-- No changes to `PlansCard`, `PointPacksCard`, `PlanEditor`, or `PackRow`.
-- Keep the `PricingAdmin` container width bumped to `max-w-7xl` to accommodate the card grid.
+## 3. UI — badges + quick actions
+
+Extend two surfaces in `src/routes/_authenticated/coordinator.calendar.tsx`:
+
+- **`PendingClientApprovalBoard`** (the pink/amber draft cards).
+- **`UnassignedColumn`** cards for any job in the 7-day window.
+
+Shared behavior:
+- One `useQuery(["trip-flags"], computeTripFlags)` at the page level, refetch every 30s and on job list changes.
+- For each card whose id has flags, render:
+  - `⚠️ Potential Duplicate Trip` badge (destructive) when `duplicates.length > 0`.
+  - `🔍 Suspicious Pattern: Verify Flight Numbers` badge (amber) when `suspicious.length > 0`.
+  - Compact action row under existing buttons:
+    - `Dismiss` (icon-only on small cards) → calls `dismissTripFlag` for the shown kind, refetches.
+    - `Merge…` (only when duplicates exist) → opens a small dialog listing this trip + each duplicate sibling (date, time, route, pax); coordinator radio-picks the trip to keep, confirms, and `mergeTrips` runs.
+- Badges disappear once dismissed or after merge (cache invalidated for `trip-flags` and `jobs`).
+- No change to Approve / Go-Ahead behavior — flags are advisory only.
+
+New tiny component: `src/components/coordinator/MergeTripsDialog.tsx` (single file, ~80 lines).
+
+## 4. Files touched
+
+- `src/lib/coordinator.functions.ts` — add `computeTripFlags`, `dismissTripFlag`, `mergeTrips`.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — page-level query + render badges/actions in `PendingClientApprovalBoard` and `UnassignedColumn`.
+- `src/components/coordinator/MergeTripsDialog.tsx` — new.
+- 1 migration adding `jobs.dismissed_flags`.
+
+## Out of scope
+
+- Cross-company duplicate detection.
+- Automatic auto-merge without confirmation.
+- Flagging past / completed trips.
+- Editing the flag rules from the UI (thresholds are constants; can be exposed later).

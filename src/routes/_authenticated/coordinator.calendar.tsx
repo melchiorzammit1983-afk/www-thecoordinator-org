@@ -9,7 +9,7 @@ import { formatMaltaDateTime } from "@/lib/time";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
-  Pencil, Sparkles,
+  Pencil, Sparkles, AlertTriangle, Search, X as XIcon, GitMerge,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner, recallPartnerDispatch,
@@ -24,8 +24,9 @@ import {
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
   listActiveSosPoints, acknowledgeSosCoord, acknowledgeAllSosForJob,
   approveClientJob, rejectClientJob,
-
+  computeTripFlags, dismissTripFlag,
 } from "@/lib/coordinator.functions";
+import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
 
 
 import { Button } from "@/components/ui/button";
@@ -143,6 +144,11 @@ type Job = {
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
+type TripFlagInfo = {
+  duplicates: { id: string; date: string | null; time: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+  suspicious: { id: string; date: string | null; time: string | null; flight_number: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+};
+
 function CalendarPage() {
   const [view, setView] = useState<"day" | "week">("day");
   const [anchor, setAnchor] = useState<Date>(new Date());
@@ -217,6 +223,20 @@ function CalendarPage() {
   const { data: drivers } = useQuery({
     queryKey: ["drivers"], queryFn: () => driversFn() as Promise<Driver[]>,
   });
+
+  const flagsFn = useServerFn(computeTripFlags);
+  const { data: tripFlags } = useQuery({
+    queryKey: ["trip-flags"],
+    queryFn: () => flagsFn() as Promise<Record<string, TripFlagInfo>>,
+    refetchInterval: 30_000,
+  });
+  const dismissFlagFn = useServerFn(dismissTripFlag);
+  const dismissFlagMut = useMutation({
+    mutationFn: (v: { job_id: string; kind: "duplicate" | "suspicious" }) => dismissFlagFn({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["trip-flags"] }); toast.success("Alert dismissed"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const [mergeTarget, setMergeTarget] = useState<{ current: MergeCandidate; duplicates: MergeCandidate[] } | null>(null);
 
   const assignFn = useServerFn(assignDriver);
   const assignMut = useMutation({
@@ -408,6 +428,9 @@ function CalendarPage() {
     clientPortalEnabled,
     clientPresence: clientPresence ?? {},
     signals: cardSignals ?? {},
+    tripFlags: tripFlags ?? {},
+    onDismissFlag: (job_id, kind) => dismissFlagMut.mutate({ job_id, kind }),
+    onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
   };
 
 
@@ -644,6 +667,18 @@ function CalendarPage() {
         />
       )}
 
+      {mergeTarget && (
+        <MergeTripsDialog
+          open={!!mergeTarget}
+          onOpenChange={(v) => !v && setMergeTarget(null)}
+          current={mergeTarget.current}
+          duplicates={mergeTarget.duplicates}
+          onMerged={() => refetch()}
+        />
+      )}
+
+
+
       {selected.size > 0 && (
         <>
           <div aria-hidden className="h-16" />
@@ -678,7 +713,9 @@ type CardCtx = {
     unread_client: number; unread_driver: number;
     client_change: boolean; sos_open: boolean; driver_status_new: boolean; rejected?: boolean;
   }>;
-
+  tripFlags?: Record<string, TripFlagInfo>;
+  onDismissFlag?: (jobId: string, kind: "duplicate" | "suspicious") => void;
+  onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
@@ -830,7 +867,7 @@ function OutboundBoard() {
 }
 
 /* ---------- Pending Client Approval ---------- */
-function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
+function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx: CardCtx; onChanged: () => void }) {
   const approveFn = useServerFn(approveClientJob);
   const rejectFn = useServerFn(rejectClientJob);
   const [busy, setBusy] = useState<string | null>(null);
@@ -881,6 +918,7 @@ function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[
               </div>
               {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
               {j.clientcompanyname && <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>}
+              <TripFlagBadges job={j} ctx={ctx} />
               <div className="flex gap-1.5 pt-1">
                 <Button size="sm" className="flex-1 h-7" disabled={busy === j.id} onClick={() => approve(j.id)}>
                   Approve
@@ -889,6 +927,7 @@ function PendingClientApprovalBoard({ jobs, ctx: _ctx, onChanged }: { jobs: Job[
                   Reject
                 </Button>
               </div>
+
             </div>
           );
         })}
@@ -1338,6 +1377,67 @@ function CompletedStrip({
 
 /* ------------------------------ Trip card ------------------------------ */
 
+function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
+  const flags = ctx.tripFlags?.[job.id];
+  if (!flags) return null;
+  const hasDup = flags.duplicates.length > 0;
+  const hasSus = flags.suspicious.length > 0;
+  if (!hasDup && !hasSus) return null;
+  const currentPax = (job.pax ?? []).map((p) => p.name).filter(Boolean) as string[];
+  const current: MergeCandidate = {
+    id: job.id, date: job.date, time: job.time,
+    from_location: job.from_location, to_location: job.to_location,
+    pax_names: currentPax,
+  };
+  return (
+    <div className="mt-1.5 space-y-1" onClick={(e) => e.stopPropagation()}>
+      {hasDup && (
+        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1">
+          <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />
+          <span className="text-[10px] font-semibold text-destructive">⚠️ Potential Duplicate Trip</span>
+          <span className="text-[10px] text-destructive/80">
+            × {flags.duplicates.length}
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => ctx.onOpenMerge?.(current, flags.duplicates)}
+              className="text-[10px] font-medium inline-flex items-center gap-1 rounded px-1.5 py-0.5 bg-destructive text-destructive-foreground hover:opacity-90"
+            >
+              <GitMerge className="h-3 w-3" /> Merge
+            </button>
+            <button
+              type="button"
+              onClick={() => ctx.onDismissFlag?.(job.id, "duplicate")}
+              className="text-[10px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 border border-destructive/40 text-destructive hover:bg-destructive/10"
+              aria-label="Dismiss duplicate alert"
+            >
+              <XIcon className="h-3 w-3" /> Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      {hasSus && (
+        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-amber-500/60 bg-amber-500/10 px-2 py-1">
+          <Search className="h-3 w-3 text-amber-700 dark:text-amber-400 shrink-0" />
+          <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-200">
+            🔍 Suspicious Pattern: Verify Flight Numbers
+          </span>
+          <span className="text-[10px] text-amber-700/80 dark:text-amber-300/80">× {flags.suspicious.length}</span>
+          <button
+            type="button"
+            onClick={() => ctx.onDismissFlag?.(job.id, "suspicious")}
+            className="ml-auto text-[10px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 border border-amber-500/60 text-amber-800 dark:text-amber-200 hover:bg-amber-500/10"
+            aria-label="Dismiss suspicious alert"
+          >
+            <XIcon className="h-3 w-3" /> Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
@@ -1574,6 +1674,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
+            <TripFlagBadges job={job} ctx={ctx} />
+
             {job.chain_names && job.chain_names.length >= 2 && (
               <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
                 {job.chain_names.map((name, i) => {

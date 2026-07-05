@@ -1723,6 +1723,7 @@ export type Database = {
           date: string
           deletion_requested_at: string | null
           deletion_requested_by: string | null
+          dismissed_flags: string[]
           dispatch_chain_company_ids: string[]
           dispatch_decided_at: string | null
           dispatch_note: string | null
@@ -1795,6 +1796,7 @@ export type Database = {
           date: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dismissed_flags?: string[]
           dispatch_chain_company_ids?: string[]
           dispatch_decided_at?: string | null
           dispatch_note?: string | null
@@ -1869,6 +1871,7 @@ export type Database = {
           date?: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
+          dismissed_flags?: string[]
           dispatch_chain_company_ids?: string[]
           dispatch_decided_at?: string | null
           dispatch_note?: string | null
