@@ -79,15 +79,20 @@ export function JobFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent
+        className="max-w-2xl"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit trip" : "New trip"}</DialogTitle>
           <DialogDescription>Schedule a transfer, add passengers, and assign resources.</DialogDescription>
         </DialogHeader>
         {isEdit ? (
-          <ManualForm drivers={drivers} job={job} onSaved={onSaved} />
+          <ManualForm drivers={drivers} job={job} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : !bulkEnabled ? (
-          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
+          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : (
           <Tabs value={tab} onValueChange={(v) => setTab(v as "manual" | "bulk")}>
             <TabsList className="grid w-full grid-cols-2">
@@ -95,10 +100,10 @@ export function JobFormDialog({
               <TabsTrigger value="bulk">Paste bulk</TabsTrigger>
             </TabsList>
             <TabsContent value="manual" className="mt-3">
-              <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
+              <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
             </TabsContent>
             <TabsContent value="bulk" className="mt-3">
-              <BulkForm onSaved={onSaved} onComplete={handleComplete} />
+              <BulkForm onSaved={onSaved} onComplete={handleComplete} onCancel={() => onOpenChange(false)} />
             </TabsContent>
           </Tabs>
         )}
@@ -108,8 +113,8 @@ export function JobFormDialog({
 }
 
 function ManualForm({
-  drivers, job, prefill, onSaved,
-}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void }) {
+  drivers, job, prefill, onSaved, onCancel,
+}: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
@@ -371,6 +376,7 @@ function ManualForm({
         )}
       </div>
       <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
       </DialogFooter>
     </form>
@@ -427,7 +433,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void }) {
+function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void; onCancel: () => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -872,6 +878,7 @@ function BulkForm({ onSaved, onComplete }: { onSaved: (createdDate?: string) => 
       )}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button disabled={mut.isPending || valid.length === 0} onClick={() => mut.mutate()}>
           {mut.isPending ? "Creating…" : `Create ${valid.length} trip${valid.length === 1 ? "" : "s"}`}
         </Button>
