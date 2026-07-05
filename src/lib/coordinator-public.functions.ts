@@ -989,25 +989,15 @@ export const pushDriverLocation = createServerFn({ method: "POST" })
     if (!link || !link.subject_id) throw new Error("driver_link_required");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Prefer a currently-active trip; if none, fall back to the driver's next
-    // assigned (non-terminal) job so manual "Share my location now" still
-    // sends useful data (e.g. the driver's on the way but hasn't updated status yet).
+    // Only accept pings while a trip is actively in motion. Once the driver
+    // marks the trip completed (or it's cancelled), stale watchers stop leaking.
     const { data: activeJobs } = await supabaseAdmin.from("jobs")
       .select("id, company_id, pickup_at, status")
       .eq("driver_id", link.subject_id)
       .in("status", ["en_route", "arrived", "in_progress"])
       .order("pickup_at", { ascending: false })
       .limit(1);
-    let active = activeJobs?.[0] as { id: string; company_id: string } | undefined;
-    if (!active) {
-      const { data: fallback } = await supabaseAdmin.from("jobs")
-        .select("id, company_id, pickup_at, status")
-        .eq("driver_id", link.subject_id)
-        .not("status", "in", "(completed,cancelled)")
-        .order("pickup_at", { ascending: true })
-        .limit(1);
-      active = fallback?.[0] as { id: string; company_id: string } | undefined;
-    }
+    const active = activeJobs?.[0] as { id: string; company_id: string } | undefined;
     if (!active) return { ok: true, inserted: 0, reason: "no_active_trip" as const };
 
 
