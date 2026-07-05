@@ -19,21 +19,31 @@ export const Route = createFileRoute("/_authenticated/coordinator")({
   component: CoordinatorLayout,
 });
 
-const NAV = [
+import { AI_FEATURE_KEYS, type FeatureKey } from "@/lib/features";
+
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  exact: boolean;
+  feature: FeatureKey | null;
+};
+
+const NAV: NavItem[] = [
   { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true, feature: null },
-  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" as const },
-  { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" as const },
-  { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" as const },
-  { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" as const },
-  { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" as const },
-  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" as const },
-  { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" as const },
-  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" as const },
-  { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: null },
+  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" },
+  { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" },
+  { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
+  { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
+  { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
+  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
+  { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
+  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
+  { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: "branding_advert" },
   { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
   { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
   { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
-] as const;
+];
 
 
 
