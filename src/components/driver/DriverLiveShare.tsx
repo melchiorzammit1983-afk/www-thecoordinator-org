@@ -122,15 +122,6 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
   const pushFn = useServerFn(pushDriverLocation);
 
   useEffect(() => { metaRef.current = liveMeta ?? null; }, [liveMeta]);
-  const [error, setError] = useState<string | null>(null);
-  const [lastAt, setLastAt] = useState<number | null>(null);
-  const native = isNative();
-  const watchIdRef = useRef<number | null>(null); // web watchPosition id
-  const nativeWatcherRef = useRef<string | null>(null); // native watcher id
-  const wakeLockRef = useRef<any>(null);
-  const queueRef = useRef<QueuedPoint[]>([]);
-  const lastPosRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
-  const pushFn = useServerFn(pushDriverLocation);
 
   // Restore persisted queue + toggle on mount.
   useEffect(() => {
