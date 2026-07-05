@@ -78,16 +78,31 @@ function CoordinatorLayout() {
     }
   }, [company, identity?.isAdmin, isLoading, navigate]);
 
-  // If admin turned off the feature that owns the route the user is looking at,
-  // bounce them back to the dashboard so disabled surfaces stay unreachable.
+  // Distinguish two cases:
+  //  - User navigates/deep-links to a disabled route → redirect with toast.
+  //  - User was on the route when admin flipped it off → show a banner but keep the page.
+  const lastPathnameRef = useRef<string | null>(null);
+  const [disabledBanner, setDisabledBanner] = useState<string | null>(null);
   useEffect(() => {
     if (!features) return;
     const match = NAV.find((n) => n.feature && (n.exact ? pathname === n.to : pathname.startsWith(n.to)));
-    if (match && match.feature && features[match.feature] === false) {
-      navigate({ to: "/coordinator", replace: true });
-    }
-    if (pathname.startsWith("/coordinator/ai-center") && !AI_FEATURE_KEYS.some((k) => features[k] !== false)) {
-      navigate({ to: "/coordinator", replace: true });
+    const aiRoute = pathname.startsWith("/coordinator/ai-center");
+    const aiAllOff = aiRoute && !AI_FEATURE_KEYS.some((k) => features[k] !== false);
+    const featureOff = !!(match && match.feature && features[match.feature] === false);
+
+    const pathChanged = lastPathnameRef.current !== pathname;
+    lastPathnameRef.current = pathname;
+
+    if (featureOff || aiAllOff) {
+      if (pathChanged) {
+        toast.error(`${match?.label ?? "This feature"} is currently disabled by your administrator.`);
+        navigate({ to: "/coordinator", replace: true });
+        setDisabledBanner(null);
+      } else {
+        setDisabledBanner(match?.label ?? "This feature");
+      }
+    } else {
+      setDisabledBanner(null);
     }
   }, [features, pathname, navigate]);
 
