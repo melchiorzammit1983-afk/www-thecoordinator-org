@@ -62,18 +62,20 @@ function useOnline() {
 
 function ClientTripPortal() {
   const { token } = Route.useParams();
-  const deviceId = useMemo(() => getDeviceId(), []);
+  const [deviceId, setDeviceId] = useState<string>("");
+  useEffect(() => { setDeviceId(getDeviceId()); }, []);
   const qc = useQueryClient();
   const online = useOnline();
 
   // Register service worker (offline + push)
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
 
   const portalFn = useServerFn(getClientTripPortal);
-  const cached = readPortalCache(token);
+  const [cached, setCached] = useState<ReturnType<typeof readPortalCache>>(null);
+  useEffect(() => { setCached(readPortalCache(token)); }, [token]);
   const { data: liveData, isLoading, error } = useQuery({
     queryKey: ["client-portal", token, deviceId],
     queryFn: async () => {
@@ -81,6 +83,7 @@ function ClientTripPortal() {
       writePortalCache(token, res);
       return res;
     },
+    enabled: !!deviceId,
     refetchInterval: online ? 15_000 : false,
     retry: online ? 3 : 0,
   });
@@ -90,7 +93,7 @@ function ClientTripPortal() {
   // Heartbeat presence every 45s while the tab is open
   const beatFn = useServerFn(heartbeatClientPortal);
   useEffect(() => {
-    if (!online) return;
+    if (!online || !deviceId) return;
     const ping = () => { beatFn({ data: { token, device_id: deviceId } }).catch(() => {}); };
     ping();
     const id = window.setInterval(ping, 45_000);
@@ -108,7 +111,53 @@ function ClientTripPortal() {
 
   const [tab, setTab] = useState<"trip" | "chat" | "rebook">("trip");
 
-  if (isLoading && !cached) {
+  const uniquePax = useMemo(() => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const p of (data?.pax ?? [])) {
+      const k = (p?.name ?? "").trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+    return out;
+  }, [data?.pax]);
+  const hasIdentity = !!data?.identity;
+  const isGroup = (data?.siblings?.length ?? 0) > 1;
+  const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
+
+  // Auto-claim identity when the coordinator shared a per-passenger link with ?pax=<uuid>.
+  const chooseFn = useServerFn(chooseClientIdentity);
+  const autoClaimedRef = useRef(false);
+  useEffect(() => {
+    if (!data || autoClaimedRef.current || hasIdentity || !deviceId) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const paxParam = params.get("pax");
+    if (!paxParam) return;
+    const match = (data.pax ?? []).find((p: any) => p?.id === paxParam);
+    if (!match) return;
+    autoClaimedRef.current = true;
+    chooseFn({ data: { token, device_id: deviceId, pax_id: match.id, pax_name: match.name } })
+      .then(() => qc.invalidateQueries({ queryKey: ["client-portal"] }))
+      .catch(() => { autoClaimedRef.current = false; });
+  }, [data, hasIdentity, chooseFn, token, deviceId, qc]);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    // Skip the picker entirely when a ?pax link is being auto-claimed.
+    const hasPaxParam = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax");
+    if (needsIdentity && !autoOpenedRef.current && !hasPaxParam) {
+      autoOpenedRef.current = true;
+      setPickerOpen(true);
+    }
+    if (hasIdentity) setPickerOpen(false);
+  }, [needsIdentity, hasIdentity]);
+
+  useFavicon((data as any)?.branding?.logo_url ?? null);
+
+  if ((isLoading || !deviceId) && !cached) {
     return <div className="min-h-screen grid place-items-center bg-slate-50">
       <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
     </div>;
@@ -125,50 +174,7 @@ function ClientTripPortal() {
   const job = data.job;
   const company = data.company;
   const driver = data.driver;
-  const isGroup = (data.siblings?.length ?? 0) > 1;
-  const hasIdentity = !!data.identity;
-  const uniquePax = useMemo(() => {
-    const seen = new Set<string>();
-    const out: any[] = [];
-    for (const p of (data.pax ?? [])) {
-      const k = (p?.name ?? "").trim().toLowerCase();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push(p);
-    }
-    return out;
-  }, [data.pax]);
-  const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
 
-  // Auto-claim identity when the coordinator shared a per-passenger link with ?pax=<uuid>.
-  const chooseFn = useServerFn(chooseClientIdentity);
-  const autoClaimedRef = useRef(false);
-  useEffect(() => {
-    if (autoClaimedRef.current || hasIdentity) return;
-    const params = new URLSearchParams(window.location.search);
-    const paxParam = params.get("pax");
-    if (!paxParam) return;
-    const match = (data.pax ?? []).find((p: any) => p?.id === paxParam);
-    if (!match) return;
-    autoClaimedRef.current = true;
-    chooseFn({ data: { token, device_id: deviceId, pax_id: match.id, pax_name: match.name } })
-      .then(() => qc.invalidateQueries({ queryKey: ["client-portal"] }))
-      .catch(() => { autoClaimedRef.current = false; });
-  }, [hasIdentity, data.pax, chooseFn, token, deviceId, qc]);
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const autoOpenedRef = useRef(false);
-  useEffect(() => {
-    // Skip the picker entirely when a ?pax link is being auto-claimed.
-    const hasPaxParam = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax");
-    if (needsIdentity && !autoOpenedRef.current && !hasPaxParam) {
-      autoOpenedRef.current = true;
-      setPickerOpen(true);
-    }
-    if (hasIdentity) setPickerOpen(false);
-  }, [needsIdentity, hasIdentity]);
-
-  useFavicon((data as any)?.branding?.logo_url ?? null);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
