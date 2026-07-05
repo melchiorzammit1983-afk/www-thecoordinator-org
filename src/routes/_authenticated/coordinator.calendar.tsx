@@ -2064,6 +2064,8 @@ function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
   const liveCount = points.filter((p) => Date.now() - new Date(p.captured_at).getTime() < 30_000).length;
 
   return (
+  if (!liveTrackingEnabled) return null;
+  return (
     <section className={`rounded-lg border bg-card ${sosPoints.length ? "ring-2 ring-red-500/60" : ""}`}>
       <button
         type="button" onClick={() => setOpen((v) => !v)}
