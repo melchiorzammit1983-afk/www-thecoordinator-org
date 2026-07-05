@@ -224,8 +224,13 @@ function DriverManifest() {
                 </div>
               )}
               {inMotion && (
-                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate">
-                  In motion · menu locked for safety
+                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
+                  <span>In motion · menu locked for safety</span>
+                  {wake.held && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
+                      ☀ Screen awake
+                    </span>
+                  )}
                 </div>
               )}
             </div>
