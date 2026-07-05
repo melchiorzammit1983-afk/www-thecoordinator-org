@@ -9,7 +9,7 @@ import { formatMaltaDateTime } from "@/lib/time";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
-  Pencil, Sparkles,
+  Pencil, Sparkles, AlertTriangle, Search, X as XIcon, GitMerge,
 } from "lucide-react";
 import {
   listConnections, dispatchJobToPartner, recallPartnerDispatch,
