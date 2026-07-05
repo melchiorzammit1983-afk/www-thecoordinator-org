@@ -1121,7 +1121,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
  * arrow, distance-to-next-turn + ETA, and a massive Expand button.
  */
 function NavigateHud({ live, onExit }: {
-  job: Job; live: LiveRouteInfo; onExit: () => void;
+  live: LiveRouteInfo; onExit: () => void;
 }) {
   const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
   return (
