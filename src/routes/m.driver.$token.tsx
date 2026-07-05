@@ -1082,19 +1082,97 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
           </Button>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <Button asChild variant="secondary" className="min-h-16 text-base font-semibold rounded-2xl">
-            <a href={navUrl} target="_blank" rel="noreferrer">
-              <Navigation className="h-5 w-5 mr-2" /> Navigate
-            </a>
-          </Button>
+          {canEnterNavigate && onEnterNavigate ? (
+            <Button
+              className="min-h-16 text-base font-bold rounded-2xl bg-primary text-primary-foreground shadow-md"
+              onClick={onEnterNavigate}
+            >
+              <Maximize2 className="h-5 w-5 mr-2" /> Navigate Mode
+            </Button>
+          ) : (
+            <Button asChild variant="secondary" className="min-h-16 text-base font-semibold rounded-2xl">
+              <a href={navUrl} target="_blank" rel="noreferrer">
+                <Navigation className="h-5 w-5 mr-2" /> Navigate
+              </a>
+            </Button>
+          )}
           <Button variant="outline" className="min-h-16 text-base font-semibold rounded-2xl" onClick={onOpenSummary}>
             <QrCode className="h-5 w-5 mr-2" /> Trip details
           </Button>
         </div>
+        {canEnterNavigate && (
+          <a
+            href={navUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground pt-1"
+          >
+            Open in Google Maps instead
+          </a>
+        )}
       </div>
     </section>
   );
 }
+
+/**
+ * Slim bottom HUD shown while Navigate Mode is active. Occupies ≤20vh so
+ * the map owns the rest of the screen. Only three data points: maneuver
+ * arrow, distance-to-next-turn + ETA, and a massive Expand button.
+ */
+function NavigateHud({ job, live, onExit }: {
+  job: Job; live: LiveRouteInfo; onExit: () => void;
+}) {
+  const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 transition-all duration-300 ease-out animate-fade-in"
+      style={{ maxHeight: "20vh" }}
+    >
+      {live.reroute_available && (
+        <button
+          type="button"
+          onClick={live.onAcceptReroute}
+          className="w-full flex items-center gap-2 px-4 py-2 bg-amber-500 text-black font-bold text-left"
+        >
+          <TrafficCone className="h-5 w-5 shrink-0" />
+          <span className="flex-1 text-sm leading-tight">
+            Faster route saves {formatEtaMin(live.reroute_saving_sec)} — tap to switch
+          </span>
+        </button>
+      )}
+      <div
+        className="flex items-center gap-3 px-4 py-3 border-t-2 border-white/60 shadow-2xl"
+        style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
+      >
+        <ManeuverArrow
+          maneuver={live.next_maneuver}
+          className="h-16 w-16 shrink-0 text-primary"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-3xl sm:text-4xl font-black tabular-nums leading-none text-slate-900 dark:text-white">
+            {formatDistance(live.next_step_distance_m) || formatDistance(live.distance_m)}
+          </div>
+          <div className="mt-1 flex items-baseline gap-2 text-base font-semibold text-slate-700 dark:text-slate-200">
+            <span className="tabular-nums">ETA {formatEtaMin(live.eta_sec)}</span>
+            {stripInstruction && (
+              <span className="truncate text-sm text-muted-foreground">· {stripInstruction}</span>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onExit}
+          aria-label="Expand trip details"
+          className="shrink-0 min-h-16 min-w-16 grid place-items-center rounded-2xl bg-primary text-primary-foreground font-bold shadow-lg active:scale-95 transition"
+        >
+          <Minimize2 className="h-7 w-7" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 
 function ProfileDialog({ open, onOpenChange, token, driver }: {
