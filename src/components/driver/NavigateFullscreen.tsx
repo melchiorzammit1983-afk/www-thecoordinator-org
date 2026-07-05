@@ -349,7 +349,7 @@ export function NavigateFullscreen({
       <button
         type="button"
         onClick={onExit}
-        aria-label="Exit navigate mode"
+        aria-label={isPreview ? "Close preview" : "Exit navigate mode"}
         className="absolute top-4 left-4 z-10 min-h-12 min-w-12 grid place-items-center rounded-full bg-white/95 text-slate-900 shadow-lg active:scale-95 transition"
       >
         <X className="h-6 w-6" />
@@ -366,8 +366,17 @@ export function NavigateFullscreen({
         <ExternalLink className="h-5 w-5" />
       </a>
 
-      {/* Top-center: current instruction banner (Google-Maps-style) */}
-      {displayInstruction && (
+      {/* Preview mode: destination title chip */}
+      {isPreview && title && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[60%]">
+          <div className="rounded-full bg-white/95 px-4 py-2 shadow-lg text-sm font-semibold text-slate-900 truncate">
+            To {title}
+          </div>
+        </div>
+      )}
+
+      {/* Top-center: next-maneuver banner (navigate mode) */}
+      {!isPreview && displayInstruction && (
         <div className="absolute top-4 left-20 right-20 z-[9] mx-auto max-w-md">
           <div
             className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
@@ -384,8 +393,8 @@ export function NavigateFullscreen({
         </div>
       )}
 
-      {/* Recenter FAB */}
-      {!follow && (
+      {/* Recenter FAB — navigate mode only */}
+      {!isPreview && !follow && (
         <button
           type="button"
           onClick={recenter}
@@ -395,6 +404,7 @@ export function NavigateFullscreen({
           <Crosshair className="h-6 w-6" />
         </button>
       )}
+
 
       {/* Bottom HUD: ETA + next step preview */}
       <div className="absolute inset-x-0 bottom-0 z-10">
