@@ -495,6 +495,11 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       }
       const rows = res.payload ?? [];
       if (!rows.length) { toast.error("AI could not find any trips"); return; }
+      // Capture the first AI draft + the raw text that produced it so we
+      // can compare against the coordinator's final edits on save.
+      const firstUserMsg = aiMut.variables?.messages?.find((m) => m.role === "user")?.text ?? raw;
+      setAiOriginalText(firstUserMsg);
+      setAiInitialOutput(rows);
       setRaw(rowsToTsv(rows));
       setAiLowConfidence(res.is_low_confidence === true);
       setChatOpen(false);
