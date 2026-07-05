@@ -388,7 +388,10 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
     : undefined;
 
   return (
-    <article className={`rounded-2xl border-2 bg-card shadow-sm overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}>
+    <article
+      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
+      style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
+    >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
       {/* Header strip */}
       <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
