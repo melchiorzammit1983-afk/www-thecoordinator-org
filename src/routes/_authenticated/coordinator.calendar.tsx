@@ -1375,6 +1375,67 @@ function CompletedStrip({
 
 /* ------------------------------ Trip card ------------------------------ */
 
+function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
+  const flags = ctx.tripFlags?.[job.id];
+  if (!flags) return null;
+  const hasDup = flags.duplicates.length > 0;
+  const hasSus = flags.suspicious.length > 0;
+  if (!hasDup && !hasSus) return null;
+  const currentPax = (job.pax ?? []).map((p) => p.name).filter(Boolean) as string[];
+  const current: MergeCandidate = {
+    id: job.id, date: job.date, time: job.time,
+    from_location: job.from_location, to_location: job.to_location,
+    pax_names: currentPax,
+  };
+  return (
+    <div className="mt-1.5 space-y-1" onClick={(e) => e.stopPropagation()}>
+      {hasDup && (
+        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1">
+          <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />
+          <span className="text-[10px] font-semibold text-destructive">⚠️ Potential Duplicate Trip</span>
+          <span className="text-[10px] text-destructive/80">
+            × {flags.duplicates.length}
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => ctx.onOpenMerge?.(current, flags.duplicates)}
+              className="text-[10px] font-medium inline-flex items-center gap-1 rounded px-1.5 py-0.5 bg-destructive text-destructive-foreground hover:opacity-90"
+            >
+              <GitMerge className="h-3 w-3" /> Merge
+            </button>
+            <button
+              type="button"
+              onClick={() => ctx.onDismissFlag?.(job.id, "duplicate")}
+              className="text-[10px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 border border-destructive/40 text-destructive hover:bg-destructive/10"
+              aria-label="Dismiss duplicate alert"
+            >
+              <XIcon className="h-3 w-3" /> Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      {hasSus && (
+        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-amber-500/60 bg-amber-500/10 px-2 py-1">
+          <Search className="h-3 w-3 text-amber-700 dark:text-amber-400 shrink-0" />
+          <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-200">
+            🔍 Suspicious Pattern: Verify Flight Numbers
+          </span>
+          <span className="text-[10px] text-amber-700/80 dark:text-amber-300/80">× {flags.suspicious.length}</span>
+          <button
+            type="button"
+            onClick={() => ctx.onDismissFlag?.(job.id, "suspicious")}
+            className="ml-auto text-[10px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 border border-amber-500/60 text-amber-800 dark:text-amber-200 hover:bg-amber-500/10"
+            aria-label="Dismiss suspicious alert"
+          >
+            <XIcon className="h-3 w-3" /> Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
