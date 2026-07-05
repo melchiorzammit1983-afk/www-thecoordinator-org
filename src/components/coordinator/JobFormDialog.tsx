@@ -79,15 +79,20 @@ export function JobFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent
+        className="max-w-2xl"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit trip" : "New trip"}</DialogTitle>
           <DialogDescription>Schedule a transfer, add passengers, and assign resources.</DialogDescription>
         </DialogHeader>
         {isEdit ? (
-          <ManualForm drivers={drivers} job={job} onSaved={onSaved} />
+          <ManualForm drivers={drivers} job={job} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : !bulkEnabled ? (
-          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
+          <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : (
           <Tabs value={tab} onValueChange={(v) => setTab(v as "manual" | "bulk")}>
             <TabsList className="grid w-full grid-cols-2">
@@ -95,10 +100,10 @@ export function JobFormDialog({
               <TabsTrigger value="bulk">Paste bulk</TabsTrigger>
             </TabsList>
             <TabsContent value="manual" className="mt-3">
-              <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} />
+              <ManualForm key={prefill ? "prefill" : "blank"} drivers={drivers} prefill={prefill} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
             </TabsContent>
             <TabsContent value="bulk" className="mt-3">
-              <BulkForm onSaved={onSaved} onComplete={handleComplete} />
+              <BulkForm onSaved={onSaved} onComplete={handleComplete} onCancel={() => onOpenChange(false)} />
             </TabsContent>
           </Tabs>
         )}
