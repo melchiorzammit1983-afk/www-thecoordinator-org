@@ -43,6 +43,7 @@ import {
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 
 
 
@@ -181,6 +182,14 @@ function DriverManifest() {
   // secondary menus while this is true so the driver keeps eyes on the road.
   const inMotion = activeJob?.status === "en_route" || activeJob?.status === "in_progress";
 
+  // Keep the phone screen awake for the whole live-trip window (from
+  // "on the way" through to "trip finished") so the map stays visible.
+  const wakeActive =
+    activeJob?.status === "en_route"
+    || activeJob?.status === "arrived"
+    || activeJob?.status === "in_progress";
+  const wake = useWakeLock(!!wakeActive);
+
   const live = useLiveRoute({
     origin: driverPos,
     destination: routeDestination,
@@ -215,8 +224,13 @@ function DriverManifest() {
                 </div>
               )}
               {inMotion && (
-                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate">
-                  In motion · menu locked for safety
+                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
+                  <span>In motion · menu locked for safety</span>
+                  {wake.held && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
+                      ☀ Screen awake
+                    </span>
+                  )}
                 </div>
               )}
             </div>
