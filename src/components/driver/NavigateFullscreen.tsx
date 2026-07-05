@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadGoogleMaps } from "@/components/driver/DriverDashboardMap";
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowUpLeft, ArrowUpRight,
@@ -6,11 +6,14 @@ import {
   X, Crosshair, ExternalLink,
 } from "lucide-react";
 
-/**
- * Route info shape returned by `useLiveRoute` in the driver route file.
- * Duplicated structurally here so this component doesn't couple to the
- * (large) route file that owns it.
- */
+type RouteStep = {
+  maneuver: string | null;
+  instruction: string | null;
+  distance_m: number | null;
+  polyline: string | null;
+  end: { lat: number; lng: number };
+};
+
 type LiveRouteInfo = {
   polyline: string | null;
   eta_sec: number | null;
@@ -23,6 +26,7 @@ type LiveRouteInfo = {
   reroute_saving_sec: number;
   onAcceptReroute: () => void;
   isLoading: boolean;
+  steps: RouteStep[];
 };
 
 function formatEtaMin(sec: number | null): string {
@@ -62,10 +66,11 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
 }
 
 /**
- * Full-screen in-app turn-by-turn view. Renders a live Google Map with the
- * route polyline, driver marker, and destination marker. Bottom HUD overlays
- * the current maneuver + ETA. Follow-mode auto-recenters on the driver;
- * panning temporarily disables it until the "recenter" FAB is tapped.
+ * In-app turn-by-turn view. Renders a live Google Map with the route,
+ * tracks the driver's progress through the step list (advancing the HUD
+ * arrow / instruction / distance-to-next-turn), and trims the polyline
+ * into a grey "already travelled" portion and a blue "ahead" portion —
+ * the way Google Maps navigation renders.
  */
 export function NavigateFullscreen({
   live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
@@ -81,12 +86,24 @@ export function NavigateFullscreen({
   const mapRef = useRef<any>(null);
   const meMarkerRef = useRef<any>(null);
   const destMarkerRef = useRef<any>(null);
-  const polyRef = useRef<any>(null);
+  const polyAheadRef = useRef<any>(null);
+  const polyDoneRef = useRef<any>(null);
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const followRef = useRef(true);
   const [follow, setFollow] = useState(true);
   const suppressPanRef = useRef(false);
+
+  // Driver position + step tracking
+  const [drvPos, setDrvPos] = useState<{ lat: number; lng: number } | null>(null);
+  const drvPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const headingRef = useRef<number | null>(null);
+  const [stepIdx, setStepIdx] = useState(0);
+  const stepIdxRef = useRef(0);
+  const [distToStepEnd, setDistToStepEnd] = useState<number | null>(null);
+
+  // Reset step index when the route (destination) changes
+  useEffect(() => { setStepIdx(0); stepIdxRef.current = 0; }, [destination]);
 
   // Init map
   useEffect(() => {
@@ -96,11 +113,13 @@ export function NavigateFullscreen({
         if (cancelled || !containerRef.current) return;
         const map = new gmaps.Map(containerRef.current, {
           center: { lat: 35.9, lng: 14.5 },
-          zoom: 15,
+          zoom: 17,
           disableDefaultUI: true,
           clickableIcons: false,
           gestureHandling: "greedy",
           tilt: 0,
+          heading: 0,
+          rotateControl: false,
           styles: [
             { featureType: "poi", stylers: [{ visibility: "off" }] },
             { featureType: "transit", stylers: [{ visibility: "off" }] },
@@ -108,7 +127,6 @@ export function NavigateFullscreen({
         });
         mapRef.current = map;
         try { new gmaps.TrafficLayer().setMap(map); } catch { /* ignore */ }
-        // Detect user drag → drop out of follow mode
         map.addListener("dragstart", () => {
           if (suppressPanRef.current) return;
           followRef.current = false;
@@ -120,7 +138,7 @@ export function NavigateFullscreen({
     return () => { cancelled = true; };
   }, []);
 
-  // Watch driver position
+  // Watch driver GPS
   useEffect(() => {
     if (!ready || typeof navigator === "undefined" || !navigator.geolocation) return;
     const gmaps = (window as any).google?.maps;
@@ -128,81 +146,149 @@ export function NavigateFullscreen({
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const heading = pos.coords.heading ?? null;
+        const heading = pos.coords.heading;
+        headingRef.current = (heading != null && !Number.isNaN(heading)) ? heading : headingRef.current;
+        drvPosRef.current = p;
+        setDrvPos(p);
         if (!meMarkerRef.current) {
           meMarkerRef.current = new gmaps.Marker({
             map: mapRef.current,
             position: p,
             icon: {
               path: gmaps.SymbolPath.FORWARD_CLOSED_ARROW,
-              scale: 7,
+              scale: 8,
               fillColor: "#2563eb",
               fillOpacity: 1,
               strokeColor: "#ffffff",
               strokeWeight: 2,
-              rotation: heading ?? 0,
+              rotation: 0,
             },
             title: "You",
             zIndex: 999,
           });
         } else {
           meMarkerRef.current.setPosition(p);
-          if (heading != null) {
-            const cur = meMarkerRef.current.getIcon?.();
-            if (cur) meMarkerRef.current.setIcon({ ...cur, rotation: heading });
-          }
         }
-        if (followRef.current) {
+        if (followRef.current && mapRef.current) {
           suppressPanRef.current = true;
           mapRef.current.panTo(p);
-          if ((mapRef.current.getZoom() ?? 0) < 15) mapRef.current.setZoom(16);
-          setTimeout(() => { suppressPanRef.current = false; }, 50);
+          if ((mapRef.current.getZoom() ?? 0) < 17) mapRef.current.setZoom(18);
+          try {
+            if (headingRef.current != null) mapRef.current.setHeading(headingRef.current);
+            mapRef.current.setTilt(45);
+          } catch { /* raster map: tilt/heading unsupported */ }
+          // Keep the marker arrow pointing along heading, relative to map rotation (0 = up).
+          const marker = meMarkerRef.current;
+          const cur = marker.getIcon?.();
+          if (cur) marker.setIcon({ ...cur, rotation: 0 });
+          setTimeout(() => { suppressPanRef.current = false; }, 60);
+        } else if (meMarkerRef.current) {
+          const cur = meMarkerRef.current.getIcon?.();
+          if (cur && headingRef.current != null) meMarkerRef.current.setIcon({ ...cur, rotation: headingRef.current });
         }
       },
-      () => { /* ignore permission errors — DriverLiveShare surfaces them */ },
-      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 20_000 },
+      () => { /* handled by DriverLiveShare */ },
+      { enableHighAccuracy: true, maximumAge: 2_000, timeout: 20_000 },
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, [ready]);
 
-  // Draw / update polyline
+  const steps = live.steps;
+
+  // Decode step polylines once per step list.
+  const decodedSteps = useMemo(() => {
+    const gmaps = (window as any).google?.maps;
+    if (!ready || !gmaps) return [] as Array<{ path: any[]; end: { lat: number; lng: number } }>;
+    return steps.map((s) => {
+      let path: any[] = [];
+      if (s.polyline) {
+        try { path = gmaps.geometry.encoding.decodePath(s.polyline); } catch { path = []; }
+      }
+      return { path, end: s.end };
+    });
+  }, [ready, steps]);
+
+  // Advance step index as driver approaches / passes the current step's end.
+  useEffect(() => {
+    const gmaps = (window as any).google?.maps;
+    if (!gmaps || !drvPos || decodedSteps.length === 0) return;
+    const here = new gmaps.LatLng(drvPos.lat, drvPos.lng);
+    let i = stepIdxRef.current;
+    // Never regress. Advance while within 25m of end, up to end of list.
+    while (i < decodedSteps.length - 1) {
+      const end = decodedSteps[i].end;
+      const endLL = new gmaps.LatLng(end.lat, end.lng);
+      const d = gmaps.geometry.spherical.computeDistanceBetween(here, endLL);
+      if (d < 25) { i += 1; continue; }
+      break;
+    }
+    if (i !== stepIdxRef.current) {
+      stepIdxRef.current = i;
+      setStepIdx(i);
+    }
+    // Live distance to end of current step
+    const endCur = decodedSteps[i]?.end;
+    if (endCur) {
+      const d = gmaps.geometry.spherical.computeDistanceBetween(
+        here, new gmaps.LatLng(endCur.lat, endCur.lng),
+      );
+      setDistToStepEnd(Math.round(d));
+    }
+  }, [drvPos, decodedSteps]);
+
+  // Draw / update polylines (travelled vs ahead) + destination marker.
   useEffect(() => {
     if (!ready) return;
     const gmaps = (window as any).google?.maps;
     const map = mapRef.current;
     if (!gmaps || !map) return;
-    if (polyRef.current) { polyRef.current.setMap(null); polyRef.current = null; }
-    if (destMarkerRef.current) { destMarkerRef.current.setMap(null); destMarkerRef.current = null; }
-    if (!live.polyline) return;
-    let path: any[] = [];
-    try {
-      path = gmaps.geometry.encoding.decodePath(live.polyline);
-    } catch { return; }
-    if (!path.length) return;
-    polyRef.current = new gmaps.Polyline({
-      map,
-      path,
-      strokeColor: "#2563eb",
-      strokeOpacity: 0.9,
-      strokeWeight: 6,
-      zIndex: 100,
-    });
-    // Destination marker at last point
-    const end = path[path.length - 1];
-    destMarkerRef.current = new gmaps.Marker({
-      map,
-      position: end,
-      title: destination ?? "Destination",
-      zIndex: 500,
-    });
-  }, [ready, live.polyline, destination]);
 
-  // Fullscreen API on mount (best-effort; ignored on iOS Safari)
+    if (polyAheadRef.current) { polyAheadRef.current.setMap(null); polyAheadRef.current = null; }
+    if (polyDoneRef.current) { polyDoneRef.current.setMap(null); polyDoneRef.current = null; }
+    if (destMarkerRef.current) { destMarkerRef.current.setMap(null); destMarkerRef.current = null; }
+
+    if (decodedSteps.length === 0) return;
+
+    // Build full path from all step polylines (fallback to route polyline).
+    let full: any[] = [];
+    for (const s of decodedSteps) full = full.concat(s.path);
+    if (full.length === 0 && live.polyline) {
+      try { full = gmaps.geometry.encoding.decodePath(live.polyline); } catch { /* ignore */ }
+    }
+    if (full.length === 0) return;
+
+    // Split point: end of steps completed (stepIdx-1 endpoint), or 0.
+    const done: any[] = [];
+    const ahead: any[] = [];
+    if (stepIdx <= 0) {
+      ahead.push(...full);
+    } else {
+      // Concatenate paths for completed steps -> done; rest -> ahead.
+      for (let i = 0; i < decodedSteps.length; i++) {
+        const p = decodedSteps[i].path;
+        if (i < stepIdx) done.push(...p); else ahead.push(...p);
+      }
+    }
+    // Include current driver pos at the head of "ahead" for a tight follow line.
+    if (drvPosRef.current) ahead.unshift(new gmaps.LatLng(drvPosRef.current.lat, drvPosRef.current.lng));
+
+    polyDoneRef.current = new gmaps.Polyline({
+      map, path: done, strokeColor: "#94a3b8", strokeOpacity: 0.7, strokeWeight: 5, zIndex: 90,
+    });
+    polyAheadRef.current = new gmaps.Polyline({
+      map, path: ahead, strokeColor: "#2563eb", strokeOpacity: 0.95, strokeWeight: 7, zIndex: 100,
+    });
+
+    const end = full[full.length - 1];
+    destMarkerRef.current = new gmaps.Marker({
+      map, position: end, title: destination ?? "Destination", zIndex: 500,
+    });
+  }, [ready, decodedSteps, stepIdx, destination, live.polyline]);
+
+  // Fullscreen API on mount
   useEffect(() => {
     const el = document.documentElement;
-    if (el.requestFullscreen) {
-      el.requestFullscreen().catch(() => { /* ignore */ });
-    }
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => { /* ignore */ });
     return () => {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => { /* ignore */ });
@@ -210,7 +296,15 @@ export function NavigateFullscreen({
     };
   }, []);
 
-  const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
+  const current: RouteStep | null = steps[stepIdx] ?? null;
+  const upcoming: RouteStep | null = steps[stepIdx + 1] ?? null;
+
+  const displayManeuver = current?.maneuver ?? live.next_maneuver;
+  const displayInstruction = (current?.instruction ?? live.next_instruction)
+    ?.replace(/<[^>]+>/g, "").trim() ?? null;
+  const displayDistance = distToStepEnd ?? current?.distance_m ?? live.next_step_distance_m;
+
+  const upcomingInstruction = upcoming?.instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
 
   const recenter = () => {
     followRef.current = true;
@@ -218,7 +312,11 @@ export function NavigateFullscreen({
     const me = meMarkerRef.current;
     if (me && mapRef.current) {
       mapRef.current.panTo(me.getPosition());
-      if ((mapRef.current.getZoom() ?? 0) < 15) mapRef.current.setZoom(16);
+      if ((mapRef.current.getZoom() ?? 0) < 17) mapRef.current.setZoom(18);
+      try {
+        if (headingRef.current != null) mapRef.current.setHeading(headingRef.current);
+        mapRef.current.setTilt(45);
+      } catch { /* raster fallback */ }
     }
   };
 
@@ -252,7 +350,25 @@ export function NavigateFullscreen({
         <ExternalLink className="h-5 w-5" />
       </a>
 
-      {/* Recenter FAB — only when user has panned away */}
+      {/* Top-center: current instruction banner (Google-Maps-style) */}
+      {displayInstruction && (
+        <div className="absolute top-4 left-20 right-20 z-[9] mx-auto max-w-md">
+          <div
+            className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
+            style={{ background: "rgba(37,99,235,0.95)", color: "#fff", backdropFilter: "blur(8px)" }}
+          >
+            <ManeuverArrow maneuver={displayManeuver} className="h-8 w-8 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-lg font-bold tabular-nums leading-none">
+                {formatDistance(displayDistance ?? null)}
+              </div>
+              <div className="mt-0.5 truncate text-xs opacity-90">{displayInstruction}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recenter FAB */}
       {!follow && (
         <button
           type="button"
@@ -264,7 +380,7 @@ export function NavigateFullscreen({
         </button>
       )}
 
-      {/* Bottom HUD */}
+      {/* Bottom HUD: ETA + next step preview */}
       <div className="absolute inset-x-0 bottom-0 z-10">
         {live.reroute_available && (
           <button
@@ -282,15 +398,21 @@ export function NavigateFullscreen({
           className="flex items-center gap-3 px-4 py-3 border-t-2 border-white/60 shadow-2xl"
           style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
         >
-          <ManeuverArrow maneuver={live.next_maneuver} className="h-14 w-14 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
             <div className="text-3xl sm:text-4xl font-black tabular-nums leading-none text-slate-900">
-              {formatDistance(live.next_step_distance_m) || formatDistance(live.distance_m)}
+              ETA {formatEtaMin(live.eta_sec)}
             </div>
-            <div className="mt-1 flex items-baseline gap-2 text-base font-semibold text-slate-700">
-              <span className="tabular-nums">ETA {formatEtaMin(live.eta_sec)}</span>
-              {stripInstruction && (
-                <span className="truncate text-sm text-slate-500">· {stripInstruction}</span>
+            <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <span className="tabular-nums">{formatDistance(live.distance_m)}</span>
+              {upcomingInstruction && (
+                <>
+                  <span className="text-slate-400">·</span>
+                  <span className="flex items-center gap-1 min-w-0">
+                    <span className="text-xs uppercase tracking-wider text-slate-500">Then</span>
+                    <ManeuverArrow maneuver={upcoming?.maneuver ?? null} className="h-4 w-4 shrink-0 text-slate-700" />
+                    <span className="truncate text-xs text-slate-500">{upcomingInstruction}</span>
+                  </span>
+                </>
               )}
             </div>
           </div>
