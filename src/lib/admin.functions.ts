@@ -991,3 +991,81 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
 
     return { ok: true, temp_password };
   });
+
+// ---------- PRICING PAGE: usage metrics + wallets ----------
+
+export const adminFeatureUsageThisMonth = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const since = new Date();
+    since.setUTCDate(1);
+    since.setUTCHours(0, 0, 0, 0);
+    const { data, error } = await sb
+      .from("points_ledger")
+      .select("feature_key, company_id")
+      .gte("created_at", since.toISOString());
+    if (error) throw new Error(error.message);
+    const acc = new Map<string, { uses: number; companies: Set<string> }>();
+    for (const row of (data ?? []) as Array<{ feature_key: string | null; company_id: string | null }>) {
+      const key = row.feature_key ?? "";
+      if (!key) continue;
+      const bucket = acc.get(key) ?? { uses: 0, companies: new Set<string>() };
+      bucket.uses += 1;
+      if (row.company_id) bucket.companies.add(row.company_id);
+      acc.set(key, bucket);
+    }
+    return Array.from(acc.entries()).map(([feature_key, v]) => ({
+      feature_key,
+      uses: v.uses,
+      companies: v.companies.size,
+    }));
+  });
+
+export const adminListCompanyWallets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const since = new Date();
+    since.setUTCDate(1);
+    since.setUTCHours(0, 0, 0, 0);
+    const [
+      { data: companies, error: cErr },
+      { data: subs, error: sErr },
+      { data: ledger, error: lErr },
+    ] = await Promise.all([
+      sb.from("companies").select("id, name, created_at, points_balance").order("name"),
+      sb.from("company_subscriptions").select("company_id, plan_id, points_remaining_this_period, plans(name)"),
+      sb.from("points_ledger").select("company_id, created_at, points_deducted").gte("created_at", since.toISOString()),
+    ]);
+    if (cErr) throw new Error(cErr.message);
+    if (sErr) throw new Error(sErr.message);
+    if (lErr) throw new Error(lErr.message);
+    const subMap = new Map<string, { plan_name: string | null; plan_points: number }>();
+    for (const s of (subs ?? []) as Array<{ company_id: string; points_remaining_this_period: number | null; plans: { name: string } | null }>) {
+      subMap.set(s.company_id, {
+        plan_name: s.plans?.name ?? null,
+        plan_points: Number(s.points_remaining_this_period ?? 0),
+      });
+    }
+    const lastActivity = new Map<string, string>();
+    const topupsThisMonth = new Map<string, number>();
+    for (const l of (ledger ?? []) as Array<{ company_id: string | null; created_at: string; points_deducted: number | null }>) {
+      if (!l.company_id) continue;
+      const cur = lastActivity.get(l.company_id);
+      if (!cur || cur < l.created_at) lastActivity.set(l.company_id, l.created_at);
+      if (Number(l.points_deducted) < 0) {
+        topupsThisMonth.set(l.company_id, (topupsThisMonth.get(l.company_id) ?? 0) + 1);
+      }
+    }
+    return ((companies ?? []) as Array<{ id: string; name: string; created_at: string; points_balance: number | null }>).map((c) => ({
+      id: c.id,
+      name: c.name,
+      created_at: c.created_at,
+      points_balance: Number(c.points_balance ?? 0),
+      plan_name: subMap.get(c.id)?.plan_name ?? null,
+      plan_points: subMap.get(c.id)?.plan_points ?? 0,
+      last_activity_at: lastActivity.get(c.id) ?? null,
+      topups_this_month: topupsThisMonth.get(c.id) ?? 0,
+    }));
+  });

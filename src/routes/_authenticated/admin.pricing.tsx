@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Save } from "lucide-react";
+import { Plus, Trash2, Save, Activity, Search, Wallet } from "lucide-react";
 import {
   adminListPlans, adminUpsertPlan, adminDeletePlan,
   adminListPointPacks, adminUpsertPointPack, adminDeletePointPack,
   adminSetFeatureCost,
+  adminFeatureUsageThisMonth,
+  adminListCompanyWallets,
 } from "@/lib/admin.functions";
 import { listAiFeatureCosts } from "@/lib/billing.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,8 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FEATURE_CATALOG } from "@/lib/features";
+import { CompanyBillingDialog } from "@/components/admin/CompanyBillingDialog";
 
 export const Route = createFileRoute("/_authenticated/admin/pricing")({
   component: PricingAdmin,
@@ -24,14 +28,15 @@ export const Route = createFileRoute("/_authenticated/admin/pricing")({
 
 function PricingAdmin() {
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-2xl font-semibold">Pricing</h1>
         <p className="text-sm text-muted-foreground">Set plans, point packs, and per-feature costs.</p>
       </div>
+      <WalletsCard />
+      <FeatureCostsCard />
       <PlansCard />
       <PointPacksCard />
-      <FeatureCostsCard />
     </div>
   );
 }
@@ -191,12 +196,22 @@ function FeatureCostsCard() {
   const qc = useQueryClient();
   const listFn = useServerFn(listAiFeatureCosts);
   const setFn = useServerFn(adminSetFeatureCost);
+  const usageFn = useServerFn(adminFeatureUsageThisMonth);
   const { data: costs } = useQuery({ queryKey: ["ai-feature-costs"], queryFn: () => listFn() });
+  const { data: usage } = useQuery({ queryKey: ["ai-feature-usage-month"], queryFn: () => usageFn() });
   const setMut = useMutation({
     mutationFn: (row: any) => setFn({ data: row }),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["ai-feature-costs"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const usageMap = useMemo(() => {
+    const m = new Map<string, { uses: number; companies: number }>();
+    for (const u of (usage ?? []) as Array<{ feature_key: string; uses: number; companies: number }>) {
+      m.set(u.feature_key, { uses: u.uses, companies: u.companies });
+    }
+    return m;
+  }, [usage]);
 
   const grouped = CATEGORIES.map((cat) => ({
     ...cat,
@@ -208,27 +223,23 @@ function FeatureCostsCard() {
       <CardHeader>
         <CardTitle>Feature point costs</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Decimals allowed (e.g. 1.5). Disable to turn a feature off globally. "Block on empty" hard-stops the action when a company runs out; leave off for core operations (trip creation) so they never break.
+          Drag the slider to set the point cost per use. Decimals allowed. Disable to turn a feature off globally. "Hard stop" blocks the action when a company runs out; leave off for core operations so they never break.
         </p>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-8">
         {grouped.map((g) => (
           <div key={g.key}>
-            <div className="text-xs font-semibold uppercase text-muted-foreground mb-2">{g.label}</div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Feature</TableHead>
-                  <TableHead>Points / use</TableHead>
-                  <TableHead>Enabled</TableHead>
-                  <TableHead>Block on empty</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {g.rows.map((c: any) => <CostRow key={c.feature_key} cost={c} onSave={setMut.mutate} />)}
-              </TableBody>
-            </Table>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{g.label}</div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {g.rows.map((c: any) => (
+                <FeatureCostCard
+                  key={c.feature_key}
+                  cost={c}
+                  usage={usageMap.get(c.feature_key)}
+                  onSave={setMut.mutate}
+                />
+              ))}
+            </div>
           </div>
         ))}
       </CardContent>
@@ -236,44 +247,80 @@ function FeatureCostsCard() {
   );
 }
 
-function CostRow({ cost, onSave }: { cost: any; onSave: (r: any) => void }) {
-  const [points, setPoints] = useState(String(cost.points_cost));
+function FeatureCostCard({
+  cost, usage, onSave,
+}: {
+  cost: any;
+  usage: { uses: number; companies: number } | undefined;
+  onSave: (r: any) => void;
+}) {
+  const initial = Number(cost.points_cost);
+  const [points, setPoints] = useState<number>(initial);
   const [enabled, setEnabled] = useState<boolean>(cost.enabled !== false);
   const [block, setBlock] = useState<boolean>(cost.block_on_empty !== false);
   const dirty =
-    points !== String(cost.points_cost) ||
+    points !== initial ||
     enabled !== (cost.enabled !== false) ||
     block !== (cost.block_on_empty !== false);
+
+  const sliderMax = Math.max(50, Math.ceil(Math.max(points, initial)));
+
   return (
-    <TableRow>
-      <TableCell>
-        <div className="text-sm font-medium">{cost.label ?? cost.feature_key}</div>
-        <div className="font-mono text-[10px] text-muted-foreground">{cost.feature_key}</div>
-      </TableCell>
-      <TableCell>
-        <Input
-          type="number"
-          step="0.01"
-          min="0"
-          value={points}
-          onChange={(e) => setPoints(e.target.value)}
-          className="h-8 w-24"
+    <div className={`rounded-lg border bg-card p-4 flex flex-col gap-3 transition-shadow hover:shadow-md ${dirty ? "ring-1 ring-primary/40" : ""}`}>
+      <div>
+        <div className="text-sm font-semibold leading-tight">{cost.label ?? cost.feature_key}</div>
+        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{cost.feature_key}</div>
+      </div>
+
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-3xl font-bold tabular-nums">{points.toFixed(2)}</span>
+        <span className="text-xs text-muted-foreground">pts / use</span>
+      </div>
+
+      <div className="space-y-2">
+        <Slider
+          value={[points]}
+          min={0}
+          max={sliderMax}
+          step={0.5}
+          onValueChange={(v) => setPoints(v[0] ?? 0)}
         />
-      </TableCell>
-      <TableCell>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>0</span>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={String(points)}
+            onChange={(e) => setPoints(Number(e.target.value) || 0)}
+            className="h-6 w-20 text-xs"
+          />
+          <span>{sliderMax}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Activity className="h-3 w-3" />
+        <span>
+          Used <strong className="text-foreground tabular-nums">{(usage?.uses ?? 0).toLocaleString()}×</strong> this month
+          {usage && usage.companies > 0 ? <> across {usage.companies} {usage.companies === 1 ? "company" : "companies"}</> : null}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
         <button type="button" onClick={() => setEnabled(!enabled)}>
-          <Badge variant={enabled ? "default" : "outline"}>{enabled ? "On" : "Off"}</Badge>
+          <Badge variant={enabled ? "default" : "outline"}>{enabled ? "Enabled" : "Disabled"}</Badge>
         </button>
-      </TableCell>
-      <TableCell>
         <button type="button" onClick={() => setBlock(!block)}>
           <Badge variant={block ? "destructive" : "secondary"}>{block ? "Hard stop" : "Allow negative"}</Badge>
         </button>
-      </TableCell>
-      <TableCell className="text-right">
+      </div>
+
+      <div className="flex justify-end pt-1">
         <Button
           size="sm"
           variant={dirty ? "default" : "ghost"}
+          disabled={!dirty}
           onClick={() => onSave({
             feature_key: cost.feature_key,
             points_cost: Number(points),
@@ -283,9 +330,118 @@ function CostRow({ cost, onSave }: { cost: any; onSave: (r: any) => void }) {
             block_on_empty: block,
           })}
         >
-          <Save className="h-4 w-4" />
+          <Save className="h-4 w-4 mr-1" /> Save
         </Button>
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Wallets ----------
+
+type WalletRow = {
+  id: string;
+  name: string;
+  created_at: string;
+  points_balance: number;
+  plan_name: string | null;
+  plan_points: number;
+  last_activity_at: string | null;
+  topups_this_month: number;
+};
+
+function WalletsCard() {
+  const listFn = useServerFn(adminListCompanyWallets);
+  const { data: wallets } = useQuery({
+    queryKey: ["admin-company-wallets"],
+    queryFn: () => listFn() as Promise<WalletRow[]>,
+  });
+  const [q, setQ] = useState("");
+
+  const rows = (wallets ?? []) as WalletRow[];
+  const filtered = rows.filter((r) => r.name.toLowerCase().includes(q.toLowerCase()));
+  const totalBalance = rows.reduce((s, r) => s + r.points_balance, 0);
+  const toppedUp = rows.filter((r) => r.topups_this_month > 0).length;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2"><Wallet className="h-4 w-4" /> Company wallets</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">Live point balances across all companies.</p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-xs text-muted-foreground">
+            Total balance: <strong className="text-foreground tabular-nums">{totalBalance.toLocaleString()} pts</strong>
+            {" · "}{rows.length} companies
+            {" · "}{toppedUp} topped up this month
+          </div>
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search company…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-8 pl-7 text-sm"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Company</TableHead>
+              <TableHead>Plan</TableHead>
+              <TableHead className="text-right">Balance</TableHead>
+              <TableHead>Last activity</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((r) => {
+              const color =
+                r.points_balance <= 0 ? "text-destructive" :
+                r.points_balance < 20 ? "text-amber-600" :
+                "text-emerald-600";
+              return (
+                <TableRow key={r.id}>
+                  <TableCell>
+                    <div className="font-medium">{r.name}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Joined {new Date(r.created_at).toLocaleDateString()}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {r.plan_name ? (
+                      <div>
+                        <Badge variant="secondary">{r.plan_name}</Badge>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{r.plan_points} plan pts left</div>
+                      </div>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell className={`text-right font-mono text-lg font-semibold tabular-nums ${color}`}>
+                    {r.points_balance.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.last_activity_at ? new Date(r.last_activity_at).toLocaleString() : "No activity"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <CompanyBillingDialog company={{ id: r.id, name: r.name }} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                  {rows.length === 0 ? "Loading…" : "No companies match your search."}
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

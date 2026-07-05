@@ -1,58 +1,62 @@
-## Audio + TTS layer for Driver Dashboard
+## Redesign the Super Admin "AI & Features Pricing" panel
 
-Hands-free audio cues and voice readouts for new trips and chat messages, using only browser APIs (no server-side TTS, no audio files).
+Focused rework of `src/routes/_authenticated/admin.pricing.tsx` (Feature Costs section) plus a new companion Wallets section. Plans and Point Packs sections stay as-is — this pass targets the two things the request calls out: feature pricing UX and the wallet overview.
 
-### Scope
+### 1. Feature cost cards (replaces the current dense table)
 
-Frontend only. Files:
-- New: `src/hooks/use-driver-audio.ts` — chimes + speech synthesis helpers.
-- Edit: `src/routes/m.driver.$token.tsx` — detect new-trip / new-chat events, play the right chime, expose the "Speak" emblem in `NavigateHud` and a smaller version in the normal card header, add a per-driver "auto-read" toggle.
+Replace the `FeatureCostsCard` table layout with a responsive grid of cards (1 col mobile, 2 cols md, 3 cols xl). One card per feature, grouped by category (Core / AI / Comms / Data) with a subtle section header per group.
 
-No changes to routing, wake lock, server functions, or backend.
+Each card shows, from top to bottom:
+- Feature label (large) + monospaced `feature_key` (muted, small).
+- A big current price pill: `X.XX pts / use`.
+- A **range slider** (shadcn `Slider`, `min=0 max=50 step=0.5`) bound to a local `points` state. The slider is the primary control; the numeric value updates live above it. Values above the slider max (legacy rows already priced higher) auto-widen the slider max to `Math.max(50, currentValue)` so nothing gets clamped.
+- A tiny numeric `Input` under the slider for precise entry (keeps decimals + values >50 reachable).
+- **Usage this month** label: `Used 1,284× this month across N companies` (dimmed muted-foreground line, with a small `Activity` icon).
+- Two toggle chips in a row: `Enabled` / `Disabled` and `Hard stop` / `Allow negative`.
+- A `Save` button in the card footer — enabled only when dirty, uses the same `adminSetFeatureCost` mutation already wired.
 
-### 1. Chimes (Web Audio API, generated on the fly)
+Visual polish: subtle border, `bg-card`, hover elevates shadow slightly, dirty state adds a `ring-1 ring-primary/40` so admins see which cards have unsaved edits.
 
-Inside `use-driver-audio.ts`:
-- Lazy-init a single `AudioContext`; first user interaction (any click on the dashboard) `resume()`s it so autoplay policy doesn't swallow the first chime.
-- Two named chimes built from short oscillator envelopes — no asset files:
-  - `dispatch` — sharp urgent double-beep (two 880 → 1320 Hz square/triangle blips, ~180 ms total, higher gain).
-  - `message` — soft single ding (660 Hz sine with quick attack + gentle decay ~350 ms, lower gain).
-- Exported API: `playChime("dispatch" | "message")`, `speak(text, opts?)`, `cancelSpeech()`, `isSpeaking`, `supported`, `autoRead`, `setAutoRead`.
+### 2. Usage metrics data source
 
-### 2. Speech synthesis (Web Speech API)
+Add a new server function `adminFeatureUsageThisMonth` in `src/lib/admin.functions.ts`:
+- Guarded by `assertAdmin`.
+- Reads `points_ledger` where `created_at >= date_trunc('month', now())`.
+- Groups by `feature_key`, returning `{ feature_key, uses, companies }` where `uses = count(*)` and `companies = count(distinct company_id)`.
+- Cached in the client via `useQuery` alongside the existing `listAiFeatureCosts` query.
 
-- Uses `window.speechSynthesis` + `SpeechSynthesisUtterance`.
-- `speak(text)` cancels any in-flight utterance first, so back-to-back events don't queue up minutes of speech.
-- Voice/lang: default (`en-US`), rate 1.0, volume 1.0. No voice picker in this pass.
-- `autoRead` preference persisted in `localStorage` under `driver:auto-read:<token>` (default off, per the user's "should not force them to read" requirement).
-- Fail silently on unsupported browsers (`'speechSynthesis' in window` guard).
+The Feature Costs section joins the two datasets in memory and passes `{ uses, companies }` into each card. Missing entries render as `Used 0× this month`.
 
-### 3. Event detection in `DriverManifest`
+### 3. Total Wallet Overview (new section, above Plans)
 
-Uses existing manifest polling — no new realtime channels. On each `data` change:
-- Track previous `jobs[].id` set in a ref. Any newly present job (not in previous set) → `playChime("dispatch")` and, if it's marked urgent (see below) or `autoRead` is on, `speak(...)`.
-  - "Urgent" heuristic: no `driver_accepted_at` AND pickup time is within 60 minutes; otherwise treat as a normal new-trip chime with lower priority (still dispatch chime, but no auto-speak unless autoRead).
-- Track previous `unread_messages` counts by job id. On increase → `playChime("message")` and, if `autoRead` is on, `speak("New message on trip to <destination>")`. We don't have the message body in the manifest payload, so we announce the arrival, not the content, in this pass.
-- First render seeds the refs without firing chimes (no false alerts on load).
+New `WalletsCard` above `PlansCard` inside `PricingAdmin`:
+- Header: "Company wallets" + subtitle "Live point balances across all companies."
+- A compact right-aligned summary strip: `Total balance: 12,430 pts · N companies · M topped up this month`.
+- A search input to filter by company name.
+- Table columns: **Company** (name + created_at muted), **Plan** (badge from active subscription), **Balance** (large mono, color-coded: `text-emerald-600` >0, `text-amber-600` low <20, `text-destructive` ≤0), **Last activity** (relative time from most recent `points_ledger` entry), **Actions**.
+- Actions column reuses the existing `<CompanyBillingDialog />` component (already imported in `admin.index.tsx`) as the "Top up" quick-action — clicking opens the same dialog that handles grant/plan/entitlements, so we don't duplicate business logic.
 
-### 4. UI: the "Speak" emblem
+Data comes from a new server function `adminListCompanyWallets` in `admin.functions.ts`:
+- Reads `companies (id, name, created_at, points_balance)`.
+- Left-joins `company_subscriptions (plan_id, plans(name))`.
+- For "last activity", one small `points_ledger` query grouped by `company_id` with `max(created_at)`.
+- Returns a single flat array so the table doesn't do N+1 fetches.
 
-Two placements, both wired to the same handler:
+### 4. Section ordering after the change
 
-- **Navigate Mode HUD** (`NavigateHud`): add a large circular Speak button (min 64×64, `rounded-full`, high-contrast primary color, `Volume2` icon from lucide-react while idle, `VolumeX` while speaking to allow tap-to-stop). Positioned to the left of the existing Expand button. Announces the most recent pending event — a small `lastAnnouncement` string ref holds the composed text (e.g. `"New trip: airport pickup at 14:30"` or `"New message on trip to Valletta"`). If nothing is pending, tapping it re-reads the current live instruction + ETA.
-- **Normal driver view**: a smaller icon toggle in the header row (only when `inMotion`) that (a) taps to speak the same `lastAnnouncement`, and (b) long-press/secondary menu item toggles `autoRead` on/off with a toast.
+```text
+Pricing (page title)
+├── Company wallets            ← NEW, top of page
+├── Feature point costs        ← redesigned as cards + sliders + usage
+├── Plans                      ← unchanged
+└── Point packs                ← unchanged
+```
 
-Both use `aria-label` and `aria-pressed` for accessibility. Buttons are `type="button"` and don't submit forms.
+### Technical notes
 
-### 5. Safety + edge cases
-
-- All Web Audio + speechSynthesis calls happen inside effects / event handlers — never during SSR (`typeof window !== 'undefined'` guards).
-- On unmount and on `inMotion` flipping false, call `cancelSpeech()` so speech doesn't continue after leaving the dashboard.
-- If the tab is hidden, still play the chime (browsers allow this) but skip speech (some browsers suspend `speechSynthesis` when hidden — cancel + drop rather than queue).
-
-### Non-goals
-
-- No provider TTS, no server round-trip, no audio uploads.
-- No push notifications or background service worker.
-- No voice-command input (mic listening) — this pass is output only.
-- No new dependencies.
+- Slider: `import { Slider } from "@/components/ui/slider"` (already in the shadcn set per file listing). Two-way bound with a numeric input; both write to the same local state.
+- Category grouping stays keyed by `CATEGORIES` constant already in the file.
+- Server functions follow the existing `createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).handler(...)` shape and go under the existing `// ---------- COMPANY ...` sections in `admin.functions.ts`.
+- No schema changes, no new RLS work — all reads use `supabaseAdmin` inside admin-gated server functions, same pattern as the existing admin fetches.
+- No changes to `PlansCard`, `PointPacksCard`, `PlanEditor`, or `PackRow`.
+- Keep the `PricingAdmin` container width bumped to `max-w-7xl` to accommodate the card grid.
