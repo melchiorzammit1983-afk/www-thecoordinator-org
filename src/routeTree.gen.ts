@@ -45,6 +45,7 @@ import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authen
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
+import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -249,6 +250,11 @@ const ApiPublicCronAiAutoCoordinateRoute =
     path: '/api/public/cron/ai-auto-coordinate',
     getParentRoute: () => rootRouteImport,
   } as any)
+const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
+  id: '/sign/$jobId',
+  path: '/sign/$jobId',
+  getParentRoute: () => MDriverTokenRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -280,12 +286,13 @@ export interface FileRoutesByFullPath {
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
-  '/m/driver/$token': typeof MDriverTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -315,12 +322,13 @@ export interface FileRoutesByTo {
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
-  '/m/driver/$token': typeof MDriverTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -354,12 +362,13 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/_authenticated/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
-  '/m/driver/$token': typeof MDriverTokenRoute
+  '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -399,6 +408,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/lovable/email/queue/process'
+    | '/m/driver/$token/sign/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -434,6 +444,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/lovable/email/queue/process'
+    | '/m/driver/$token/sign/$jobId'
   id:
     | '__root__'
     | '/'
@@ -472,6 +483,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/lovable/email/queue/process'
+    | '/m/driver/$token/sign/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -484,7 +496,7 @@ export interface RootRouteChildren {
   CTokenRoute: typeof CTokenRoute
   TTokenRoute: typeof TTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
-  MDriverTokenRoute: typeof MDriverTokenRoute
+  MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
@@ -744,6 +756,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCronAiAutoCoordinateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/m/driver/$token/sign/$jobId': {
+      id: '/m/driver/$token/sign/$jobId'
+      path: '/sign/$jobId'
+      fullPath: '/m/driver/$token/sign/$jobId'
+      preLoaderRoute: typeof MDriverTokenSignJobIdRouteImport
+      parentRoute: typeof MDriverTokenRoute
+    }
   }
 }
 
@@ -832,6 +851,18 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface MDriverTokenRouteChildren {
+  MDriverTokenSignJobIdRoute: typeof MDriverTokenSignJobIdRoute
+}
+
+const MDriverTokenRouteChildren: MDriverTokenRouteChildren = {
+  MDriverTokenSignJobIdRoute: MDriverTokenSignJobIdRoute,
+}
+
+const MDriverTokenRouteWithChildren = MDriverTokenRoute._addFileChildren(
+  MDriverTokenRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
@@ -842,7 +873,7 @@ const rootRouteChildren: RootRouteChildren = {
   CTokenRoute: CTokenRoute,
   TTokenRoute: TTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
-  MDriverTokenRoute: MDriverTokenRoute,
+  MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,

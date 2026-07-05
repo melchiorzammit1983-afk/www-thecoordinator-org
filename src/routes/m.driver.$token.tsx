@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -764,6 +764,11 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
               {job.unread_messages}
             </span>
           )}
+        </Button>
+        <Button variant="outline" className="col-span-2 h-10" asChild>
+          <Link to="/m/driver/$token/sign/$jobId" params={{ token, jobId: job.id }}>
+            <Megaphone className="h-4 w-4 mr-1.5" /> Open Sign Board
+          </Link>
         </Button>
         {job.deletion_requested_at && (
           <Button variant="destructive" className="col-span-2 h-10" disabled={approveDelMut.isPending}
