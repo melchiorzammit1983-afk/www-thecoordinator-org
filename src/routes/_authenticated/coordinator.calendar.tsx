@@ -536,6 +536,12 @@ function CalendarPage() {
         </div>
       </header>
 
+      {/* Drivers currently on waiting time */}
+      <WaitingNowStrip onJump={(jobId) => {
+        const j = (jobs ?? []).find((x: any) => x.id === jobId);
+        if (j) setDetailsJob(j as any);
+      }} />
+
       {/* Live driver map */}
       <LiveMapPanel />
 
