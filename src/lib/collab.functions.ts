@@ -227,7 +227,7 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status")
       .eq("id", data.job_id)
       .maybeSingle();
     if (jobError) throw new Error(jobError.message);
@@ -246,16 +246,21 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       .limit(1);
     if (hopReadError) throw new Error(hopReadError.message);
     const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
-    const { error: hopError } = await supabaseAdmin.from("job_dispatch_hops").insert({
+    const { data: insertedHop, error: hopError } = await supabaseAdmin.from("job_dispatch_hops").insert({
       job_id: data.job_id,
       hop_index: nextIndex,
       from_company_id: c.id,
       to_company_id: data.partner_company_id,
       status: "pending",
       note: data.note ?? "",
-    });
+    }).select("id").maybeSingle();
     if (hopError) throw new Error(hopError.message);
-    const { error: updateError } = await supabaseAdmin.from("jobs").update({
+
+    // Optimistic-concurrency guard: only update if dispatch_status hasn't shifted
+    // (a concurrent recall/respond would have changed it). On mismatch we roll
+    // back the hop insert we just made to keep the state consistent.
+    const prevStatus = job.dispatch_status ?? null;
+    let updateQuery = supabaseAdmin.from("jobs").update({
       origin_company_id: job.origin_company_id ?? job.company_id,
       executor_company_id: data.partner_company_id,
       dispatch_status: "pending",
@@ -264,7 +269,17 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       dispatch_note: data.note ?? "",
       dispatch_chain_company_ids: [...chain, data.partner_company_id],
     }).eq("id", data.job_id);
-    if (updateError) throw new Error(updateError.message);
+    updateQuery = prevStatus === null
+      ? updateQuery.is("dispatch_status", null)
+      : updateQuery.eq("dispatch_status", prevStatus);
+    const { data: updatedRows, error: updateError } = await updateQuery.select("id");
+    if (updateError || !updatedRows || updatedRows.length === 0) {
+      if (insertedHop?.id) {
+        await supabaseAdmin.from("job_dispatch_hops").delete().eq("id", insertedHop.id);
+      }
+      if (updateError) throw new Error("Couldn't complete the hand-off — no changes were saved");
+      throw new Error("Trip state changed — please refresh and retry");
+    }
     await spendSoft(c.id, "trip_dispatched", "Trip dispatched to partner", data.job_id);
     return { ok: true };
   });
