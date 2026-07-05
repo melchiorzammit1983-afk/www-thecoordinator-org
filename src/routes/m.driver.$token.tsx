@@ -323,27 +323,57 @@ function DriverManifest() {
                 )}
               </div>
             </div>
-            {inMotion ? (
-              <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {driver && (
-                    <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-                      <User className="h-4 w-4 mr-2" /> Edit profile
+            <div className="flex items-center gap-2">
+              {audio.speechSupported && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={audio.isSpeaking ? "default" : "outline"}
+                  aria-label={audio.isSpeaking ? "Stop speaking" : "Speak latest notification"}
+                  aria-pressed={audio.isSpeaking}
+                  onClick={speakLatest}
+                >
+                  {audio.isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+              )}
+              {inMotion ? (
+                <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {driver && (
+                      <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                        <User className="h-4 w-4 mr-2" /> Edit profile
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setStatementOpen(true)}>
+                      <FileText className="h-4 w-4 mr-2" /> Download statement
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => setStatementOpen(true)}>
-                    <FileText className="h-4 w-4 mr-2" /> Download statement
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                    {audio.speechSupported && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            const next = !audio.autoRead;
+                            audio.setAutoRead(next);
+                            toast.success(next ? "Auto-read on: new alerts will be spoken" : "Auto-read off");
+                          }}
+                        >
+                          <Megaphone className="h-4 w-4 mr-2" />
+                          {audio.autoRead ? "Turn off auto-read" : "Turn on auto-read"}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+
           </div>
         </header>
       )}
