@@ -462,8 +462,9 @@ function DriverManifest() {
             </div>
           )}
           {jobs.map((j) => (
-            <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
+
 
           {archivedJobs.length > 0 && (
             <div className="pt-2">
