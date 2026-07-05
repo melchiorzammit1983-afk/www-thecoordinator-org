@@ -468,6 +468,8 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   // can compare it against the coordinator's final edits on save.
   const [aiOriginalText, setAiOriginalText] = useState<string | null>(null);
   const [aiInitialOutput, setAiInitialOutput] = useState<AiRow[] | null>(null);
+  // Dynamic billing flags from the AI extraction (accuracy < 75% → half-price).
+  const [aiBilling, setAiBilling] = useState<{ is_half_price: boolean; accuracy_score: number } | null>(null);
 
   const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
     setRaw((prev) => {
