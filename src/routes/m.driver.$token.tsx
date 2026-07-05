@@ -484,7 +484,18 @@ function DriverManifest() {
             </div>
           )}
         </main>
+
+      {navigateMode && activeJob && (
+        <NavigateFullscreen
+          live={live}
+          destination={routeDestination}
+          externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(routeDestination ?? "")}&travelmode=driving`}
+          onExit={() => setNavigateMode(false)}
+          onSpeak={audio.speechSupported ? speakLatest : null}
+          isSpeaking={audio.isSpeaking}
+        />
       )}
+
 
 
       <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
