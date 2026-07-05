@@ -144,6 +144,11 @@ type Job = {
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
+type TripFlagInfo = {
+  duplicates: { id: string; date: string | null; time: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+  suspicious: { id: string; date: string | null; time: string | null; flight_number: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+};
+
 function CalendarPage() {
   const [view, setView] = useState<"day" | "week">("day");
   const [anchor, setAnchor] = useState<Date>(new Date());
