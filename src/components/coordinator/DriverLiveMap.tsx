@@ -19,6 +19,7 @@ export type LivePoint = {
   distance_m?: number | null;
   next_instruction?: string | null;
   destination_label?: string | null;
+  wait_started_at?: string | null;
 };
 
 type GMaps = any;
