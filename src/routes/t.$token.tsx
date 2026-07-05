@@ -308,7 +308,7 @@ function ClientTripPortal() {
           )}
 
           {/* Share my location */}
-          <ShareLocation token={token} deviceId={deviceId} />
+          <ShareLocation token={token} deviceId={deviceId} status={job.status} />
 
           {/* Group siblings */}
           {isGroup && (
