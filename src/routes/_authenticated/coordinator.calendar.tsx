@@ -1756,9 +1756,11 @@ function TripMenu({
         <DropdownMenuItem onClick={() => ctx.onPax(job)}>
           <Users className="h-4 w-4 mr-2" /> Passengers
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => ctx.onChat(job)}>
-          <MessagesSquare className="h-4 w-4 mr-2" /> Chat
-        </DropdownMenuItem>
+        <IfFeature feature="chat">
+          <DropdownMenuItem onClick={() => ctx.onChat(job)}>
+            <MessagesSquare className="h-4 w-4 mr-2" /> Chat
+          </DropdownMenuItem>
+        </IfFeature>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
