@@ -126,6 +126,7 @@ function SignBoardPage() {
     };
   }, []);
 
+  const anchorLogo = data?.anchor_logo_url ?? null;
 
   const lines = useMemo(() => {
     if (!job) return [] as string[];
