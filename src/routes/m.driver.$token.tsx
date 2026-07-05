@@ -412,6 +412,31 @@ function DriverManifest() {
             hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
           />
 
+          {pendingJobs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById(`job-card-${pendingJobs[0].id}`);
+                el?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="w-full text-left rounded-lg border-2 border-amber-500/70 bg-amber-500/10 p-3 flex items-center gap-3 animate-pulse"
+              aria-label={`${pendingJobs.length} trip${pendingJobs.length === 1 ? "" : "s"} awaiting your response`}
+            >
+              <div className="h-9 w-9 rounded-full bg-amber-500 text-white grid place-items-center shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-sm">
+                  {pendingJobs.length} trip{pendingJobs.length === 1 ? "" : "s"} awaiting your response
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  Tap to review — accept or decline before it's locked in.
+                </div>
+              </div>
+              <Badge className="bg-amber-600 hover:bg-amber-600 text-white">{pendingJobs.length}</Badge>
+            </button>
+          )}
+
           {jobs.length === 0 && archivedJobs.length === 0 && (
             <div className="text-center py-20">
               <div className="mx-auto h-14 w-14 rounded-full bg-muted grid place-items-center mb-3">
