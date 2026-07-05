@@ -16,8 +16,9 @@ type QueuedPoint = {
 
 const STORAGE_KEY = "driverLiveShareOn";
 const QUEUE_KEY = "driverLiveQueue";
-const MIN_DISTANCE_M = 25;
-const MIN_INTERVAL_MS = 8_000;
+// Battery-friendly cadence: emit at most every ~12s OR every 20m moved.
+const MIN_DISTANCE_M = 20;
+const MIN_INTERVAL_MS = 12_000;
 const FLUSH_INTERVAL_MS = 10_000;
 
 function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
