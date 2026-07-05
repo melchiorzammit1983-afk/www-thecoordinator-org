@@ -204,6 +204,85 @@ function DriverManifest() {
     if (!inMotion && navigateMode) setNavigateMode(false);
   }, [inMotion, navigateMode]);
 
+  // Hands-free audio layer: dispatch/message chimes + Web Speech readouts.
+  const audio = useDriverAudio({ storageKey: `driver:auto-read:${token}` });
+  const [lastAnnouncement, setLastAnnouncement] = useState<string | null>(null);
+  const knownJobIdsRef = useRef<Set<string> | null>(null);
+  const unreadCountsRef = useRef<Map<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const currentJobs = data.jobs;
+    const prevIds = knownJobIdsRef.current;
+    const prevUnread = unreadCountsRef.current;
+
+    // First pass — seed refs without firing chimes.
+    if (prevIds === null || prevUnread === null) {
+      knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
+      const seed = new Map<string, number>();
+      for (const j of currentJobs) seed.set(j.id, j.unread_messages ?? 0);
+      unreadCountsRef.current = seed;
+      return;
+    }
+
+    // New trip(s) → dispatch chime.
+    const newJobs = currentJobs.filter((j) => !prevIds.has(j.id));
+    if (newJobs.length > 0) {
+      audio.playChime("dispatch");
+      const j = newJobs[0];
+      const pickupLabel = j.pickup_at
+        ? ` at ${formatMaltaTime(j.pickup_at)}`
+        : "";
+      const text = `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}`;
+      setLastAnnouncement(text);
+      if (audio.autoRead) audio.speak(text);
+    }
+
+    // Increased unread messages on any job → message chime.
+    const nextUnread = new Map<string, number>();
+    let bumpedJob: Job | null = null;
+    for (const j of currentJobs) {
+      const cur = j.unread_messages ?? 0;
+      nextUnread.set(j.id, cur);
+      const before = prevUnread.get(j.id) ?? 0;
+      if (cur > before && !newJobs.some((nj) => nj.id === j.id)) {
+        bumpedJob = j;
+      }
+    }
+    if (bumpedJob) {
+      audio.playChime("message");
+      const text = `New message on trip to ${bumpedJob.to_location}`;
+      setLastAnnouncement(text);
+      if (audio.autoRead) audio.speak(text);
+    }
+
+    knownJobIdsRef.current = new Set(currentJobs.map((j) => j.id));
+    unreadCountsRef.current = nextUnread;
+  }, [data, audio]);
+
+  // Cancel speech when leaving motion or unmounting.
+  useEffect(() => {
+    if (!inMotion) audio.cancelSpeech();
+  }, [inMotion, audio]);
+
+  // Compose an on-demand announcement for the Speak emblem.
+  const speakLatest = useCallback(() => {
+    if (audio.isSpeaking) { audio.cancelSpeech(); return; }
+    if (lastAnnouncement) { audio.speak(lastAnnouncement); return; }
+    // Fallback: read the current driving status.
+    if (activeJob) {
+      const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
+      const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
+      const parts = [
+        activeJob.status === "in_progress" ? `Driving to ${dest}` : `Heading to pickup at ${dest}`,
+        etaMin ? `ETA ${etaMin} minute${etaMin === 1 ? "" : "s"}` : null,
+        live.next_instruction ? `Next: ${live.next_instruction.replace(/<[^>]+>/g, "").trim()}` : null,
+      ].filter(Boolean);
+      audio.speak(parts.join(". "));
+    }
+  }, [audio, lastAnnouncement, activeJob, live.eta_sec, live.next_instruction]);
+
+
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
