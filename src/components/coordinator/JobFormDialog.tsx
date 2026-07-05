@@ -878,6 +878,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       )}
       <LabelPicker value={labelIds} onChange={setLabelIds} />
       <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button disabled={mut.isPending || valid.length === 0} onClick={() => mut.mutate()}>
           {mut.isPending ? "Creating…" : `Create ${valid.length} trip${valid.length === 1 ? "" : "s"}`}
         </Button>
