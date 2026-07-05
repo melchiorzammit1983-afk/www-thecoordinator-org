@@ -48,6 +48,15 @@ import { useDriverAudio } from "@/hooks/use-driver-audio";
 
 
 
+const REJECT_REASONS = [
+  "Unavailable — not free at that time",
+  "Too far / outside my area",
+  "Vehicle issue",
+  "Double-booked with another trip",
+  "Personal emergency",
+  "Other",
+] as const;
+
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
