@@ -40,13 +40,14 @@ function ClientPortal() {
     queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; bookings: Booking[]; branding: BrandingInfo } | null>,
   });
   const [editing, setEditing] = useState<Booking | null>(null);
+  useFavicon(data?.branding?.logo_url ?? null);
 
   if (isLoading) return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
   if (!data) return <NotFound />;
 
   const upcoming = data.bookings.filter((b) => !b.pickup_at || new Date(b.pickup_at).getTime() > Date.now() - 3600_000);
   const branding = data.branding;
-  useFavicon(branding?.logo_url ?? null);
+
 
   return (
     <div className="min-h-screen bg-muted/30 pb-28">
