@@ -391,7 +391,7 @@ type AiRow = {
 };
 type AiResp =
   | { type: "question"; payload: string }
-  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean };
+  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean; accuracy_score?: number; is_half_price?: boolean };
 type ChatMsg = { role: "user" | "model"; text: string };
 
 function rowsToTsv(rows: AiRow[]): string {
