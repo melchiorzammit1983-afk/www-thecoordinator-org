@@ -3392,43 +3392,55 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
 
     // Transcribe + extract in a single Gemini multimodal call.
     const today = new Date().toISOString().slice(0, 10);
-    const baseVoicePrompt = `Transcribe the audio, then extract transport trips. Today=${today}. Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}. Dates YYYY-MM-DD, times HH:MM.`;
+    const baseVoicePrompt = [
+      `Transcribe the audio, then extract transport trips. Today=${today}.`,
+      `Return JSON {"transcript":"...","trips":[{pickupDate,pickupTime,pickupAddress,deliveryAddress,customerName,contactNumber,transportType,quantity}]}.`,
+      `Dates YYYY-MM-DD, times HH:MM.`,
+      `FALLBACK RULES: Always include ALL 8 keys per trip row. If a value is unknown, use "" (or "1" for quantity) — never omit a key, never use null. If nothing sounds like a trip, return {"transcript":"...","trips":[]}.`,
+    ].join(" ");
     const sysPrompt = await buildSystemPrompt(c.id, baseVoicePrompt);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: sysPrompt }] },
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: sysPrompt }] },
 
-        contents: [{ role: "user", parts: [
-          { text: "Extract trips from this voice note." },
-          { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
-        ] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
-      }),
-    });
+          contents: [{ role: "user", parts: [
+            { text: "Extract trips from this voice note." },
+            { inline_data: { mime_type: data.mime_type, data: data.audio_base64 } },
+          ] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+        }),
+      });
+    } catch {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note transport failure");
+      throw new Error("AI is temporarily unreachable — please try again");
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      await refundPoints(c.id, "ai_voice_to_trip", `Voice note ${res.status}`);
+      if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
       throw new Error(`AI error ${res.status}: ${body.slice(0, 200)}`);
     }
     const json = await res.json() as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    if (!text) {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note empty response");
+      throw new Error("AI returned an empty transcript — recording may be silent");
+    }
     let parsed: any;
-    try { parsed = JSON.parse(text); } catch { throw new Error("AI returned invalid JSON"); }
+    try { parsed = safeJsonParse(text); }
+    catch {
+      await refundPoints(c.id, "ai_voice_to_trip", "Voice note invalid JSON");
+      throw new Error("AI response was unreadable — please try again");
+    }
     const trips = Array.isArray(parsed?.trips) ? parsed.trips : [];
     return {
       transcript: String(parsed?.transcript ?? ""),
-      trips: trips.map((r: any) => ({
-        pickupDate: String(r?.pickupDate ?? ""),
-        pickupTime: String(r?.pickupTime ?? ""),
-        pickupAddress: String(r?.pickupAddress ?? ""),
-        deliveryAddress: String(r?.deliveryAddress ?? ""),
-        customerName: String(r?.customerName ?? ""),
-        contactNumber: String(r?.contactNumber ?? ""),
-        transportType: String(r?.transportType ?? ""),
-        quantity: String(r?.quantity ?? "1"),
-      })),
+      trips: trips.map(normalizeTripRow),
     };
   });
 
