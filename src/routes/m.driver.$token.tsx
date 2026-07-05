@@ -270,7 +270,6 @@ function DriverManifest() {
 
       {navigateMode && activeJob ? (
         <NavigateHud
-          job={activeJob}
           live={live}
           onExit={() => setNavigateMode(false)}
         />
