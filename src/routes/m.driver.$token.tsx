@@ -842,31 +842,41 @@ function JobCard({ job, token, onOpen, onChat }: { job: Job; token: string; onOp
         </div>
       </div>
 
-      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) setRejectReason(""); }}>
+      <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) { setRejectReason(""); setRejectNote(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject this trip?</DialogTitle>
+            <DialogTitle>Decline this trip?</DialogTitle>
             <DialogDescription>
-              The trip returns to your coordinator's Unassigned list and they'll get a message with your reason.
+              The coordinator needs to know why — please pick a reason. The trip returns to their Unassigned list.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Reason (optional but recommended)</Label>
-            <Textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="e.g. Vehicle breakdown, already assigned another trip, ran late…" />
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {["Vehicle issue","Double-booked","Personal emergency","Too far","Running late"].map((r) => (
-                <button key={r} type="button"
-                  className="text-[11px] rounded-full border px-2 py-0.5 hover:bg-muted"
-                  onClick={() => setRejectReason(r)}>{r}</button>
-              ))}
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Reason (required)</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {REJECT_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRejectReason(r)}
+                    className={`text-left text-sm rounded-md border px-3 py-2 transition ${rejectReason === r ? "border-destructive bg-destructive/10 font-medium" : "border-border hover:bg-muted"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Extra details (optional)</Label>
+              <Textarea rows={2} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)}
+                placeholder="Anything the coordinator should know…" maxLength={300} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
-            <Button variant="destructive" disabled={rejectMut.isPending}
-              onClick={() => rejectMut.mutate(rejectReason)}>
-              {rejectMut.isPending ? "Sending…" : "Reject trip"}
+            <Button variant="destructive" disabled={rejectMut.isPending || !rejectReason}
+              onClick={() => rejectMut.mutate(rejectNote ? `${rejectReason} — ${rejectNote.trim()}` : rejectReason)}>
+              {rejectMut.isPending ? "Sending…" : "Decline trip"}
             </Button>
           </DialogFooter>
         </DialogContent>
