@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
+import { NavigateFullscreen } from "@/components/driver/NavigateFullscreen";
 import { DriverDashboardMap, type DriverMapJob } from "@/components/driver/DriverDashboardMap";
 import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
