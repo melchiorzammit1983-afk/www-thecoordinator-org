@@ -1611,6 +1611,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {labels.map((l) => <LabelChip key={l.id} label={l} />)}
             </div>
+            <TripFlagBadges job={job} ctx={ctx} />
+
             {job.chain_names && job.chain_names.length >= 2 && (
               <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
                 {job.chain_names.map((name, i) => {
