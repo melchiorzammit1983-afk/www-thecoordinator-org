@@ -181,6 +181,14 @@ function DriverManifest() {
   // secondary menus while this is true so the driver keeps eyes on the road.
   const inMotion = activeJob?.status === "en_route" || activeJob?.status === "in_progress";
 
+  // Keep the phone screen awake for the whole live-trip window (from
+  // "on the way" through to "trip finished") so the map stays visible.
+  const wakeActive =
+    activeJob?.status === "en_route"
+    || activeJob?.status === "arrived"
+    || activeJob?.status === "in_progress";
+  const wake = useWakeLock(!!wakeActive);
+
   const live = useLiveRoute({
     origin: driverPos,
     destination: routeDestination,
