@@ -819,6 +819,50 @@ export type Database = {
           },
         ]
       }
+      company_logos: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          is_background: boolean
+          is_primary: boolean
+          label: string | null
+          sort_order: number
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          is_background?: boolean
+          is_primary?: boolean
+          label?: string | null
+          sort_order?: number
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_background?: boolean
+          is_primary?: boolean
+          label?: string | null
+          sort_order?: number
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_logos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_subscriptions: {
         Row: {
           company_id: string
@@ -1712,6 +1756,7 @@ export type Database = {
       }
       jobs: {
         Row: {
+          board_config: Json | null
           client_confirmed_at: string | null
           client_link_token: string | null
           clientcompanyname: string | null
@@ -1785,6 +1830,7 @@ export type Database = {
           vehicle: string | null
         }
         Insert: {
+          board_config?: Json | null
           client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
@@ -1860,6 +1906,7 @@ export type Database = {
           vehicle?: string | null
         }
         Update: {
+          board_config?: Json | null
           client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
@@ -2399,6 +2446,7 @@ export type Database = {
           score: number
         }[]
       }
+      charge_extra_logos_weekly: { Args: never; Returns: number }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
