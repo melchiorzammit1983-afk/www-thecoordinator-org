@@ -102,9 +102,26 @@ async function writeQueue(q: QueuedPoint[]) {
   if (typeof localStorage !== "undefined") localStorage.setItem(QUEUE_KEY, s);
 }
 
-export function DriverLiveShare({ token, hasActiveTrip }: { token: string; hasActiveTrip: boolean }) {
+export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
+  token: string;
+  hasActiveTrip: boolean;
+  liveMeta?: LiveShareMeta | null;
+  hidden?: boolean;
+}) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<"idle" | "live" | "paused" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [lastAt, setLastAt] = useState<number | null>(null);
+  const native = isNative();
+  const watchIdRef = useRef<number | null>(null); // web watchPosition id
+  const nativeWatcherRef = useRef<string | null>(null); // native watcher id
+  const wakeLockRef = useRef<any>(null);
+  const queueRef = useRef<QueuedPoint[]>([]);
+  const lastPosRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+  const metaRef = useRef<LiveShareMeta | null>(liveMeta ?? null);
+  const pushFn = useServerFn(pushDriverLocation);
+
+  useEffect(() => { metaRef.current = liveMeta ?? null; }, [liveMeta]);
   const [error, setError] = useState<string | null>(null);
   const [lastAt, setLastAt] = useState<number | null>(null);
   const native = isNative();
