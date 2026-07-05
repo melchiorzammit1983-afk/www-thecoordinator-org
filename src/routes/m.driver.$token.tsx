@@ -478,7 +478,7 @@ function DriverManifest() {
               {showArchived && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
-                    <JobCard key={j.id} job={j} token={token} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
                   ))}
                 </div>
               )}
