@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
-import { FeatureGate } from "@/components/billing/FeatureGate";
+import { useFeature } from "@/hooks/use-features";
 
 type Proposal =
   | { kind: "group"; trip_ids: string[]; reason: string }
