@@ -168,10 +168,33 @@ function DriverManifest() {
     ? { id: activeJob.id, from_location: activeJob.from_location, to_location: activeJob.to_location, is_active: true }
     : null;
 
+  // Driver location — lifted so routing + map both use one source of truth.
+  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Where the driver is heading right now depends on the trip phase.
+  const routeDestination =
+    activeJob?.status === "in_progress" ? activeJob?.to_location
+    : activeJob ? activeJob.from_location
+    : null;
+
+  // "In Motion" = the vehicle is actively moving on this trip. We hide
+  // secondary menus while this is true so the driver keeps eyes on the road.
+  const inMotion = activeJob?.status === "en_route" || activeJob?.status === "in_progress";
+
+  const live = useLiveRoute({
+    origin: driverPos,
+    destination: routeDestination,
+    enabled: !!activeJob && !!driverPos && !!routeDestination,
+  });
+
   return (
     <div className="relative min-h-screen pb-28">
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
-      <DriverDashboardMap activeJob={mapJob} />
+      <DriverDashboardMap
+        activeJob={mapJob}
+        routeEncodedPolyline={live.polyline}
+        onDriverPosition={setDriverPos}
+      />
 
       <header
         className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
@@ -185,34 +208,52 @@ function DriverManifest() {
                 {branding?.company_name ?? "Driver Manifest"}
               </div>
               <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
-              {driver && (
+              {driver && !inMotion && (
                 <div className="text-[11px] text-muted-foreground truncate">
                   {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
                   {driver.availability_note ?? "No availability set"}
                 </div>
               )}
+              {inMotion && (
+                <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate">
+                  In motion · menu locked for safety
+                </div>
+              )}
             </div>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {driver && (
-                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-                  <User className="h-4 w-4 mr-2" /> Edit profile
+          {inMotion ? (
+            <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {driver && (
+                  <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                    <User className="h-4 w-4 mr-2" /> Edit profile
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setStatementOpen(true)}>
+                  <FileText className="h-4 w-4 mr-2" /> Download statement
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => setStatementOpen(true)}>
-                <FileText className="h-4 w-4 mr-2" /> Download statement
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
 
       <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
-        {activeJob && <NextInstructionCard job={activeJob} token={token} onOpenSummary={() => setOpenJob(activeJob)} />}
+        {activeJob && (
+          <NextInstructionCard
+            job={activeJob}
+            token={token}
+            onOpenSummary={() => setOpenJob(activeJob)}
+            live={live}
+          />
+        )}
         <DriverLiveShare
           token={token}
           hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
