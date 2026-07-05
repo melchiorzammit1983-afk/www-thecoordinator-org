@@ -528,7 +528,30 @@ export const assignDriver = createServerFn({ method: "POST" })
     let q = supabaseAdmin.from("jobs").update(patch).eq("company_id", c.id);
     q = gid ? q.eq("group_id" as any, gid) : q.eq("id", data.job_id);
     const { error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.message?.includes("partner_must_accept_first")) {
+        throw new Error("This trip was dispatched to a partner company — they must accept it before a driver can be assigned.");
+      }
+      throw new Error(error.message);
+    }
+    // System audit trail in trip chat: who was assigned and that we're waiting on them.
+    if (data.driver_id) {
+      const { data: driverRow } = await supabaseAdmin.from("drivers")
+        .select("name").eq("id", data.driver_id).maybeSingle();
+      const driverName = driverRow?.name ?? "the driver";
+      const jobIds = gid
+        ? (await supabaseAdmin.from("jobs").select("id").eq("company_id", c.id).eq("group_id" as any, gid)).data?.map((r: any) => r.id) ?? [data.job_id]
+        : [data.job_id];
+      const rows = jobIds.map((jid) => ({
+        job_id: jid,
+        company_id: c.id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `🕓 Trip assigned to ${driverName} — waiting on them to accept.`,
+        thread_kind: "driver_coord",
+      } as never));
+      await supabaseAdmin.from("trip_messages").insert(rows);
+    }
     return { ok: true, group_id: gid };
   });
 
