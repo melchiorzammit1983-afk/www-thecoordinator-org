@@ -964,8 +964,9 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  * active/accepted trip. Extra-large instruction text + a 64px+ primary
  * action so the button stays tappable while the phone is dashboard-mounted.
  */
-function NextInstructionCard({ job, token, onOpenSummary, live }: {
+function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate, onEnterNavigate }: {
   job: Job; token: string; onOpenSummary: () => void; live: LiveRouteInfo;
+  canEnterNavigate?: boolean; onEnterNavigate?: () => void;
 }) {
   const qc = useQueryClient();
   const statusFn = useServerFn(updateJobStatus);
