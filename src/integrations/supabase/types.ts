@@ -1025,12 +1025,16 @@ export type Database = {
           captured_at: string
           company_id: string | null
           created_at: string
+          destination_label: string | null
+          distance_m: number | null
           driver_id: string
+          eta_sec: number | null
           heading: number | null
           id: string
           job_id: string | null
           latitude: number
           longitude: number
+          next_instruction: string | null
           speed_mps: number | null
         }
         Insert: {
@@ -1038,12 +1042,16 @@ export type Database = {
           captured_at?: string
           company_id?: string | null
           created_at?: string
+          destination_label?: string | null
+          distance_m?: number | null
           driver_id: string
+          eta_sec?: number | null
           heading?: number | null
           id?: string
           job_id?: string | null
           latitude: number
           longitude: number
+          next_instruction?: string | null
           speed_mps?: number | null
         }
         Update: {
@@ -1051,12 +1059,16 @@ export type Database = {
           captured_at?: string
           company_id?: string | null
           created_at?: string
+          destination_label?: string | null
+          distance_m?: number | null
           driver_id?: string
+          eta_sec?: number | null
           heading?: number | null
           id?: string
           job_id?: string | null
           latitude?: number
           longitude?: number
+          next_instruction?: string | null
           speed_mps?: number | null
         }
         Relationships: [
