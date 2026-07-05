@@ -1480,6 +1480,73 @@ export type Database = {
           },
         ]
       }
+      job_adjustments: {
+        Row: {
+          amount: number
+          company_id: string | null
+          created_at: string
+          currency: string
+          driver_id: string | null
+          driver_note: string | null
+          id: string
+          job_id: string
+          kind: string
+          label: string | null
+          source: string
+          wait_session_id: string | null
+        }
+        Insert: {
+          amount: number
+          company_id?: string | null
+          created_at?: string
+          currency?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          id?: string
+          job_id: string
+          kind: string
+          label?: string | null
+          source?: string
+          wait_session_id?: string | null
+        }
+        Update: {
+          amount?: number
+          company_id?: string | null
+          created_at?: string
+          currency?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          id?: string
+          job_id?: string
+          kind?: string
+          label?: string | null
+          source?: string
+          wait_session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_adjustments_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_adjustments_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_adjustments_wait_session_id_fkey"
+            columns: ["wait_session_id"]
+            isOneToOne: false
+            referencedRelation: "job_wait_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_assignment_events: {
         Row: {
           company_id: string
@@ -1802,6 +1869,69 @@ export type Database = {
             foreignKeyName: "job_route_cache_job_id_fkey"
             columns: ["job_id"]
             isOneToOne: true
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_wait_sessions: {
+        Row: {
+          agreed_amount: number | null
+          company_id: string | null
+          created_at: string
+          currency: string
+          driver_id: string | null
+          driver_note: string | null
+          ended_at: string | null
+          id: string
+          job_id: string
+          notified_thresholds: number[]
+          source: string
+          started_at: string
+          updated_at: string
+        }
+        Insert: {
+          agreed_amount?: number | null
+          company_id?: string | null
+          created_at?: string
+          currency?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          ended_at?: string | null
+          id?: string
+          job_id: string
+          notified_thresholds?: number[]
+          source?: string
+          started_at?: string
+          updated_at?: string
+        }
+        Update: {
+          agreed_amount?: number | null
+          company_id?: string | null
+          created_at?: string
+          currency?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          ended_at?: string | null
+          id?: string
+          job_id?: string
+          notified_thresholds?: number[]
+          source?: string
+          started_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_wait_sessions_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_wait_sessions_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
             referencedRelation: "jobs"
             referencedColumns: ["id"]
           },

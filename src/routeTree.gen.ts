@@ -43,6 +43,7 @@ import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
+import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
@@ -238,6 +239,12 @@ const LovableEmailQueueProcessRoute =
     path: '/lovable/email/queue/process',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksWaitThresholdsRoute =
+  ApiPublicHooksWaitThresholdsRouteImport.update({
+    id: '/api/public/hooks/wait-thresholds',
+    path: '/api/public/hooks/wait-thresholds',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronRolloverSubscriptionsRoute =
   ApiPublicCronRolloverSubscriptionsRouteImport.update({
     id: '/api/public/cron/rollover-subscriptions',
@@ -291,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
@@ -327,6 +335,7 @@ export interface FileRoutesByTo {
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
@@ -367,6 +376,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
 }
@@ -407,6 +417,7 @@ export interface FileRouteTypes {
     | '/coordinator/'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/sign/$jobId'
   fileRoutesByTo: FileRoutesByTo
@@ -443,6 +454,7 @@ export interface FileRouteTypes {
     | '/coordinator'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/sign/$jobId'
   id:
@@ -482,6 +494,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/sign/$jobId'
   fileRoutesById: FileRoutesById
@@ -499,6 +512,7 @@ export interface RootRouteChildren {
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
+  ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
@@ -742,6 +756,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/wait-thresholds': {
+      id: '/api/public/hooks/wait-thresholds'
+      path: '/api/public/hooks/wait-thresholds'
+      fullPath: '/api/public/hooks/wait-thresholds'
+      preLoaderRoute: typeof ApiPublicHooksWaitThresholdsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/rollover-subscriptions': {
       id: '/api/public/cron/rollover-subscriptions'
       path: '/api/public/cron/rollover-subscriptions'
@@ -877,6 +898,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
+  ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport
