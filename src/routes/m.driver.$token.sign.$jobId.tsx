@@ -6,7 +6,7 @@ import { getDriverSignBoard } from "@/lib/coordinator-public.functions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { ArrowLeft, Settings2 } from "lucide-react";
+import { ArrowLeft, Settings2, Sun, Moon, Maximize2 } from "lucide-react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
 
 export const Route = createFileRoute("/m/driver/$token/sign/$jobId")({
