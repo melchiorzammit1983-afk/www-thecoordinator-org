@@ -504,12 +504,19 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       setAiInitialOutput(rows);
       setRaw(rowsToTsv(rows));
       setAiLowConfidence(res.is_low_confidence === true);
+      // Dynamic billing: record the accuracy-based discount flag so the bulk
+      // save can forward it to the billing/invoice module.
+      const score = typeof res.accuracy_score === "number" ? res.accuracy_score : 1;
+      const halfPrice = res.is_half_price === true;
+      setAiBilling({ is_half_price: halfPrice, accuracy_score: score });
       setChatOpen(false);
       setChat([]);
       setPendingQuestion(null);
       setReply("");
       setAttachments([]);
-      if (res.is_low_confidence) {
+      if (halfPrice) {
+        toast.warning(`AI accuracy ${Math.round(score * 100)}% — 50% discount will apply on save.`);
+      } else if (res.is_low_confidence) {
         toast.warning("AI extracted trips, but confidence is low — please review.");
       } else {
         toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
