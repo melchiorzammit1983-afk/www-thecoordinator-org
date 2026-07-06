@@ -3873,12 +3873,16 @@ export const deleteAiRule = createServerFn({ method: "POST" })
   });
 
 // ---- AI Command Bar ----
+// ==========================================================
+// AI Command Agent — confirm-first, reads whole dispatch board
+// ==========================================================
 export const runAiCommand = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
     z.object({
       prompt: z.string().trim().min(2).max(2000),
       mode: z.enum(["read", "execute"]).default("read"),
+      scope: z.enum(["board", "owned"]).default("board"),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -3894,128 +3898,301 @@ export const runAiCommand = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, featureKey);
     await spendOrThrow(c.id, featureKey, `AI command (${data.mode}): ${data.prompt.slice(0, 60)}`);
 
-    // Dynamic date context. Widen the window to include yesterday so commands
-    // like "shift yesterday's trips to today" can reference real rows.
     const now = new Date();
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const today = iso(now);
     const yesterday = iso(new Date(now.getTime() - 24 * 3600 * 1000));
     const tomorrow = iso(new Date(now.getTime() + 24 * 3600 * 1000));
+    const in30 = iso(new Date(now.getTime() + 30 * 24 * 3600 * 1000));
     const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
     const nowIso = now.toISOString();
 
-    const [{ data: jobs }, { data: drivers }] = await Promise.all([
-      sb.from("jobs")
-        .select("id, name, surname, from_location, to_location, pickup_at, time, date, driver_id, status")
-        .eq("company_id", c.id)
-        .gte("date", yesterday)
-        .order("date", { ascending: true }).order("time", { ascending: true })
-        .limit(120),
-      sb.from("drivers").select("id, name, status").eq("company_id", c.id).limit(40),
+    // Board-wide scope: match listJobs (owned + executor + origin + chain).
+    // "owned" scope narrows to company_id = c.id (legacy behavior).
+    const cols = "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status, name, surname, from_location, to_location, pickup_at, time, date, driver_id, status, from_flight, to_flight, flight_scheduled_at, flight_estimated_at, flight_status, flight_status_note, group_id, group_name, grouped_count, clientcompanyname, contact_phone, pax(name), drivers(name), job_labels(trip_labels(name))";
+
+    let jq = sb.from("jobs").select(cols).gte("date", yesterday).lte("date", in30);
+    if (data.scope === "owned") {
+      jq = jq.eq("company_id", c.id);
+    } else {
+      jq = jq.or(
+        `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`,
+      );
+    }
+    const [{ data: jobsRaw }, { data: drivers }, { data: partners }] = await Promise.all([
+      jq.order("date", { ascending: true }).order("time", { ascending: true }).limit(500),
+      sb.from("drivers").select("id, name, status").eq("company_id", c.id).limit(60),
+      sb.from("coordinator_connections")
+        .select("owner_company_id, partner_company_id, status")
+        .or(`owner_company_id.eq.${c.id},partner_company_id.eq.${c.id}`)
+        .eq("status", "active"),
     ]);
+    const jobs = (jobsRaw ?? []) as any[];
+
+    // Resolve company names for the ids referenced by chain/executor/origin.
+    const companyIds = new Set<string>();
+    for (const j of jobs) {
+      if (j.company_id) companyIds.add(j.company_id);
+      if (j.executor_company_id) companyIds.add(j.executor_company_id);
+      if (j.origin_company_id) companyIds.add(j.origin_company_id);
+      for (const id of j.dispatch_chain_company_ids ?? []) companyIds.add(id);
+    }
+    for (const p of partners ?? []) {
+      if (p.owner_company_id) companyIds.add(p.owner_company_id);
+      if (p.partner_company_id) companyIds.add(p.partner_company_id);
+    }
+    const nameById = new Map<string, string>();
+    if (companyIds.size > 0) {
+      const { data: cRows } = await sb.from("companies").select("id, name").in("id", Array.from(companyIds));
+      for (const r of cRows ?? []) nameById.set(r.id, r.name ?? r.id.slice(0, 6));
+    }
+    const cn = (id?: string | null) => (id ? nameById.get(id) ?? id.slice(0, 6) : "");
+    const partnerList = (partners ?? [])
+      .map((p: any) => (p.owner_company_id === c.id ? p.partner_company_id : p.owner_company_id))
+      .filter((id: string, i: number, arr: string[]) => id && arr.indexOf(id) === i)
+      .map((id: string) => ({ id, name: cn(id) }));
 
     const baseSys = [
-      "You are the AI operations assistant for a transport dispatch coordinator.",
-      `Today's current date is ${today} (${dayOfWeek}). Yesterday was ${yesterday}. Tomorrow is ${tomorrow}. Current time (UTC): ${nowIso}.`,
-      "RELATIVE DATES: When the user says 'today', 'yesterday', 'tomorrow', 'this week', 'next Monday', etc., resolve to concrete YYYY-MM-DD dates using the values above before choosing rows. Never guess — compute from these anchors.",
-      `Mode: ${data.mode}. In read mode you answer questions and suggest actions. In execute mode you also propose a JSON action list the app will run server-side.`,
-      "Return JSON exactly: {\"response\":\"markdown answer\",\"actions\":[{\"type\":\"assign\"|\"unassign\"|\"reschedule\"|\"note\",\"job_id\":\"uuid\",\"driver_id\":\"uuid|null\",\"date\":\"YYYY-MM-DD|null\",\"time\":\"HH:MM|null\",\"pickup_at\":\"ISO|null\",\"note\":\"string|null\"}]}",
-      "ALWAYS include every key in each action object. If a field doesn't apply, use null (or empty string for note). Never omit a key.",
-      "DATE FORMAT: The jobs table stores `date` as YYYY-MM-DD and `time` as HH:MM. For reschedule actions ALWAYS provide both `date` (YYYY-MM-DD) and `time` (HH:MM). Also provide `pickup_at` as an ISO timestamp when possible.",
-      "Only reference job_id and driver_id values from the CONTEXT below. Never fabricate ids. If a request would touch trips not in the context, say so in `response` and leave actions empty.",
-      "If a request would touch more than 5 jobs, list them under actions but set response to explain that confirmation is required.",
-      "If no matching trips exist for the requested date/filter, return actions:[] and set response to a helpful message like: \"I searched for trips on {DATE}, but found 0 records to move.\"",
+      "You are the AI operations agent for a transport dispatch coordinator. You think like both a coordinator and a driver.",
+      `Today is ${today} (${dayOfWeek}). Yesterday ${yesterday}. Tomorrow ${tomorrow}. Current UTC: ${nowIso}. All trip date/time values are Europe/Malta wall-clock.`,
+      "RELATIVE DATES: When the user says 'today', 'tomorrow', 'this week', 'next Monday', 'the 20th', etc., resolve to concrete YYYY-MM-DD before choosing rows.",
+      "CONFIRM-FIRST: You NEVER change data directly. Everything you propose must be approved by the coordinator. In your `response`, describe what you are proposing in plain English — never say 'done', 'moved', 'sent'. Say 'I'll ... once you approve'.",
+      "Return JSON exactly: {\"response\":\"markdown\",\"actions\":[Action,...]} where Action.type is one of: assign|unassign|reschedule|status|group|ungroup|message|dispatch|note.",
+      "Every Action MUST include ALL these keys (use null when N/A): type, job_id, job_ids, driver_id, date, time, pickup_at, new_status, group_name, partner_company_id, thread, body, note.",
+      "assign: job_id + driver_id.  unassign: job_id.  reschedule: job_id + date(YYYY-MM-DD) + time(HH:MM) (both, Malta wall-clock).  status: job_id + new_status (one of pending|confirmed|in_progress|completed|cancelled|no_show).  group: job_ids (2+) + optional group_name.  ungroup: job_id OR group_id via job_id.  message: job_id + thread ('driver' for driver+coordinator private, 'client' for pax private, 'group' for shared group thread) + body.  dispatch: job_id + partner_company_id.  note: job_id + note (free-text; not persisted, just shown).",
+      "Only use job_id / driver_id / partner_company_id values from CONTEXT. Never fabricate. If a request would touch trips not in context, set actions:[] and say so in `response`.",
+      "If no matching trips exist, actions:[] and say 'I searched {DATE} and found 0 matching trips.'",
     ].join("\n");
     const sys = await buildSystemPrompt(c.id, baseSys);
 
+    const fmtRow = (j: any) => {
+      const paxNames = Array.isArray(j.pax) ? j.pax.map((p: any) => p.name).filter(Boolean).join(", ") : "";
+      const labels = Array.isArray(j.job_labels) ? j.job_labels.map((l: any) => l.trip_labels?.name).filter(Boolean).join(",") : "";
+      const chain = (j.dispatch_chain_company_ids ?? []).map((id: string) => cn(id)).join(" → ");
+      const drvName = j.drivers?.name ?? (j.driver_id ? "assigned" : "none");
+      return [
+        `- ${j.id}`,
+        `${j.date} ${j.time ?? ""}${j.pickup_at ? ` (pickup ${j.pickup_at})` : ""}`,
+        `${j.from_location ?? ""} → ${j.to_location ?? ""}`,
+        `pax=${j.name ?? ""} ${j.surname ?? ""}${paxNames ? ` [${paxNames}]` : ""}`,
+        `driver=${drvName}`,
+        `status=${j.status ?? ""}`,
+        j.from_flight || j.to_flight ? `flight=${j.from_flight ?? j.to_flight ?? ""}${j.flight_status ? ` (${j.flight_status})` : ""}${j.flight_scheduled_at ? ` sched=${j.flight_scheduled_at}` : ""}${j.flight_estimated_at ? ` est=${j.flight_estimated_at}` : ""}` : null,
+        j.group_id ? `group=${j.group_name ?? j.group_id.slice(0, 6)} (${j.grouped_count ?? "?"})` : null,
+        j.clientcompanyname ? `client=${j.clientcompanyname}` : null,
+        j.contact_phone ? `phone=${j.contact_phone}` : null,
+        labels ? `labels=${labels}` : null,
+        `owner=${cn(j.company_id)}${j.executor_company_id && j.executor_company_id !== j.company_id ? ` exec=${cn(j.executor_company_id)}` : ""}${chain ? ` chain=${chain}` : ""}${j.dispatch_status ? ` dispatch=${j.dispatch_status}` : ""}`,
+      ].filter(Boolean).join(" | ");
+    };
+
     const ctxText = `CONTEXT
-JOBS (${(jobs ?? []).length}):
-${(jobs ?? []).map((j: any) => `- ${j.id} | ${j.date} ${j.time ?? ""} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | pax ${j.name ?? ""} ${j.surname ?? ""} | driver=${j.driver_id ?? "none"} | status=${j.status ?? ""}`).join("\n")}
+YOUR COMPANY: ${c.id} (${cn(c.id)})
+
+TRIPS ON BOARD (${jobs.length}):
+${jobs.map(fmtRow).join("\n")}
 
 DRIVERS (${(drivers ?? []).length}):
-${(drivers ?? []).map((d: any) => `- ${d.id} | ${d.name ?? ""} | ${d.status ?? ""}`).join("\n")}`;
+${(drivers ?? []).map((d: any) => `- ${d.id} | ${d.name ?? ""} | ${d.status ?? ""}`).join("\n")}
+
+CONNECTED PARTNER COMPANIES (${partnerList.length}):
+${partnerList.map((p) => `- ${p.id} | ${p.name}`).join("\n")}`;
 
     let parsed: any = { response: "", actions: [] };
-    let status: "ok" | "error" | "awaiting_confirm" = "ok";
+    let status: "ok" | "error" | "awaiting_confirm" = "awaiting_confirm";
     let errMsg: string | null = null;
     try {
-      parsed = await callGemini(`${sys}\n\n${ctxText}\n\nUSER: ${data.prompt}`, "gemini-2.5-flash", { maxOutputTokens: 1500 });
+      parsed = await callGemini(`${sys}\n\n${ctxText}\n\nUSER: ${data.prompt}`, "gemini-2.5-flash", { maxOutputTokens: 2000 });
     } catch (e: any) {
       status = "error";
       errMsg = e?.message ?? "AI error";
     }
 
-    // Filter and normalize actions against real ids so hallucinations can't
-    // leak through to the executor.
-    const jobIdSet = new Set((jobs ?? []).map((j: any) => j.id));
+    const jobIdSet = new Set(jobs.map((j) => j.id));
     const driverIdSet = new Set((drivers ?? []).map((d: any) => d.id));
+    const partnerIdSet = new Set(partnerList.map((p) => p.id));
+    const validTypes = new Set(["assign", "unassign", "reschedule", "status", "group", "ungroup", "message", "dispatch", "note"]);
     const rawActions = Array.isArray(parsed?.actions) ? parsed.actions : [];
-    const actions = rawActions.filter((a: any) => a && typeof a === "object" && jobIdSet.has(a.job_id) && ["assign", "unassign", "reschedule", "note"].includes(a.type));
-    let response = String(parsed?.response ?? "");
+    const actions = rawActions.filter((a: any) => {
+      if (!a || typeof a !== "object" || !validTypes.has(a.type)) return false;
+      if (a.type === "group") return Array.isArray(a.job_ids) && a.job_ids.every((id: string) => jobIdSet.has(id));
+      if (!jobIdSet.has(a.job_id)) return false;
+      if (a.type === "assign" && !driverIdSet.has(a.driver_id)) return false;
+      if (a.type === "dispatch" && !partnerIdSet.has(a.partner_company_id)) return false;
+      return true;
+    });
+    const response = String(parsed?.response ?? "");
 
-    if (data.mode === "execute" && actions.length > 5) status = "awaiting_confirm";
+    // Read mode: never propose actions — treat as Q&A only.
+    const finalActions = data.mode === "read" ? [] : actions;
+    if (status !== "error") status = finalActions.length > 0 ? "awaiting_confirm" : "ok";
 
-    // Execute server-side when mode=execute and within the confirmation limit.
-    let executed = 0;
-    let affected = 0;
-    const executionNotes: string[] = [];
-    if (status === "ok" && data.mode === "execute" && actions.length > 0) {
-      for (const a of actions) {
-        try {
-          if (a.type === "assign") {
-            if (!driverIdSet.has(a.driver_id)) { executionNotes.push(`assign skipped for ${String(a.job_id).slice(0, 8)}: driver not in context`); continue; }
-            const { data: rows, error } = await sb.from("jobs")
-              .update({ driver_id: a.driver_id }).eq("id", a.job_id).eq("company_id", c.id).select("id");
-            if (error) throw error;
-            if (rows?.length) { affected += rows.length; executed++; }
-          } else if (a.type === "unassign") {
-            const { data: rows, error } = await sb.from("jobs")
-              .update({ driver_id: null }).eq("id", a.job_id).eq("company_id", c.id).select("id");
-            if (error) throw error;
-            if (rows?.length) { affected += rows.length; executed++; }
-          } else if (a.type === "reschedule") {
-            const patch: { date?: string; time?: string; pickup_at?: string } = {};
-            if (typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date)) patch.date = a.date;
-            if (typeof a.time === "string" && /^\d{2}:\d{2}$/.test(a.time)) patch.time = a.time;
-            if (typeof a.pickup_at === "string" && !Number.isNaN(Date.parse(a.pickup_at))) patch.pickup_at = a.pickup_at;
-            if (Object.keys(patch).length === 0) { executionNotes.push(`reschedule skipped for ${String(a.job_id).slice(0, 8)}: no valid date/time`); continue; }
-            const { data: rows, error } = await sb.from("jobs")
-              .update(patch).eq("id", a.job_id).eq("company_id", c.id).select("id");
-            if (error) throw error;
-            if (rows?.length) { affected += rows.length; executed++; }
-          } else if (a.type === "note") {
-            // Notes aren't persisted in a job field here — just surface in response.
-            executionNotes.push(`note ${String(a.job_id).slice(0, 8)}: ${String(a.note ?? "").slice(0, 140)}`);
-          }
-        } catch (e: any) {
-          executionNotes.push(`action failed for ${String(a.job_id).slice(0, 8)}: ${(e?.message ?? "unknown").slice(0, 140)}`);
-        }
-      }
-    }
-
-    // Helpful 0-row feedback when the AI returned no actions or nothing landed.
-    if (status === "ok" && data.mode === "execute" && actions.length === 0) {
-      if (!response.trim()) response = `I searched today (${today}) and yesterday (${yesterday}), but found 0 matching trips to change.`;
-    } else if (status === "ok" && data.mode === "execute" && actions.length > 0 && affected === 0) {
-      response = `${response}\n\n_No trips were changed — 0 rows affected. The referenced trips may have moved or already match the requested state._`.trim();
-    } else if (status === "ok" && data.mode === "execute" && affected > 0) {
-      response = `${response}\n\n_Applied ${executed} of ${actions.length} action(s); ${affected} trip(s) updated._`.trim();
-    }
-    if (executionNotes.length > 0) response = `${response}\n\n${executionNotes.map((n) => `- ${n}`).join("\n")}`.trim();
-
-    await sb.from("ai_command_log").insert({
+    const { data: logRow } = await sb.from("ai_command_log").insert({
       company_id: c.id,
       actor_user_id: context.userId,
       mode: data.mode,
       prompt: data.prompt,
       response,
-      actions,
+      actions: finalActions,
       status,
       error: errMsg,
-    });
+      requires_confirmation: finalActions.length > 0,
+    }).select("id").maybeSingle();
 
     if (status === "error") throw new Error(errMsg ?? "AI error");
-    return { response, actions, status, affected, executed };
+    return { id: (logRow as any)?.id ?? null, response, actions: finalActions, status };
+  });
+
+// Apply proposed AI actions after coordinator approval.
+export const applyAiCommandActions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      command_log_id: z.string().uuid(),
+      action_indices: z.array(z.number().int().min(0)).min(1).max(50),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+
+    const { data: log } = await sb.from("ai_command_log")
+      .select("id, company_id, actions, applied_at")
+      .eq("id", data.command_log_id).maybeSingle();
+    if (!log || (log as any).company_id !== c.id) throw new Error("Command not found");
+    if ((log as any).applied_at) throw new Error("Actions already applied");
+    const stored: any[] = Array.isArray((log as any).actions) ? (log as any).actions : [];
+
+    const { data: userRow } = await sb.auth.admin.getUserById(context.userId);
+    const label = `AI · ${userRow?.user?.email ?? "Coordinator"}`;
+
+    const results: Array<{ index: number; ok: boolean; message: string }> = [];
+    let affected = 0;
+
+    for (const idx of data.action_indices) {
+      const a = stored[idx];
+      if (!a || typeof a !== "object") {
+        results.push({ index: idx, ok: false, message: "invalid action" });
+        continue;
+      }
+      try {
+        if (a.type === "assign") {
+          const { error } = await sb.from("jobs")
+            .update({ driver_id: a.driver_id, driver_accepted_at: null } as never)
+            .eq("id", a.job_id)
+            .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: "driver assigned" });
+        } else if (a.type === "unassign") {
+          const { error } = await sb.from("jobs")
+            .update({ driver_id: null, driver_accepted_at: null } as never)
+            .eq("id", a.job_id)
+            .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: "driver removed" });
+        } else if (a.type === "reschedule") {
+          const patch: Record<string, unknown> = {};
+          if (typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date)) patch.date = a.date;
+          if (typeof a.time === "string" && /^\d{2}:\d{2}$/.test(a.time)) patch.time = a.time;
+          if (typeof a.pickup_at === "string" && !Number.isNaN(Date.parse(a.pickup_at))) patch.pickup_at = a.pickup_at;
+          if (!Object.keys(patch).length) throw new Error("no valid date/time");
+          const { error } = await sb.from("jobs").update(patch as never).eq("id", a.job_id)
+            .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: `rescheduled ${patch.date ?? ""} ${patch.time ?? ""}`.trim() });
+        } else if (a.type === "status") {
+          const allowed = ["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show"];
+          if (!allowed.includes(a.new_status)) throw new Error("invalid status");
+          const { error } = await sb.from("jobs").update({ status: a.new_status } as never).eq("id", a.job_id)
+            .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: `status → ${a.new_status}` });
+        } else if (a.type === "group") {
+          if (!Array.isArray(a.job_ids) || a.job_ids.length < 2) throw new Error("need 2+ trips");
+          const gid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const { error } = await sb.from("jobs")
+            .update({ group_id: gid, grouped_count: a.job_ids.length, grouped_at: new Date().toISOString(), group_name: a.group_name ?? null } as never)
+            .in("id", a.job_ids).eq("company_id", c.id);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: `grouped ${a.job_ids.length}` });
+        } else if (a.type === "ungroup") {
+          const { data: row } = await sb.from("jobs").select("group_id, company_id").eq("id", a.job_id).maybeSingle();
+          const gid = (row as any)?.group_id;
+          if (!gid) throw new Error("not in a group");
+          const { error, count } = await sb.from("jobs")
+            .update({ group_id: null, grouped_count: null, grouped_at: null } as never, { count: "exact" })
+            .eq("group_id" as any, gid).eq("company_id", c.id);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: `ungrouped ${count ?? 0}` });
+        } else if (a.type === "message") {
+          await spendOrThrow(c.id, "ai_agent_message", `AI message on trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
+          const body = String(a.body ?? "").trim();
+          if (!body) throw new Error("empty message");
+          let thread_kind: "group" | "private" | "driver_coord" = "group";
+          let extra: Record<string, unknown> = {};
+          if (a.thread === "driver") {
+            const { data: jobRow } = await sb.from("jobs").select("driver_id").eq("id", a.job_id).maybeSingle();
+            thread_kind = "driver_coord";
+            extra.driver_id = (jobRow as any)?.driver_id ?? null;
+          } else if (a.thread === "client") {
+            thread_kind = "private";
+          }
+          const { error } = await sb.from("trip_messages").insert({
+            job_id: a.job_id,
+            company_id: c.id,
+            sender_kind: "coordinator",
+            sender_label: label,
+            body,
+            thread_kind,
+            ...extra,
+          } as any);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: `message sent (${a.thread})` });
+        } else if (a.type === "dispatch") {
+          await spendOrThrow(c.id, "ai_agent_dispatch", `AI dispatch trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
+          // Delegate to canonical dispatch flow rules via direct table write is not
+          // enough (loop/chain checks). Duplicate the guardrails inline.
+          const { data: job } = await sb.from("jobs")
+            .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status")
+            .eq("id", a.job_id).maybeSingle();
+          if (!job) throw new Error("trip not found");
+          if ((job.executor_company_id ?? job.company_id) !== c.id) throw new Error("only current executor can dispatch");
+          const chain: string[] = Array.isArray(job.dispatch_chain_company_ids) ? job.dispatch_chain_company_ids : [job.company_id];
+          if (chain.includes(a.partner_company_id)) throw new Error("would create a loop");
+          const { data: hops } = await sb.from("job_dispatch_hops").select("hop_index").eq("job_id", a.job_id).order("hop_index", { ascending: false }).limit(1);
+          const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
+          await sb.from("job_dispatch_hops").insert({
+            job_id: a.job_id, hop_index: nextIndex,
+            from_company_id: c.id, to_company_id: a.partner_company_id,
+            status: "pending", note: "via AI agent",
+          });
+          const { error } = await sb.from("jobs").update({
+            origin_company_id: job.origin_company_id ?? job.company_id,
+            executor_company_id: a.partner_company_id,
+            dispatch_status: "pending",
+            dispatched_at: new Date().toISOString(),
+            dispatch_decided_at: null,
+            dispatch_chain_company_ids: [...chain, a.partner_company_id],
+          } as never).eq("id", a.job_id);
+          if (error) throw error;
+          affected++; results.push({ index: idx, ok: true, message: "dispatched to partner" });
+        } else if (a.type === "note") {
+          results.push({ index: idx, ok: true, message: `note: ${String(a.note ?? "").slice(0, 120)}` });
+        } else {
+          results.push({ index: idx, ok: false, message: "unsupported action" });
+        }
+      } catch (e: any) {
+        results.push({ index: idx, ok: false, message: (e?.message ?? "failed").slice(0, 200) });
+      }
+    }
+
+    await sb.from("ai_command_log").update({
+      executed_actions: results,
+      affected_count: affected,
+      applied_at: new Date().toISOString(),
+    } as never).eq("id", data.command_log_id);
+
+    return { ok: true, affected, results };
   });
 
 export const listAiCommandHistory = createServerFn({ method: "GET" })
@@ -4024,7 +4201,7 @@ export const listAiCommandHistory = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const sb = await getAdminClient();
     const { data } = await sb.from("ai_command_log")
-      .select("id, mode, prompt, response, actions, status, created_at")
+      .select("id, mode, prompt, response, actions, status, created_at, applied_at, executed_actions, affected_count, requires_confirmation")
       .eq("company_id", c.id)
       .order("created_at", { ascending: false })
       .limit(20);
