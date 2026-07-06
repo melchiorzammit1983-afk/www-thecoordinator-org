@@ -1795,6 +1795,10 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     const label = userRow?.user?.email ?? "Coordinator";
 
     if (data.thread_kind === "driver") {
+      // Tag with the current driver so a later reassignment doesn't leak this
+      // private thread to whichever driver takes over next.
+      const { data: jobRow } = await supabaseAdmin.from("jobs")
+        .select("driver_id").eq("id", data.job_id).maybeSingle();
       const { error } = await supabaseAdmin.from("trip_messages").insert({
         job_id: data.job_id,
         company_id: company.id,
@@ -1802,6 +1806,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
         sender_label: label,
         body: data.body,
         thread_kind: "driver_coord",
+        driver_id: (jobRow as any)?.driver_id ?? null,
       } as any);
       if (error) throw new Error(error.message);
       return { ok: true };
