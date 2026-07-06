@@ -1716,12 +1716,26 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
+    // Look up the CURRENT driver on this job — private driver↔coordinator
+    // history from a previous (reassigned) driver should not show up in the
+    // current driver chat panel.
+    const { data: jobRow } = await supabaseAdmin.from("jobs")
+      .select("driver_id").eq("id", data.job_id).maybeSingle();
+    const currentDriverId = (jobRow as any)?.driver_id ?? null;
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id, driver_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     // Coordinator NEVER sees driver↔client private messages.
     let filtered = ((rows ?? []) as any[]).filter((r) => r.thread_kind !== "driver_client");
+    // When a driver is assigned, scope driver_coord to that driver only.
+    // When unassigned (e.g. right after a rejection), keep history visible so
+    // the coordinator can still read the rejection reason.
+    if (currentDriverId) {
+      filtered = filtered.filter((r) =>
+        r.thread_kind !== "driver_coord" || !r.driver_id || r.driver_id === currentDriverId
+      );
+    }
 
     // If a pax_id was provided but no identity_id, look up the identity tied to that pax.
     let effectiveIdentityId: string | null = data.identity_id ?? null;
