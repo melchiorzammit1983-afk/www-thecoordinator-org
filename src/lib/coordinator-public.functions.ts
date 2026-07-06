@@ -185,7 +185,7 @@ export const listTripMessages = createServerFn({ method: "GET" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     let ids: string[] = [data.job_id];
     const gid = (job as any).group_id as string | null;
     if (gid) {
