@@ -1444,6 +1444,68 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
   );
 }
 
+function useLiveEtaPoint(jobId: string): LivePoint | null {
+  const fn = useServerFn(listActiveDriverLocations);
+  const { data } = useQuery({
+    queryKey: ["live-locations"],
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+  return (data ?? []).find((p) => p.job_id === jobId) ?? null;
+}
+
+function fmtEtaShort(sec: number): string {
+  if (sec < 60) return "<1 min";
+  if (sec < 3600) return `${Math.max(1, Math.round(sec / 60))}m`;
+  return `${Math.floor(sec / 3600)}h ${Math.round((sec % 3600) / 60)}m`;
+}
+
+function computeLateMin(job: Job, etaSec: number | null | undefined): number | null {
+  if (etaSec == null || !job.date || !job.time) return null;
+  const pickupMs = new Date(`${job.date}T${job.time.length === 5 ? `${job.time}:00` : job.time}`).getTime();
+  if (!Number.isFinite(pickupMs)) return null;
+  const projected = Date.now() + etaSec * 1000;
+  return Math.round((projected - pickupMs) / 60000);
+}
+
+function EtaChip({ point, job }: { point: LivePoint | null; job: Job }) {
+  if (!point) return null;
+  const fresh = Date.now() - new Date(point.captured_at).getTime() < 90_000;
+  if (!fresh) return null;
+  if (point.wait_started_at) return null;
+  const status = job.status;
+  if (!["en_route", "arrived", "in_progress"].includes(status)) return null;
+  if (status === "arrived") {
+    return (
+      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
+        Arrived
+      </span>
+    );
+  }
+  const eta = point.eta_sec;
+  if (eta == null) return null;
+  const label = fmtEtaShort(eta);
+  if (status === "in_progress") {
+    return (
+      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 whitespace-nowrap">
+        Drop in {label}
+      </span>
+    );
+  }
+  const lateMin = computeLateMin(job, eta);
+  const isLate = lateMin != null && lateMin > 2;
+  return isLate ? (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 border border-amber-500/40 whitespace-nowrap">
+      Late {lateMin}m
+    </span>
+  ) : (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary whitespace-nowrap">
+      ETA {label}
+    </span>
+  );
+}
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
@@ -1472,12 +1534,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const partnerRejected = job.dispatch_status === "rejected";
   const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
 
-  // Color priority: red > blue(unread) > partner state > driver-accepted > driver-pending > default
+  const livePoint = useLiveEtaPoint(job.id);
+  const isLatePickup = (() => {
+    if (!livePoint || livePoint.wait_started_at) return false;
+    if (job.status !== "en_route") return false;
+    const fresh = Date.now() - new Date(livePoint.captured_at).getTime() < 90_000;
+    if (!fresh) return false;
+    const late = computeLateMin(job, livePoint.eta_sec);
+    return late != null && late > 2;
+  })();
+
+  // Color priority: red > blue(unread) > partner state > late > driver-accepted > driver-pending > default
   const tone = problem || partnerRejected
     ? "border-destructive bg-destructive/10"
     : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
     : partnerPending
+    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+    : isLatePickup
     ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
     : partnerAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
@@ -1626,8 +1700,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </div>
             )}
             {(job.status && job.status !== "pending" && job.status !== "active") && (
-              <div className="mt-1.5">
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
+                <EtaChip point={livePoint} job={job} />
               </div>
             )}
             <TrafficBadge
