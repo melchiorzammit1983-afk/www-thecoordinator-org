@@ -2551,6 +2551,7 @@ export type Database = {
           client_identity_id: string | null
           company_id: string
           created_at: string
+          driver_id: string | null
           id: string
           is_sos: boolean
           job_id: string
@@ -2568,6 +2569,7 @@ export type Database = {
           client_identity_id?: string | null
           company_id: string
           created_at?: string
+          driver_id?: string | null
           id?: string
           is_sos?: boolean
           job_id: string
@@ -2585,6 +2587,7 @@ export type Database = {
           client_identity_id?: string | null
           company_id?: string
           created_at?: string
+          driver_id?: string | null
           id?: string
           is_sos?: boolean
           job_id?: string
@@ -2603,6 +2606,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_messages_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
             referencedColumns: ["id"]
           },
           {
