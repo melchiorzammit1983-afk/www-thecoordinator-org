@@ -1063,17 +1063,28 @@ function PendingPortalBookings() {
                 <div className="text-xs mt-0.5 truncate">
                   {payload.from_location} → {payload.to_location}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {payload.date ?? (payload.pickup_at ? String(payload.pickup_at).slice(0, 10) : "—")}
-                  {payload.time ? ` · ${String(payload.time).slice(0, 5)}` : ""}
-                  {payload.flight_number ? ` · ${payload.flight_number}` : ""}
-                </div>
+                {(() => {
+                  const d = payload.date ?? (payload.pickup_at ? String(payload.pickup_at).slice(0, 10) : null);
+                  const t = payload.time
+                    ? String(payload.time).slice(0, 5)
+                    : payload.pickup_at
+                    ? new Date(payload.pickup_at).toISOString().slice(11, 16)
+                    : null;
+                  return (
+                    <div className="text-[11px] font-semibold text-foreground">
+                      {d ?? "—"}{t ? ` · ${t}` : ""}
+                    </div>
+                  );
+                })()}
+                {payload.flight_number && (
+                  <div className="text-[11px] text-muted-foreground truncate">✈ {payload.flight_number}</div>
+                )}
               </div>
             </div>
-            <div className="flex gap-1.5 mt-2">
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
               <Button
                 size="sm"
-                className="h-7 text-xs flex-1"
+                className="h-8 text-xs w-full"
                 disabled={acceptMut.isPending}
                 onClick={() => acceptMut.mutate(b.id)}
               >
@@ -1082,7 +1093,7 @@ function PendingPortalBookings() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs"
+                className="h-8 text-xs w-full"
                 disabled={rejectMut.isPending}
                 onClick={() => rejectMut.mutate(b.id)}
               >
