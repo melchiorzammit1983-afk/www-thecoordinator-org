@@ -1444,6 +1444,68 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
   );
 }
 
+function useLiveEtaPoint(jobId: string): LivePoint | null {
+  const fn = useServerFn(listActiveDriverLocations);
+  const { data } = useQuery({
+    queryKey: ["live-locations"],
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+  return (data ?? []).find((p) => p.job_id === jobId) ?? null;
+}
+
+function fmtEtaShort(sec: number): string {
+  if (sec < 60) return "<1 min";
+  if (sec < 3600) return `${Math.max(1, Math.round(sec / 60))}m`;
+  return `${Math.floor(sec / 3600)}h ${Math.round((sec % 3600) / 60)}m`;
+}
+
+function computeLateMin(job: Job, etaSec: number | null | undefined): number | null {
+  if (etaSec == null || !job.date || !job.time) return null;
+  const pickupMs = new Date(`${job.date}T${job.time.length === 5 ? `${job.time}:00` : job.time}`).getTime();
+  if (!Number.isFinite(pickupMs)) return null;
+  const projected = Date.now() + etaSec * 1000;
+  return Math.round((projected - pickupMs) / 60000);
+}
+
+function EtaChip({ point, job }: { point: LivePoint | null; job: Job }) {
+  if (!point) return null;
+  const fresh = Date.now() - new Date(point.captured_at).getTime() < 90_000;
+  if (!fresh) return null;
+  if (point.wait_started_at) return null;
+  const status = job.status;
+  if (!["en_route", "arrived", "in_progress"].includes(status)) return null;
+  if (status === "arrived") {
+    return (
+      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
+        Arrived
+      </span>
+    );
+  }
+  const eta = point.eta_sec;
+  if (eta == null) return null;
+  const label = fmtEtaShort(eta);
+  if (status === "in_progress") {
+    return (
+      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 whitespace-nowrap">
+        Drop in {label}
+      </span>
+    );
+  }
+  const lateMin = computeLateMin(job, eta);
+  const isLate = lateMin != null && lateMin > 2;
+  return isLate ? (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 border border-amber-500/40 whitespace-nowrap">
+      Late {lateMin}m
+    </span>
+  ) : (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary whitespace-nowrap">
+      ETA {label}
+    </span>
+  );
+}
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
