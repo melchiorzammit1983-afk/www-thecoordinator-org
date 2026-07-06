@@ -354,6 +354,45 @@ export function TripDetailsSheet({
             </div>
           )}
 
+          {/* Early flight (green — good news, but coordinator should confirm) */}
+          {flightEarly && (
+            <div className="rounded-md border border-emerald-500/50 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-400 space-y-2">
+              <div
+                className="relative flex items-start gap-2 rounded-sm select-none cursor-pointer overflow-hidden"
+                onPointerDown={startHold}
+                onPointerUp={cancelHold}
+                onPointerLeave={cancelHold}
+                onPointerCancel={cancelHold}
+                title={newTime ? "Hold 1s to move pickup to new flight time" : undefined}
+              >
+                {holdPct > 0 && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-500/25 transition-[width] duration-75"
+                    style={{ width: `${Math.round(holdPct * 100)}%` }}
+                  />
+                )}
+                <Plane className="h-4 w-4 mt-0.5 shrink-0 relative" />
+                <span className="relative">
+                  <b>✈ {flightCode}</b>{" "}
+                  EARLY → {newTime || "?"}{schedTime ? ` (was ${schedTime})` : ""}
+                  {newTime && (
+                    <span className="ml-1 opacity-70">· hold 1s to move pickup to {newTime}</span>
+                  )}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-emerald-500/60 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                disabled={autoShiftMut.isPending}
+                onClick={() => autoShiftMut.mutate()}
+              >
+                {autoShiftMut.isPending ? "Shifting…" : "Auto-shift (1 pt)"}
+              </Button>
+            </div>
+          )}
+
           {/* SOS Alerts */}
           {openSos.length > 0 && (
             <section className="rounded-md border-2 border-red-500 bg-red-50 dark:bg-red-950/30 p-3 space-y-2 animate-pulse">
