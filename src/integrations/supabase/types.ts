@@ -125,6 +125,39 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_portal_settings: {
+        Row: {
+          allow_bulk: boolean
+          allow_coord_pax_chat: boolean
+          default_points_per_booking: number
+          default_seat_points: number
+          id: number
+          max_link_duration_hours: number
+          require_approval_within_hours: number
+          updated_at: string
+        }
+        Insert: {
+          allow_bulk?: boolean
+          allow_coord_pax_chat?: boolean
+          default_points_per_booking?: number
+          default_seat_points?: number
+          id?: number
+          max_link_duration_hours?: number
+          require_approval_within_hours?: number
+          updated_at?: string
+        }
+        Update: {
+          allow_bulk?: boolean
+          allow_coord_pax_chat?: boolean
+          default_points_per_booking?: number
+          default_seat_points?: number
+          id?: number
+          max_link_duration_hours?: number
+          require_approval_within_hours?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_command_log: {
         Row: {
           actions: Json
@@ -2324,6 +2357,66 @@ export type Database = {
           },
         ]
       }
+      pax_tracking_tokens: {
+        Row: {
+          booking_ref: string | null
+          created_at: string
+          id: string
+          job_id: string
+          location_share_expires_at: string | null
+          location_share_granted_at: string | null
+          location_share_requested_at: string | null
+          phone_last4: string | null
+          portal_booking_id: string | null
+          revoked_at: string | null
+          show_driver_location: boolean
+          token: string
+        }
+        Insert: {
+          booking_ref?: string | null
+          created_at?: string
+          id?: string
+          job_id: string
+          location_share_expires_at?: string | null
+          location_share_granted_at?: string | null
+          location_share_requested_at?: string | null
+          phone_last4?: string | null
+          portal_booking_id?: string | null
+          revoked_at?: string | null
+          show_driver_location?: boolean
+          token?: string
+        }
+        Update: {
+          booking_ref?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string
+          location_share_expires_at?: string | null
+          location_share_granted_at?: string | null
+          location_share_requested_at?: string | null
+          phone_last4?: string | null
+          portal_booking_id?: string | null
+          revoked_at?: string | null
+          show_driver_location?: boolean
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pax_tracking_tokens_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pax_tracking_tokens_portal_booking_id_fkey"
+            columns: ["portal_booking_id"]
+            isOneToOne: false
+            referencedRelation: "portal_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plans: {
         Row: {
           code: string
@@ -2437,6 +2530,455 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_bookings: {
+        Row: {
+          accepted_at: string | null
+          agreed_price: number | null
+          created_at: string
+          created_by_email: string | null
+          created_by_name: string | null
+          currency: string | null
+          id: string
+          job_id: string | null
+          payload: Json
+          portal_company_id: string
+          requires_approval: boolean
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          agreed_price?: number | null
+          created_at?: string
+          created_by_email?: string | null
+          created_by_name?: string | null
+          currency?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_company_id: string
+          requires_approval?: boolean
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          agreed_price?: number | null
+          created_at?: string
+          created_by_email?: string | null
+          created_by_name?: string | null
+          currency?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_company_id?: string
+          requires_approval?: boolean
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_bookings_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_bookings_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_change_requests: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          job_id: string | null
+          kind: string
+          portal_booking_id: string
+          requested_changes: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          kind: string
+          portal_booking_id: string
+          requested_changes?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          kind?: string
+          portal_booking_id?: string
+          requested_changes?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_change_requests_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_change_requests_portal_booking_id_fkey"
+            columns: ["portal_booking_id"]
+            isOneToOne: false
+            referencedRelation: "portal_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_companies: {
+        Row: {
+          active: boolean
+          brand_color: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          coordinator_company_id: string
+          created_at: string
+          display_name_for_passenger: string | null
+          id: string
+          kind: string
+          link_enabled: boolean
+          link_expires_at: string | null
+          logo_url: string | null
+          magic_token: string
+          monthly_seat_points: number
+          name: string
+          notification_email: string | null
+          points_per_booking: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          brand_color?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          coordinator_company_id: string
+          created_at?: string
+          display_name_for_passenger?: string | null
+          id?: string
+          kind?: string
+          link_enabled?: boolean
+          link_expires_at?: string | null
+          logo_url?: string | null
+          magic_token?: string
+          monthly_seat_points?: number
+          name: string
+          notification_email?: string | null
+          points_per_booking?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          brand_color?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          coordinator_company_id?: string
+          created_at?: string
+          display_name_for_passenger?: string | null
+          id?: string
+          kind?: string
+          link_enabled?: boolean
+          link_expires_at?: string | null
+          logo_url?: string | null
+          magic_token?: string
+          monthly_seat_points?: number
+          name?: string
+          notification_email?: string | null
+          points_per_booking?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_companies_coordinator_company_id_fkey"
+            columns: ["coordinator_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_link_events: {
+        Row: {
+          actor_kind: string
+          actor_user_id: string | null
+          created_at: string
+          detail: Json | null
+          event: string
+          id: string
+          portal_company_id: string
+        }
+        Insert: {
+          actor_kind: string
+          actor_user_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          event: string
+          id?: string
+          portal_company_id: string
+        }
+        Update: {
+          actor_kind?: string
+          actor_user_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          event?: string
+          id?: string
+          portal_company_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_link_events_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          read_by: Json
+          sender_label: string | null
+          sender_role: string
+          thread_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          read_by?: Json
+          sender_label?: string | null
+          sender_role: string
+          thread_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          read_by?: Json
+          sender_label?: string | null
+          sender_role?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "portal_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_payment_messages: {
+        Row: {
+          amount: number | null
+          body: string | null
+          created_at: string
+          currency: string | null
+          id: string
+          kind: string
+          sender_label: string | null
+          sender_role: string
+          thread_id: string
+        }
+        Insert: {
+          amount?: number | null
+          body?: string | null
+          created_at?: string
+          currency?: string | null
+          id?: string
+          kind?: string
+          sender_label?: string | null
+          sender_role: string
+          thread_id: string
+        }
+        Update: {
+          amount?: number | null
+          body?: string | null
+          created_at?: string
+          currency?: string | null
+          id?: string
+          kind?: string
+          sender_label?: string | null
+          sender_role?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_payment_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "portal_payment_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_payment_threads: {
+        Row: {
+          created_at: string
+          id: string
+          portal_booking_id: string
+          portal_company_id: string
+          scope: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          portal_booking_id: string
+          portal_company_id: string
+          scope: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          portal_booking_id?: string
+          portal_company_id?: string
+          scope?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_payment_threads_portal_booking_id_fkey"
+            columns: ["portal_booking_id"]
+            isOneToOne: false
+            referencedRelation: "portal_bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_payment_threads_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_rate_limits: {
+        Row: {
+          count: number
+          minute_bucket: number
+          token: string
+        }
+        Insert: {
+          count?: number
+          minute_bucket: number
+          token: string
+        }
+        Update: {
+          count?: number
+          minute_bucket?: number
+          token?: string
+        }
+        Relationships: []
+      }
+      portal_statements: {
+        Row: {
+          generated_at: string
+          id: string
+          period_end: string
+          period_start: string
+          portal_company_id: string
+          totals: Json
+        }
+        Insert: {
+          generated_at?: string
+          id?: string
+          period_end: string
+          period_start: string
+          portal_company_id: string
+          totals?: Json
+        }
+        Update: {
+          generated_at?: string
+          id?: string
+          period_end?: string
+          period_start?: string
+          portal_company_id?: string
+          totals?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_statements_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_threads: {
+        Row: {
+          created_at: string
+          id: string
+          job_id: string | null
+          portal_booking_id: string | null
+          portal_company_id: string
+          scope: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          portal_booking_id?: string | null
+          portal_company_id: string
+          scope: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          portal_booking_id?: string | null
+          portal_company_id?: string
+          scope?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_threads_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_threads_portal_booking_id_fkey"
+            columns: ["portal_booking_id"]
+            isOneToOne: false
+            referencedRelation: "portal_bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_threads_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
             referencedColumns: ["id"]
           },
         ]
