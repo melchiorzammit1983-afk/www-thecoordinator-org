@@ -44,6 +44,7 @@ import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authenticated/admin.revenue'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
+import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
@@ -256,6 +257,12 @@ const AuthenticatedAdminPricingRoute =
     path: '/pricing',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminPortalSettingsRoute =
+  AuthenticatedAdminPortalSettingsRouteImport.update({
+    id: '/portal-settings',
+    path: '/portal-settings',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -365,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -415,6 +423,7 @@ export interface FileRoutesByTo {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -469,6 +478,7 @@ export interface FileRoutesById {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -523,6 +533,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/admin/activity'
+    | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
     | '/admin/revenue'
@@ -573,6 +584,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/admin/activity'
+    | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
     | '/admin/revenue'
@@ -626,6 +638,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
     | '/_authenticated/admin/revenue'
@@ -941,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPricingRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/portal-settings': {
+      id: '/_authenticated/admin/portal-settings'
+      path: '/portal-settings'
+      fullPath: '/admin/portal-settings'
+      preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -1058,6 +1078,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
   AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminRevenueRoute: typeof AuthenticatedAdminRevenueRoute
@@ -1067,6 +1088,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
   AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminRevenueRoute: AuthenticatedAdminRevenueRoute,
