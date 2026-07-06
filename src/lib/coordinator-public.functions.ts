@@ -252,6 +252,8 @@ export const postTripMessage = createServerFn({ method: "POST" })
         .order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
       clientIdentityId = (ident as any)?.id ?? null;
     }
+    const isPrivateDriverThread =
+      data.thread_kind === "driver_client" || data.thread_kind === "driver_coord";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: job.company_id,
@@ -261,6 +263,7 @@ export const postTripMessage = createServerFn({ method: "POST" })
       thread_kind: data.thread_kind,
       client_identity_id: clientIdentityId,
       pax_id: paxId,
+      driver_id: isPrivateDriverThread ? link.subject_id ?? null : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
