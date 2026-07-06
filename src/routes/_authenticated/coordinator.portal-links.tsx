@@ -59,7 +59,11 @@ const BRAND_DOMAIN = "thecoordinator.org";
 
 function brandedUrl(slug: string | null | undefined) {
   if (!slug) return null;
-  return `https://${slug}.${BRAND_DOMAIN}/portal`;
+  return `https://${BRAND_DOMAIN}/h/${slug}`;
+}
+function brandedUrlDisplay(slug: string | null | undefined) {
+  if (!slug) return null;
+  return `${BRAND_DOMAIN}/h/${slug}`;
 }
 function rawTokenUrl(token: string) {
   if (typeof window === "undefined") return `/portal/${token}`;

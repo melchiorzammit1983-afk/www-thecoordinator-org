@@ -15,10 +15,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as PortalIndexRouteImport } from './routes/portal.index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
+import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -93,11 +93,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PortalIndexRoute = PortalIndexRouteImport.update({
-  id: '/portal/',
-  path: '/portal/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
   id: '/track/$token',
   path: '/track/$token',
@@ -111,6 +106,11 @@ const TTokenRoute = TTokenRouteImport.update({
 const PortalTokenRoute = PortalTokenRouteImport.update({
   id: '/portal/$token',
   path: '/portal/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HSlugRoute = HSlugRouteImport.update({
+  id: '/h/$slug',
+  path: '/h/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CTokenRoute = CTokenRouteImport.update({
@@ -381,10 +381,10 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
-  '/portal/': typeof PortalIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -434,10 +434,10 @@ export interface FileRoutesByTo {
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
+  '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
-  '/portal': typeof PortalIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -491,10 +491,10 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
-  '/portal/': typeof PortalIndexRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -548,10 +548,10 @@ export interface FileRouteTypes {
     | '/admin'
     | '/coordinator'
     | '/c/$token'
+    | '/h/$slug'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
-    | '/portal/'
     | '/admin/activity'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -601,10 +601,10 @@ export interface FileRouteTypes {
     | '/request-access'
     | '/sitemap.xml'
     | '/c/$token'
+    | '/h/$slug'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
-    | '/portal'
     | '/admin/activity'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -657,10 +657,10 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/c/$token'
+    | '/h/$slug'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
-    | '/portal/'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
@@ -712,10 +712,10 @@ export interface RootRouteChildren {
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   CTokenRoute: typeof CTokenRoute
+  HSlugRoute: typeof HSlugRoute
   PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
-  PortalIndexRoute: typeof PortalIndexRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
@@ -778,13 +778,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/portal/': {
-      id: '/portal/'
-      path: '/portal'
-      fullPath: '/portal/'
-      preLoaderRoute: typeof PortalIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/track/$token': {
       id: '/track/$token'
       path: '/track/$token'
@@ -804,6 +797,13 @@ declare module '@tanstack/react-router' {
       path: '/portal/$token'
       fullPath: '/portal/$token'
       preLoaderRoute: typeof PortalTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/h/$slug': {
+      id: '/h/$slug'
+      path: '/h/$slug'
+      fullPath: '/h/$slug'
+      preLoaderRoute: typeof HSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$token': {
@@ -1242,10 +1242,10 @@ const rootRouteChildren: RootRouteChildren = {
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   CTokenRoute: CTokenRoute,
+  HSlugRoute: HSlugRoute,
   PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
   TrackTokenRoute: TrackTokenRoute,
-  PortalIndexRoute: PortalIndexRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
