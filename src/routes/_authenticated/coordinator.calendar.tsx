@@ -1534,12 +1534,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const partnerRejected = job.dispatch_status === "rejected";
   const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
 
-  // Color priority: red > blue(unread) > partner state > driver-accepted > driver-pending > default
+  const livePoint = useLiveEtaPoint(job.id);
+  const isLatePickup = (() => {
+    if (!livePoint || livePoint.wait_started_at) return false;
+    if (job.status !== "en_route") return false;
+    const fresh = Date.now() - new Date(livePoint.captured_at).getTime() < 90_000;
+    if (!fresh) return false;
+    const late = computeLateMin(job, livePoint.eta_sec);
+    return late != null && late > 2;
+  })();
+
+  // Color priority: red > blue(unread) > partner state > late > driver-accepted > driver-pending > default
   const tone = problem || partnerRejected
     ? "border-destructive bg-destructive/10"
     : unread > 0 || hasUnread
     ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
     : partnerPending
+    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+    : isLatePickup
     ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
     : partnerAccepted
     ? "border-emerald-500/70 bg-emerald-500/5"
