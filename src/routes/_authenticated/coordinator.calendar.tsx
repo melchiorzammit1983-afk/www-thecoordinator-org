@@ -1705,6 +1705,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {flightEarly && (
+              <div className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+                ✈ {flightCode} {flightMsg}
+              </div>
+            )}
             {(job.status && job.status !== "pending" && job.status !== "active") && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
