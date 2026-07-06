@@ -15,7 +15,9 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as TTokenRouteImport } from './routes/t.$token'
+import { Route as PortalTokenRouteImport } from './routes/portal.$token'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -25,6 +27,7 @@ import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
 import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes/_authenticated/coordinator.statements'
 import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
+import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorMyDrivingRouteImport } from './routes/_authenticated/coordinator.my-driving'
@@ -41,12 +44,23 @@ import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authenticated/admin.revenue'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
+import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
+import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
+import { Route as ApiPublicTrackTokenIndexRouteImport } from './routes/api/public/track/$token/index'
+import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/public/portal/$token/index'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
+import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
+import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
+import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
+import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
+import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
+import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
+import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -77,9 +91,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrackTokenRoute = TrackTokenRouteImport.update({
+  id: '/track/$token',
+  path: '/track/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TTokenRoute = TTokenRouteImport.update({
   id: '/t/$token',
   path: '/t/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalTokenRoute = PortalTokenRouteImport.update({
+  id: '/portal/$token',
+  path: '/portal/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CTokenRoute = CTokenRouteImport.update({
@@ -129,6 +153,12 @@ const AuthenticatedCoordinatorReferRoute =
   AuthenticatedCoordinatorReferRouteImport.update({
     id: '/refer',
     path: '/refer',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPortalsRoute =
+  AuthenticatedCoordinatorPortalsRouteImport.update({
+    id: '/portals',
+    path: '/portals',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorPortalLinksRoute =
@@ -227,6 +257,12 @@ const AuthenticatedAdminPricingRoute =
     path: '/pricing',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminPortalSettingsRoute =
+  AuthenticatedAdminPortalSettingsRouteImport.update({
+    id: '/portal-settings',
+    path: '/portal-settings',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -257,11 +293,71 @@ const ApiPublicCronAiAutoCoordinateRoute =
     path: '/api/public/cron/ai-auto-coordinate',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedCoordinatorPortalsIdRoute =
+  AuthenticatedCoordinatorPortalsIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedCoordinatorPortalsRoute,
+  } as any)
+const ApiPublicTrackTokenIndexRoute =
+  ApiPublicTrackTokenIndexRouteImport.update({
+    id: '/api/public/track/$token/',
+    path: '/api/public/track/$token/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenIndexRoute =
+  ApiPublicPortalTokenIndexRouteImport.update({
+    id: '/api/public/portal/$token/',
+    path: '/api/public/portal/$token/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
   id: '/sign/$jobId',
   path: '/sign/$jobId',
   getParentRoute: () => MDriverTokenRoute,
 } as any)
+const ApiPublicTrackTokenVerifyRoute =
+  ApiPublicTrackTokenVerifyRouteImport.update({
+    id: '/api/public/track/$token/verify',
+    path: '/api/public/track/$token/verify',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTrackTokenMessagesRoute =
+  ApiPublicTrackTokenMessagesRouteImport.update({
+    id: '/api/public/track/$token/messages',
+    path: '/api/public/track/$token/messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTrackTokenLocationRoute =
+  ApiPublicTrackTokenLocationRouteImport.update({
+    id: '/api/public/track/$token/location',
+    path: '/api/public/track/$token/location',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenPaxLinkRoute =
+  ApiPublicPortalTokenPaxLinkRouteImport.update({
+    id: '/api/public/portal/$token/pax-link',
+    path: '/api/public/portal/$token/pax-link',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenMessagesRoute =
+  ApiPublicPortalTokenMessagesRouteImport.update({
+    id: '/api/public/portal/$token/messages',
+    path: '/api/public/portal/$token/messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenChangeRequestsRoute =
+  ApiPublicPortalTokenChangeRequestsRouteImport.update({
+    id: '/api/public/portal/$token/change-requests',
+    path: '/api/public/portal/$token/change-requests',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenBookingsRoute =
+  ApiPublicPortalTokenBookingsRouteImport.update({
+    id: '/api/public/portal/$token/bookings',
+    path: '/api/public/portal/$token/bookings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -272,8 +368,11 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -290,17 +389,28 @@ export interface FileRoutesByFullPath {
   '/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
+  '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
+  '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
+  '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
+  '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -309,8 +419,11 @@ export interface FileRoutesByTo {
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
+  '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -327,17 +440,28 @@ export interface FileRoutesByTo {
   '/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
+  '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
+  '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
+  '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
+  '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
+  '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -350,8 +474,11 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/c/$token': typeof CTokenRoute
+  '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
+  '/track/$token': typeof TrackTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/admin/revenue': typeof AuthenticatedAdminRevenueRoute
@@ -368,17 +495,28 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/my-driving': typeof AuthenticatedCoordinatorMyDrivingRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
+  '/_authenticated/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
   '/_authenticated/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/_authenticated/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/_authenticated/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
+  '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
+  '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
+  '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
+  '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -391,8 +529,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/coordinator'
     | '/c/$token'
+    | '/portal/$token'
     | '/t/$token'
+    | '/track/$token'
     | '/admin/activity'
+    | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
     | '/admin/revenue'
@@ -409,17 +550,28 @@ export interface FileRouteTypes {
     | '/coordinator/my-driving'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
+    | '/coordinator/portals'
     | '/coordinator/refer'
     | '/coordinator/statements'
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
+    | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
+    | '/api/public/portal/$token/bookings'
+    | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/messages'
+    | '/api/public/portal/$token/pax-link'
+    | '/api/public/track/$token/location'
+    | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/portal/$token/'
+    | '/api/public/track/$token/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -428,8 +580,11 @@ export interface FileRouteTypes {
     | '/request-access'
     | '/sitemap.xml'
     | '/c/$token'
+    | '/portal/$token'
     | '/t/$token'
+    | '/track/$token'
     | '/admin/activity'
+    | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
     | '/admin/revenue'
@@ -446,17 +601,28 @@ export interface FileRouteTypes {
     | '/coordinator/my-driving'
     | '/coordinator/pending'
     | '/coordinator/portal-links'
+    | '/coordinator/portals'
     | '/coordinator/refer'
     | '/coordinator/statements'
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
+    | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
+    | '/api/public/portal/$token/bookings'
+    | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/messages'
+    | '/api/public/portal/$token/pax-link'
+    | '/api/public/track/$token/location'
+    | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/portal/$token'
+    | '/api/public/track/$token'
   id:
     | '__root__'
     | '/'
@@ -468,8 +634,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/c/$token'
+    | '/portal/$token'
     | '/t/$token'
+    | '/track/$token'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
     | '/_authenticated/admin/revenue'
@@ -486,17 +655,28 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/my-driving'
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
+    | '/_authenticated/coordinator/portals'
     | '/_authenticated/coordinator/refer'
     | '/_authenticated/coordinator/statements'
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
+    | '/_authenticated/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
+    | '/api/public/portal/$token/bookings'
+    | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/messages'
+    | '/api/public/portal/$token/pax-link'
+    | '/api/public/track/$token/location'
+    | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/portal/$token/'
+    | '/api/public/track/$token/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -507,13 +687,24 @@ export interface RootRouteChildren {
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   CTokenRoute: typeof CTokenRoute
+  PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
+  TrackTokenRoute: typeof TrackTokenRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
+  ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
+  ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
+  ApiPublicPortalTokenMessagesRoute: typeof ApiPublicPortalTokenMessagesRoute
+  ApiPublicPortalTokenPaxLinkRoute: typeof ApiPublicPortalTokenPaxLinkRoute
+  ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
+  ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
+  ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
+  ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
+  ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -560,11 +751,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/track/$token': {
+      id: '/track/$token'
+      path: '/track/$token'
+      fullPath: '/track/$token'
+      preLoaderRoute: typeof TrackTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/t/$token': {
       id: '/t/$token'
       path: '/t/$token'
       fullPath: '/t/$token'
       preLoaderRoute: typeof TTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal/$token': {
+      id: '/portal/$token'
+      path: '/portal/$token'
+      fullPath: '/portal/$token'
+      preLoaderRoute: typeof PortalTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$token': {
@@ -628,6 +833,13 @@ declare module '@tanstack/react-router' {
       path: '/refer'
       fullPath: '/coordinator/refer'
       preLoaderRoute: typeof AuthenticatedCoordinatorReferRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/portals': {
+      id: '/_authenticated/coordinator/portals'
+      path: '/portals'
+      fullPath: '/coordinator/portals'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/portal-links': {
@@ -742,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPricingRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/portal-settings': {
+      id: '/_authenticated/admin/portal-settings'
+      path: '/portal-settings'
+      fullPath: '/admin/portal-settings'
+      preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -777,6 +996,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCronAiAutoCoordinateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/coordinator/portals/$id': {
+      id: '/_authenticated/coordinator/portals/$id'
+      path: '/$id'
+      fullPath: '/coordinator/portals/$id'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsIdRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorPortalsRoute
+    }
+    '/api/public/track/$token/': {
+      id: '/api/public/track/$token/'
+      path: '/api/public/track/$token'
+      fullPath: '/api/public/track/$token/'
+      preLoaderRoute: typeof ApiPublicTrackTokenIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/': {
+      id: '/api/public/portal/$token/'
+      path: '/api/public/portal/$token'
+      fullPath: '/api/public/portal/$token/'
+      preLoaderRoute: typeof ApiPublicPortalTokenIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/m/driver/$token/sign/$jobId': {
       id: '/m/driver/$token/sign/$jobId'
       path: '/sign/$jobId'
@@ -784,11 +1024,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MDriverTokenSignJobIdRouteImport
       parentRoute: typeof MDriverTokenRoute
     }
+    '/api/public/track/$token/verify': {
+      id: '/api/public/track/$token/verify'
+      path: '/api/public/track/$token/verify'
+      fullPath: '/api/public/track/$token/verify'
+      preLoaderRoute: typeof ApiPublicTrackTokenVerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/messages': {
+      id: '/api/public/track/$token/messages'
+      path: '/api/public/track/$token/messages'
+      fullPath: '/api/public/track/$token/messages'
+      preLoaderRoute: typeof ApiPublicTrackTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/location': {
+      id: '/api/public/track/$token/location'
+      path: '/api/public/track/$token/location'
+      fullPath: '/api/public/track/$token/location'
+      preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/pax-link': {
+      id: '/api/public/portal/$token/pax-link'
+      path: '/api/public/portal/$token/pax-link'
+      fullPath: '/api/public/portal/$token/pax-link'
+      preLoaderRoute: typeof ApiPublicPortalTokenPaxLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/messages': {
+      id: '/api/public/portal/$token/messages'
+      path: '/api/public/portal/$token/messages'
+      fullPath: '/api/public/portal/$token/messages'
+      preLoaderRoute: typeof ApiPublicPortalTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/change-requests': {
+      id: '/api/public/portal/$token/change-requests'
+      path: '/api/public/portal/$token/change-requests'
+      fullPath: '/api/public/portal/$token/change-requests'
+      preLoaderRoute: typeof ApiPublicPortalTokenChangeRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/bookings': {
+      id: '/api/public/portal/$token/bookings'
+      path: '/api/public/portal/$token/bookings'
+      fullPath: '/api/public/portal/$token/bookings'
+      preLoaderRoute: typeof ApiPublicPortalTokenBookingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
   AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
   AuthenticatedAdminRevenueRoute: typeof AuthenticatedAdminRevenueRoute
@@ -798,6 +1088,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
   AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
   AuthenticatedAdminRevenueRoute: AuthenticatedAdminRevenueRoute,
@@ -807,6 +1098,21 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
 
 const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
+
+interface AuthenticatedCoordinatorPortalsRouteChildren {
+  AuthenticatedCoordinatorPortalsIdRoute: typeof AuthenticatedCoordinatorPortalsIdRoute
+}
+
+const AuthenticatedCoordinatorPortalsRouteChildren: AuthenticatedCoordinatorPortalsRouteChildren =
+  {
+    AuthenticatedCoordinatorPortalsIdRoute:
+      AuthenticatedCoordinatorPortalsIdRoute,
+  }
+
+const AuthenticatedCoordinatorPortalsRouteWithChildren =
+  AuthenticatedCoordinatorPortalsRoute._addFileChildren(
+    AuthenticatedCoordinatorPortalsRouteChildren,
+  )
 
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
@@ -821,6 +1127,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorMyDrivingRoute: typeof AuthenticatedCoordinatorMyDrivingRoute
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
+  AuthenticatedCoordinatorPortalsRoute: typeof AuthenticatedCoordinatorPortalsRouteWithChildren
   AuthenticatedCoordinatorReferRoute: typeof AuthenticatedCoordinatorReferRoute
   AuthenticatedCoordinatorStatementsRoute: typeof AuthenticatedCoordinatorStatementsRoute
   AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
@@ -848,6 +1155,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
     AuthenticatedCoordinatorPortalLinksRoute:
       AuthenticatedCoordinatorPortalLinksRoute,
+    AuthenticatedCoordinatorPortalsRoute:
+      AuthenticatedCoordinatorPortalsRouteWithChildren,
     AuthenticatedCoordinatorReferRoute: AuthenticatedCoordinatorReferRoute,
     AuthenticatedCoordinatorStatementsRoute:
       AuthenticatedCoordinatorStatementsRoute,
@@ -892,7 +1201,9 @@ const rootRouteChildren: RootRouteChildren = {
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   CTokenRoute: CTokenRoute,
+  PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
+  TrackTokenRoute: TrackTokenRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
@@ -900,17 +1211,17 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicCronRolloverSubscriptionsRoute,
   ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
+  ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
+  ApiPublicPortalTokenChangeRequestsRoute:
+    ApiPublicPortalTokenChangeRequestsRoute,
+  ApiPublicPortalTokenMessagesRoute: ApiPublicPortalTokenMessagesRoute,
+  ApiPublicPortalTokenPaxLinkRoute: ApiPublicPortalTokenPaxLinkRoute,
+  ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
+  ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
+  ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
+  ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
+  ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
