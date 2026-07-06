@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   getAiConfig, saveAiConfig,
   listAiRules, upsertAiRule, deleteAiRule,
-  runAiCommand, listAiCommandHistory,
+  runAiCommand, listAiCommandHistory, applyAiCommandActions,
 } from "@/lib/coordinator.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
@@ -122,30 +122,122 @@ function TogglesSection() {
 }
 
 // -------- 2. Command Bar --------
+type HistoryRow = {
+  id: string; mode: string; prompt: string; response: string;
+  actions: any[]; status: string; created_at: string;
+  applied_at: string | null; executed_actions: Array<{ index: number; ok: boolean; message: string }> | null;
+  affected_count: number; requires_confirmation: boolean;
+};
+
+function describeAction(a: any): string {
+  if (!a || typeof a !== "object") return "invalid";
+  const short = (s?: string) => (s ? String(s).slice(0, 8) : "");
+  switch (a.type) {
+    case "assign": return `Assign driver ${short(a.driver_id)} → trip ${short(a.job_id)}`;
+    case "unassign": return `Unassign driver from trip ${short(a.job_id)}`;
+    case "reschedule": return `Reschedule ${short(a.job_id)} → ${a.date ?? ""} ${a.time ?? ""}`.trim();
+    case "status": return `Set status of ${short(a.job_id)} → ${a.new_status}`;
+    case "group": return `Group ${Array.isArray(a.job_ids) ? a.job_ids.length : 0} trips${a.group_name ? ` as "${a.group_name}"` : ""}`;
+    case "ungroup": return `Ungroup trip ${short(a.job_id)}`;
+    case "message": return `Message (${a.thread}) on ${short(a.job_id)}: ${String(a.body ?? "").slice(0, 80)}`;
+    case "dispatch": return `Dispatch ${short(a.job_id)} → partner ${short(a.partner_company_id)}`;
+    case "note": return `Note on ${short(a.job_id)}: ${String(a.note ?? "").slice(0, 80)}`;
+    default: return String(a.type);
+  }
+}
+
+function HistoryEntry({ h }: { h: HistoryRow }) {
+  const qc = useQueryClient();
+  const applyFn = useServerFn(applyAiCommandActions);
+  const initial = new Set((h.actions ?? []).map((_, i) => i));
+  const [selected, setSelected] = useState<Set<number>>(initial);
+
+  const apply = useMutation({
+    mutationFn: () => applyFn({ data: { command_log_id: h.id, action_indices: Array.from(selected).sort((a, b) => a - b) } }) as Promise<{
+      ok: boolean; affected: number; results: Array<{ index: number; ok: boolean; message: string }>;
+    }>,
+    onSuccess: (res) => {
+      toast.success(`Applied ${res.affected} action(s)`);
+      qc.invalidateQueries({ queryKey: ["ai-cmd-history"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toggle = (i: number) => {
+    const next = new Set(selected);
+    next.has(i) ? next.delete(i) : next.add(i);
+    setSelected(next);
+  };
+
+  const applied = !!h.applied_at;
+  const acts = h.actions ?? [];
+
+  return (
+    <div className="rounded-md border p-3 text-sm space-y-2">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="outline" className="capitalize">{h.mode}</Badge>
+        <Badge variant={applied ? "secondary" : h.status === "awaiting_confirm" ? "default" : h.status === "ok" ? "secondary" : "destructive"} className="capitalize">
+          {applied ? "applied" : h.status.replace("_", " ")}
+        </Badge>
+        <span>{new Date(h.created_at).toLocaleString()}</span>
+      </div>
+      <div className="font-medium">{h.prompt}</div>
+      {h.response && <div className="text-foreground/80 whitespace-pre-wrap">{h.response}</div>}
+      {acts.length > 0 && (
+        <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
+          <div className="text-xs font-medium">Proposed actions ({acts.length}) — needs your approval</div>
+          {acts.map((a, i) => {
+            const result = h.executed_actions?.find((r) => r.index === i);
+            return (
+              <label key={i} className="flex items-start gap-2 text-xs">
+                {!applied && (
+                  <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="mt-0.5" />
+                )}
+                <span className="flex-1">{describeAction(a)}</span>
+                {result && (
+                  <span className={result.ok ? "text-emerald-600" : "text-destructive"}>
+                    {result.ok ? "✓" : "✗"} {result.message}
+                  </span>
+                )}
+              </label>
+            );
+          })}
+          {!applied && (
+            <div className="flex justify-end pt-1">
+              <Button size="sm" disabled={selected.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
+                {apply.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : null}
+                Approve {selected.size} of {acts.length}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommandSection() {
   const qc = useQueryClient();
   const runFn = useServerFn(runAiCommand);
   const historyFn = useServerFn(listAiCommandHistory);
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState<"read" | "execute">("read");
+  const [mode, setMode] = useState<"read" | "execute">("execute");
+  const [readCards, setReadCards] = useState(true);
 
   const { data: history } = useQuery({
     queryKey: ["ai-cmd-history"],
-    queryFn: () => historyFn() as Promise<Array<{
-      id: string; mode: string; prompt: string; response: string;
-      actions: any[]; status: string; created_at: string;
-    }>>,
+    queryFn: () => historyFn() as Promise<HistoryRow[]>,
   });
 
   const mut = useMutation({
-    mutationFn: () => runFn({ data: { prompt: prompt.trim(), mode } }) as Promise<{
-      response: string; actions: any[]; status: string;
+    mutationFn: () => runFn({ data: { prompt: prompt.trim(), mode, scope: readCards ? "board" : "owned" } }) as Promise<{
+      id: string | null; response: string; actions: any[]; status: string;
     }>,
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["ai-cmd-history"] });
       setPrompt("");
-      if (res.status === "awaiting_confirm") {
-        toast.warning(`AI proposed ${res.actions.length} actions — review below before confirming.`);
+      if (res.actions.length > 0) {
+        toast.warning(`AI proposed ${res.actions.length} action(s) — review and approve below.`);
       } else {
         toast.success("AI responded");
       }
@@ -157,34 +249,36 @@ function CommandSection() {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Talk to the AI</CardTitle>
-          <CardDescription>Ask questions or issue commands in plain English.</CardDescription>
+          <CardTitle className="text-base">Talk to the AI agent</CardTitle>
+          <CardDescription>Ask questions or issue commands. The agent proposes actions — you approve before anything runs.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g. Who is my busiest driver tomorrow? — or — Move Sarah's 09:00 pickup to 09:15"
+            placeholder="e.g. Move tomorrow's Malta trips to Wednesday — or — Message the driver on trip #a1b2 that pickup is delayed 10 min"
             rows={3}
           />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setMode("read")}
-                className={`px-2 py-1 rounded border ${mode === "read" ? "bg-primary text-primary-foreground border-primary" : ""}`}
-              >
-                Read
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("execute")}
-                className={`px-2 py-1 rounded border ${mode === "execute" ? "bg-primary text-primary-foreground border-primary" : ""}`}
-              >
-                Execute
-              </button>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 text-xs">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMode("read")}
+                  className={`px-2 py-1 rounded border ${mode === "read" ? "bg-primary text-primary-foreground border-primary" : ""}`}
+                >Read</button>
+                <button
+                  type="button"
+                  onClick={() => setMode("execute")}
+                  className={`px-2 py-1 rounded border ${mode === "execute" ? "bg-primary text-primary-foreground border-primary" : ""}`}
+                >Agent</button>
+              </div>
+              <label className="flex items-center gap-1.5 text-muted-foreground">
+                <Switch checked={readCards} onCheckedChange={(v) => setReadCards(!!v)} />
+                Read all dispatch board cards
+              </label>
               <span className="text-muted-foreground">
-                {mode === "read" ? "AI only answers." : "AI proposes actions to run (over 5 needs confirmation)."}
+                {mode === "read" ? "Q&A only." : "Proposes actions for your approval."}
               </span>
             </div>
             <Button
@@ -209,22 +303,7 @@ function CommandSection() {
             <div className="text-xs text-muted-foreground">No commands yet.</div>
           )}
           {(history ?? []).map((h) => (
-            <div key={h.id} className="rounded-md border p-3 text-sm space-y-1.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline" className="capitalize">{h.mode}</Badge>
-                <Badge variant={h.status === "ok" ? "secondary" : h.status === "awaiting_confirm" ? "default" : "destructive"} className="capitalize">
-                  {h.status.replace("_", " ")}
-                </Badge>
-                <span>{new Date(h.created_at).toLocaleString()}</span>
-              </div>
-              <div className="font-medium">{h.prompt}</div>
-              {h.response && <div className="text-foreground/80 whitespace-pre-wrap">{h.response}</div>}
-              {Array.isArray(h.actions) && h.actions.length > 0 && (
-                <div className="text-xs text-muted-foreground">
-                  Suggested actions: {h.actions.length}
-                </div>
-              )}
-            </div>
+            <HistoryEntry key={h.id} h={h} />
           ))}
         </CardContent>
       </Card>

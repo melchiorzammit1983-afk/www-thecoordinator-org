@@ -1,72 +1,96 @@
 ## Problem
 
-The "Fix time" button on a flight-mismatched trip sets the pickup to the wrong time (13:55 flight became 11:55 pickup). Root cause: `rescheduleJobToFlight` in `src/lib/coordinator.functions.ts` reads the flight ISO with `.toISOString().slice(11,16)`, which gives UTC hours. In Malta summer (UTC+2) that shifts every fixed time back 2 hours.
+`runAiCommand` in `src/lib/coordinator.functions.ts` (~line 3876) only loads jobs where `company_id = your company`, capped at the last day and 120 rows, with a very thin field list. The dispatch board's `listJobs` (~line 222) loads much more: trips your company owns, executes, originated, or sits in the dispatch chain of. So partner-dispatched cards visible on the board are invisible to the AI, and "no jobs" is the honest answer to its narrow query. On top of that the AI can't message drivers/clients, and there's no explicit confirm-before-act contract.
 
-Additionally, today the flight tracker only reacts when a flight is late or cancelled. Early flights are silently ignored, so drivers can be caught out.
+## Fix
 
-## Changes
+### 1. Read the same trips the board reads
 
-### 1. Fix the "Fix time" bug (Malta wall-clock everywhere)
+In `runAiCommand`, replace the current jobs query with the same OR filter used by `listJobs`:
 
-In `rescheduleJobToFlight`, replace the UTC slice with a Malta-timezone formatter (reuse the existing helpers in `src/lib/time.ts` — same pattern `refreshMaltaFlightForJob` already uses to derive date/time). Result: a 13:55 Europe/Malta flight snaps pickup to `date=2026-07-06`, `time=13:55`, and `pickup_at` is the correct UTC instant.
-
-Sweep the file for any other `.toISOString().slice(...)` that should be Malta wall-clock (e.g. `rescheduleJobToFlight` is the main offender; the flight-refresh path already handles TZ correctly). No changes to how times are stored — everything stays UTC in the DB and Malta wall-clock in the UI.
-
-### 2. Detect early flights (>= 5 min earlier than scheduled)
-
-In `refreshMaltaFlightForJob` (same file), when the board gives us a new estimated time:
-
-```text
-diff = scheduled - estimated   (minutes)
-if diff >= 5      → flight_status = "early"
-if |diff| < 5     → "on_time"
-if estimated > scheduled + 5 → existing "delayed" path (unchanged)
+```
+company_id.eq.{c.id}
+executor_company_id.eq.{c.id}
+origin_company_id.eq.{c.id}
+dispatch_chain_company_ids.cs.{{c.id}}
 ```
 
-Store `flight_status = "early"` with `flight_status_note = "EARLY → 13:30"` and update `flight_estimated_at`. No DB migration needed — `flight_status` is already free text.
+Also widen the window: `date >= yesterday AND date <= today+30`, limit 500 (was 120, yesterday-only).
 
-### 3. Green flight line + "Fix time" prompt on the card
+### 2. Give the AI the full card context
 
-In `src/routes/_authenticated/coordinator.calendar.tsx` (the flight banner around line 1518 and the trip cards around line 1152):
+Extend the SELECT to include every field the board card renders, then format each row in the prompt with these fields:
 
-- Treat `flight_status === "early"` as an "actionable" state alongside `delayed` / `time_mismatch`, so the card surfaces it and the "Fix time" button appears.
-- Style: render the flight line in green (`text-emerald-600 dark:text-emerald-400`) instead of the amber/red used for late — the card itself stays neutral (not ember), because early is good news, not an alert.
-- Text: `✈ EK109 Flight 13:30 (was 13:55) · pickup 13:55` so both times are visible.
-- Tapping "Fix time" runs the existing (now-corrected) `rescheduleJobToFlight` and snaps pickup to the new flight time — matches your answer.
+- Flight: `from_flight`, `to_flight`, `flight_scheduled_at`, `flight_estimated_at`, `flight_status`, `flight_status_note`
+- Group + labels: `group_id`, `group_name`, `grouped_count`, `job_labels(trip_labels(name))`
+- Company + dispatch: `company_id`, `executor_company_id`, `origin_company_id`, `dispatch_status`, `dispatch_chain_company_ids` (resolved to company names in a single lookup)
+- Client + pax: `clientcompanyname`, `contact_phone`, `pax(name)`, plus the existing `name`/`surname`
+- Existing: id, from/to, date, time, pickup_at, driver, status
 
-### 4. Notify the assigned driver (no auto-shift)
+Also load the caller's connected partner companies (for dispatch actions) and the currently open `trip_messages` threads per job (for messaging).
 
-When `refreshMaltaFlightForJob` transitions a job into `"early"` and there is a `driver_id`, insert a system message into the existing `trip_messages` driver_coord thread:
+### 3. Turn the AI into a confirm-first agent
 
-```text
-"Flight EK109 is EARLIER: now 13:30 (was 13:55). Pickup still 13:55 —
-coordinator will confirm."
+Change the action contract so **every** action is a proposal, not an auto-execute. Return shape becomes:
+
+```
+{ response: "markdown", actions: [ ... ], requires_confirmation: true }
 ```
 
-This piggybacks on the mechanism you already use for other status changes, so the driver gets a push via the existing `driver_push_subs` flow with no new infrastructure. Only fires once per transition (guard on `flight_status !== 'early'` before update).
+`mode: "execute"` no longer means "run now"; it means "propose actions the user can approve". Current auto-run for ≤5 actions is removed — the UI must always show the proposed actions with an Approve / Reject button before anything hits the DB. The 5-action `awaiting_confirm` path becomes the only path.
 
-### 5. Coordinator-triggered auto-shift (points-metered)
+Add new action types on top of the existing `assign | unassign | reschedule | note`:
 
-Add a new server function `autoShiftEarlyFlight({ id })` that:
-- Verifies the job is `flight_status === "early"` and the caller owns the job.
-- Calls `spend_points(company_id, 'auto_shift_early_flight', job_id, ...)` — a new feature key in `ai_feature_costs` (added via migration, default cost 1, `block_on_empty=true`).
-- Runs the same snap logic as `rescheduleJobToFlight`.
-- Inserts a driver system message: `"Pickup moved earlier to 13:30 (auto)"`.
+- `status` — set trip status (completed, cancelled, no_show, etc.)
+- `group` / `ungroup` — merge/split trips into a group
+- `dispatch` — send a trip to a connected partner company (routes through the existing dispatch flow, points-metered)
+- `message` — post a message into an existing `trip_messages` thread (driver_coord or client_coord), from the AI on behalf of the coordinator
 
-On the calendar card, when a trip is in `"early"` state, show a second small button next to "Fix time" labelled "Auto-shift (1 pt)" that calls this function. Coordinators without points see the standard `insufficient_points` toast you already handle elsewhere.
+Each executor branch already exists elsewhere in `coordinator.functions.ts` (assign/reschedule/status changes, group create, dispatch to partner, `postTripMessage`); the AI executor reuses those code paths instead of raw table updates so the existing rules (partner-must-accept, private-thread rewrites, points spend, driver notification) still fire.
 
-## Technical details
+### 4. New "apply proposed actions" server function
 
-Files touched:
-- `src/lib/coordinator.functions.ts` — fix `rescheduleJobToFlight`; extend `refreshMaltaFlightForJob` early-detection + driver system message; add `autoShiftEarlyFlight`.
-- `src/routes/_authenticated/coordinator.calendar.tsx` — treat `"early"` as an actionable state, green flight line, second "Auto-shift" button.
-- One migration: insert `('auto_shift_early_flight', 1, true, true)` into `ai_feature_costs` (idempotent `ON CONFLICT DO NOTHING`).
+Add `applyAiCommandActions({ command_log_id, action_indices[] })` that:
 
-No frontend framework changes, no new dependencies, no schema changes beyond the one seed row.
+- Reads the stored `ai_command_log` row for the current company
+- Re-validates every action against the current DB state (ids, ownership, driver availability, partner-accept state, points balance)
+- Runs each accepted action through the existing helpers listed above
+- Writes back `executed_actions`, `affected_count`, `applied_at` to the log row
+- Returns a per-action result list so the UI shows ✓ / ✗ inline
+
+Also add columns to `ai_command_log`: `requires_confirmation boolean`, `applied_at timestamptz`, `executed_actions jsonb`, `affected_count int`.
+
+### 5. UI (`src/routes/_authenticated/coordinator.ai-center.tsx`)
+
+- Under each history entry with actions, render an action list with checkboxes (all checked by default) and an **Approve selected** button → calls `applyAiCommandActions`.
+- Show partner-name + dispatch chain + flight status inline per proposed action so the coordinator can see what will happen.
+- After apply, replace the block with per-row ✓/✗ and the affected count.
+- Add a small "Read cards" toggle above the input that's on by default and, when off, restricts the AI to the old owned-only scope (satisfies "if the user told the AI to start reading the cards, he will change to read the cards").
+
+### 6. System prompt updates
+
+- Tell the model it's an agent for a coordinator + driver mind, and that **every action needs coordinator confirmation** — never claim something was done, always propose.
+- Document each of the 8 action types (`assign | unassign | reschedule | status | group | ungroup | dispatch | message | note`) with required fields.
+- Instruct: "If the user asks to message a driver/client, propose a `message` action with `thread='driver_coord'|'client_coord'` and `body='...'` and wait for approval."
+
+### Migration
+
+One migration adds:
+- `ai_command_log.requires_confirmation boolean default true`
+- `ai_command_log.applied_at timestamptz`
+- `ai_command_log.executed_actions jsonb`
+- `ai_command_log.affected_count int`
+- Seed rows in `ai_feature_costs` for `ai_agent_message` (1 pt) and `ai_agent_dispatch` (1 pt) so messaging/dispatch actions are metered.
+
+## Files touched
+
+- `src/lib/coordinator.functions.ts` — widened jobs query, richer context, agent contract, new `applyAiCommandActions`, new action executors reusing existing helpers.
+- `src/routes/_authenticated/coordinator.ai-center.tsx` — proposal UI with Approve selected + per-action results + "Read cards" toggle.
+- One SQL migration for `ai_command_log` columns and two `ai_feature_costs` rows.
 
 ## Explicit non-goals
 
-- No timezone selector — everything stays Malta time as you chose.
-- No automatic pickup shift without coordinator tap.
-- No changes to how late/cancelled flights behave today.
-- No backfill of existing `flight_status` values.
+- No auto-execute. Even a single-action response requires the coordinator to press Approve.
+- No new AI-only tables — reuse `trip_messages`, `jobs`, `job_dispatch_hops`.
+- No changes to driver-facing UI or the private-thread rules from the earlier fix.
+- No timezone / flight logic changes — those are already done.

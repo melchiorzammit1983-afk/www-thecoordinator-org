@@ -129,36 +129,48 @@ export type Database = {
         Row: {
           actions: Json
           actor_user_id: string | null
+          affected_count: number
+          applied_at: string | null
           company_id: string
           created_at: string
           error: string | null
+          executed_actions: Json | null
           id: string
           mode: string
           prompt: string
+          requires_confirmation: boolean
           response: string | null
           status: string
         }
         Insert: {
           actions?: Json
           actor_user_id?: string | null
+          affected_count?: number
+          applied_at?: string | null
           company_id: string
           created_at?: string
           error?: string | null
+          executed_actions?: Json | null
           id?: string
           mode?: string
           prompt: string
+          requires_confirmation?: boolean
           response?: string | null
           status?: string
         }
         Update: {
           actions?: Json
           actor_user_id?: string | null
+          affected_count?: number
+          applied_at?: string | null
           company_id?: string
           created_at?: string
           error?: string | null
+          executed_actions?: Json | null
           id?: string
           mode?: string
           prompt?: string
+          requires_confirmation?: boolean
           response?: string | null
           status?: string
         }
