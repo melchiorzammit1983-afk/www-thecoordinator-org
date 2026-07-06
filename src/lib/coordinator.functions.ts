@@ -1269,7 +1269,7 @@ function combineDateAndTime(baseIso: string | null, hhmm: string | null | undefi
 
 async function refreshMaltaFlightForJob(
   supabaseAdmin: any,
-  job: { id: string; from_flight: string | null; to_flight: string | null; pickup_at: string | null },
+  job: { id: string; company_id?: string | null; driver_id?: string | null; from_flight: string | null; to_flight: string | null; pickup_at: string | null; flight_status?: string | null },
 ) {
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false as const, reason: "no_code" };
@@ -1289,7 +1289,22 @@ async function refreshMaltaFlightForJob(
   const estimatedIso = combineDateAndTime(job.pickup_at, row.estimated ?? null);
   let mapped = mapMaltaStatus(row.status);
   const shownTime = (row.estimated || row.scheduled || "").trim();
-  const pickTime = job.pickup_at ? new Date(job.pickup_at).toISOString().slice(11, 16) : "";
+  const pickTime = job.pickup_at ? isoToMaltaDateTime(job.pickup_at).time : "";
+  const schedTime = scheduledIso ? isoToMaltaDateTime(scheduledIso).time : "";
+  const estTime = estimatedIso ? isoToMaltaDateTime(estimatedIso).time : "";
+
+  // Early-flight detection: estimated is 5+ min before scheduled and the board
+  // hasn't flagged the flight as delayed/cancelled/etc. Green, not red.
+  if (
+    mapped === "on_time" && scheduledIso && estimatedIso
+  ) {
+    const s = new Date(scheduledIso).getTime();
+    const e = new Date(estimatedIso).getTime();
+    if (!Number.isNaN(s) && !Number.isNaN(e) && s - e >= 5 * 60_000) {
+      mapped = "early" as any;
+    }
+  }
+
   if (scheduledIso && job.pickup_at) {
     const s = new Date(scheduledIso).getTime();
     const p = new Date(job.pickup_at).getTime();
@@ -1303,6 +1318,7 @@ async function refreshMaltaFlightForJob(
     case "diverted": note = "DIVERTED"; break;
     case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
     case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
+    case "early" as any: note = `EARLY → ${estTime || shownTime || "?"}${schedTime ? ` (was ${schedTime})` : ""}`; break;
     case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
     case "active": note = row.status || "In progress"; break;
     default: note = `On time · ${shownTime || "?"}`; break;
@@ -1319,8 +1335,28 @@ async function refreshMaltaFlightForJob(
     flight_gate: row.gate ?? null,
     flight_baggage_belt: (row as any).baggage_belt ?? (row as any).belt ?? null,
   }).eq("id", job.id);
+
+  // Notify assigned driver on transition INTO the early state (once).
+  if (
+    (mapped as any) === "early" &&
+    job.flight_status !== "early" &&
+    job.driver_id && job.company_id
+  ) {
+    try {
+      await supabaseAdmin.from("trip_messages").insert([{
+        job_id: job.id,
+        company_id: job.company_id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `⏫ Flight ${code} is EARLIER: now ${estTime || "?"}${schedTime ? ` (was ${schedTime})` : ""}. Pickup still ${pickTime || "?"} — coordinator will confirm.`,
+        thread_kind: "driver_coord",
+        driver_id: job.driver_id,
+      } as never]);
+    } catch { /* non-fatal */ }
+  }
   return { ok: true as const, status: mapped, note };
 }
+
 
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
