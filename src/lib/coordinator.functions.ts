@@ -549,6 +549,7 @@ export const assignDriver = createServerFn({ method: "POST" })
         sender_label: "System",
         body: `🕓 Trip assigned to ${driverName} — waiting on them to accept.`,
         thread_kind: "driver_coord",
+        driver_id: data.driver_id,
       } as never));
       await supabaseAdmin.from("trip_messages").insert(rows);
     }
