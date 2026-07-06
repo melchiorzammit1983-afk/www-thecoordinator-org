@@ -1516,6 +1516,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
   const unread = unreadCounts.total;
   const flightIssue = job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
+  const flightEarly = job.flight_status === "early";
   const problem = flightIssue || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
