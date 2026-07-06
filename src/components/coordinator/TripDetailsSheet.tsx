@@ -181,10 +181,19 @@ export function TripDetailsSheet({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const autoShiftFn = useServerFn(autoShiftEarlyFlight);
+  const autoShiftMut = useMutation({
+    mutationFn: () => autoShiftFn({ data: { id: job.id } }) as Promise<{ ok: true; date: string; time: string }>,
+    onSuccess: (r) => {
+      toast.success(`Pickup auto-shifted to ${r.date} ${r.time}`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const [holdPct, setHoldPct] = useState(0);
   const holdRef = useRef<{ start: number | null; raf: number | null }>({ start: null, raf: null });
   const startHold = () => {
-    if (!flightIssue || !newTime || rescheduleMut.isPending) return;
+    if (!(flightIssue || flightEarly) || !newTime || rescheduleMut.isPending) return;
     holdRef.current.start = performance.now();
     const tick = () => {
       if (holdRef.current.start == null) return;
