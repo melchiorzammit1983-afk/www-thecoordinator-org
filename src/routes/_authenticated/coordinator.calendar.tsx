@@ -1745,7 +1745,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
-              {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
+              {flightCode && !delayed && !flightEarly && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
