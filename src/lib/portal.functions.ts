@@ -120,6 +120,9 @@ export const updatePortal = createServerFn({ method: "POST" })
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
+    if (data.patch.slug && RESERVED_SLUGS.has(data.patch.slug.toLowerCase())) {
+      throw new Error("slug_reserved");
+    }
     const { error, data: row } = await context.supabase
       .from("portal_companies" as any)
       .update(data.patch as any)
