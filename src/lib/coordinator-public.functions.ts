@@ -198,6 +198,9 @@ export const listTripMessages = createServerFn({ method: "GET" })
       .in("job_id", ids).order("created_at", { ascending: true });
     if (data.thread_kind === "driver_client") {
       q = q.eq("thread_kind", "driver_client");
+      // Private driver↔client thread is scoped to the driver — reassigned
+      // drivers never see the previous driver's private conversation.
+      if (link.subject_id) q = q.eq("driver_id" as any, link.subject_id);
       if (data.pax_id) {
         // Scope to just this passenger's private thread with the driver.
         const { data: idents } = await supabaseAdmin
@@ -209,6 +212,8 @@ export const listTripMessages = createServerFn({ method: "GET" })
       }
     } else if (data.thread_kind === "driver_coord") {
       q = q.eq("thread_kind", "driver_coord");
+      // Same for driver↔coordinator private thread.
+      if (link.subject_id) q = q.eq("driver_id" as any, link.subject_id);
     } else {
       // group: legacy null + explicit group; exclude the two private side-channels
       q = q.or("thread_kind.is.null,thread_kind.eq.group");
