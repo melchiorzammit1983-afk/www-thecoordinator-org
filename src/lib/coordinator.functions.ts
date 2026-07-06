@@ -1847,17 +1847,24 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     // creator, or anywhere in the dispatch chain) so the trip creator still
     // gets notified after the trip is dispatched to another driver/partner.
     const { data: myJobs } = await supabaseAdmin.from("jobs")
-      .select("id")
+      .select("id, driver_id")
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
     const jobIds = (myJobs ?? []).map((j: any) => j.id as string);
     if (!jobIds.length) return {};
+    const currentDriverByJob: Record<string, string | null> = {};
+    for (const j of (myJobs ?? []) as any[]) currentDriverByJob[j.id] = j.driver_id ?? null;
     const { data, error } = await supabaseAdmin.from("trip_messages")
-      .select("job_id, sender_kind").in("job_id", jobIds).is("read_by_coordinator_at", null)
+      .select("job_id, sender_kind, thread_kind, driver_id").in("job_id", jobIds).is("read_by_coordinator_at", null)
       .in("sender_kind", ["driver", "client"])
       .not("thread_kind", "eq", "driver_client");
     if (error) throw new Error(error.message);
     const acc: Record<string, { driver: number; client: number; total: number }> = {};
-    for (const m of (data ?? []) as { job_id: string; sender_kind: string }[]) {
+    for (const m of (data ?? []) as { job_id: string; sender_kind: string; thread_kind: string; driver_id: string | null }[]) {
+      // Skip driver_coord unread from a previous (reassigned) driver.
+      if (m.thread_kind === "driver_coord") {
+        const cur = currentDriverByJob[m.job_id];
+        if (cur && m.driver_id && m.driver_id !== cur) continue;
+      }
       const row = (acc[m.job_id] ??= { driver: 0, client: 0, total: 0 });
       if (m.sender_kind === "client") row.client += 1;
       else row.driver += 1;
