@@ -2670,6 +2670,7 @@ export type Database = {
           name: string
           notification_email: string | null
           points_per_booking: number
+          slug: string | null
           updated_at: string
         }
         Insert: {
@@ -2690,6 +2691,7 @@ export type Database = {
           name: string
           notification_email?: string | null
           points_per_booking?: number
+          slug?: string | null
           updated_at?: string
         }
         Update: {
@@ -2710,6 +2712,7 @@ export type Database = {
           name?: string
           notification_email?: string | null
           points_per_booking?: number
+          slug?: string | null
           updated_at?: string
         }
         Relationships: [
