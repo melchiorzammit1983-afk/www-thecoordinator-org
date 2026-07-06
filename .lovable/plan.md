@@ -1,61 +1,72 @@
 ## Problem
 
-`trip_messages` are keyed only by `job_id` + `thread_kind`. When a job is reassigned to a new driver:
-- Driver ↔ Client (`driver_client`) and Driver ↔ Coordinator (`driver_coord`) private threads become visible to the new driver.
-- The coordinator's "Driver chat" panel keeps showing the old driver's replies mixed with the new one.
+The "Fix time" button on a flight-mismatched trip sets the pickup to the wrong time (13:55 flight became 11:55 pickup). Root cause: `rescheduleJobToFlight` in `src/lib/coordinator.functions.ts` reads the flight ISO with `.toISOString().slice(11,16)`, which gives UTC hours. In Malta summer (UTC+2) that shifts every fixed time back 2 hours.
 
-Group thread should stay shared (new driver needs the context).
+Additionally, today the flight tracker only reacts when a flight is late or cancelled. Early flights are silently ignored, so drivers can be caught out.
 
-## Fix
+## Changes
 
-Attach every message to the driver it belongs to, then filter private threads by that driver.
+### 1. Fix the "Fix time" bug (Malta wall-clock everywhere)
 
-### 1. Schema (migration)
+In `rescheduleJobToFlight`, replace the UTC slice with a Malta-timezone formatter (reuse the existing helpers in `src/lib/time.ts` — same pattern `refreshMaltaFlightForJob` already uses to derive date/time). Result: a 13:55 Europe/Malta flight snaps pickup to `date=2026-07-06`, `time=13:55`, and `pickup_at` is the correct UTC instant.
 
-- Add `driver_id uuid null references public.drivers(id)` to `public.trip_messages`.
-- Index `(job_id, thread_kind, driver_id)`.
-- Backfill: for existing `driver_client` / `driver_coord` rows, set `driver_id = jobs.driver_id` (best effort — historical driver identity isn't tracked, so current assignee is the closest approximation). Group/private client rows stay `NULL`.
-- No RLS change needed (all reads/writes go through service-role server functions that already gate by job/token).
+Sweep the file for any other `.toISOString().slice(...)` that should be Malta wall-clock (e.g. `rescheduleJobToFlight` is the main offender; the flight-refresh path already handles TZ correctly). No changes to how times are stored — everything stays UTC in the DB and Malta wall-clock in the UI.
 
-### 2. Write path — stamp `driver_id`
+### 2. Detect early flights (>= 5 min earlier than scheduled)
 
-In `src/lib/coordinator-public.functions.ts` (driver token side), when inserting a `trip_messages` row with `thread_kind` in `driver_client` | `driver_coord`, include `driver_id: link.subject_id`. Applies to:
-- `postTripMessage` (driver typing in Client / Coordinator tab)
-- System `driver_coord` inserts on accept/decline/wait/adjustments/SOS/etc. — use `job.driver_id` (already fetched).
+In `refreshMaltaFlightForJob` (same file), when the board gives us a new estimated time:
 
-In `src/lib/coordinator.functions.ts` (coordinator side), when inserting into the `driver` thread (`thread_kind: "driver_coord"` in `postTripMessageCoord` and the system insert around line 548), include `driver_id: job.driver_id` (fetch it alongside the existing job lookup).
+```text
+diff = scheduled - estimated   (minutes)
+if diff >= 5      → flight_status = "early"
+if |diff| < 5     → "on_time"
+if estimated > scheduled + 5 → existing "delayed" path (unchanged)
+```
 
-### 3. Read path — filter by current driver
+Store `flight_status = "early"` with `flight_status_note = "EARLY → 13:30"` and update `flight_estimated_at`. No DB migration needed — `flight_status` is already free text.
 
-**Driver token (`listTripMessages` in `coordinator-public.functions.ts`)**
-- For `driver_client` and `driver_coord`, add `.eq("driver_id", link.subject_id)`. New driver sees an empty private thread; old driver's history stays with them (still queryable if they revisit via their token, but their token access is already gated by `driver_id` check on the job, so reassignment cuts them off entirely — this only guarantees no cross-driver leakage if the same driver record is reassigned later).
-- `group` thread: unchanged.
+### 3. Green flight line + "Fix time" prompt on the card
 
-**Coordinator (`listTripMessagesCoord`)**
-- When `thread_kind === "driver"`, filter to `driver_id = jobs.driver_id` (current assignee). Fetch current `driver_id` from the job in the same query and apply in-memory (matches existing style).
-- Group / private client threads unchanged.
+In `src/routes/_authenticated/coordinator.calendar.tsx` (the flight banner around line 1518 and the trip cards around line 1152):
 
-**Client token (`listClientTripMessages`)**
-- For `driver_client`, add `.eq("driver_id", jobs.driver_id)` so the client only sees the current driver's private thread, not the previous one's.
+- Treat `flight_status === "early"` as an "actionable" state alongside `delayed` / `time_mismatch`, so the card surfaces it and the "Fix time" button appears.
+- Style: render the flight line in green (`text-emerald-600 dark:text-emerald-400`) instead of the amber/red used for late — the card itself stays neutral (not ember), because early is good news, not an alert.
+- Text: `✈ EK109 Flight 13:30 (was 13:55) · pickup 13:55` so both times are visible.
+- Tapping "Fix time" runs the existing (now-corrected) `rescheduleJobToFlight` and snaps pickup to the new flight time — matches your answer.
 
-### 4. Unread counters
+### 4. Notify the assigned driver (no auto-shift)
 
-- Coordinator unread (`getUnreadCountsForJobs`, line ~1834) and driver unread (`coordinator-public.functions.ts` line ~155) queries that touch `driver_coord` should also constrain to `driver_id = current job.driver_id` / `driver_id = link.subject_id` so a stale unread badge from the old driver doesn't linger.
+When `refreshMaltaFlightForJob` transitions a job into `"early"` and there is a `driver_id`, insert a system message into the existing `trip_messages` driver_coord thread:
 
-### 5. UI
+```text
+"Flight EK109 is EARLIER: now 13:30 (was 13:55). Pickup still 13:55 —
+coordinator will confirm."
+```
 
-No component changes required — `TripChatDialog` already passes `thread_kind`; filtering is server-side.
+This piggybacks on the mechanism you already use for other status changes, so the driver gets a push via the existing `driver_push_subs` flow with no new infrastructure. Only fires once per transition (guard on `flight_status !== 'early'` before update).
 
-## Files touched
+### 5. Coordinator-triggered auto-shift (points-metered)
 
-- New migration `supabase/migrations/<ts>_trip_messages_driver_id.sql`
-- `src/integrations/supabase/types.ts` (regenerated column)
-- `src/lib/coordinator-public.functions.ts` — insert + read filters (driver + client sides)
-- `src/lib/coordinator.functions.ts` — insert + read filters (coordinator side)
+Add a new server function `autoShiftEarlyFlight({ id })` that:
+- Verifies the job is `flight_status === "early"` and the caller owns the job.
+- Calls `spend_points(company_id, 'auto_shift_early_flight', job_id, ...)` — a new feature key in `ai_feature_costs` (added via migration, default cost 1, `block_on_empty=true`).
+- Runs the same snap logic as `rescheduleJobToFlight`.
+- Inserts a driver system message: `"Pickup moved earlier to 13:30 (auto)"`.
 
-No frontend, no new dependencies.
+On the calendar card, when a trip is in `"early"` state, show a second small button next to "Fix time" labelled "Auto-shift (1 pt)" that calls this function. Coordinators without points see the standard `insufficient_points` toast you already handle elsewhere.
+
+## Technical details
+
+Files touched:
+- `src/lib/coordinator.functions.ts` — fix `rescheduleJobToFlight`; extend `refreshMaltaFlightForJob` early-detection + driver system message; add `autoShiftEarlyFlight`.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — treat `"early"` as an actionable state, green flight line, second "Auto-shift" button.
+- One migration: insert `('auto_shift_early_flight', 1, true, true)` into `ai_feature_costs` (idempotent `ON CONFLICT DO NOTHING`).
+
+No frontend framework changes, no new dependencies, no schema changes beyond the one seed row.
 
 ## Explicit non-goals
 
-- Not migrating past `driver_client`/`driver_coord` rows away from the currently-assigned driver (no historical assignment log exists).
-- Not changing the group thread — reassigned drivers still see full group history, as requested.
+- No timezone selector — everything stays Malta time as you chose.
+- No automatic pickup shift without coordinator tap.
+- No changes to how late/cancelled flights behave today.
+- No backfill of existing `flight_status` values.
