@@ -47,3 +47,27 @@ export function formatMaltaTime(iso: string): string {
     hour: "2-digit", minute: "2-digit", timeZone: MALTA_TZ,
   });
 }
+
+/**
+ * Splits an ISO timestamp into a Malta wall-clock date (YYYY-MM-DD) and
+ * time (HH:MM). Use when persisting `date`/`time` columns derived from a
+ * UTC instant — plain `.toISOString().slice(...)` gives UTC hours and is
+ * wrong by the Malta DST offset.
+ */
+export function isoToMaltaDateTime(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) throw new Error("Invalid ISO timestamp");
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MALTA_TZ, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  let hh = get("hour");
+  if (hh === "24") hh = "00";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${hh}:${get("minute")}`,
+  };
+}
+
