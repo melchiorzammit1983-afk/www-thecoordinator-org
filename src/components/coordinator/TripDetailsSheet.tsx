@@ -90,11 +90,16 @@ export function TripDetailsSheet({
   const stageIdx = TRIP_STAGES.findIndex((s) => s.value === job.status);
   const flightIssue =
     job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
+  const flightEarly = job.flight_status === "early";
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+  })();
+  const schedTime = (() => {
+    const iso = job.flight_scheduled_at;
+    if (!iso) return "";
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightCode = job.from_flight || job.to_flight;
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
