@@ -462,15 +462,14 @@ export const rescheduleJobToFlight = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, date, time, flight_scheduled_at, flight_estimated_at")
+      .select("id, company_id, date, time, driver_id, from_flight, to_flight, flight_scheduled_at, flight_estimated_at")
       .eq("id", data.id).eq("company_id", c.id).maybeSingle();
     if (e1 || !job) throw new Error("Job not found");
     const iso = (job as any).flight_estimated_at || (job as any).flight_scheduled_at;
     if (!iso) throw new Error("No flight time available yet");
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) throw new Error("Invalid flight time");
-    const date = d.toISOString().slice(0, 10);
-    const time = d.toISOString().slice(11, 16);
+    // CRITICAL: derive Malta wall-clock date/time, not UTC slice.
+    // A 13:55 Malta flight in summer (UTC+2) would otherwise be stored as 11:55.
+    const { date, time } = isoToMaltaDateTime(iso);
     const pickup_at = makePickupIso(date, time);
     const { error } = await supabaseAdmin.from("jobs").update({
       date, time, pickup_at,
@@ -479,8 +478,77 @@ export const rescheduleJobToFlight = createServerFn({ method: "POST" })
       flight_status_updated_at: new Date().toISOString(),
     }).eq("id", data.id);
     if (error) throw new Error(error.message);
+    // Notify assigned driver so they know the pickup shifted.
+    if ((job as any).driver_id) {
+      const flightCode = (job as any).from_flight || (job as any).to_flight || "";
+      await supabaseAdmin.from("trip_messages").insert([{
+        job_id: data.id,
+        company_id: c.id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `🕒 Pickup updated to ${date} ${time}${flightCode ? ` (flight ${flightCode})` : ""}.`,
+        thread_kind: "driver_coord",
+        driver_id: (job as any).driver_id,
+      } as never]);
+    }
     return { ok: true, date, time };
   });
+
+export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error: e1 } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, driver_id, from_flight, to_flight, flight_status, flight_scheduled_at, flight_estimated_at")
+      .eq("id", data.id).eq("company_id", c.id).maybeSingle();
+    if (e1 || !job) throw new Error("Job not found");
+    if ((job as any).flight_status !== "early") throw new Error("Flight is not marked as early");
+    const iso = (job as any).flight_estimated_at || (job as any).flight_scheduled_at;
+    if (!iso) throw new Error("No flight time available yet");
+
+    // Meter first — refuse the shift if the company is out of points.
+    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+      _company_id: c.id,
+      _feature_key: "auto_shift_early_flight",
+      _job_id: data.id as unknown as string,
+      _note: "auto-shift pickup to earlier flight time",
+      _cost_override: undefined as unknown as number,
+    });
+    if (spendErr) {
+      const msg = spendErr.message || "";
+      if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to auto-shift.");
+      if (msg.includes("feature_disabled")) throw new Error("Auto-shift has been disabled by the administrator.");
+      if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for auto-shift.");
+      throw new Error(msg);
+    }
+
+    const { date, time } = isoToMaltaDateTime(iso);
+    const pickup_at = makePickupIso(date, time);
+    const { error } = await supabaseAdmin.from("jobs").update({
+      date, time, pickup_at,
+      flight_status: "on_time",
+      flight_status_note: null,
+      flight_status_updated_at: new Date().toISOString(),
+    }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    if ((job as any).driver_id) {
+      const flightCode = (job as any).from_flight || (job as any).to_flight || "";
+      await supabaseAdmin.from("trip_messages").insert([{
+        job_id: data.id,
+        company_id: c.id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `⏫ Pickup moved earlier to ${time} (auto${flightCode ? `, flight ${flightCode}` : ""}).`,
+        thread_kind: "driver_coord",
+        driver_id: (job as any).driver_id,
+      } as never]);
+    }
+    return { ok: true, date, time };
+  });
+
 
 
 export const addJobPax = createServerFn({ method: "POST" })
