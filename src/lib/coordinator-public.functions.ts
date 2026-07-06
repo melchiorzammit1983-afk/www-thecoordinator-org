@@ -620,6 +620,7 @@ export const driverRejectJob = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: `⚠️ Driver rejected this trip. Reason: ${reason}`,
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
     return { ok: true };
   });
