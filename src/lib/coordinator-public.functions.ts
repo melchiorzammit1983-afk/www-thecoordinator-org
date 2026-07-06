@@ -161,7 +161,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       const filteredMsgs = (msgs ?? []).filter((m: any) =>
         m.thread_kind !== "driver_coord" || !m.driver_id || m.driver_id === link.subject_id
       );
-      unread = (msgs ?? []).reduce((acc: Record<string, number>, m: { job_id: string }) => {
+      unread = filteredMsgs.reduce((acc: Record<string, number>, m: { job_id: string }) => {
         acc[m.job_id] = (acc[m.job_id] ?? 0) + 1; return acc;
       }, {});
     }
