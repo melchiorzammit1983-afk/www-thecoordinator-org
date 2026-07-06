@@ -25,7 +25,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
         let jobs: any[] = [];
         if (jobIds.length) {
           const { data } = await admin.from("jobs")
-            .select("id, status, pickup_at, driver_id, drivers(name, vehicle_model, plate)")
+            .select("id, status, pickup_at, driver_id, drivers(name, car_make_model, plate)")
             .in("id", jobIds);
           jobs = data ?? [];
         }

@@ -233,7 +233,7 @@ function TripsList({ bookings, jobs }: { bookings: any[]; jobs: any[] }) {
               <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
               <div className="text-xs mt-1">Status: {job?.status ?? "—"} {job?.pickup_at && `· ${new Date(job.pickup_at).toLocaleString()}`}</div>
               {job?.drivers && (
-                <div className="text-xs mt-1">Driver: {String(job.drivers.name || "").split(" ")[0]} · {job.drivers.vehicle_model} · {job.drivers.plate}</div>
+                <div className="text-xs mt-1">Driver: {String(job.drivers.name || "").split(" ")[0]} · {job.drivers.car_make_model} · {job.drivers.plate}</div>
               )}
             </CardContent>
           </Card>

@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/public/track/$token/")({
 
         const [{ data: job }, { data: booking }] = await Promise.all([
           admin.from("jobs")
-            .select("id, status, pickup_at, from_location, to_location, driver_id, drivers(name, vehicle_model, plate)")
+            .select("id, status, pickup_at, from_location, to_location, driver_id, drivers(name, car_make_model, plate)")
             .eq("id", (tok as any).job_id).maybeSingle(),
           (tok as any).portal_booking_id
             ? admin.from("portal_bookings" as any)
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/api/public/track/$token/")({
 
         const driver = (job as any).drivers ? {
           first_name: String((job as any).drivers.name ?? "").split(" ")[0] || "Driver",
-          vehicle: (job as any).drivers.vehicle_model,
+          vehicle: (job as any).drivers.car_make_model,
           plate: (job as any).drivers.plate,
         } : null;
 
