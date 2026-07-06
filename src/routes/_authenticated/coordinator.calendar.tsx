@@ -1081,10 +1081,10 @@ function PendingPortalBookings() {
                 )}
               </div>
             </div>
-            <div className="flex gap-1.5 mt-2">
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
               <Button
                 size="sm"
-                className="h-7 text-xs flex-1"
+                className="h-8 text-xs w-full"
                 disabled={acceptMut.isPending}
                 onClick={() => acceptMut.mutate(b.id)}
               >
@@ -1093,7 +1093,7 @@ function PendingPortalBookings() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs"
+                className="h-8 text-xs w-full"
                 disabled={rejectMut.isPending}
                 onClick={() => rejectMut.mutate(b.id)}
               >
