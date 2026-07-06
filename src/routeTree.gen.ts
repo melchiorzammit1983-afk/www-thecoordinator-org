@@ -57,6 +57,7 @@ import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$to
 import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
 import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
 import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
+import { Route as ApiPublicPortalBySlugSlugRouteImport } from './routes/api/public/portal/by-slug/$slug'
 import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
 import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
@@ -334,6 +335,12 @@ const ApiPublicTrackTokenLocationRoute =
     path: '/api/public/track/$token/location',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalBySlugSlugRoute =
+  ApiPublicPortalBySlugSlugRouteImport.update({
+    id: '/api/public/portal/by-slug/$slug',
+    path: '/api/public/portal/by-slug/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalTokenPaxLinkRoute =
   ApiPublicPortalTokenPaxLinkRouteImport.update({
     id: '/api/public/portal/$token/pax-link',
@@ -405,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -456,6 +464,7 @@ export interface FileRoutesByTo {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -511,6 +520,7 @@ export interface FileRoutesById {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -566,6 +576,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -617,6 +628,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -671,6 +683,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -700,6 +713,7 @@ export interface RootRouteChildren {
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
   ApiPublicPortalTokenMessagesRoute: typeof ApiPublicPortalTokenMessagesRoute
   ApiPublicPortalTokenPaxLinkRoute: typeof ApiPublicPortalTokenPaxLinkRoute
+  ApiPublicPortalBySlugSlugRoute: typeof ApiPublicPortalBySlugSlugRoute
   ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
   ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
   ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
@@ -1045,6 +1059,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/by-slug/$slug': {
+      id: '/api/public/portal/by-slug/$slug'
+      path: '/api/public/portal/by-slug/$slug'
+      fullPath: '/api/public/portal/by-slug/$slug'
+      preLoaderRoute: typeof ApiPublicPortalBySlugSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/$token/pax-link': {
       id: '/api/public/portal/$token/pax-link'
       path: '/api/public/portal/$token/pax-link'
@@ -1216,6 +1237,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicPortalTokenChangeRequestsRoute,
   ApiPublicPortalTokenMessagesRoute: ApiPublicPortalTokenMessagesRoute,
   ApiPublicPortalTokenPaxLinkRoute: ApiPublicPortalTokenPaxLinkRoute,
+  ApiPublicPortalBySlugSlugRoute: ApiPublicPortalBySlugSlugRoute,
   ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
   ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
   ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
