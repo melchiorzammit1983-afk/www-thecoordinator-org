@@ -1700,8 +1700,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </div>
             )}
             {(job.status && job.status !== "pending" && job.status !== "active") && (
-              <div className="mt-1.5">
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
+                <EtaChip point={livePoint} job={job} />
               </div>
             )}
             <TrafficBadge
