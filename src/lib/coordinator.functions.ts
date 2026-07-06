@@ -1390,7 +1390,7 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin.from("jobs")
-      .select("id, from_flight, to_flight, pickup_at")
+      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status")
       .eq("id", data.job_id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
