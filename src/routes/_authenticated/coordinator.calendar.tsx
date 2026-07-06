@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
-import { formatMaltaDateTime } from "@/lib/time";
+import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
 import {
   Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
   Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
@@ -1516,6 +1516,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
   const unread = unreadCounts.total;
   const flightIssue = job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
+  const flightEarly = job.flight_status === "early";
   const problem = flightIssue || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
   const assignedPending = !!job.driver_id && !job.driver_accepted_at;
@@ -1572,13 +1573,18 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+  })();
+  const schedTime = (() => {
+    const iso = job.flight_scheduled_at;
+    if (!iso) return "";
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightMsg =
     job.flight_status === "cancelled" ? "CANCELLED" :
     job.flight_status === "time_mismatch" ? (job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH")) :
     job.flight_status === "delayed" ? (job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED")) :
+    flightEarly ? (newTime ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}` : (job.flight_status_note || "EARLY")) :
     "";
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
@@ -1699,6 +1705,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {flightEarly && (
+              <div className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+                ✈ {flightCode} {flightMsg}
+              </div>
+            )}
             {(job.status && job.status !== "pending" && job.status !== "active") && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
@@ -1734,7 +1745,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
-              {flightCode && !delayed && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
+              {flightCode && !delayed && !flightEarly && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
               {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
               
               {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}

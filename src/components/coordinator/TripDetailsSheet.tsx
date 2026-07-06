@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { formatMaltaTime } from "@/lib/time";
+import { formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -90,11 +90,16 @@ export function TripDetailsSheet({
   const stageIdx = TRIP_STAGES.findIndex((s) => s.value === job.status);
   const flightIssue =
     job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
+  const flightEarly = job.flight_status === "early";
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+  })();
+  const schedTime = (() => {
+    const iso = job.flight_scheduled_at;
+    if (!iso) return "";
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightCode = job.from_flight || job.to_flight;
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
@@ -176,10 +181,19 @@ export function TripDetailsSheet({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const autoShiftFn = useServerFn(autoShiftEarlyFlight);
+  const autoShiftMut = useMutation({
+    mutationFn: () => autoShiftFn({ data: { id: job.id } }) as Promise<{ ok: true; date: string; time: string }>,
+    onSuccess: (r) => {
+      toast.success(`Pickup auto-shifted to ${r.date} ${r.time}`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const [holdPct, setHoldPct] = useState(0);
   const holdRef = useRef<{ start: number | null; raf: number | null }>({ start: null, raf: null });
   const startHold = () => {
-    if (!flightIssue || !newTime || rescheduleMut.isPending) return;
+    if (!(flightIssue || flightEarly) || !newTime || rescheduleMut.isPending) return;
     holdRef.current.start = performance.now();
     const tick = () => {
       if (holdRef.current.start == null) return;
@@ -337,6 +351,45 @@ export function TripDetailsSheet({
                   <span>Deletion pending driver approval</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Early flight (green — good news, but coordinator should confirm) */}
+          {flightEarly && (
+            <div className="rounded-md border border-emerald-500/50 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-400 space-y-2">
+              <div
+                className="relative flex items-start gap-2 rounded-sm select-none cursor-pointer overflow-hidden"
+                onPointerDown={startHold}
+                onPointerUp={cancelHold}
+                onPointerLeave={cancelHold}
+                onPointerCancel={cancelHold}
+                title={newTime ? "Hold 1s to move pickup to new flight time" : undefined}
+              >
+                {holdPct > 0 && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-500/25 transition-[width] duration-75"
+                    style={{ width: `${Math.round(holdPct * 100)}%` }}
+                  />
+                )}
+                <Plane className="h-4 w-4 mt-0.5 shrink-0 relative" />
+                <span className="relative">
+                  <b>✈ {flightCode}</b>{" "}
+                  EARLY → {newTime || "?"}{schedTime ? ` (was ${schedTime})` : ""}
+                  {newTime && (
+                    <span className="ml-1 opacity-70">· hold 1s to move pickup to {newTime}</span>
+                  )}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-emerald-500/60 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                disabled={autoShiftMut.isPending}
+                onClick={() => autoShiftMut.mutate()}
+              >
+                {autoShiftMut.isPending ? "Shifting…" : "Auto-shift (1 pt)"}
+              </Button>
             </div>
           )}
 
