@@ -4340,7 +4340,7 @@ export const computeTripFlags = createServerFn({ method: "GET" })
       .eq("company_id", (c as any).id)
       .gte("date", from)
       .lte("date", to)
-      .not("status", "in", "(cancelled,rejected,completed)");
+      .not("status", "in", "(cancelled,completed)");
     if (error) throw new Error(error.message);
 
     const jobs = (rows ?? []).map((j: any) => {
