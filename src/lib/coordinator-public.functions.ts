@@ -152,9 +152,16 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const jobIds = (jobs ?? []).map((j: { id: string }) => j.id);
     let unread: Record<string, number> = {};
     if (jobIds.length) {
+      // Skip driver_coord rows tied to a different driver (i.e. a previous
+      // driver on a since-reassigned trip) so a new driver never inherits
+      // the old driver's unread counter.
       const { data: msgs } = await supabaseAdmin.from("trip_messages")
-        .select("job_id").in("job_id", jobIds).eq("sender_kind", "coordinator").is("read_by_driver_at", null);
-      unread = (msgs ?? []).reduce((acc: Record<string, number>, m: { job_id: string }) => {
+        .select("job_id, thread_kind, driver_id")
+        .in("job_id", jobIds).eq("sender_kind", "coordinator").is("read_by_driver_at", null);
+      const filteredMsgs = (msgs ?? []).filter((m: any) =>
+        m.thread_kind !== "driver_coord" || !m.driver_id || m.driver_id === link.subject_id
+      );
+      unread = filteredMsgs.reduce((acc: Record<string, number>, m: { job_id: string }) => {
         acc[m.job_id] = (acc[m.job_id] ?? 0) + 1; return acc;
       }, {});
     }
@@ -178,7 +185,7 @@ export const listTripMessages = createServerFn({ method: "GET" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     let ids: string[] = [data.job_id];
     const gid = (job as any).group_id as string | null;
     if (gid) {
@@ -191,6 +198,9 @@ export const listTripMessages = createServerFn({ method: "GET" })
       .in("job_id", ids).order("created_at", { ascending: true });
     if (data.thread_kind === "driver_client") {
       q = q.eq("thread_kind", "driver_client");
+      // Private driver↔client thread is scoped to the driver — reassigned
+      // drivers never see the previous driver's private conversation.
+      if (link.subject_id) q = q.eq("driver_id" as any, link.subject_id);
       if (data.pax_id) {
         // Scope to just this passenger's private thread with the driver.
         const { data: idents } = await supabaseAdmin
@@ -202,6 +212,8 @@ export const listTripMessages = createServerFn({ method: "GET" })
       }
     } else if (data.thread_kind === "driver_coord") {
       q = q.eq("thread_kind", "driver_coord");
+      // Same for driver↔coordinator private thread.
+      if (link.subject_id) q = q.eq("driver_id" as any, link.subject_id);
     } else {
       // group: legacy null + explicit group; exclude the two private side-channels
       q = q.or("thread_kind.is.null,thread_kind.eq.group");
@@ -240,6 +252,8 @@ export const postTripMessage = createServerFn({ method: "POST" })
         .order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
       clientIdentityId = (ident as any)?.id ?? null;
     }
+    const isPrivateDriverThread =
+      data.thread_kind === "driver_client" || data.thread_kind === "driver_coord";
     const { error } = await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: job.company_id,
@@ -249,6 +263,7 @@ export const postTripMessage = createServerFn({ method: "POST" })
       thread_kind: data.thread_kind,
       client_identity_id: clientIdentityId,
       pax_id: paxId,
+      driver_id: isPrivateDriverThread ? link.subject_id ?? null : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -377,6 +392,7 @@ export const driverFinalizeTrip = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: parts.join(" · "),
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
 
     // Auto-dissolve group if all siblings done (same logic as updateJobStatus).
@@ -562,6 +578,7 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         sender_label: "System",
         body: `✅ ${link.subject_label ?? "Driver"} accepted this trip.`,
         thread_kind: "driver_coord",
+        driver_id: link.subject_id ?? null,
       } as never);
     }
     // Withdraw any still-open price proposals from this driver on this job.
@@ -603,6 +620,7 @@ export const driverRejectJob = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: `⚠️ Driver rejected this trip. Reason: ${reason}`,
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
     return { ok: true };
   });
@@ -912,6 +930,7 @@ export const markPaxNoShow = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: `🚫 No-show: ${(paxRow as any).name}`,
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
     return { ok: true };
   });
@@ -957,6 +976,7 @@ export const driverReportLate = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: `🕒 Running ~${data.minutes} min late${suffix}`,
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
     return { ok: true };
   });
@@ -1208,6 +1228,10 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "driver_client").or(orParts.join(","));
+      // Only surface the current driver's private thread — if the trip was
+      // reassigned, the previous driver's messages stay hidden from the client.
+      if ((job as any).driver_id) q = q.eq("driver_id" as any, (job as any).driver_id);
+      else return [];
     } else {
       q = q.eq("thread_kind", "group");
     }
@@ -1245,6 +1269,9 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       thread_kind: effectiveKind,
       client_identity_id: scoped ? identityId : null,
       pax_id: scoped ? paxId : null,
+      // Tag driver_client replies with the current driver so a future
+      // reassignment doesn't leak this thread to a new driver.
+      driver_id: effectiveKind === "driver_client" ? ((job as any).driver_id ?? null) : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };

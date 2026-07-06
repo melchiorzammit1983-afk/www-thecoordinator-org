@@ -549,6 +549,7 @@ export const assignDriver = createServerFn({ method: "POST" })
         sender_label: "System",
         body: `🕓 Trip assigned to ${driverName} — waiting on them to accept.`,
         thread_kind: "driver_coord",
+        driver_id: data.driver_id,
       } as never));
       await supabaseAdmin.from("trip_messages").insert(rows);
     }
@@ -1715,12 +1716,26 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const ids = await siblingGroupJobIds(supabaseAdmin, data.job_id);
+    // Look up the CURRENT driver on this job — private driver↔coordinator
+    // history from a previous (reassigned) driver should not show up in the
+    // current driver chat panel.
+    const { data: jobRow } = await supabaseAdmin.from("jobs")
+      .select("driver_id").eq("id", data.job_id).maybeSingle();
+    const currentDriverId = (jobRow as any)?.driver_id ?? null;
     const { data: rows, error } = await supabaseAdmin.from("trip_messages")
-      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id")
+      .select("id, sender_kind, sender_label, body, created_at, read_by_coordinator_at, thread_kind, client_identity_id, pax_id, driver_id")
       .in("job_id", ids).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     // Coordinator NEVER sees driver↔client private messages.
     let filtered = ((rows ?? []) as any[]).filter((r) => r.thread_kind !== "driver_client");
+    // When a driver is assigned, scope driver_coord to that driver only.
+    // When unassigned (e.g. right after a rejection), keep history visible so
+    // the coordinator can still read the rejection reason.
+    if (currentDriverId) {
+      filtered = filtered.filter((r) =>
+        r.thread_kind !== "driver_coord" || !r.driver_id || r.driver_id === currentDriverId
+      );
+    }
 
     // If a pax_id was provided but no identity_id, look up the identity tied to that pax.
     let effectiveIdentityId: string | null = data.identity_id ?? null;
@@ -1780,6 +1795,10 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     const label = userRow?.user?.email ?? "Coordinator";
 
     if (data.thread_kind === "driver") {
+      // Tag with the current driver so a later reassignment doesn't leak this
+      // private thread to whichever driver takes over next.
+      const { data: jobRow } = await supabaseAdmin.from("jobs")
+        .select("driver_id").eq("id", data.job_id).maybeSingle();
       const { error } = await supabaseAdmin.from("trip_messages").insert({
         job_id: data.job_id,
         company_id: company.id,
@@ -1787,6 +1806,7 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
         sender_label: label,
         body: data.body,
         thread_kind: "driver_coord",
+        driver_id: (jobRow as any)?.driver_id ?? null,
       } as any);
       if (error) throw new Error(error.message);
       return { ok: true };
@@ -1827,17 +1847,24 @@ export const getUnreadCountsCoord = createServerFn({ method: "GET" })
     // creator, or anywhere in the dispatch chain) so the trip creator still
     // gets notified after the trip is dispatched to another driver/partner.
     const { data: myJobs } = await supabaseAdmin.from("jobs")
-      .select("id")
+      .select("id, driver_id")
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`);
     const jobIds = (myJobs ?? []).map((j: any) => j.id as string);
     if (!jobIds.length) return {};
+    const currentDriverByJob: Record<string, string | null> = {};
+    for (const j of (myJobs ?? []) as any[]) currentDriverByJob[j.id] = j.driver_id ?? null;
     const { data, error } = await supabaseAdmin.from("trip_messages")
-      .select("job_id, sender_kind").in("job_id", jobIds).is("read_by_coordinator_at", null)
+      .select("job_id, sender_kind, thread_kind, driver_id").in("job_id", jobIds).is("read_by_coordinator_at", null)
       .in("sender_kind", ["driver", "client"])
       .not("thread_kind", "eq", "driver_client");
     if (error) throw new Error(error.message);
     const acc: Record<string, { driver: number; client: number; total: number }> = {};
-    for (const m of (data ?? []) as { job_id: string; sender_kind: string }[]) {
+    for (const m of (data ?? []) as { job_id: string; sender_kind: string; thread_kind: string; driver_id: string | null }[]) {
+      // Skip driver_coord unread from a previous (reassigned) driver.
+      if (m.thread_kind === "driver_coord") {
+        const cur = currentDriverByJob[m.job_id];
+        if (cur && m.driver_id && m.driver_id !== cur) continue;
+      }
       const row = (acc[m.job_id] ??= { driver: 0, client: 0, total: 0 });
       if (m.sender_kind === "client") row.client += 1;
       else row.driver += 1;
