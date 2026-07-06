@@ -1573,13 +1573,18 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 16);
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+  })();
+  const schedTime = (() => {
+    const iso = job.flight_scheduled_at;
+    if (!iso) return "";
+    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightMsg =
     job.flight_status === "cancelled" ? "CANCELLED" :
     job.flight_status === "time_mismatch" ? (job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH")) :
     job.flight_status === "delayed" ? (job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED")) :
+    flightEarly ? (newTime ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}` : (job.flight_status_note || "EARLY")) :
     "";
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
