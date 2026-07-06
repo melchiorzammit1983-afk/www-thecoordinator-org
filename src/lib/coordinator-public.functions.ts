@@ -1228,6 +1228,10 @@ export const listClientTripMessages = createServerFn({ method: "GET" })
       if (identityId) orParts.push(`client_identity_id.eq.${identityId}`);
       if (paxId) orParts.push(`pax_id.eq.${paxId}`);
       q = q.eq("thread_kind", "driver_client").or(orParts.join(","));
+      // Only surface the current driver's private thread — if the trip was
+      // reassigned, the previous driver's messages stay hidden from the client.
+      if ((job as any).driver_id) q = q.eq("driver_id" as any, (job as any).driver_id);
+      else return [];
     } else {
       q = q.eq("thread_kind", "group");
     }
