@@ -129,7 +129,7 @@ function CompaniesPanel() {
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
         Send a company its own private dashboard where they can create bookings, chat with guests, and see their statements.
-        Branded URLs look like <code className="bg-background px-1 rounded">yourhotel.{BRAND_DOMAIN}</code>.
+        Branded URLs look like <code className="bg-background px-1 rounded">{BRAND_DOMAIN}/h/yourhotel</code>.
       </div>
 
       <div className="rounded-lg border bg-card p-4 space-y-3">
@@ -141,6 +141,7 @@ function CompaniesPanel() {
           <div className="space-y-1.5 md:col-span-2">
             <Label>Branded link</Label>
             <div className="flex items-center border rounded-md h-10 px-2 bg-background text-sm">
+              <span className="text-muted-foreground text-xs whitespace-nowrap">{BRAND_DOMAIN}/h/</span>
               <Input
                 className="border-0 h-8 px-0 focus-visible:ring-0 flex-1 min-w-0"
                 value={effectiveSlug}
@@ -148,7 +149,6 @@ function CompaniesPanel() {
                 onFocus={() => setSlugTouched(true)}
                 placeholder="grand-hotel"
               />
-              <span className="text-muted-foreground text-xs whitespace-nowrap">.{BRAND_DOMAIN}</span>
             </div>
             <SlugHint state={slugState} slug={effectiveSlug} />
           </div>
@@ -313,7 +313,7 @@ function CompanyRow({ portal }: { portal: any }) {
       <TableCell>
         <div className="flex items-center gap-1 max-w-[340px]">
           <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">
-            {branded ? `${portal.slug}.${BRAND_DOMAIN}` : "(no slug)"}
+            {brandedUrlDisplay(portal.slug) ?? "(no slug)"}
           </code>
           <Button size="icon" variant="ghost" title="Copy link" onClick={copyLink}>
             <Copy className="h-3.5 w-3.5" />
