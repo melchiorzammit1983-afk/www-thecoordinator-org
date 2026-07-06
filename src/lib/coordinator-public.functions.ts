@@ -578,6 +578,7 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         sender_label: "System",
         body: `✅ ${link.subject_label ?? "Driver"} accepted this trip.`,
         thread_kind: "driver_coord",
+        driver_id: link.subject_id ?? null,
       } as never);
     }
     // Withdraw any still-open price proposals from this driver on this job.
