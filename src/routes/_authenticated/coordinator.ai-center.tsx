@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   getAiConfig, saveAiConfig,
   listAiRules, upsertAiRule, deleteAiRule,
-  runAiCommand, listAiCommandHistory,
+  runAiCommand, listAiCommandHistory, applyAiCommandActions,
 } from "@/lib/coordinator.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
