@@ -1269,6 +1269,9 @@ export const postClientTripMessage = createServerFn({ method: "POST" })
       thread_kind: effectiveKind,
       client_identity_id: scoped ? identityId : null,
       pax_id: scoped ? paxId : null,
+      // Tag driver_client replies with the current driver so a future
+      // reassignment doesn't leak this thread to a new driver.
+      driver_id: effectiveKind === "driver_client" ? ((job as any).driver_id ?? null) : null,
     } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
