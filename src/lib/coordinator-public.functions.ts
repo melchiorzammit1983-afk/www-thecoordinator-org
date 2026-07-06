@@ -152,8 +152,15 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     const jobIds = (jobs ?? []).map((j: { id: string }) => j.id);
     let unread: Record<string, number> = {};
     if (jobIds.length) {
+      // Skip driver_coord rows tied to a different driver (i.e. a previous
+      // driver on a since-reassigned trip) so a new driver never inherits
+      // the old driver's unread counter.
       const { data: msgs } = await supabaseAdmin.from("trip_messages")
-        .select("job_id").in("job_id", jobIds).eq("sender_kind", "coordinator").is("read_by_driver_at", null);
+        .select("job_id, thread_kind, driver_id")
+        .in("job_id", jobIds).eq("sender_kind", "coordinator").is("read_by_driver_at", null);
+      const filteredMsgs = (msgs ?? []).filter((m: any) =>
+        m.thread_kind !== "driver_coord" || !m.driver_id || m.driver_id === link.subject_id
+      );
       unread = (msgs ?? []).reduce((acc: Record<string, number>, m: { job_id: string }) => {
         acc[m.job_id] = (acc[m.job_id] ?? 0) + 1; return acc;
       }, {});
