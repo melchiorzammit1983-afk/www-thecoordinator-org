@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PortalIndexRouteImport } from './routes/portal.index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
@@ -57,6 +58,7 @@ import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$to
 import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
 import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
 import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
+import { Route as ApiPublicPortalBySlugSlugRouteImport } from './routes/api/public/portal/by-slug/$slug'
 import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
 import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
@@ -89,6 +91,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalIndexRoute = PortalIndexRouteImport.update({
+  id: '/portal/',
+  path: '/portal/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
@@ -334,6 +341,12 @@ const ApiPublicTrackTokenLocationRoute =
     path: '/api/public/track/$token/location',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalBySlugSlugRoute =
+  ApiPublicPortalBySlugSlugRouteImport.update({
+    id: '/api/public/portal/by-slug/$slug',
+    path: '/api/public/portal/by-slug/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalTokenPaxLinkRoute =
   ApiPublicPortalTokenPaxLinkRouteImport.update({
     id: '/api/public/portal/$token/pax-link',
@@ -371,6 +384,7 @@ export interface FileRoutesByFullPath {
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/portal/': typeof PortalIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -405,6 +419,7 @@ export interface FileRoutesByFullPath {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -422,6 +437,7 @@ export interface FileRoutesByTo {
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/portal': typeof PortalIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -456,6 +472,7 @@ export interface FileRoutesByTo {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -477,6 +494,7 @@ export interface FileRoutesById {
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/portal/': typeof PortalIndexRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -511,6 +529,7 @@ export interface FileRoutesById {
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
@@ -532,6 +551,7 @@ export interface FileRouteTypes {
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/portal/'
     | '/admin/activity'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -566,6 +586,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -583,6 +604,7 @@ export interface FileRouteTypes {
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/portal'
     | '/admin/activity'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -617,6 +639,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -637,6 +660,7 @@ export interface FileRouteTypes {
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/portal/'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
@@ -671,6 +695,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/by-slug/$slug'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
@@ -690,6 +715,7 @@ export interface RootRouteChildren {
   PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
+  PortalIndexRoute: typeof PortalIndexRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
@@ -700,6 +726,7 @@ export interface RootRouteChildren {
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
   ApiPublicPortalTokenMessagesRoute: typeof ApiPublicPortalTokenMessagesRoute
   ApiPublicPortalTokenPaxLinkRoute: typeof ApiPublicPortalTokenPaxLinkRoute
+  ApiPublicPortalBySlugSlugRoute: typeof ApiPublicPortalBySlugSlugRoute
   ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
   ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
   ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
@@ -749,6 +776,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal/': {
+      id: '/portal/'
+      path: '/portal'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof PortalIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/track/$token': {
@@ -1045,6 +1079,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/by-slug/$slug': {
+      id: '/api/public/portal/by-slug/$slug'
+      path: '/api/public/portal/by-slug/$slug'
+      fullPath: '/api/public/portal/by-slug/$slug'
+      preLoaderRoute: typeof ApiPublicPortalBySlugSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/$token/pax-link': {
       id: '/api/public/portal/$token/pax-link'
       path: '/api/public/portal/$token/pax-link'
@@ -1204,6 +1245,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
   TrackTokenRoute: TrackTokenRoute,
+  PortalIndexRoute: PortalIndexRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
@@ -1216,6 +1258,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicPortalTokenChangeRequestsRoute,
   ApiPublicPortalTokenMessagesRoute: ApiPublicPortalTokenMessagesRoute,
   ApiPublicPortalTokenPaxLinkRoute: ApiPublicPortalTokenPaxLinkRoute,
+  ApiPublicPortalBySlugSlugRoute: ApiPublicPortalBySlugSlugRoute,
   ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
   ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
   ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
@@ -1225,13 +1268,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

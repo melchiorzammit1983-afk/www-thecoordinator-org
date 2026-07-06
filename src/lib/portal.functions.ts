@@ -37,10 +37,37 @@ export const listPortals = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+const RESERVED_SLUGS = new Set([
+  "www", "admin", "api", "app", "id-preview", "project", "mail", "auth",
+  "preview", "portal", "track", "static", "assets", "cdn", "help", "docs",
+]);
+
+export function slugify(input: string): string {
+  const base = (input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
+  const trimmed = base.length > 38 ? base.slice(0, 38) : base;
+  return trimmed.length >= 3 ? trimmed : `${trimmed}co`;
+}
+
+export const checkSlugAvailable = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ slug: z.string(), excludeId: z.string().uuid().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const s = data.slug.trim().toLowerCase();
+    if (!SLUG_RE.test(s)) return { ok: false as const, reason: "invalid" };
+    if (RESERVED_SLUGS.has(s)) return { ok: false as const, reason: "reserved" };
+    let q = context.supabase.from("portal_companies" as any).select("id").eq("slug", s).limit(1);
+    if (data.excludeId) q = q.neq("id", data.excludeId);
+    const { data: rows } = await q;
+    if (rows && rows.length > 0) return { ok: false as const, reason: "taken" };
+    return { ok: true as const };
+  });
+
 export const createPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({
     name: z.string().min(1).max(120),
+    slug: z.string().regex(SLUG_RE).optional(),
     kind: z.enum(["hotel", "agent", "corporate"]).default("hotel"),
     contact_email: z.string().email().optional().nullable(),
     contact_phone: z.string().max(40).optional().nullable(),
@@ -52,9 +79,20 @@ export const createPortal = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
+    // Ensure a unique slug (auto-suggest + dedup)
+    let baseSlug = (data.slug ?? slugify(data.name)).toLowerCase();
+    if (RESERVED_SLUGS.has(baseSlug)) baseSlug = `${baseSlug}-portal`;
+    const a = await admin();
+    let attempt = baseSlug, n = 1;
+    while (n <= 20) {
+      const { data: exists } = await a.from("portal_companies" as any).select("id").eq("slug", attempt).limit(1);
+      if (!exists || exists.length === 0) break;
+      n += 1;
+      attempt = `${baseSlug.slice(0, 36)}-${n}`;
+    }
     const { data: row, error } = await context.supabase
       .from("portal_companies" as any)
-      .insert({ ...data, coordinator_company_id: cid } as any)
+      .insert({ ...data, slug: attempt, coordinator_company_id: cid } as any)
       .select("*")
       .single();
     if (error) throw new Error(error.message);
@@ -67,6 +105,7 @@ export const updatePortal = createServerFn({ method: "POST" })
     id: z.string().uuid(),
     patch: z.object({
       name: z.string().min(1).max(120).optional(),
+      slug: z.string().regex(SLUG_RE).optional(),
       contact_email: z.string().email().nullable().optional(),
       contact_phone: z.string().max(40).nullable().optional(),
       notification_email: z.string().email().nullable().optional(),
@@ -81,6 +120,9 @@ export const updatePortal = createServerFn({ method: "POST" })
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
+    if (data.patch.slug && RESERVED_SLUGS.has(data.patch.slug.toLowerCase())) {
+      throw new Error("slug_reserved");
+    }
     const { error, data: row } = await context.supabase
       .from("portal_companies" as any)
       .update(data.patch as any)
