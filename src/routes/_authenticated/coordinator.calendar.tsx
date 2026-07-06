@@ -984,9 +984,113 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
         </div>
       )}
       <div className="space-y-2">
+        <PendingPortalBookings />
         {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
         {renderItems(items, ctx)}
       </div>
+    </div>
+  );
+}
+
+function PendingPortalBookings() {
+  const listFn = useServerFn(listPortalBookings);
+  const acceptFn = useServerFn(acceptPortalBooking);
+  const rejectFn = useServerFn(rejectPortalBooking);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["portal-bookings", "pending"],
+    queryFn: () => listFn({ data: { status: "pending" } }) as Promise<any[]>,
+    refetchInterval: 20_000,
+  });
+  const acceptMut = useMutation({
+    mutationFn: (id: string) => acceptFn({ data: { booking_id: id } }),
+    onSuccess: () => {
+      toast.success("Approved — moved to Unassigned");
+      qc.invalidateQueries({ queryKey: ["portal-bookings"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => e.message === "insufficient_points"
+      ? toast.error("Top-Up required to approve")
+      : toast.error(e.message),
+  });
+  const rejectMut = useMutation({
+    mutationFn: (id: string) => rejectFn({ data: { booking_id: id } }),
+    onSuccess: () => { toast.success("Rejected"); qc.invalidateQueries({ queryKey: ["portal-bookings"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {rows.map((b: any) => {
+        const portal = b.portal_companies ?? {};
+        const brand = portal.brand_color || "hsl(38 92% 50%)";
+        const payload = b.payload ?? {};
+        const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim() || "New booking";
+        return (
+          <div
+            key={b.id}
+            className="rounded-md border bg-card p-2.5"
+            style={{ boxShadow: `inset 4px 0 0 ${brand}` }}
+          >
+            <div className="flex items-start gap-2">
+              {portal.logo_url ? (
+                <img
+                  src={portal.logo_url}
+                  alt={portal.name ?? "Hotel"}
+                  className="h-8 w-8 rounded object-cover border shrink-0"
+                />
+              ) : (
+                <div
+                  className="h-8 w-8 rounded border shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+                  style={{ backgroundColor: brand }}
+                >
+                  {(portal.name ?? "H").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                    style={{ backgroundColor: `${brand}22`, color: brand }}
+                  >
+                    {portal.name ?? "Portal"}
+                  </span>
+                  <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+                </div>
+                <div className="font-medium text-sm mt-1 truncate">{fullName}</div>
+                <div className="text-xs mt-0.5 truncate">
+                  {payload.from_location} → {payload.to_location}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {payload.date ?? (payload.pickup_at ? String(payload.pickup_at).slice(0, 10) : "—")}
+                  {payload.time ? ` · ${String(payload.time).slice(0, 5)}` : ""}
+                  {payload.flight_number ? ` · ${payload.flight_number}` : ""}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <Button
+                size="sm"
+                className="h-7 text-xs flex-1"
+                disabled={acceptMut.isPending}
+                onClick={() => acceptMut.mutate(b.id)}
+              >
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={rejectMut.isPending}
+                onClick={() => rejectMut.mutate(b.id)}
+              >
+                Reject
+              </Button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
