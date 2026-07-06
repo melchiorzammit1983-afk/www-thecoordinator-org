@@ -392,6 +392,7 @@ export const driverFinalizeTrip = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: parts.join(" · "),
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
 
     // Auto-dissolve group if all siblings done (same logic as updateJobStatus).
