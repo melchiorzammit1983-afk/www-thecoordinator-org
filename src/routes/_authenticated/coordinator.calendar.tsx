@@ -15,6 +15,7 @@ import {
   listConnections, dispatchJobToPartner, recallPartnerDispatch,
   listIncomingDispatches, listOutboundDispatches, respondToDispatch,
 } from "@/lib/collab.functions";
+import { listPortalBookings, acceptPortalBooking, rejectPortalBooking } from "@/lib/portal.functions";
 
 
 import {
