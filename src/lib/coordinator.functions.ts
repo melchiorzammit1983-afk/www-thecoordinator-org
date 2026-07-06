@@ -1367,7 +1367,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin.from("jobs")
-      .select("id, from_flight, to_flight, pickup_at")
+      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .gte("pickup_at", fromIso).lte("pickup_at", toIso);
