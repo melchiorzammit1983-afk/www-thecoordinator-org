@@ -162,6 +162,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if ((b as any).status !== "pending") throw new Error("not_pending");
 
     const payload = (b as any).payload ?? {};
+    const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
     // create a job
     const { data: job, error: jerr } = await a.from("jobs").insert({
       company_id: cid,
@@ -170,16 +171,12 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       from_location: payload.from_location,
       to_location: payload.to_location,
       pickup_at: payload.pickup_at ?? null,
-      date: payload.date ?? null,
+      date: payload.date ?? (payload.pickup_at ? new Date(payload.pickup_at).toISOString().slice(0, 10) : null),
       time: payload.time ?? null,
-      name: payload.name ?? null,
-      surname: payload.surname ?? null,
-      client_email: payload.client_email ?? null,
-      client_phone: payload.client_phone ?? null,
-      room_number: payload.room_number ?? null,
-      from_flight: payload.flight_number ?? null,
-      pax_count: payload.pax_count ?? null,
-      notes: payload.notes ?? null,
+      clientcompanyname: fullName || null,
+      from_flight: (payload.flight_number || "").toUpperCase() || null,
+      flightorship: payload.flight_number || null,
+      contact_phone: payload.client_phone ?? null,
       source: `portal:${(b as any).portal_company_id}`,
       status: "pending",
     } as any).select("id").single();
