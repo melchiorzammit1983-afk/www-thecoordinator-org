@@ -1,78 +1,58 @@
-## Company Portal Links — unified tab + branded subdomain URLs
+# Switch branded portal URLs to path slugs
 
-Add a **Companies** tab to `/coordinator/portal-links` that owns the full lifecycle of hotel/agent/corporate portals, and switch the public URL from a raw token to a branded subdomain like `grand-hotel.thecoordinator.org`.
-
-### 1. Branded subdomain URLs
-
-- Add `slug` (citext, unique, 3–40 chars, `^[a-z0-9][a-z0-9-]*[a-z0-9]$`) to `portal_companies`. Reserved words blocked (`www`, `admin`, `api`, `app`, `id-preview`, `project`, `mail`, `auth`, `preview`).
-- Coordinator sets slug on create (auto-suggested from company name, editable). Rename allowed later with confirm ("old URL stops working").
-- Resolver order in `src/routes/portal.$token.tsx` and all `/api/public/portal/$token/*` routes:
-  1. If host is `<slug>.thecoordinator.org` (or `*.lovable.app` preview), look up by slug + verify `magic_token` still matches the path param OR accept slug alone when path param is `-`.
-  2. Fallback: existing `magic_token` lookup (keeps old links working).
-- New route file `src/routes/portal.tsx` (host-based landing) that reads `window.location.hostname`, extracts the slug, and renders the existing portal UI. Raw `/portal/$token` stays as a working fallback for share links + local dev.
-- Add a **new server function** `getPortalBySlug` for SSR loader; keep token-based fetch for the fallback path.
-- Docs note in the UI: to activate branded subdomains, coordinator must add a wildcard DNS `CNAME *.thecoordinator.org → thecoordinator.org` and enable wildcard SSL on the custom domain (one-time). Until then, links fall back to the raw `/portal/<token>` URL — we still show the pretty form so nothing breaks.
-
-### 2. New "Companies" tab in Portal Links
-
-Refactor `src/routes/_authenticated/coordinator.portal-links.tsx`:
+You picked "Drop subdomains, use path slugs." That means branded links become:
 
 ```
-Tabs: [ Drivers ] [ Clients ] [ Companies ]
+https://thecoordinator.org/h/grand-hotel
+https://thecoordinator.org/h/hilton-downtown
 ```
 
-The Companies tab replaces the standalone `/coordinator/portals` page (we redirect the old route to the new tab). It shows:
+No DNS changes, no SSL provisioning, no wildcard setup. Works the moment we ship. The existing `slug` column and Companies tab stay — only the URL shape and resolver change.
 
-**Create row** (inline card, matches Drivers/Clients styling):
-- Name, Kind (hotel/agent/corporate), Slug (auto-suggested, editable, live availability check), Points per booking, Logo upload, Expiry preset, Create.
+## What you'll need to do
+Nothing. Your domain is already connected. Once this ships, every branded link is live.
 
-**Table of companies** (same visual language as the driver/client tables):
-| Company | Branded URL | Status | Expires | Actions |
+## What I'll change in code
 
-Per-row actions (icon buttons, matching existing pattern):
-- **Copy** branded URL
-- **WhatsApp share** (reuses existing `shareOnWhatsApp` pattern with a company-specific preview)
-- **Toggle ON/OFF** (dormant/revive) — instant, no confirm
-- **Extend expiry** — same prompt-based flow as driver/client links, with presets 1h / 24h / 7d / 30d / never
-- **Rotate token** — confirm dialog, generates new `magic_token`, keeps slug
-- **Upload/replace logo** — opens file picker, uploads to `portal-logos` bucket, updates `logo_url`
-- **Manage →** deep-links to `/coordinator/portals/$id` for inbox, statements, change requests (unchanged)
-- **Delete** — confirm
+### 1. New route: `/h/$slug`
+Create `src/routes/h.$slug.tsx`. On load:
+- SSR loader calls `getPortalBySlug({ slug })` (already exists).
+- If found + link enabled + not expired → render the portal (reuse the exact component body from `portal.$token.tsx`, or redirect to `/portal/{token}` internally).
+- If not found → 404 with a friendly "This link is no longer active" page.
+- If dormant/expired → same friendly page with the hotel's logo + name.
 
-Status badge shows: `Live` (green), `Dormant` (grey, link OFF), `Expired` (red), `Rotated` (amber, first 60s).
+### 2. Update the Companies tab (`coordinator.portal-links.tsx`)
+- Every place that currently builds `https://{slug}.thecoordinator.org` changes to `https://thecoordinator.org/h/{slug}`.
+- Copy button, WhatsApp share, and the URL pill all use the new format.
+- Live availability check (`checkSlugAvailable`) keeps working as-is — slug uniqueness still matters.
 
-### 3. UI cleanup on Portal Links page
+### 3. Retire the subdomain resolver
+- Delete `src/routes/portal.index.tsx` (the hostname-sniffing landing page — no longer needed).
+- Keep `src/routes/api/public/portal/by-slug/$slug.ts` — the new `/h/$slug` route uses it.
+- `/portal/$token` keeps working as a fallback for any already-shared raw links.
 
-- Convert the current dense form into the same 3-column responsive card layout used elsewhere.
-- Add a small "How links work" helper card at the top of each tab (2 lines).
-- Move URL cell to a single-line pill with copy icon (like current Drivers tab).
-- Show relative expiry (`in 6 days`) + absolute timestamp on hover.
-- Empty states: friendly one-liner + primary CTA button.
-- Retire the standalone `/coordinator/portals` list; keep `/coordinator/portals/$id` as the detail page and add a "← Back to Portal Links" breadcrumb.
+### 4. Reserved slugs
+Keep the existing reserved-slug list (`www`, `api`, `admin`, `auth`, `app`, etc.) so `/h/api` etc. can never be claimed.
 
-### 4. Server functions to add in `src/lib/portal.functions.ts`
+### 5. Slug rules (unchanged from what's already in the DB)
+- lowercase, a–z, 0–9, hyphens
+- 3–40 chars
+- unique across all portals
+- auto-suggested from company name, coordinator can edit before creating
 
-- `checkSlugAvailable({ slug, excludeId? })`
-- `updatePortalSlug({ id, slug })`
-- `uploadPortalLogo({ id, path })` (client uploads to `portal-logos/<companyId>/logo.png` via signed URL, then this fn updates `logo_url`)
-- `getPortalPreview({ id })` for WhatsApp share text (mirrors driver preview)
-- Extend existing `updatePortal` to accept `link_enabled`, `link_expires_at`, `points_per_booking`.
+## URL examples after this ships
+| Company | Branded link |
+|---|---|
+| Grand Hotel Dubai | `thecoordinator.org/h/grand-hotel-dubai` |
+| Hilton Downtown | `thecoordinator.org/h/hilton-downtown` |
+| Marriott JBR | `thecoordinator.org/h/marriott-jbr` |
 
-### 5. Migration
+Every link looks professional, is short enough for WhatsApp, and carries the hotel's own name.
 
-```sql
-ALTER TABLE public.portal_companies
-  ADD COLUMN slug citext UNIQUE
-    CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$');
-CREATE INDEX portal_companies_slug_idx ON public.portal_companies (slug);
--- Backfill existing rows from name (slugified, dedup with -2, -3…)
-```
+## Files touched
+- **Create**: `src/routes/h.$slug.tsx`
+- **Edit**: `src/routes/_authenticated/coordinator.portal-links.tsx` (URL format only)
+- **Delete**: `src/routes/portal.index.tsx`
+- **Keep unchanged**: DB migration, `by-slug` API, `/portal/$token` fallback, all server functions
 
-### Out of scope
-- Wildcard DNS/SSL setup itself (documented for coordinator).
-- Hotel-side slug editing (coordinator-only per your answer).
-- Native/mobile changes.
-
-### Open questions worth confirming before I build
-1. Should the raw `/portal/<token>` URL keep working forever as a fallback, or should we auto-redirect to the branded subdomain when the request hits our apex?
-2. For the WhatsApp preview: OK to include company logo emoji + upcoming pending-bookings count, or keep it minimal (just link)?
+No database migration needed — the `slug` column and constraints from the previous turn stay exactly as they are.
