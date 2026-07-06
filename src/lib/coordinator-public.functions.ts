@@ -976,6 +976,7 @@ export const driverReportLate = createServerFn({ method: "POST" })
       sender_label: link.subject_label ?? "Driver",
       body: `🕒 Running ~${data.minutes} min late${suffix}`,
       thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
     } as never);
     return { ok: true };
   });
