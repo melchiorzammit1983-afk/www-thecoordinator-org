@@ -11,7 +11,7 @@ import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
