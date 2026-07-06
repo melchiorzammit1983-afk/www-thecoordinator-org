@@ -444,7 +444,12 @@ export const updateJob = createServerFn({ method: "POST" })
       vehicle: data.vehicle || null, contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
     }).eq("id", data.id);
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.message?.includes("partner_must_accept_first")) {
+        throw new Error("This trip was dispatched to a partner company — they must accept it before a driver can be assigned.");
+      }
+      throw new Error(error.message);
+    }
     await syncJobLabels(context, c.id, data.id, data.label_ids);
     return { ok: true };
   });
