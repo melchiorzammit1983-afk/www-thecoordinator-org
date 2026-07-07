@@ -191,16 +191,25 @@ function ManualForm({
   const updateFn = useServerFn(updateJob);
   const bulkFn = useServerFn(createJobsBulk);
   const previewFn = useServerFn(previewTripStatus);
+  const refreshFn = useServerFn(refreshJobLiveStatus);
 
   const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
   const previewMut = useMutation({
-    mutationFn: () => previewFn({ data: {
-      from_location: from || (fromFlight ? "Airport" : ""),
-      to_location: to || (toFlight ? "Airport" : ""),
-      date, time,
-      from_flight: fromFlight || undefined,
-      to_flight: toFlight || undefined,
-    } }),
+    mutationFn: () => {
+      // If the trip is already saved, persist the refresh so the calendar card
+      // and client portal reflect it — otherwise fall back to a read-only preview.
+      if (job?.id) return refreshFn({ data: { job_id: job.id } });
+      return previewFn({ data: {
+        from_location: from || (fromFlight ? "Airport" : ""),
+        to_location: to || (toFlight ? "Airport" : ""),
+        date, time,
+        from_flight: fromFlight || undefined,
+        to_flight: toFlight || undefined,
+      } });
+    },
+    onSuccess: () => {
+      if (job?.id) qc.invalidateQueries({ queryKey: ["coord-jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const preview = previewMut.data;
