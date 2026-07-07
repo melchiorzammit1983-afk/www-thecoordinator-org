@@ -215,8 +215,9 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       from_location: payload.from_location,
       to_location: payload.to_location,
       pickup_at: payload.pickup_at ?? null,
-      date: payload.date ?? (payload.pickup_at ? new Date(payload.pickup_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
-      time: payload.time ?? (payload.pickup_at ? new Date(payload.pickup_at).toISOString().slice(11, 16) : "12:00"),
+      date: payload.date ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).date : new Date().toISOString().slice(0, 10)),
+      time: payload.time ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).time : "12:00"),
+
       clientcompanyname: fullName || null,
       from_flight: (payload.flight_number || "").toUpperCase() || null,
       flightorship: payload.flight_number || null,
