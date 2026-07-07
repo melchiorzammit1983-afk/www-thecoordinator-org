@@ -73,22 +73,28 @@ function AuthPage() {
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-slate-950">
-      {/* Fullscreen Malta map — scaled to hide Google chrome, low-opacity wash so the map reads through */}
-      <div className="absolute inset-0 overflow-hidden">
+      {/* Fullscreen Malta map — always covers the viewport on any aspect ratio */}
+      <div className="fixed inset-0 overflow-hidden">
         <iframe
           title="Malta map"
           aria-hidden="true"
           tabIndex={-1}
           src="https://www.google.com/maps?q=Malta&z=11&t=m&output=embed&iwloc=near"
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-0 pointer-events-none select-none"
-          style={{ width: "130%", height: "130%" }}
+          style={{
+            width: "max(140vw, 140vh)",
+            height: "max(140vw, 140vh)",
+            minWidth: "100vw",
+            minHeight: "100vh",
+          }}
           loading="eager"
         />
       </div>
 
-      {/* Subtle brand wash — much lighter so the map is clearly visible */}
-      <div className="absolute inset-0 bg-gradient-to-br from-teal-950/55 via-slate-950/45 to-teal-900/55" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(2,15,20,0.55)_75%)]" />
+      {/* Brand wash — keeps the card readable while letting the map show through */}
+      <div className="fixed inset-0 bg-gradient-to-br from-teal-950/70 via-slate-950/60 to-teal-900/70" />
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_center,rgba(2,15,20,0.15)_0%,rgba(2,15,20,0.7)_80%)]" />
+
 
       {/* Live pulse dots over Malta hotspots */}
       <PulseDots />
