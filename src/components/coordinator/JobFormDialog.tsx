@@ -264,6 +264,59 @@ function ManualForm({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Live from→to ETA badge. Debounced auto-fetch so we only ping Google once
+  // the user has stopped typing. Charged as "route_eta" — if the company has
+  // it disabled or out of points, we silently show nothing.
+  const etaFn = useServerFn(estimateRouteEta);
+  const [etaLoading, setEtaLoading] = useState(false);
+  const [etaResult, setEtaResult] = useState<{
+    duration_sec: number; distance_m: number; duration_text: string; distance_text: string;
+  } | { error: string } | null>(() => {
+    if (job?.route_duration_sec) {
+      return {
+        duration_sec: job.route_duration_sec,
+        distance_m: job.route_distance_m ?? 0,
+        duration_text: formatEta(job.route_duration_sec) ?? "",
+        distance_text: job.route_distance_m ? `${(job.route_distance_m / 1000).toFixed(1)} km` : "",
+      };
+    }
+    return null;
+  });
+  const etaKeyRef = useRef<string>("");
+  useEffect(() => {
+    const key = `${from}||${to}`;
+    if (!from.trim() || !to.trim() || from.trim().length < 3 || to.trim().length < 3) {
+      etaKeyRef.current = key;
+      return;
+    }
+    if (etaKeyRef.current === key) return;
+    const timer = setTimeout(async () => {
+      etaKeyRef.current = key;
+      setEtaLoading(true);
+      try {
+        const r = await etaFn({ data: {
+          from, to,
+          job_id: job?.id,
+          cache_on_job: !!job?.id,
+        } });
+        if ((r as any).ok) {
+          setEtaResult({
+            duration_sec: (r as any).duration_sec,
+            distance_m: (r as any).distance_m,
+            duration_text: (r as any).duration_text,
+            distance_text: (r as any).distance_text,
+          });
+        } else {
+          setEtaResult({ error: (r as any).reason ?? "unavailable" });
+        }
+      } catch {
+        setEtaResult({ error: "network" });
+      } finally {
+        setEtaLoading(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [from, to, etaFn, job?.id]);
 
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
