@@ -162,7 +162,7 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState(defaultPhone || "+");
   const [loading, setLoading] = useState(false);
-  const [tempPw, setTempPw] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const resetFn = useServerFn(requestPasswordReset);
 
   async function submit(e: React.FormEvent) {
@@ -171,11 +171,11 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
     if (!parsed.success) return toast.error("Enter phone in international format, e.g. +35699123456");
     setLoading(true);
     try {
-      const res = await resetFn({ data: { phone: parsed.data } });
-      setTempPw(res.temp_password);
-      toast.success("Password reset — copy your temporary password below.");
+      await resetFn({ data: { phone: parsed.data } });
+      setSubmitted(true);
+      toast.success("Request submitted");
     } catch (err: any) {
-      toast.error(err?.message ?? "Could not reset password");
+      toast.error(err?.message ?? "Could not submit request");
     } finally {
       setLoading(false);
     }
@@ -183,7 +183,7 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
 
   function close() {
     setOpen(false);
-    setTempPw(null);
+    setSubmitted(false);
     setPhone(defaultPhone || "+");
   }
 
@@ -194,25 +194,16 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
       </button>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Reset your password</DialogTitle>
+          <DialogTitle>Request a password reset</DialogTitle>
           <DialogDescription>
-            We'll generate a new temporary password for your account. You'll be asked to set a new one after signing in.
+            Submit your phone number and an admin will contact you to verify your identity before issuing a new temporary password.
           </DialogDescription>
         </DialogHeader>
-        {tempPw ? (
+        {submitted ? (
           <div className="space-y-3">
-            <div className="rounded-md border bg-muted/50 p-3">
-              <div className="text-xs text-muted-foreground mb-1">Your temporary password</div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 font-mono text-sm break-all">{tempPw}</code>
-                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(tempPw); toast.success("Copied"); }}>
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+            <div className="rounded-md border bg-muted/50 p-3 text-sm">
+              Request submitted. An admin will contact you at your registered phone number with a new temporary password once they've confirmed your identity.
             </div>
-            <p className="text-xs text-muted-foreground">
-              Sign in with this password now; you'll be prompted to set a new one immediately.
-            </p>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
@@ -225,7 +216,7 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={close} disabled={loading}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? "Resetting…" : "Reset password"}</Button>
+              <Button type="submit" disabled={loading}>{loading ? "Submitting…" : "Submit request"}</Button>
             </DialogFooter>
           </form>
         )}
@@ -233,6 +224,7 @@ function ForgotPasswordDialog({ defaultPhone }: { defaultPhone: string }) {
     </Dialog>
   );
 }
+
 
 
 
