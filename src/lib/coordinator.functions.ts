@@ -1402,6 +1402,165 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     }
   });
 
+// Shared compute for traffic + flight status. Used by both previewTripStatus
+// (read-only preview for the trip dialog) and refreshJobLiveStatus (persists
+// the result on the trip row so cards + client portal reflect it).
+async function _computeTripLiveStatus(data: {
+  from_location?: string;
+  to_location?: string;
+  date?: string;
+  time?: string;
+  from_flight?: string;
+  to_flight?: string;
+}) {
+  let pickupIso: string | null = null;
+  if (data.date && data.time) {
+    try { pickupIso = maltaWallTimeToUtcIso(data.date, data.time); } catch { pickupIso = null; }
+  }
+
+  // ---- FLIGHT ----
+  let flight: {
+    ok: boolean;
+    status?: string;
+    note?: string;
+    scheduled?: string | null;
+    estimated?: string | null;
+    terminal?: string | null;
+    gate?: string | null;
+    code?: string;
+    reason?: string;
+  } | null = null;
+  const flightCode = (data.from_flight || data.to_flight || "").trim();
+  if (flightCode) {
+    const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
+    if (!process.env.FIRECRAWL_API_KEY) {
+      flight = { ok: false, code: flightCode, reason: "not_configured" };
+    } else {
+      try {
+        const rows = await fetchMaltaBoard(kind);
+        const norm = normalizeFlightCode(flightCode);
+        const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
+        if (!row) {
+          flight = { ok: false, code: flightCode, reason: "not_found" };
+        } else {
+          const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
+          const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
+          let mapped = mapMaltaStatus(row.status);
+          const shownTime = (row.estimated || row.scheduled || "").trim();
+          const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
+          if (scheduledIso && pickupIso) {
+            const s = new Date(scheduledIso).getTime();
+            const p = new Date(pickupIso).getTime();
+            if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+              mapped = "time_mismatch";
+            }
+          }
+          let note: string;
+          switch (mapped) {
+            case "cancelled": note = "CANCELLED"; break;
+            case "diverted": note = "DIVERTED"; break;
+            case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
+            case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
+            case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
+            case "active": note = row.status || "In progress"; break;
+            default: note = `On time · ${shownTime || "?"}`; break;
+          }
+          if (row.gate) note += ` · Gate ${row.gate}`;
+          if (row.terminal) note += ` · T${row.terminal}`;
+          flight = {
+            ok: true, code: flightCode, status: mapped, note,
+            scheduled: scheduledIso, estimated: estimatedIso,
+            terminal: row.terminal ?? null, gate: row.gate ?? null,
+          };
+        }
+      } catch {
+        flight = { ok: false, code: flightCode, reason: "scrape_failed" };
+      }
+    }
+  }
+
+  // ---- TRAFFIC ----
+  let traffic: {
+    ok: boolean;
+    delay_minutes?: number;
+    severity?: "light" | "moderate" | "heavy" | "severe";
+    duration_text?: string;
+    duration_seconds?: number;
+    free_seconds?: number;
+    distance_text?: string;
+    leave_by_at?: string | null;
+    reason?: string;
+  } | null = null;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  if (data.from_location && data.to_location) {
+    if (!apiKey || !lovableKey) {
+      traffic = { ok: false, reason: "not_configured" };
+    } else {
+      try {
+        const nowMs = Date.now();
+        const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
+        const depTime = pickupMs > nowMs + 60_000 ? String(Math.floor(pickupMs / 1000)) : "now";
+        // Route via the Lovable Google Maps connector gateway; the connector
+        // auto-attaches the Google API key via X-Connection-Api-Key.
+        const dmUrl =
+          `https://connector-gateway.lovable.dev/google_maps/maps/api/distancematrix/json` +
+          `?origins=${encodeURIComponent(data.from_location)}` +
+          `&destinations=${encodeURIComponent(data.to_location)}` +
+          `&departure_time=${depTime}&traffic_model=best_guess`;
+        const dmRes = await fetch(dmUrl, {
+          headers: {
+            Authorization: `Bearer ${lovableKey}`,
+            "X-Connection-Api-Key": apiKey,
+          },
+        });
+        if (!dmRes.ok) {
+          const body = await dmRes.text().catch(() => "");
+          console.error(`[computeTripLiveStatus.dm] ${dmRes.status}: ${body.slice(0, 500)}`);
+          traffic = { ok: false, reason: `dm_${dmRes.status}` };
+        } else {
+          const dm: any = await dmRes.json();
+          const topStatus = String(dm?.status ?? "").toUpperCase();
+          const el = dm?.rows?.[0]?.elements?.[0];
+          if (topStatus && topStatus !== "OK") {
+            traffic = { ok: false, reason: topStatus.toLowerCase() };
+          } else if (!el || el.status !== "OK") {
+            traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
+          } else {
+            const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
+            const free = el.duration?.value ?? null;
+            const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
+            const delayMin = Math.round(delaySec / 60);
+            const ratio = free && dur ? dur / free : 1;
+            let severity: "light" | "moderate" | "heavy" | "severe" = "light";
+            if (ratio >= 1.75 || delayMin >= 30) severity = "severe";
+            else if (ratio >= 1.4 || delayMin >= 15) severity = "heavy";
+            else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
+            const leaveBy = pickupIso && dur
+              ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString()
+              : null;
+            traffic = {
+              ok: true,
+              delay_minutes: delayMin,
+              severity,
+              duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+              duration_seconds: dur ?? undefined,
+              free_seconds: free ?? undefined,
+              distance_text: el.distance?.text ?? "",
+              leave_by_at: leaveBy,
+            };
+          }
+        }
+      } catch (e: any) {
+        console.error("[computeTripLiveStatus.dm] exception", e);
+        traffic = { ok: false, reason: "dm_failed" };
+      }
+    }
+  }
+
+  return { pickup_at: pickupIso, flight, traffic };
+}
+
 // Preview traffic + flight status for a trip that hasn't been saved yet.
 // Read-only; does NOT deduct points or write any DB rows.
 export const previewTripStatus = createServerFn({ method: "POST" })
@@ -1417,163 +1576,13 @@ export const previewTripStatus = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
-    let pickupIso: string | null = null;
-    if (data.date && data.time) {
-      try { pickupIso = maltaWallTimeToUtcIso(data.date, data.time); } catch { pickupIso = null; }
-    }
-
-    // ---- FLIGHT ----
-    let flight: {
-      ok: boolean;
-      status?: string;
-      note?: string;
-      scheduled?: string | null;
-      estimated?: string | null;
-      terminal?: string | null;
-      gate?: string | null;
-      code?: string;
-      reason?: string;
-    } | null = null;
-    const flightCode = (data.from_flight || data.to_flight || "").trim();
-    if (flightCode) {
-      const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
-      if (!process.env.FIRECRAWL_API_KEY) {
-        flight = { ok: false, code: flightCode, reason: "not_configured" };
-      } else {
-        try {
-          const rows = await fetchMaltaBoard(kind);
-          const norm = normalizeFlightCode(flightCode);
-          const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
-          if (!row) {
-            flight = { ok: false, code: flightCode, reason: "not_found" };
-          } else {
-            const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
-            const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
-            let mapped = mapMaltaStatus(row.status);
-            const shownTime = (row.estimated || row.scheduled || "").trim();
-            const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
-            if (scheduledIso && pickupIso) {
-              const s = new Date(scheduledIso).getTime();
-              const p = new Date(pickupIso).getTime();
-              if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
-                mapped = "time_mismatch";
-              }
-            }
-            let note: string;
-            switch (mapped) {
-              case "cancelled": note = "CANCELLED"; break;
-              case "diverted": note = "DIVERTED"; break;
-              case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
-              case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
-              case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
-              case "active": note = row.status || "In progress"; break;
-              default: note = `On time · ${shownTime || "?"}`; break;
-            }
-            if (row.gate) note += ` · Gate ${row.gate}`;
-            if (row.terminal) note += ` · T${row.terminal}`;
-            flight = {
-              ok: true, code: flightCode, status: mapped, note,
-              scheduled: scheduledIso, estimated: estimatedIso,
-              terminal: row.terminal ?? null, gate: row.gate ?? null,
-            };
-          }
-        } catch (e: any) {
-          flight = { ok: false, code: flightCode, reason: "scrape_failed" };
-        }
-      }
-    }
-
-    // ---- TRAFFIC ----
-    let traffic: {
-      ok: boolean;
-      delay_minutes?: number;
-      severity?: "light" | "moderate" | "heavy" | "severe";
-      duration_text?: string;
-      duration_seconds?: number;
-      free_seconds?: number;
-      distance_text?: string;
-      leave_by_at?: string | null;
-      reason?: string;
-    } | null = null;
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    const lovableKey = process.env.LOVABLE_API_KEY;
-    if (data.from_location && data.to_location) {
-      if (!apiKey || !lovableKey) {
-        traffic = { ok: false, reason: "not_configured" };
-      } else {
-        try {
-          // For future pickups Google needs a Unix timestamp in the future;
-          // for past/missing pickup fall back to "now".
-          const nowMs = Date.now();
-          const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
-          const depTime = pickupMs > nowMs + 60_000 ? String(Math.floor(pickupMs / 1000)) : "now";
-          // Route via the Lovable Google Maps connector gateway (same as places.functions.ts).
-          const dmUrl =
-            `https://connector-gateway.lovable.dev/google_maps/maps/api/distancematrix/json` +
-            `?origins=${encodeURIComponent(data.from_location)}` +
-            `&destinations=${encodeURIComponent(data.to_location)}` +
-            `&departure_time=${depTime}&traffic_model=best_guess`;
-          const dmRes = await fetch(dmUrl, {
-            headers: {
-              Authorization: `Bearer ${lovableKey}`,
-              "X-Connection-Api-Key": apiKey,
-            },
-          });
-          if (!dmRes.ok) {
-            const body = await dmRes.text().catch(() => "");
-            console.error(`[previewTripStatus.dm] ${dmRes.status}: ${body.slice(0, 500)}`);
-            traffic = { ok: false, reason: `dm_${dmRes.status}` };
-          } else {
-            const dm: any = await dmRes.json();
-            const topStatus = String(dm?.status ?? "").toUpperCase();
-            const el = dm?.rows?.[0]?.elements?.[0];
-            if (topStatus && topStatus !== "OK") {
-              traffic = { ok: false, reason: topStatus.toLowerCase() };
-            } else if (!el || el.status !== "OK") {
-              traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
-            } else {
-              const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
-              const free = el.duration?.value ?? null;
-              const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
-              const delayMin = Math.round(delaySec / 60);
-              const ratio = free && dur ? dur / free : 1;
-              let severity: "light" | "moderate" | "heavy" | "severe" = "light";
-              if (ratio >= 1.75 || delayMin >= 30) severity = "severe";
-              else if (ratio >= 1.4 || delayMin >= 15) severity = "heavy";
-              else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
-              const leaveBy = pickupIso && dur
-                ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString()
-                : null;
-              traffic = {
-                ok: true,
-                delay_minutes: delayMin,
-                severity,
-                duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
-                duration_seconds: dur ?? undefined,
-                free_seconds: free ?? undefined,
-                distance_text: el.distance?.text ?? "",
-                leave_by_at: leaveBy,
-              };
-            }
-          }
-        } catch (e: any) {
-          console.error("[previewTripStatus.dm] exception", e);
-          traffic = { ok: false, reason: "dm_failed" };
-        }
-      }
-    }
-
-    return {
-      pickup_at: pickupIso,
-      flight,
-      traffic,
-    };
+    return await _computeTripLiveStatus(data);
   });
 
 // Persist a fresh live-status snapshot on the trip row. Coordinator-only.
-// Reuses the same traffic + flight logic as previewTripStatus, then writes
-// traffic_* / flight_* columns so the calendar card and client portal reflect
-// the new values without any extra refresh.
+// Reuses the same compute as previewTripStatus, then writes traffic_* /
+// flight_* columns so the calendar card and client portal reflect the new
+// values without any extra client-side plumbing.
 export const refreshJobLiveStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
@@ -1586,18 +1595,15 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       .eq("id", data.job_id)
       .maybeSingle();
     if (error || !job) throw new Error("Trip not found");
-    if (job.company_id !== c.id) throw new Error("Not allowed");
+    if ((job as any).company_id !== c.id) throw new Error("Not allowed");
 
-    const preview = await (previewTripStatus as any).__executeServer({
-      data: {
-        from_location: job.from_location ?? undefined,
-        to_location: job.to_location ?? undefined,
-        date: job.date ?? undefined,
-        time: (job.time ?? "").slice(0, 5) || undefined,
-        from_flight: job.from_flight ?? undefined,
-        to_flight: job.to_flight ?? undefined,
-      },
-      context,
+    const preview = await _computeTripLiveStatus({
+      from_location: (job as any).from_location ?? undefined,
+      to_location: (job as any).to_location ?? undefined,
+      date: (job as any).date ?? undefined,
+      time: ((job as any).time ?? "").slice(0, 5) || undefined,
+      from_flight: (job as any).from_flight ?? undefined,
+      to_flight: (job as any).to_flight ?? undefined,
     });
 
     const patch: Record<string, any> = {};
@@ -1614,10 +1620,12 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       patch.flight_estimated_at = preview.flight.estimated ?? null;
     }
     if (Object.keys(patch).length) {
-      await supabaseAdmin.from("jobs").update(patch).eq("id", data.job_id);
+      await supabaseAdmin.from("jobs").update(patch as any).eq("id", data.job_id);
     }
     return preview;
   });
+
+
 
 
 export const listJobPax = createServerFn({ method: "GET" })
