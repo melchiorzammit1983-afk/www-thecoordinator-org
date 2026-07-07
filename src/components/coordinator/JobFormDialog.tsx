@@ -237,6 +237,10 @@ function ManualForm({
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
+        pickup_place_id: fromPlaceId,
+        dropoff_place_id: toPlaceId,
+        pickup_display_name: fromDisplayName,
+        dropoff_display_name: toDisplayName,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
