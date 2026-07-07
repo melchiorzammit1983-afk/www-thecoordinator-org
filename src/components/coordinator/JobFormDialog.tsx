@@ -389,6 +389,29 @@ function ManualForm({
           </Select>
         </div>
       </div>
+      {/* Live from → to ETA (from Google, billed via `route_eta` feature) */}
+      {(from.trim().length >= 3 && to.trim().length >= 3) && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
+          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {etaLoading ? (
+            <span className="text-muted-foreground">Estimating drive time…</span>
+          ) : etaResult && "duration_sec" in etaResult ? (
+            <>
+              <span className="font-semibold text-foreground">
+                {formatEta(etaResult.duration_sec) ?? etaResult.duration_text}
+              </span>
+              {etaResult.distance_text && (
+                <span className="text-muted-foreground">· {etaResult.distance_text}</span>
+              )}
+              <span className="ml-auto text-[10px] text-muted-foreground">estimated drive time</span>
+            </>
+          ) : etaResult && "error" in etaResult ? (
+            <span className="text-muted-foreground">ETA unavailable</span>
+          ) : (
+            <span className="text-muted-foreground">Estimated drive time will show here</span>
+          )}
+        </div>
+      )}
       {!job && (
         <div className="space-y-1.5">
           <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (one per line, optional)</Label>
