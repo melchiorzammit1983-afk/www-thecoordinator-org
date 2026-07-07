@@ -122,7 +122,9 @@ function ManualForm({
 }: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
+  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
@@ -247,14 +249,15 @@ function ManualForm({
           Prefilled from paste — fill in any missing fields highlighted below.
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5 min-w-0">
           <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
-          <Input
+          <AddressAutocomplete
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            placeId={fromPlaceId}
+            onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
             onBlur={() => handleLocationBlur("from")}
-            placeholder={fromFlight ? "Airport (auto)" : ""}
+            placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
           />
           <Input
             value={fromFlight}
@@ -267,13 +270,14 @@ function ManualForm({
             <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
           )}
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
-          <Input
+          <AddressAutocomplete
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            placeId={toPlaceId}
+            onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}
             onBlur={() => handleLocationBlur("to")}
-            placeholder={toFlight ? "Airport (auto)" : ""}
+            placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
           <Input
             value={toFlight}
