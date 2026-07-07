@@ -11,7 +11,7 @@ import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions } from "@/lib/coordinator.functions";
+import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, refreshJobLiveStatus } from "@/lib/coordinator.functions";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -283,14 +283,23 @@ export function TripDetailsSheet({
             )}
           </SheetHeader>
 
-          <TrafficBadge
-            info={{
-              traffic_delay_minutes: job.traffic_delay_minutes,
-              traffic_severity: job.traffic_severity,
-              leave_by_at: job.leave_by_at,
-              pickup_shift_reason: job.pickup_shift_reason,
-            }}
-          />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                Live status
+              </div>
+              <RefreshLiveStatusButton jobId={job.id} />
+            </div>
+            <TrafficBadge
+              info={{
+                traffic_delay_minutes: job.traffic_delay_minutes,
+                traffic_severity: job.traffic_severity,
+                leave_by_at: job.leave_by_at,
+                pickup_shift_reason: job.pickup_shift_reason,
+              }}
+            />
+          </div>
+
 
 
           {/* Progress */}
@@ -1071,3 +1080,40 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
     </section>
   );
 }
+
+function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
+  const refreshFn = useServerFn(refreshJobLiveStatus);
+  const mut = useMutation({
+    mutationFn: () => refreshFn({ data: { job_id: jobId } }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      const t = r?.traffic;
+      const f = r?.flight;
+      if (t?.ok) {
+        const delay = t.delay_minutes ?? 0;
+        const dur = t.duration_text ? ` · ${t.duration_text}` : "";
+        const dist = t.distance_text ? ` · ${t.distance_text}` : "";
+        toast.success(
+          delay > 0 ? `ETA refreshed — +${delay} min traffic${dur}${dist}` : `ETA refreshed${dur}${dist}`,
+        );
+      } else if (t?.reason) {
+        toast.error(`Traffic: ${t.reason}`);
+      }
+      if (f?.ok && f.note) toast.message(`Flight ${f.code}: ${f.note}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Button
+      type="button" size="sm" variant="outline"
+      className="h-7 px-2 text-[11px]"
+      disabled={mut.isPending}
+      onClick={() => mut.mutate()}
+    >
+      <RefreshCw className={`h-3 w-3 mr-1 ${mut.isPending ? "animate-spin" : ""}`} />
+      {mut.isPending ? "Refreshing…" : "Refresh ETA"}
+    </Button>
+  );
+}
+

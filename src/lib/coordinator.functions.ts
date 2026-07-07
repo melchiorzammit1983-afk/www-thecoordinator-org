@@ -1402,118 +1402,129 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     }
   });
 
-// Preview traffic + flight status for a trip that hasn't been saved yet.
-// Read-only; does NOT deduct points or write any DB rows.
-export const previewTripStatus = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({
-      from_location: z.string().trim().max(300).optional(),
-      to_location: z.string().trim().max(300).optional(),
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-      from_flight: z.string().trim().max(20).optional(),
-      to_flight: z.string().trim().max(20).optional(),
-    }).parse(i),
-  )
-  .handler(async ({ data }) => {
-    let pickupIso: string | null = null;
-    if (data.date && data.time) {
-      try { pickupIso = maltaWallTimeToUtcIso(data.date, data.time); } catch { pickupIso = null; }
-    }
+// Shared compute for traffic + flight status. Used by both previewTripStatus
+// (read-only preview for the trip dialog) and refreshJobLiveStatus (persists
+// the result on the trip row so cards + client portal reflect it).
+async function _computeTripLiveStatus(data: {
+  from_location?: string;
+  to_location?: string;
+  date?: string;
+  time?: string;
+  from_flight?: string;
+  to_flight?: string;
+}) {
+  let pickupIso: string | null = null;
+  if (data.date && data.time) {
+    try { pickupIso = maltaWallTimeToUtcIso(data.date, data.time); } catch { pickupIso = null; }
+  }
 
-    // ---- FLIGHT ----
-    let flight: {
-      ok: boolean;
-      status?: string;
-      note?: string;
-      scheduled?: string | null;
-      estimated?: string | null;
-      terminal?: string | null;
-      gate?: string | null;
-      code?: string;
-      reason?: string;
-    } | null = null;
-    const flightCode = (data.from_flight || data.to_flight || "").trim();
-    if (flightCode) {
-      const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
-      if (!process.env.FIRECRAWL_API_KEY) {
-        flight = { ok: false, code: flightCode, reason: "not_configured" };
-      } else {
-        try {
-          const rows = await fetchMaltaBoard(kind);
-          const norm = normalizeFlightCode(flightCode);
-          const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
-          if (!row) {
-            flight = { ok: false, code: flightCode, reason: "not_found" };
-          } else {
-            const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
-            const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
-            let mapped = mapMaltaStatus(row.status);
-            const shownTime = (row.estimated || row.scheduled || "").trim();
-            const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
-            if (scheduledIso && pickupIso) {
-              const s = new Date(scheduledIso).getTime();
-              const p = new Date(pickupIso).getTime();
-              if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
-                mapped = "time_mismatch";
-              }
+  // ---- FLIGHT ----
+  let flight: {
+    ok: boolean;
+    status?: string;
+    note?: string;
+    scheduled?: string | null;
+    estimated?: string | null;
+    terminal?: string | null;
+    gate?: string | null;
+    code?: string;
+    reason?: string;
+  } | null = null;
+  const flightCode = (data.from_flight || data.to_flight || "").trim();
+  if (flightCode) {
+    const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
+    if (!process.env.FIRECRAWL_API_KEY) {
+      flight = { ok: false, code: flightCode, reason: "not_configured" };
+    } else {
+      try {
+        const rows = await fetchMaltaBoard(kind);
+        const norm = normalizeFlightCode(flightCode);
+        const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
+        if (!row) {
+          flight = { ok: false, code: flightCode, reason: "not_found" };
+        } else {
+          const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
+          const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
+          let mapped = mapMaltaStatus(row.status);
+          const shownTime = (row.estimated || row.scheduled || "").trim();
+          const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
+          if (scheduledIso && pickupIso) {
+            const s = new Date(scheduledIso).getTime();
+            const p = new Date(pickupIso).getTime();
+            if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+              mapped = "time_mismatch";
             }
-            let note: string;
-            switch (mapped) {
-              case "cancelled": note = "CANCELLED"; break;
-              case "diverted": note = "DIVERTED"; break;
-              case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
-              case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
-              case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
-              case "active": note = row.status || "In progress"; break;
-              default: note = `On time · ${shownTime || "?"}`; break;
-            }
-            if (row.gate) note += ` · Gate ${row.gate}`;
-            if (row.terminal) note += ` · T${row.terminal}`;
-            flight = {
-              ok: true, code: flightCode, status: mapped, note,
-              scheduled: scheduledIso, estimated: estimatedIso,
-              terminal: row.terminal ?? null, gate: row.gate ?? null,
-            };
           }
-        } catch (e: any) {
-          flight = { ok: false, code: flightCode, reason: "scrape_failed" };
+          let note: string;
+          switch (mapped) {
+            case "cancelled": note = "CANCELLED"; break;
+            case "diverted": note = "DIVERTED"; break;
+            case "time_mismatch": note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`; break;
+            case "delayed": note = `Delayed → ${row.estimated || shownTime || "?"}`; break;
+            case "landed": note = `Landed ${row.estimated || shownTime || ""}`.trim(); break;
+            case "active": note = row.status || "In progress"; break;
+            default: note = `On time · ${shownTime || "?"}`; break;
+          }
+          if (row.gate) note += ` · Gate ${row.gate}`;
+          if (row.terminal) note += ` · T${row.terminal}`;
+          flight = {
+            ok: true, code: flightCode, status: mapped, note,
+            scheduled: scheduledIso, estimated: estimatedIso,
+            terminal: row.terminal ?? null, gate: row.gate ?? null,
+          };
         }
+      } catch {
+        flight = { ok: false, code: flightCode, reason: "scrape_failed" };
       }
     }
+  }
 
-    // ---- TRAFFIC ----
-    let traffic: {
-      ok: boolean;
-      delay_minutes?: number;
-      severity?: "light" | "moderate" | "heavy" | "severe";
-      duration_text?: string;
-      duration_seconds?: number;
-      free_seconds?: number;
-      distance_text?: string;
-      leave_by_at?: string | null;
-      reason?: string;
-    } | null = null;
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (data.from_location && data.to_location) {
-      if (!apiKey) {
-        traffic = { ok: false, reason: "not_configured" };
-      } else {
-        try {
-          // For future pickups, Google requires a Unix timestamp in the future.
-          // If pickup is in the past or missing, use "now" for a real-time estimate.
-          const nowMs = Date.now();
-          const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
-          const depTime = pickupMs > nowMs + 60_000 ? Math.floor(pickupMs / 1000) : "now";
-          const dmUrl =
-            `https://maps.googleapis.com/maps/api/distancematrix/json` +
-            `?origins=${encodeURIComponent(data.from_location)}` +
-            `&destinations=${encodeURIComponent(data.to_location)}` +
-            `&departure_time=${depTime}&traffic_model=best_guess&key=${apiKey}`;
-          const dm: any = await (await fetch(dmUrl)).json();
+  // ---- TRAFFIC ----
+  let traffic: {
+    ok: boolean;
+    delay_minutes?: number;
+    severity?: "light" | "moderate" | "heavy" | "severe";
+    duration_text?: string;
+    duration_seconds?: number;
+    free_seconds?: number;
+    distance_text?: string;
+    leave_by_at?: string | null;
+    reason?: string;
+  } | null = null;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  if (data.from_location && data.to_location) {
+    if (!apiKey || !lovableKey) {
+      traffic = { ok: false, reason: "not_configured" };
+    } else {
+      try {
+        const nowMs = Date.now();
+        const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
+        const depTime = pickupMs > nowMs + 60_000 ? String(Math.floor(pickupMs / 1000)) : "now";
+        // Route via the Lovable Google Maps connector gateway; the connector
+        // auto-attaches the Google API key via X-Connection-Api-Key.
+        const dmUrl =
+          `https://connector-gateway.lovable.dev/google_maps/maps/api/distancematrix/json` +
+          `?origins=${encodeURIComponent(data.from_location)}` +
+          `&destinations=${encodeURIComponent(data.to_location)}` +
+          `&departure_time=${depTime}&traffic_model=best_guess`;
+        const dmRes = await fetch(dmUrl, {
+          headers: {
+            Authorization: `Bearer ${lovableKey}`,
+            "X-Connection-Api-Key": apiKey,
+          },
+        });
+        if (!dmRes.ok) {
+          const body = await dmRes.text().catch(() => "");
+          console.error(`[computeTripLiveStatus.dm] ${dmRes.status}: ${body.slice(0, 500)}`);
+          traffic = { ok: false, reason: `dm_${dmRes.status}` };
+        } else {
+          const dm: any = await dmRes.json();
+          const topStatus = String(dm?.status ?? "").toUpperCase();
           const el = dm?.rows?.[0]?.elements?.[0];
-          if (!el || el.status !== "OK") {
+          if (topStatus && topStatus !== "OK") {
+            traffic = { ok: false, reason: topStatus.toLowerCase() };
+          } else if (!el || el.status !== "OK") {
             traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
           } else {
             const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
@@ -1539,18 +1550,83 @@ export const previewTripStatus = createServerFn({ method: "POST" })
               leave_by_at: leaveBy,
             };
           }
-        } catch {
-          traffic = { ok: false, reason: "dm_failed" };
         }
+      } catch (e: any) {
+        console.error("[computeTripLiveStatus.dm] exception", e);
+        traffic = { ok: false, reason: "dm_failed" };
       }
     }
+  }
 
-    return {
-      pickup_at: pickupIso,
-      flight,
-      traffic,
-    };
+  return { pickup_at: pickupIso, flight, traffic };
+}
+
+// Preview traffic + flight status for a trip that hasn't been saved yet.
+// Read-only; does NOT deduct points or write any DB rows.
+export const previewTripStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      from_location: z.string().trim().max(300).optional(),
+      to_location: z.string().trim().max(300).optional(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      from_flight: z.string().trim().max(20).optional(),
+      to_flight: z.string().trim().max(20).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    return await _computeTripLiveStatus(data);
   });
+
+// Persist a fresh live-status snapshot on the trip row. Coordinator-only.
+// Reuses the same compute as previewTripStatus, then writes traffic_* /
+// flight_* columns so the calendar card and client portal reflect the new
+// values without any extra client-side plumbing.
+export const refreshJobLiveStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (error || !job) throw new Error("Trip not found");
+    if ((job as any).company_id !== c.id) throw new Error("Not allowed");
+
+    const preview = await _computeTripLiveStatus({
+      from_location: (job as any).from_location ?? undefined,
+      to_location: (job as any).to_location ?? undefined,
+      date: (job as any).date ?? undefined,
+      time: ((job as any).time ?? "").slice(0, 5) || undefined,
+      from_flight: (job as any).from_flight ?? undefined,
+      to_flight: (job as any).to_flight ?? undefined,
+    });
+
+    const patch: Record<string, any> = {};
+    if (preview.traffic?.ok) {
+      patch.traffic_delay_minutes = preview.traffic.delay_minutes ?? 0;
+      patch.traffic_severity = preview.traffic.severity ?? null;
+      patch.leave_by_at = preview.traffic.leave_by_at ?? null;
+    }
+    if (preview.flight?.ok) {
+      patch.flight_status = preview.flight.status ?? null;
+      patch.flight_status_note = preview.flight.note ?? null;
+      patch.flight_status_updated_at = new Date().toISOString();
+      patch.flight_scheduled_at = preview.flight.scheduled ?? null;
+      patch.flight_estimated_at = preview.flight.estimated ?? null;
+    }
+    if (Object.keys(patch).length) {
+      await supabaseAdmin.from("jobs").update(patch as any).eq("id", data.job_id);
+    }
+    return preview;
+  });
+
+
+
 
 export const listJobPax = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

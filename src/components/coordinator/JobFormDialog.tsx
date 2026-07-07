@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
@@ -191,16 +191,25 @@ function ManualForm({
   const updateFn = useServerFn(updateJob);
   const bulkFn = useServerFn(createJobsBulk);
   const previewFn = useServerFn(previewTripStatus);
+  const refreshFn = useServerFn(refreshJobLiveStatus);
 
   const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
   const previewMut = useMutation({
-    mutationFn: () => previewFn({ data: {
-      from_location: from || (fromFlight ? "Airport" : ""),
-      to_location: to || (toFlight ? "Airport" : ""),
-      date, time,
-      from_flight: fromFlight || undefined,
-      to_flight: toFlight || undefined,
-    } }),
+    mutationFn: () => {
+      // If the trip is already saved, persist the refresh so the calendar card
+      // and client portal reflect it — otherwise fall back to a read-only preview.
+      if (job?.id) return refreshFn({ data: { job_id: job.id } });
+      return previewFn({ data: {
+        from_location: from || (fromFlight ? "Airport" : ""),
+        to_location: to || (toFlight ? "Airport" : ""),
+        date, time,
+        from_flight: fromFlight || undefined,
+        to_flight: toFlight || undefined,
+      } });
+    },
+    onSuccess: () => {
+      if (job?.id) qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const preview = previewMut.data;
