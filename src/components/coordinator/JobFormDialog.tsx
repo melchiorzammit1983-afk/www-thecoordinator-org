@@ -10,8 +10,10 @@ import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPast
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FileDown, Paperclip, X } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogDescription,
+  ResponsiveDialogFooter, ResponsiveDialogHeader, ResponsiveDialogTitle,
+} from "@/components/mobile/ResponsiveDialog";
+import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,9 +24,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown, Undo2, Wand2 } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
+import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { resolveAddresses } from "@/lib/places.functions";
+import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -78,17 +83,17 @@ export function JobFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-2xl"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent
+        className="sm:max-w-2xl"
+        onPointerDownOutside={(e: any) => e.preventDefault()}
+        onInteractOutside={(e: any) => e.preventDefault()}
+        onEscapeKeyDown={(e: any) => e.preventDefault()}
       >
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit trip" : "New trip"}</DialogTitle>
-          <DialogDescription>Schedule a transfer, add passengers, and assign resources.</DialogDescription>
-        </DialogHeader>
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>{isEdit ? "Edit trip" : "New trip"}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>Schedule a transfer, add passengers, and assign resources.</ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
         {isEdit ? (
           <ManualForm drivers={drivers} job={job} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : !bulkEnabled ? (
@@ -107,8 +112,8 @@ export function JobFormDialog({
             </TabsContent>
           </Tabs>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
 
