@@ -278,7 +278,11 @@ function ManualForm({
           <AddressAutocomplete
             value={from}
             placeId={fromPlaceId}
-            onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
+            onChange={(v) => {
+              setFrom(v.address);
+              setFromPlaceId(v.place_id);
+              setFromDisplayName(v.display_name ?? null);
+            }}
             onBlur={() => handleLocationBlur("from")}
             placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
           />
@@ -298,7 +302,11 @@ function ManualForm({
           <AddressAutocomplete
             value={to}
             placeId={toPlaceId}
-            onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}
+            onChange={(v) => {
+              setTo(v.address);
+              setToPlaceId(v.place_id);
+              setToDisplayName(v.display_name ?? null);
+            }}
             onBlur={() => handleLocationBlur("to")}
             placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
