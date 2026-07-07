@@ -47,6 +47,12 @@ type Job = {
   contact_phone: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
+  pickup_place_id?: string | null;
+  dropoff_place_id?: string | null;
+  pickup_display_name?: string | null;
+  dropoff_display_name?: string | null;
+  route_duration_sec?: number | null;
+  route_distance_m?: number | null;
   labels?: { id: string; name: string; color: string }[];
 };
 
@@ -124,9 +130,11 @@ function ManualForm({
 }: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
-  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(job?.pickup_place_id ?? null);
+  const [fromDisplayName, setFromDisplayName] = useState<string | null>(job?.pickup_display_name ?? null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
-  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
+  const [toPlaceId, setToPlaceId] = useState<string | null>(job?.dropoff_place_id ?? null);
+  const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
