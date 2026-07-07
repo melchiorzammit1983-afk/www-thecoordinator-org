@@ -140,6 +140,12 @@ type Job = {
   traffic_severity?: string | null;
   leave_by_at?: string | null;
   pickup_shift_reason?: string | null;
+  pickup_display_name?: string | null;
+  dropoff_display_name?: string | null;
+  pickup_place_id?: string | null;
+  dropoff_place_id?: string | null;
+  route_duration_sec?: number | null;
+  route_distance_m?: number | null;
 };
 
 
