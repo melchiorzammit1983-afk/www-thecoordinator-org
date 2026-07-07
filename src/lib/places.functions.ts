@@ -54,7 +54,7 @@ const BiasSchema = z
   .object({
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
-    radius_m: z.number().min(1000).max(500_000).optional(),
+    radius_m: z.number().min(1000).max(50_000).optional(),
     region: z.string().min(2).max(4).optional(),
     language: z.string().min(2).max(8).optional(),
   })
