@@ -269,10 +269,14 @@ function ClientTripPortal() {
             )}
           </section>
 
+          {/* Traffic / route ETA */}
+          <TripTrafficCard job={job} />
+
           {/* Flight card */}
           {(job.from_flight || job.to_flight) && (
             <FlightCard job={job} />
           )}
+
 
           {/* Driver + tracking + ETA */}
           <section className="rounded-2xl bg-white p-4 shadow-sm border">
