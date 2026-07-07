@@ -764,6 +764,8 @@ type CardCtx = {
   tripFlags?: Record<string, TripFlagInfo>;
   onDismissFlag?: (jobId: string, kind: "duplicate" | "suspicious") => void;
   onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
+  urgency: UrgencyThresholds;
+  nowTick: number; // ms — bumped every minute so cards re-evaluate glow
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
