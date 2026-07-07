@@ -208,7 +208,7 @@ function ManualForm({
       } });
     },
     onSuccess: () => {
-      if (job?.id) qc.invalidateQueries({ queryKey: ["coord-jobs"] });
+      if (job?.id) qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
