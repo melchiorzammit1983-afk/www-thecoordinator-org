@@ -46,6 +46,7 @@ import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
+import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
@@ -270,6 +271,12 @@ const AuthenticatedAdminPortalSettingsRoute =
     path: '/portal-settings',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminPasswordResetsRoute =
+  AuthenticatedAdminPasswordResetsRouteImport.update({
+    id: '/password-resets',
+    path: '/password-resets',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -386,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
@@ -439,6 +447,7 @@ export interface FileRoutesByTo {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
@@ -496,6 +505,7 @@ export interface FileRoutesById {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
@@ -553,6 +563,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/admin/activity'
+    | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
@@ -606,6 +617,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/admin/activity'
+    | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
     | '/admin/requests'
@@ -662,6 +674,7 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
@@ -995,6 +1008,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/password-resets': {
+      id: '/_authenticated/admin/password-resets'
+      path: '/password-resets'
+      fullPath: '/admin/password-resets'
+      preLoaderRoute: typeof AuthenticatedAdminPasswordResetsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -1119,6 +1139,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
   AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
   AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
@@ -1129,6 +1150,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,
   AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
   AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,

@@ -959,23 +959,64 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const phone = data.phone;
-    const digits = phone.replace(/[^\d]/g, "");
-    const email = `p${digits}@phone.crewchange.local`;
 
-    // Rate limit: 1 reset per phone per 60 seconds (per worker instance).
+    // Rate limit: 1 request per phone per 60 seconds (per worker instance).
     const last = _resetAttempts.get(phone) ?? 0;
     const now = Date.now();
     if (now - last < 60_000) {
-      throw new Error("Please wait a minute before requesting another reset.");
+      // Do not reveal rate-limit state to anonymous callers; pretend success.
+      return { ok: true } as const;
     }
     _resetAttempts.set(phone, now);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("password_reset_requests")
+        .insert({ phone, status: "pending" });
+    } catch (e) {
+      console.error("requestPasswordReset insert failed", e);
+    }
 
-    // Find user by synthetic email (paginated up to 1000).
+    // Always return ok regardless of whether an account exists, to prevent
+    // using this endpoint to enumerate registered phone numbers.
+    return { ok: true } as const;
+  });
+
+export const adminListPasswordResetRequests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const { data, error } = await sb
+      .from("password_reset_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const adminApprovePasswordResetRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { data: req, error: rErr } = await sb
+      .from("password_reset_requests")
+      .select("id, phone, status")
+      .eq("id", data.id)
+      .single();
+    if (rErr || !req) throw new Error(readableError(rErr, "Request not found"));
+    if (req.status !== "pending") throw new Error("Request is not pending");
+
+    const phone = req.phone as string;
+    const digits = phone.replace(/[^\d]/g, "");
+    const email = `p${digits}@phone.crewchange.local`;
+
+    // Find user by synthetic email (paginated).
     let existing: { id: string; user_metadata?: any } | null = null;
     for (let page = 1; page <= 5 && !existing; page++) {
-      const { data: list, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+      const { data: list, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
       if (error) throw new Error(error.message);
       existing = list.users.find((u) => u.email?.toLowerCase() === email) as any;
       if (list.users.length < 200) break;
@@ -983,14 +1024,34 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
     if (!existing) throw new Error("No account found for that phone number.");
 
     const temp_password = generateTempPassword(12);
-    const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+    const { error: uErr } = await sb.auth.admin.updateUserById(existing.id, {
       password: temp_password,
       user_metadata: { ...(existing.user_metadata ?? {}), must_change_password: true },
     });
     if (uErr) throw new Error(uErr.message);
 
-    return { ok: true, temp_password };
+    const { error: updErr } = await sb
+      .from("password_reset_requests")
+      .update({ status: "approved", resolved_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (updErr) throw new Error(updErr.message);
+
+    return { ok: true, phone, temp_password } as const;
   });
+
+export const adminDismissPasswordResetRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const { error } = await sb
+      .from("password_reset_requests")
+      .update({ status: "dismissed", resolved_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true } as const;
+  });
+
 
 // ---------- PRICING PAGE: usage metrics + wallets ----------
 

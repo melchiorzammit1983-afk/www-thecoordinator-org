@@ -2306,6 +2306,30 @@ export type Database = {
           },
         ]
       }
+      password_reset_requests: {
+        Row: {
+          created_at: string
+          id: string
+          phone: string
+          resolved_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          phone: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          phone?: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       pax: {
         Row: {
           boarded_at: string | null
