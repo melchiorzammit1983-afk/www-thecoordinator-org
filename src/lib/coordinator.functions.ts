@@ -231,7 +231,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, route_duration_sec, route_distance_m, route_computed_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -375,6 +375,12 @@ const jobInput = z.object({
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
+  // From Google Places pick — persisted so we can render the hotel/business
+  // name instead of the raw address, and re-lookup ETAs without re-charging.
+  pickup_place_id: z.string().trim().max(200).optional().nullable(),
+  dropoff_place_id: z.string().trim().max(200).optional().nullable(),
+  pickup_display_name: z.string().trim().max(200).optional().nullable(),
+  dropoff_display_name: z.string().trim().max(200).optional().nullable(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
