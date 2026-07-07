@@ -14,6 +14,20 @@ export type ParsedTrip = {
   pax: string[];
   contact_phone: string;
   errors: string[];
+  // Optional Places metadata attached by the bulk auto-fix pass.
+  from_place_id?: string | null;
+  from_lat?: number | null;
+  from_lng?: number | null;
+  to_place_id?: string | null;
+  to_lat?: number | null;
+  to_lng?: number | null;
+  // When set, records the original text before Google auto-fix so the
+  // user can undo in the review UI. Only fields the auto-fix touched
+  // are present.
+  autoFixed?: {
+    from_location?: string;
+    to_location?: string;
+  };
 };
 
 const PHONE_RE = /(\+?\d[\d\s().\-]{5,}\d)/;

@@ -4,11 +4,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { updateClientBooking } from "@/lib/coordinator-public.functions";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogDescription,
+  ResponsiveDialogFooter, ResponsiveDialogHeader, ResponsiveDialogTitle,
+} from "@/components/mobile/ResponsiveDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 
 export function EditBookingDialog({
   open, onOpenChange, token, booking,
@@ -18,7 +20,9 @@ export function EditBookingDialog({
   booking: { id: string; from_location: string; to_location: string; date: string | null; time: string | null; pickup_at: string | null } | null;
 }) {
   const [from, setFrom] = useState(booking?.from_location ?? "");
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
   const [to, setTo] = useState(booking?.to_location ?? "");
+  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
   const [date, setDate] = useState(booking?.date ?? "");
   const [time, setTime] = useState((booking?.time ?? "").slice(0, 5));
 
@@ -51,25 +55,41 @@ export function EditBookingDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit booking</DialogTitle>
-          <DialogDescription>Changes made within 2 hours of pickup need coordinator approval.</DialogDescription>
-        </DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="sm:max-w-lg">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Edit booking</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>Changes made within 2 hours of pickup need coordinator approval.</ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
         <div className="grid gap-3">
-          <div className="grid gap-1.5"><Label>From</Label><Input value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div className="grid gap-1.5"><Label>To</Label><Input value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-1.5">
+            <Label>From</Label>
+            <AddressAutocomplete
+              value={from}
+              placeId={fromPlaceId}
+              onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
+              placeholder="Pickup location"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>To</Label>
+            <AddressAutocomplete
+              value={to}
+              placeId={toPlaceId}
+              onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}
+              placeholder="Drop-off location"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="grid gap-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
             <div className="grid gap-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
           </div>
         </div>
-        <DialogFooter>
+        <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending ? "Saving…" : "Save changes"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

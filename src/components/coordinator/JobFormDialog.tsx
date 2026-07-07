@@ -10,8 +10,10 @@ import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPast
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FileDown, Paperclip, X } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogDescription,
+  ResponsiveDialogFooter, ResponsiveDialogHeader, ResponsiveDialogTitle,
+} from "@/components/mobile/ResponsiveDialog";
+import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,9 +24,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown, Undo2, Wand2 } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
+import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { resolveAddresses } from "@/lib/places.functions";
+import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -78,17 +83,17 @@ export function JobFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-2xl"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent
+        className="sm:max-w-2xl"
+        onPointerDownOutside={(e: any) => e.preventDefault()}
+        onInteractOutside={(e: any) => e.preventDefault()}
+        onEscapeKeyDown={(e: any) => e.preventDefault()}
       >
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit trip" : "New trip"}</DialogTitle>
-          <DialogDescription>Schedule a transfer, add passengers, and assign resources.</DialogDescription>
-        </DialogHeader>
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>{isEdit ? "Edit trip" : "New trip"}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>Schedule a transfer, add passengers, and assign resources.</ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
         {isEdit ? (
           <ManualForm drivers={drivers} job={job} onSaved={onSaved} onCancel={() => onOpenChange(false)} />
         ) : !bulkEnabled ? (
@@ -107,8 +112,8 @@ export function JobFormDialog({
             </TabsContent>
           </Tabs>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
 
@@ -117,7 +122,9 @@ function ManualForm({
 }: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
+  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
@@ -242,14 +249,15 @@ function ManualForm({
           Prefilled from paste — fill in any missing fields highlighted below.
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5 min-w-0">
           <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
-          <Input
+          <AddressAutocomplete
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            placeId={fromPlaceId}
+            onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
             onBlur={() => handleLocationBlur("from")}
-            placeholder={fromFlight ? "Airport (auto)" : ""}
+            placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
           />
           <Input
             value={fromFlight}
@@ -262,13 +270,14 @@ function ManualForm({
             <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
           )}
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
-          <Input
+          <AddressAutocomplete
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            placeId={toPlaceId}
+            onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}
             onBlur={() => handleLocationBlur("to")}
-            placeholder={toFlight ? "Airport (auto)" : ""}
+            placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
           <Input
             value={toFlight}
@@ -450,6 +459,69 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const valid = withErrors.filter((t) => t.errors.length === 0);
   const incomplete = withErrors.filter((t) => t.errors.length > 0);
   const aiEnabled = useFeature("ai_extraction");
+
+  // ------- Address auto-fix (Google Places) -------
+  // When enabled in settings, replace fuzzy From/To text with Google's top
+  // match. Original text is stashed in trip.autoFixed so the user can undo.
+  const { settings: addressSettings } = useAddressSettings();
+  const resolveFn = useServerFn(resolveAddresses);
+  const [autoFixBusy, setAutoFixBusy] = useState(false);
+  const [autoFixed, setAutoFixed] = useState(false);
+
+  useEffect(() => {
+    if (!addressSettings.auto_fix_bulk) return;
+    if (autoFixed) return;
+    if (parsed.length === 0) return;
+    let cancelled = false;
+    const items: { key: string; text: string }[] = [];
+    parsed.forEach((t, i) => {
+      if (t.from_location && t.from_location.length >= 2 && !t.from_place_id) {
+        items.push({ key: `${i}:from`, text: t.from_location });
+      }
+      if (t.to_location && t.to_location.length >= 2 && !t.to_place_id) {
+        items.push({ key: `${i}:to`, text: t.to_location });
+      }
+    });
+    if (items.length === 0) { setAutoFixed(true); return; }
+    setAutoFixBusy(true);
+    resolveFn({ data: { items, bias: toBias(addressSettings) } })
+      .then((res) => {
+        if (cancelled) return;
+        setEdited((prev) => prev.map((t, i) => {
+          const fromR = res.results[`${i}:from`];
+          const toR = res.results[`${i}:to`];
+          const next: ParsedTrip = { ...t };
+          const af: NonNullable<ParsedTrip["autoFixed"]> = { ...(t.autoFixed ?? {}) };
+          if (fromR && fromR.address && fromR.address !== t.from_location) {
+            af.from_location = t.from_location;
+            next.from_location = fromR.address;
+            next.from_place_id = fromR.place_id;
+            next.from_lat = fromR.lat;
+            next.from_lng = fromR.lng;
+          }
+          if (toR && toR.address && toR.address !== t.to_location) {
+            af.to_location = t.to_location;
+            next.to_location = toR.address;
+            next.to_place_id = toR.place_id;
+            next.to_lat = toR.lat;
+            next.to_lng = toR.lng;
+          }
+          if (af.from_location || af.to_location) next.autoFixed = af;
+          return next;
+        }));
+        const fixedCount = Object.values(res.results).filter(Boolean).length;
+        if (fixedCount > 0) toast.message(`Address auto-fix: cleaned ${fixedCount} field${fixedCount === 1 ? "" : "s"}`);
+      })
+      .catch(() => { /* silent — user can still fix manually */ })
+      .finally(() => {
+        if (!cancelled) { setAutoFixBusy(false); setAutoFixed(true); }
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed]);
+
+  // Any new paste resets the auto-fix guard.
+  useEffect(() => { setAutoFixed(false); }, [raw]);
 
   // Chat state for the "Understand with AI" mini-chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -829,6 +901,12 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
           <div className="mt-0.5">Please review and complete the fields below before creating trips.</div>
         </div>
       )}
+      {autoFixBusy && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          <Wand2 className="h-3.5 w-3.5 animate-pulse text-primary" />
+          Address auto-fix: matching pickup/drop-off with Google…
+        </div>
+      )}
       {withErrors.length > 0 && (
         <div className="space-y-2 max-h-[380px] overflow-auto rounded-md border p-2">
           {withErrors.map((t, i) => {
@@ -867,18 +945,72 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                     <Input type="time" value={t.time} className="h-7 text-xs"
                       onChange={(e) => patch({ time: e.target.value })} />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-[10px] text-muted-foreground">Pickup</span>
-                    <Input value={t.from_location} className="h-7 text-xs"
+                  <div className="space-y-1 col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">Pickup</span>
+                      {t.autoFixed?.from_location && (
+                        <button type="button"
+                          className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:underline"
+                          onClick={() => {
+                            const original = t.autoFixed!.from_location!;
+                            const nextAf = { ...(t.autoFixed ?? {}) };
+                            delete nextAf.from_location;
+                            patch({
+                              from_location: original,
+                              from_place_id: null, from_lat: null, from_lng: null,
+                              autoFixed: (nextAf.from_location || nextAf.to_location) ? nextAf : undefined,
+                            });
+                          }}
+                          title={`Undo — restore "${t.autoFixed.from_location}"`}
+                        >
+                          <Undo2 className="h-3 w-3" /> Auto-fixed · undo
+                        </button>
+                      )}
+                    </div>
+                    <AddressAutocomplete
+                      value={t.from_location}
+                      placeId={t.from_place_id ?? null}
+                      onChange={(v) => patch({
+                        from_location: v.address,
+                        from_place_id: v.place_id, from_lat: v.lat, from_lng: v.lng,
+                      })}
                       placeholder="Pickup address"
-                      onChange={(e) => patch({ from_location: e.target.value })} />
-                  </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-[10px] text-muted-foreground">Delivery</span>
-                    <Input value={t.to_location} className="h-7 text-xs"
+                      inputClassName="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">Delivery</span>
+                      {t.autoFixed?.to_location && (
+                        <button type="button"
+                          className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:underline"
+                          onClick={() => {
+                            const original = t.autoFixed!.to_location!;
+                            const nextAf = { ...(t.autoFixed ?? {}) };
+                            delete nextAf.to_location;
+                            patch({
+                              to_location: original,
+                              to_place_id: null, to_lat: null, to_lng: null,
+                              autoFixed: (nextAf.from_location || nextAf.to_location) ? nextAf : undefined,
+                            });
+                          }}
+                          title={`Undo — restore "${t.autoFixed.to_location}"`}
+                        >
+                          <Undo2 className="h-3 w-3" /> Auto-fixed · undo
+                        </button>
+                      )}
+                    </div>
+                    <AddressAutocomplete
+                      value={t.to_location}
+                      placeId={t.to_place_id ?? null}
+                      onChange={(v) => patch({
+                        to_location: v.address,
+                        to_place_id: v.place_id, to_lat: v.lat, to_lng: v.lng,
+                      })}
                       placeholder="Delivery address"
-                      onChange={(e) => patch({ to_location: e.target.value })} />
-                  </label>
+                      inputClassName="h-8 text-xs"
+                    />
+                  </div>
                   <label className="space-y-1">
                     <span className="text-[10px] text-muted-foreground">Company</span>
                     <Input value={t.clientcompanyname} className="h-7 text-xs"
