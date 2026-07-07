@@ -49,11 +49,22 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
-const BRAND = "#1a2a52";
+// Modern Black & Yellow color scheme
+const COLORS = {
+  black: "#0F0F0F",
+  blackLight: "#1A1A1A",
+  blackDark: "#000000",
+  yellow: "#FFD700",
+  yellowBright: "#FFF500",
+  yellowGlow: "#FFEB3B",
+  white: "#FFFFFF",
+  greyLight: "#F5F5F5",
+  greyMed: "#808080",
+};
 
 function Landing() {
   return (
-    <div className="min-h-screen bg-white text-slate-900 antialiased">
+    <div className="min-h-screen antialiased" style={{ backgroundColor: COLORS.black, color: COLORS.white }}>
       <Nav />
       <Hero />
       <ProblemSolution />
@@ -69,28 +80,146 @@ function Landing() {
   );
 }
 
+/* ============================ ABSTRACT MALTA MAP ============================ */
+function AbstractMaltaMap() {
+  return (
+    <svg
+      viewBox="0 0 400 400"
+      className="absolute inset-0 w-full h-full opacity-30"
+      style={{ filter: "url(#glow)" }}
+    >
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <linearGradient id="maltaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={COLORS.yellow} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={COLORS.yellowGlow} stopOpacity="0.1" />
+        </linearGradient>
+      </defs>
+
+      {/* Abstract Malta outline - simplified geometric shape */}
+      <path
+        d="M 180 80 Q 200 85 210 100 L 220 120 Q 225 130 220 145 L 210 160 Q 200 170 190 175 L 170 180 Q 150 175 140 160 L 135 140 Q 130 120 140 100 Q 155 85 180 80 Z"
+        fill="none"
+        stroke={COLORS.yellow}
+        strokeWidth="1.5"
+        opacity="0.4"
+      />
+
+      {/* Gozo outline */}
+      <path
+        d="M 130 60 Q 140 62 145 70 L 142 82 Q 135 80 130 75 Z"
+        fill="none"
+        stroke={COLORS.yellowGlow}
+        strokeWidth="1"
+        opacity="0.3"
+      />
+
+      {/* Network nodes - transport hubs */}
+      {[
+        { x: 200, y: 130, r: 3, label: "Valletta" },
+        { x: 160, y: 145, r: 2.5, label: "South" },
+        { x: 220, y: 140, r: 2.5, label: "East" },
+        { x: 180, y: 100, r: 2, label: "North" },
+        { x: 175, y: 160, r: 2, label: "West" },
+      ].map((node, i) => (
+        <g key={i}>
+          <circle cx={node.x} cy={node.y} r={node.r} fill={COLORS.yellow} opacity="0.6" />
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r={node.r + 1.5}
+            fill="none"
+            stroke={COLORS.yellow}
+            strokeWidth="0.8"
+            opacity="0.3"
+          />
+        </g>
+      ))}
+
+      {/* Connection lines - transport routes */}
+      <g stroke={COLORS.yellow} strokeWidth="0.8" opacity="0.2" strokeDasharray="2,2">
+        <line x1="200" y1="130" x2="160" y2="145" />
+        <line x1="200" y1="130" x2="220" y2="140" />
+        <line x1="200" y1="130" x2="180" y2="100" />
+        <line x1="200" y1="130" x2="175" y2="160" />
+        <line x1="160" y1="145" x2="175" y2="160" />
+        <line x1="220" y1="140" x2="175" y2="160" />
+      </g>
+
+      {/* Animated moving dots (trips in progress) */}
+      <circle cx="190" cy="125" r="1.5" fill={COLORS.yellowBright} opacity="0.8">
+        <animate attributeName="r" values="1.5;3;1.5" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.8;0.3;0.8" dur="3s" repeatCount="indefinite" />
+      </circle>
+
+      <circle cx="210" cy="140" r="1.2" fill={COLORS.yellowBright} opacity="0.6">
+        <animate attributeName="r" values="1.2;2.5;1.2" dur="4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.6;0.2;0.6" dur="4s" repeatCount="indefinite" />
+      </circle>
+
+      <circle cx="170" cy="150" r="1" fill={COLORS.yellowBright} opacity="0.5">
+        <animate attributeName="r" values="1;2;1" dur="5s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.5;0.15;0.5" dur="5s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+}
+
 /* ============================ NAV ============================ */
 function Nav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl">
+    <header
+      className="sticky top-0 z-40 border-b"
+      style={{
+        backgroundColor: `${COLORS.black}dd`,
+        borderColor: COLORS.yellow,
+        backdropFilter: "blur(8px)",
+      }}
+    >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 md:px-6 md:py-3">
         <a href="/" className="flex items-center gap-2 min-w-0">
           <img src={logoAsset.url} alt="The Coordinators" className="h-9 md:h-11 w-auto shrink-0" />
-          <span className="hidden sm:block text-[15px] font-semibold tracking-tight text-slate-900 truncate">
+          <span className="hidden sm:block text-[15px] font-semibold tracking-tight" style={{ color: COLORS.white }}>
             The Coordinators
           </span>
         </a>
         <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <Link
             to="/auth"
-            className="rounded-xl px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+            className="rounded-xl px-3 md:px-4 py-2 text-xs md:text-sm font-medium transition-colors"
+            style={{ color: COLORS.yellow, backgroundColor: "transparent" }}
+            onMouseEnter={(e) => {
+              (e.target as HTMLElement).style.backgroundColor = `${COLORS.yellow}15`;
+            }}
+            onMouseLeave={(e) => {
+              (e.target as HTMLElement).style.backgroundColor = "transparent";
+            }}
           >
             Login
           </Link>
           <Link
             to="/request-access"
             search={{ demo: "1" }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#1a2a52] px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-white hover:bg-[#243668] shadow-sm hover:shadow-md transition-all"
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 md:px-4 py-2 text-xs md:text-sm font-semibold transition-all"
+            style={{
+              backgroundColor: COLORS.yellow,
+              color: COLORS.black,
+              boxShadow: `0 0 20px ${COLORS.yellow}40`,
+            }}
+            onMouseEnter={(e) => {
+              (e.target as HTMLElement).style.boxShadow = `0 0 30px ${COLORS.yellow}80`;
+              (e.target as HTMLElement).style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              (e.target as HTMLElement).style.boxShadow = `0 0 20px ${COLORS.yellow}40`;
+              (e.target as HTMLElement).style.transform = "translateY(0)";
+            }}
           >
             Book a Demo <ArrowRight className="h-3.5 w-3.5" />
           </Link>
@@ -103,63 +232,92 @@ function Nav() {
 /* ============================ HERO ============================ */
 function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(26,42,82,0.10), transparent 70%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-        }}
-      />
-      <div className="mx-auto max-w-6xl px-5 pt-12 pb-14 md:px-6 md:pt-20 md:pb-24">
+    <section className="relative overflow-hidden min-h-[80vh] flex items-center">
+      {/* Abstract Malta Map Background */}
+      <div className="absolute inset-0 -z-10">
+        <AbstractMaltaMap />
+        {/* Dark overlay for readability */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(circle at 50% 50%, ${COLORS.blackLight}99, ${COLORS.black}ff)`,
+          }}
+        />
+      </div>
+
+      <div className="mx-auto max-w-6xl px-5 py-12 md:px-6 md:py-20 w-full relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-center">
-          {/* Text */}
+          {/* Text Content */}
           <div className="text-center md:text-left">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] md:text-xs font-medium text-slate-600 shadow-sm">
-              <Sparkles className="h-3.5 w-3.5 text-[#1a2a52]" />
+            {/* Badge */}
+            <div
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] md:text-xs font-medium"
+              style={{
+                borderColor: COLORS.yellow,
+                backgroundColor: `${COLORS.yellow}10`,
+                color: COLORS.yellow,
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
               Built in Malta for Maltese transport operators
             </div>
-            <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight text-slate-900 sm:text-4xl md:text-5xl lg:text-6xl">
-              Stop manually dispatching.
+
+            {/* Main Heading */}
+            <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
+              <span style={{ color: COLORS.white }}>Stop manually dispatching.</span>
               <br />
-              <span className="text-[#1a2a52]">Start collaborating.</span>
+              <span style={{ color: COLORS.yellow }}>Start collaborating.</span>
             </h1>
-            <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg text-slate-600 leading-relaxed">
-              The all-in-one transport network for Malta's hotels, shipping agents, and fleet
-              owners. Dispatch trips, track flights, and share jobs instantly—without forcing your
-              drivers to download an app.
+
+            {/* Description */}
+            <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
+              The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips,
+              track flights, and share jobs instantly—without forcing your drivers to download an app.
             </p>
+
+            {/* CTA Buttons */}
             <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-2.5">
               <Link
                 to="/request-access"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1a2a52] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1a2a52]/20 hover:bg-[#243668] transition-all"
+                className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition-all"
+                style={{
+                  backgroundColor: COLORS.yellow,
+                  color: COLORS.black,
+                  boxShadow: `0 10px 30px ${COLORS.yellow}40`,
+                }}
               >
                 Get Started <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#how"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3.5 text-sm font-semibold transition-all hover:bg-opacity-10"
+                style={{
+                  borderColor: COLORS.yellow,
+                  color: COLORS.yellow,
+                }}
               >
                 See How It Works
               </a>
             </div>
-            <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-emerald-600" /> Pay as you go
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-emerald-600" /> No driver app required
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-emerald-600" /> Live flight tracking
-              </span>
+
+            {/* Features List */}
+            <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs">
+              {["Pay as you go", "No driver app required", "Live flight tracking"].map((feature) => (
+                <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.yellow }}>
+                  <Check className="h-3.5 w-3.5" /> {feature}
+                </span>
+              ))}
             </div>
           </div>
 
-          {/* Phone mockup: client trip portal */}
+          {/* Phone Mockup */}
           <div className="relative flex justify-center">
-            <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-gradient-to-br from-[#1a2a52]/15 to-emerald-100/60 blur-2xl" />
+            <div
+              className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-50"
+              style={{
+                background: `linear-gradient(135deg, ${COLORS.yellow}30, ${COLORS.yellowGlow}10)`,
+              }}
+            />
             <ClientPortalPhone />
           </div>
         </div>
@@ -172,12 +330,16 @@ function Hero() {
 function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className={`relative w-full ${compact ? "max-w-[220px]" : "max-w-[260px]"} rounded-[2.25rem] border-[8px] border-slate-900 bg-white shadow-2xl overflow-hidden`}
-      style={{ aspectRatio: "9 / 19" }}
+      className={`relative w-full ${compact ? "max-w-[220px]" : "max-w-[260px]"} rounded-[2.25rem] border-[8px] bg-white shadow-2xl overflow-hidden`}
+      style={{ aspectRatio: "9 / 19", borderColor: COLORS.black }}
     >
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 h-5 w-24 rounded-b-2xl bg-slate-900 z-10" />
+      <div
+        className="absolute top-0 left-1/2 -translate-x-1/2 h-5 w-24 rounded-b-2xl z-10"
+        style={{ backgroundColor: COLORS.black }}
+      />
+
       {/* Header */}
-      <div className="px-3 pt-8 pb-3 bg-[#1a2a52] text-white">
+      <div className="px-3 pt-8 pb-3 text-white" style={{ backgroundColor: COLORS.black }}>
         <div className="flex items-center gap-2">
           <img src={logoAsset.url} alt="" className="h-7 w-7 rounded-md bg-white p-0.5 object-contain" />
           <div className="text-[10px] leading-tight min-w-0">
@@ -186,6 +348,7 @@ function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       </div>
+
       {/* Body */}
       <div className="p-3 space-y-2.5">
         {/* Progress */}
@@ -193,8 +356,18 @@ function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
           <div className="flex items-center gap-1">
             {["Assigned", "En route", "Arrived", "Done"].map((s, i) => (
               <div key={s} className="flex-1">
-                <div className={`h-1 rounded-full ${i <= 1 ? "bg-[#1a2a52]" : "bg-slate-200"}`} />
-                <div className={`mt-1 text-[7px] text-center ${i <= 1 ? "text-slate-800 font-semibold" : "text-slate-400"}`}>
+                <div
+                  className="h-1 rounded-full"
+                  style={{
+                    backgroundColor: i <= 1 ? COLORS.yellow : "#E0E0E0",
+                  }}
+                />
+                <div
+                  className="mt-1 text-[7px] text-center font-semibold"
+                  style={{
+                    color: i <= 1 ? COLORS.black : "#999",
+                  }}
+                >
                   {s}
                 </div>
               </div>
@@ -203,21 +376,27 @@ function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
         </div>
 
         {/* Live map */}
-        <div className="relative h-32 rounded-lg overflow-hidden bg-slate-100">
+        <div className="relative h-32 rounded-lg overflow-hidden" style={{ backgroundColor: "#F0F0F0" }}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_60%,#dbeafe_0,transparent_45%),radial-gradient(circle_at_70%_40%,#d1fae5_0,transparent_45%)]" />
           <svg viewBox="0 0 200 130" className="absolute inset-0 w-full h-full">
-            <path d="M10 110 Q 60 80, 90 90 T 160 40" stroke="#1a2a52" strokeWidth="2" strokeLinecap="round" fill="none" strokeDasharray="4 3" />
+            <path d="M10 110 Q 60 80, 90 90 T 160 40" stroke={COLORS.yellow} strokeWidth="2" strokeLinecap="round" fill="none" strokeDasharray="4 3" />
           </svg>
           <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 shadow text-[9px] font-semibold text-slate-800">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Andrei · 4 min
           </div>
-          <div className="absolute left-[45%] top-[55%] h-3 w-3 rounded-full bg-[#1a2a52] ring-4 ring-[#1a2a52]/25" />
+          <div
+            className="absolute left-[45%] top-[55%] h-3 w-3 rounded-full ring-4"
+            style={{
+              backgroundColor: COLORS.yellow,
+              boxShadow: `0 0 0 4px ${COLORS.yellow}40`,
+            }}
+          />
           <div className="absolute right-3 bottom-2 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
         </div>
 
         {/* Trip details */}
-        <div className="rounded-lg border border-slate-200 p-2 text-[9px] leading-snug">
+        <div className="rounded-lg border p-2 text-[9px] leading-snug" style={{ borderColor: "#E0E0E0" }}>
           <div className="flex items-center gap-1 text-slate-500">
             <Plane className="h-2.5 w-2.5" /> KM110 · on time
           </div>
@@ -227,10 +406,10 @@ function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
 
         {/* Buttons */}
         <div className="grid grid-cols-2 gap-2 pt-0.5">
-          <button className="rounded-lg bg-slate-100 py-2 text-[10px] font-semibold text-slate-800 flex items-center justify-center gap-1">
+          <button className="rounded-lg py-2 text-[10px] font-semibold flex items-center justify-center gap-1" style={{ backgroundColor: "#F0F0F0", color: COLORS.black }}>
             <MessageCircle className="h-3 w-3" /> Chat
           </button>
-          <button className="rounded-lg bg-red-600 py-2 text-[10px] font-bold text-white flex items-center justify-center gap-1">
+          <button className="rounded-lg py-2 text-[10px] font-bold text-white flex items-center justify-center gap-1 bg-red-600">
             <ShieldAlert className="h-3 w-3" /> SOS
           </button>
         </div>
@@ -244,31 +423,46 @@ function ProblemSolution() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center">
-        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest text-[#1a2a52]">
+        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           The shift
         </div>
-        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           From WhatsApp chaos to total control.
         </h2>
       </div>
+
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-        <div className="rounded-2xl border border-red-100 bg-red-50/50 p-6 md:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+        {/* Old Way */}
+        <div
+          className="rounded-2xl border p-6 md:p-8"
+          style={{
+            borderColor: "#FF6B6B",
+            backgroundColor: `#FF6B6B15`,
+          }}
+        >
+          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: "#FF6B6B30", color: "#FF6B6B" }}>
             <X className="h-3.5 w-3.5" /> The old way
           </div>
-          <p className="mt-4 text-base md:text-lg text-slate-700 leading-relaxed">
+          <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
             Endlessly typing out WhatsApp messages, manually tracking delayed flights, and losing
-            <span className="font-semibold text-red-700"> 20% of your day</span> to administrative
-            chaos.
+            <span style={{ color: "#FF6B6B", fontWeight: "600" }}> 20% of your day</span> to administrative chaos.
           </p>
         </div>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-6 md:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+
+        {/* New Way */}
+        <div
+          className="rounded-2xl border p-6 md:p-8"
+          style={{
+            borderColor: COLORS.yellow,
+            backgroundColor: `${COLORS.yellow}15`,
+          }}
+        >
+          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: `${COLORS.yellow}30`, color: COLORS.yellow }}>
             <Check className="h-3.5 w-3.5" /> The new way
           </div>
-          <p className="mt-4 text-base md:text-lg text-slate-700 leading-relaxed">
+          <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
             Drag-and-drop dispatching, AI-powered bulk uploads, and instant live tracking links.
-            <span className="font-semibold text-emerald-700"> Total control in seconds.</span>
+            <span style={{ color: COLORS.yellow, fontWeight: "600" }}> Total control in seconds.</span>
           </p>
         </div>
       </div>
@@ -304,16 +498,17 @@ function HowItWorks() {
       visual: <StepTrackVisual />,
     },
   ];
+
   return (
     <section id="how" className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center max-w-2xl mx-auto">
-        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest text-[#1a2a52]">
+        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           How it works
         </div>
-        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           From booking to billed in one flow.
         </h2>
-        <p className="mt-3 text-base md:text-lg text-slate-600">
+        <p className="mt-3 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
           The exact workflow every coordinator on the platform runs, every day.
         </p>
       </div>
@@ -322,21 +517,35 @@ function HowItWorks() {
         {steps.map((s) => (
           <li
             key={s.n}
-            className="relative rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+            className="relative rounded-2xl border p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+            style={{
+              borderColor: COLORS.yellow,
+              backgroundColor: COLORS.blackLight,
+            }}
           >
             <div className="flex items-center justify-between">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#1a2a52] text-white text-[11px] font-bold">
+              <div
+                className="grid h-8 w-8 place-items-center rounded-lg text-white text-[11px] font-bold"
+                style={{
+                  backgroundColor: COLORS.yellow,
+                  color: COLORS.black,
+                }}
+              >
                 {s.n}
               </div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.greyMed }}>
                 Step
               </div>
             </div>
-            <div className="mt-4 h-32 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden relative">
+            <div className="mt-4 h-32 rounded-xl border overflow-hidden relative" style={{ borderColor: COLORS.yellow, backgroundColor: "#0A0A0A" }}>
               {s.visual}
             </div>
-            <h3 className="mt-4 text-base font-semibold text-slate-900">{s.title}</h3>
-            <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{s.body}</p>
+            <h3 className="mt-4 text-base font-semibold" style={{ color: COLORS.white }}>
+              {s.title}
+            </h3>
+            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+              {s.body}
+            </p>
           </li>
         ))}
       </ol>
@@ -346,23 +555,24 @@ function HowItWorks() {
 
 function StepPasteVisual() {
   return (
-    <div className="absolute inset-2 rounded-lg bg-white border border-slate-200 p-2 text-[8px] font-mono text-slate-600 leading-tight overflow-hidden">
-      <div className="text-[9px] font-sans font-semibold text-slate-800 mb-1 flex items-center gap-1">
+    <div className="absolute inset-2 rounded-lg border p-2 text-[8px] font-mono leading-tight overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight, color: COLORS.greyLight }}>
+      <div className="text-[9px] font-sans font-semibold mb-1 flex items-center gap-1" style={{ color: COLORS.yellow }}>
         <Clipboard className="h-2.5 w-2.5" /> Paste bookings
       </div>
       <div>Guest 1 — MLA 14:20 KM110 2pax</div>
       <div>Guest 2 — Corinthia → MLA 16:00</div>
       <div>Guest 3 — MLA → Valletta RY4501</div>
-      <div className="mt-1.5 inline-block rounded bg-[#1a2a52] px-1.5 py-0.5 text-[8px] font-sans text-white">
+      <div className="mt-1.5 inline-block rounded px-1.5 py-0.5 text-[8px] font-sans" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
         Parse with AI
       </div>
     </div>
   );
 }
+
 function StepAIVisual() {
   return (
-    <div className="absolute inset-2 rounded-lg bg-white border border-slate-200 p-2 space-y-1 overflow-hidden">
-      <div className="text-[9px] font-semibold text-[#1a2a52] flex items-center gap-1">
+    <div className="absolute inset-2 rounded-lg border p-2 space-y-1 overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+      <div className="text-[9px] font-semibold flex items-center gap-1" style={{ color: COLORS.yellow }}>
         <Sparkles className="h-2.5 w-2.5" /> 3 trips parsed
       </div>
       {[
@@ -370,54 +580,67 @@ function StepAIVisual() {
         { t: "16:00", r: "Corinthia → MLA", f: "—" },
         { t: "17:45", r: "MLA → Valletta", f: "RY4501" },
       ].map((r) => (
-        <div key={r.t} className="flex items-center gap-1.5 text-[8px] text-slate-700">
-          <span className="font-mono font-semibold text-slate-900">{r.t}</span>
+        <div key={r.t} className="flex items-center gap-1.5 text-[8px]" style={{ color: COLORS.greyLight }}>
+          <span className="font-mono font-semibold" style={{ color: COLORS.white }}>
+            {r.t}
+          </span>
           <span className="flex-1 truncate">{r.r}</span>
-          <span className="text-slate-400">{r.f}</span>
+          <span style={{ color: COLORS.greyMed }}>{r.f}</span>
           <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
         </div>
       ))}
     </div>
   );
 }
+
 function StepDriverVisual() {
   return (
     <div className="absolute inset-0 flex items-center justify-center gap-2 p-2">
-      <div className="flex-1 rounded-lg bg-white border border-slate-200 p-2 text-[8px]">
-        <div className="font-semibold text-slate-800 flex items-center gap-1">
+      <div className="flex-1 rounded-lg border p-2 text-[8px]" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight, color: COLORS.white }}>
+        <div className="font-semibold flex items-center gap-1" style={{ color: COLORS.yellow }}>
           <Send className="h-2.5 w-2.5" /> Send link
         </div>
-        <div className="mt-1 text-slate-500">Driver · Andrei</div>
-        <div className="mt-1 h-3.5 rounded bg-emerald-500 text-white text-[7px] font-bold grid place-items-center">
+        <div className="mt-1" style={{ color: COLORS.greyMed }}>
+          Driver · Andrei
+        </div>
+        <div className="mt-1 h-3.5 rounded grid place-items-center text-[7px] font-bold text-white bg-emerald-500">
           WhatsApp
         </div>
       </div>
-      <div className="h-24 w-14 rounded-lg border-2 border-slate-800 bg-white p-1 text-[6px] shrink-0">
-        <div className="bg-[#1a2a52] text-white rounded-sm px-1 py-0.5 font-semibold">Trip</div>
-        <div className="mt-1 text-slate-700 leading-tight">14:20 MLA → Le Meridien</div>
-        <div className="mt-1 h-3 rounded bg-emerald-100 grid place-items-center text-emerald-800 font-semibold">
+      <div className="h-24 w-14 rounded-lg border-2 p-1 text-[6px] shrink-0" style={{ borderColor: COLORS.black, backgroundColor: COLORS.white }}>
+        <div className="rounded-sm px-1 py-0.5 font-semibold text-white" style={{ backgroundColor: COLORS.black }}>
+          Trip
+        </div>
+        <div className="mt-1" style={{ color: COLORS.black }}>
+          14:20 MLA → Le Meridien
+        </div>
+        <div className="mt-1 h-3 rounded grid place-items-center font-semibold bg-emerald-100 text-emerald-800">
           Accept
         </div>
       </div>
     </div>
   );
 }
+
 function StepTrackVisual() {
   return (
-    <div className="absolute inset-2 rounded-lg bg-white border border-slate-200 p-1.5 space-y-1 overflow-hidden">
+    <div className="absolute inset-2 rounded-lg border p-1.5 space-y-1 overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
       {[
         { t: "14:20", tone: "emerald", who: "Andrei" },
         { t: "16:00", tone: "amber", who: "Partner ↗" },
         { t: "17:45", tone: "sky", who: "Marco" },
       ].map((c) => (
-        <div key={c.t} className="relative rounded border border-slate-200 pl-2 pr-1.5 py-1 text-[8px]">
+        <div key={c.t} className="relative rounded border pl-2 pr-1.5 py-1 text-[8px]" style={{ borderColor: COLORS.yellow, backgroundColor: "#0A0A0A" }}>
           <span
-            className={`absolute left-0 top-1 bottom-1 w-0.5 rounded ${
-              c.tone === "emerald" ? "bg-emerald-500" : c.tone === "amber" ? "bg-amber-500" : "bg-sky-500"
-            }`}
+            className="absolute left-0 top-1 bottom-1 w-0.5 rounded"
+            style={{
+              backgroundColor: c.tone === "emerald" ? "#10B981" : c.tone === "amber" ? "#F59E0B" : "#0EA5E9",
+            }}
           />
-          <div className="font-mono font-semibold text-slate-900">{c.t}</div>
-          <div className="text-slate-500 flex items-center gap-1">
+          <div className="font-mono font-semibold" style={{ color: COLORS.white }}>
+            {c.t}
+          </div>
+          <div className="flex items-center gap-1" style={{ color: COLORS.greyMed }}>
             <Radar className="h-2 w-2" /> {c.who}
           </div>
         </div>
@@ -431,13 +654,13 @@ function Bento() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center max-w-2xl mx-auto">
-        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest text-[#1a2a52]">
+        <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           Features
         </div>
-        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           Everything a transport network needs.
         </h2>
-        <p className="mt-3 text-base md:text-lg text-slate-600">
+        <p className="mt-3 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
           Purpose-built for the pace and pressure of Malta's transfer market.
         </p>
       </div>
@@ -491,14 +714,29 @@ function BentoCard({
 }) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60 p-5 md:p-6 hover:bg-white hover:border-slate-300 hover:shadow-xl hover:-translate-y-0.5 transition-all min-h-[220px] ${className}`}
+      className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 hover:shadow-lg hover:-translate-y-0.5 transition-all ${className}`}
+      style={{
+        borderColor: COLORS.yellow,
+        backgroundColor: COLORS.blackLight,
+      }}
     >
       <div className="relative z-10 max-w-md">
-        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#1a2a52] border border-slate-200 shadow-sm">
+        <div
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border"
+          style={{
+            backgroundColor: COLORS.yellow,
+            color: COLORS.black,
+            borderColor: COLORS.yellow,
+          }}
+        >
           {icon}
         </div>
-        <h3 className="mt-4 text-lg font-semibold text-slate-900">{title}</h3>
-        <p className="mt-2 text-sm text-slate-600 leading-relaxed">{body}</p>
+        <h3 className="mt-4 text-lg font-semibold" style={{ color: COLORS.white }}>
+          {title}
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+          {body}
+        </p>
       </div>
       {visual && (
         <div className="pointer-events-none absolute inset-0 opacity-80 group-hover:opacity-100 transition-opacity">
@@ -514,8 +752,8 @@ function JumpingVisual() {
     <svg viewBox="0 0 400 220" className="absolute right-0 bottom-0 h-36 md:h-40 w-auto opacity-90">
       <defs>
         <linearGradient id="jg" x1="0" x2="1">
-          <stop offset="0" stopColor="#1a2a52" />
-          <stop offset="1" stopColor="#3b5bdb" />
+          <stop offset="0" stopColor={COLORS.yellow} />
+          <stop offset="1" stopColor={COLORS.yellowGlow} />
         </linearGradient>
       </defs>
       {[[300, 60], [220, 140], [340, 150], [260, 50]].map(([cx, cy], i) => (
@@ -526,49 +764,54 @@ function JumpingVisual() {
     </svg>
   );
 }
+
 function PhoneLinkVisual() {
   return (
-    <div className="pointer-events-none absolute right-4 bottom-4 h-36 w-20 rounded-[1rem] border-4 border-slate-800 bg-white shadow-2xl overflow-hidden">
-      <div className="bg-[#1a2a52] text-white px-1.5 py-1 text-[7px] font-semibold">Your Trip</div>
+    <div className="pointer-events-none absolute right-4 bottom-4 h-36 w-20 rounded-[1rem] border-4 bg-white shadow-2xl overflow-hidden" style={{ borderColor: COLORS.black }}>
+      <div className="text-white px-1.5 py-1 text-[7px] font-semibold" style={{ backgroundColor: COLORS.black }}>
+        Your Trip
+      </div>
       <div className="p-1.5 space-y-1">
-        <div className="h-1.5 rounded bg-slate-200 w-3/4" />
-        <div className="h-1.5 rounded bg-slate-200 w-1/2" />
-        <div className="mt-1.5 rounded bg-emerald-100 border border-emerald-300 h-5 grid place-items-center text-[6px] font-semibold text-emerald-800">
+        <div className="h-1.5 rounded w-3/4" style={{ backgroundColor: "#E0E0E0" }} />
+        <div className="h-1.5 rounded w-1/2" style={{ backgroundColor: "#E0E0E0" }} />
+        <div className="mt-1.5 rounded h-5 grid place-items-center text-[6px] font-semibold bg-emerald-100 text-emerald-800">
           Accept
         </div>
-        <div className="mt-1.5 h-12 rounded bg-slate-100 grid place-items-center">
-          <MapPin className="h-3.5 w-3.5 text-slate-400" />
+        <div className="mt-1.5 h-12 rounded grid place-items-center" style={{ backgroundColor: "#F0F0F0" }}>
+          <MapPin className="h-3.5 w-3.5" style={{ color: COLORS.greyMed }} />
         </div>
       </div>
     </div>
   );
 }
+
 function AIVisual() {
   return (
-    <div className="pointer-events-none absolute right-3 bottom-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-md">
-      <div className="flex items-center gap-1 text-[9px] font-semibold text-[#1a2a52]">
+    <div className="pointer-events-none absolute right-3 bottom-3 rounded-lg border px-2.5 py-2 shadow-md" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+      <div className="flex items-center gap-1 text-[9px] font-semibold" style={{ color: COLORS.yellow }}>
         <Sparkles className="h-2.5 w-2.5" /> Parsed 12 trips
       </div>
       <div className="mt-1 space-y-0.5">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-1 rounded bg-slate-200 w-16" />
+          <div key={i} className="h-1 rounded w-16" style={{ backgroundColor: COLORS.yellow + "40" }} />
         ))}
       </div>
     </div>
   );
 }
+
 function AdVisual() {
   return (
     <div className="pointer-events-none absolute right-4 bottom-4 flex gap-2">
-      <div className="rounded-lg bg-white border border-slate-200 p-2 shadow-md w-24 md:w-28">
-        <div className="h-10 rounded bg-gradient-to-br from-[#1a2a52] to-[#3b5bdb]" />
-        <div className="mt-1.5 h-1 rounded bg-slate-200 w-3/4" />
-        <div className="mt-1 h-1 rounded bg-slate-200 w-1/2" />
+      <div className="rounded-lg border p-2 shadow-md w-24 md:w-28" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+        <div className="h-10 rounded bg-gradient-to-br" style={{ backgroundImage: `linear-gradient(135deg, ${COLORS.black}, ${COLORS.yellow})` }} />
+        <div className="mt-1.5 h-1 rounded w-3/4" style={{ backgroundColor: COLORS.yellow + "40" }} />
+        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "40" }} />
       </div>
-      <div className="rounded-lg bg-white border border-slate-200 p-2 shadow-md w-24 md:w-28">
+      <div className="rounded-lg border p-2 shadow-md w-24 md:w-28" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
         <div className="h-10 rounded bg-gradient-to-br from-emerald-500 to-teal-600" />
-        <div className="mt-1.5 h-1 rounded bg-slate-200 w-2/3" />
-        <div className="mt-1 h-1 rounded bg-slate-200 w-1/2" />
+        <div className="mt-1.5 h-1 rounded w-2/3" style={{ backgroundColor: COLORS.yellow + "40" }} />
+        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "40" }} />
       </div>
     </div>
   );
@@ -580,35 +823,38 @@ function ClientExperience() {
     <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-center">
         <div className="text-center md:text-left">
-          <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest text-[#1a2a52]">
+          <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
             The client experience
           </div>
-          <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]">
-            Put the trip in <span className="text-[#1a2a52]">their pocket.</span>
+          <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
+            Put the trip in <span style={{ color: COLORS.yellow }}>their pocket.</span>
           </h2>
-          <p className="mt-4 text-base md:text-lg text-slate-600 leading-relaxed">
-            Send a secure booking link straight to your VIP corporate client or hotel guest. They
-            confirm in one tap, then get live driver location, private chat with the driver, and a
-            one-tap SOS safety button — no app to install.
+          <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
+            Send a secure booking link straight to your VIP corporate client or hotel guest. They confirm in one tap, then get live driver location, private chat with the driver, and a one-tap SOS safety button — no app to install.
           </p>
-          <ul className="mt-6 space-y-3 text-sm text-slate-700 max-w-md mx-auto md:mx-0 text-left">
+          <ul className="mt-6 space-y-3 text-sm max-w-md mx-auto md:mx-0 text-left">
             {[
               ["Live driver GPS + accurate ETA", MapPin],
               ["Private chat per trip — no WhatsApp mess", MessageCircle],
               ["One-tap SOS safety button", ShieldAlert],
             ].map(([t, Icon]: any) => (
               <li key={t} className="flex items-center gap-3">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1a2a52]/10 text-[#1a2a52] shrink-0">
+                <span className="grid h-8 w-8 place-items-center rounded-lg shrink-0" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
                   <Icon className="h-4 w-4" />
                 </span>
-                {t}
+                <span style={{ color: COLORS.white }}>{t}</span>
               </li>
             ))}
           </ul>
         </div>
 
         <div className="relative flex justify-center">
-          <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-gradient-to-br from-[#1a2a52]/15 to-emerald-100/60 blur-2xl" />
+          <div
+            className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-50"
+            style={{
+              background: `linear-gradient(135deg, ${COLORS.yellow}30, ${COLORS.yellowGlow}10)`,
+            }}
+          />
           <ClientPortalPhone />
         </div>
       </div>
@@ -620,34 +866,54 @@ function ClientExperience() {
 function FinalCta() {
   return (
     <section className="px-5 py-12 md:px-6 md:py-16">
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#0f1a35] p-8 md:p-20 text-center relative">
+      <div
+        className="mx-auto max-w-6xl overflow-hidden rounded-3xl p-8 md:p-20 text-center relative"
+        style={{
+          backgroundColor: COLORS.blackLight,
+          background: `linear-gradient(135deg, ${COLORS.blackLight}, ${COLORS.black})`,
+        }}
+      >
         <div
-          aria-hidden
-          className="absolute inset-0 opacity-40"
+          className="absolute inset-0 opacity-20"
           style={{
-            background:
-              "radial-gradient(50% 60% at 20% 20%, rgba(59,91,219,0.6), transparent 60%), radial-gradient(40% 50% at 80% 80%, rgba(16,185,129,0.35), transparent 60%)",
+            background: `radial-gradient(circle at 50% 50%, ${COLORS.yellow}40, transparent 70%)`,
           }}
         />
         <div className="relative">
-          <img src={logoAsset.url} alt="" className="mx-auto h-14 md:h-16 w-auto rounded-xl bg-white/5 p-1" />
-          <h2 className="mt-5 md:mt-6 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-[1.05]">
+          <img src={logoAsset.url} alt="" className="mx-auto h-14 md:h-16 w-auto rounded-xl p-1" style={{ backgroundColor: `${COLORS.yellow}15` }} />
+          <h2 className="mt-5 md:mt-6 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
             Built for the realities of Maltese transport.
           </h2>
-          <p className="mt-4 max-w-2xl mx-auto text-base md:text-lg text-slate-300">
+          <p className="mt-4 max-w-2xl mx-auto text-base md:text-lg" style={{ color: COLORS.greyLight }}>
             Stop turning away jobs because you don't have enough cars. Connect your network today.
           </p>
           <div className="mt-7 flex flex-col sm:flex-row justify-center gap-2.5">
             <Link
               to="/request-access"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-[#0f1a35] shadow-xl hover:bg-slate-100 transition-all"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold shadow-xl transition-all"
+              style={{
+                backgroundColor: COLORS.yellow,
+                color: COLORS.black,
+                boxShadow: `0 0 30px ${COLORS.yellow}40`,
+              }}
             >
               Get Started <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               to="/request-access"
               search={{ demo: "1" }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition-all"
+              style={{
+                borderColor: COLORS.yellow,
+                color: COLORS.yellow,
+                border: `1px solid ${COLORS.yellow}`,
+              }}
+              onMouseEnter={(e) => {
+                (e.target as HTMLElement).style.backgroundColor = `${COLORS.yellow}15`;
+              }}
+              onMouseLeave={(e) => {
+                (e.target as HTMLElement).style.backgroundColor = "transparent";
+              }}
             >
               Book a Demo
             </Link>
@@ -665,35 +931,54 @@ function HowPointsWork() {
     { title: "Fractional pricing", body: "A trip is 1.5 pts. Dispatching to a partner is 0.5 pts. A client SMS link is 0.25 pts." },
     { title: "Top up anytime", body: "Request a top-up from your dashboard. Volume discounts on larger packs." },
   ];
+
   return (
-    <section id="pricing" className="border-t border-slate-100 bg-slate-50/60">
+    <section id="pricing" className="border-t" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
       <div className="mx-auto max-w-6xl px-5 md:px-6 py-14 md:py-20">
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#1a2a52]/10 px-3 py-1 text-[11px] font-semibold text-[#1a2a52]">
+          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
             Pay as you go
           </div>
-          <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+          <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight" style={{ color: COLORS.white }}>
             Simple points-based pricing
           </h2>
-          <p className="mt-3 text-slate-600">
+          <p className="mt-3" style={{ color: COLORS.greyLight }}>
             No subscriptions. No wasted seats. You only pay for the actions your team actually takes.
           </p>
         </div>
+
         <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
           {items.map((it) => (
-            <div key={it.title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="h-10 w-10 rounded-xl bg-[#1a2a52]/10 flex items-center justify-center text-[#1a2a52] font-bold">
+            <div
+              key={it.title}
+              className="rounded-2xl border p-6 shadow-sm"
+              style={{
+                borderColor: COLORS.yellow,
+                backgroundColor: COLORS.black,
+              }}
+            >
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
                 pts
               </div>
-              <h3 className="mt-4 font-semibold text-slate-900">{it.title}</h3>
-              <p className="mt-2 text-sm text-slate-600 leading-relaxed">{it.body}</p>
+              <h3 className="mt-4 font-semibold" style={{ color: COLORS.white }}>
+                {it.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+                {it.body}
+              </p>
             </div>
           ))}
         </div>
+
         <div className="mt-8 text-center">
           <Link
             to="/request-access"
-            className="inline-flex items-center gap-2 rounded-xl bg-[#1a2a52] px-5 py-3 text-sm font-semibold text-white hover:bg-[#243668] transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-all"
+            style={{
+              backgroundColor: COLORS.yellow,
+              color: COLORS.black,
+              boxShadow: `0 0 20px ${COLORS.yellow}40`,
+            }}
           >
             Get Started <ArrowRight className="h-4 w-4" />
           </Link>
@@ -706,26 +991,33 @@ function HowPointsWork() {
 /* ============================ TRUST STRIP ============================ */
 function TrustStrip() {
   return (
-    <section className="border-t border-slate-100 bg-white">
+    <section className="border-t" style={{ borderColor: COLORS.yellow }}>
       <div className="mx-auto max-w-6xl px-5 md:px-6 py-12 md:py-16">
-        <p className="text-center text-xs uppercase tracking-[0.15em] text-slate-500 font-semibold">
+        <p className="text-center text-xs uppercase tracking-[0.15em] font-semibold" style={{ color: COLORS.greyMed }}>
           Trusted by operators across Malta
         </p>
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-[11px] font-medium text-slate-400"
+              className="h-14 rounded-lg border flex items-center justify-center text-[11px] font-medium"
+              style={{
+                borderColor: COLORS.yellow,
+                backgroundColor: COLORS.blackLight,
+                color: COLORS.greyMed,
+              }}
             >
               Your logo
             </div>
           ))}
         </div>
-        <blockquote className="mt-10 max-w-3xl mx-auto rounded-2xl border border-slate-200 bg-slate-50 p-6 md:p-8 text-center">
-          <p className="text-base md:text-lg text-slate-800 leading-relaxed">
+        <blockquote className="mt-10 max-w-3xl mx-auto rounded-2xl border p-6 md:p-8 text-center" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+          <p className="text-base md:text-lg leading-relaxed" style={{ color: COLORS.white }}>
             "We stopped losing jobs on busy weekends. The Coordinator lets us push overflow to trusted partners in seconds."
           </p>
-          <footer className="mt-4 text-sm text-slate-500">— Operations Manager, Maltese transport company</footer>
+          <footer className="mt-4 text-sm" style={{ color: COLORS.greyMed }}>
+            — Operations Manager, Maltese transport company
+          </footer>
         </blockquote>
       </div>
     </section>
@@ -756,24 +1048,43 @@ function FaqSection() {
       a: "In a secure cloud with strict role-based access. Only you and the partners you explicitly connect with can see your trips.",
     },
   ];
+
   return (
-    <section className="border-t border-slate-100 bg-slate-50/60">
+    <section className="border-t" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
       <div className="mx-auto max-w-3xl px-5 md:px-6 py-14 md:py-20">
         <div className="text-center">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight" style={{ color: COLORS.white }}>
             Frequently asked questions
           </h2>
         </div>
         <div className="mt-8 space-y-3">
           {faqs.map((f) => (
-            <details key={f.q} className="group rounded-xl border border-slate-200 bg-white p-4 md:p-5 open:shadow-sm">
-              <summary className="cursor-pointer list-none flex items-center justify-between gap-3 font-semibold text-slate-900">
+            <details
+              key={f.q}
+              className="group rounded-xl border p-4 md:p-5 open:shadow-sm"
+              style={{
+                borderColor: COLORS.yellow,
+                backgroundColor: COLORS.black,
+              }}
+            >
+              <summary
+                className="cursor-pointer list-none flex items-center justify-between gap-3 font-semibold"
+                style={{ color: COLORS.white }}
+              >
                 <span>{f.q}</span>
-                <span className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-open:rotate-45 transition-transform">
+                <span
+                  className="h-6 w-6 rounded-full flex items-center justify-center group-open:rotate-45 transition-transform"
+                  style={{
+                    backgroundColor: `${COLORS.yellow}20`,
+                    color: COLORS.yellow,
+                  }}
+                >
                   +
                 </span>
               </summary>
-              <p className="mt-3 text-sm text-slate-600 leading-relaxed">{f.a}</p>
+              <p className="mt-3 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+                {f.a}
+              </p>
             </details>
           ))}
         </div>
@@ -785,17 +1096,21 @@ function FaqSection() {
 /* ============================ FOOTER ============================ */
 function Footer() {
   return (
-    <footer className="border-t border-slate-200">
+    <footer className="border-t" style={{ borderColor: COLORS.yellow }}>
       <div className="mx-auto max-w-6xl px-5 md:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <img src={logoAsset.url} alt="" className="h-7 w-7 object-contain" />
-          <div className="text-xs md:text-sm text-slate-600 text-center sm:text-left">
+          <div className="text-xs md:text-sm text-center sm:text-left" style={{ color: COLORS.greyMed }}>
             © {new Date().getFullYear()} The Coordinators · Transport Network Hub
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs md:text-sm text-slate-500">
-          <Link to="/auth" className="hover:text-slate-900">Login</Link>
-          <a href="mailto:hello@coordinatormt.com" className="hover:text-slate-900">Contact</a>
+        <div className="flex items-center gap-4 text-xs md:text-sm" style={{ color: COLORS.greyMed }}>
+          <Link to="/auth" className="hover:" style={{ color: COLORS.yellow }}>
+            Login
+          </Link>
+          <a href="mailto:hello@coordinatormt.com" style={{ color: COLORS.yellow }}>
+            Contact
+          </a>
         </div>
       </div>
     </footer>
