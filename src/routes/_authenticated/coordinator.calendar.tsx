@@ -457,6 +457,25 @@ function CalendarPage() {
   const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
 
+  // Fetch admin urgency thresholds once. Falls back to defaults if not readable.
+  const portalSettingsFn = useServerFn(getPortalSettings);
+  const { data: portalSettings } = useQuery({
+    queryKey: ["portal-settings-urgency"],
+    queryFn: () => portalSettingsFn() as Promise<any>,
+    staleTime: 5 * 60_000,
+  });
+  const urgency: UrgencyThresholds = {
+    green_min: Number(portalSettings?.urgency_green_min ?? DEFAULT_URGENCY.green_min),
+    orange_min: Number(portalSettings?.urgency_orange_min ?? DEFAULT_URGENCY.orange_min),
+    red_min: Number(portalSettings?.urgency_red_min ?? DEFAULT_URGENCY.red_min),
+  };
+  // Bump every 60s so unassigned cards re-evaluate their glow tier.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
@@ -473,6 +492,8 @@ function CalendarPage() {
     tripFlags: tripFlags ?? {},
     onDismissFlag: (job_id, kind) => dismissFlagMut.mutate({ job_id, kind }),
     onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
+    urgency,
+    nowTick,
   };
 
 
