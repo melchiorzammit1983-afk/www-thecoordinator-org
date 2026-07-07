@@ -460,6 +460,69 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const incomplete = withErrors.filter((t) => t.errors.length > 0);
   const aiEnabled = useFeature("ai_extraction");
 
+  // ------- Address auto-fix (Google Places) -------
+  // When enabled in settings, replace fuzzy From/To text with Google's top
+  // match. Original text is stashed in trip.autoFixed so the user can undo.
+  const { settings: addressSettings } = useAddressSettings();
+  const resolveFn = useServerFn(resolveAddresses);
+  const [autoFixBusy, setAutoFixBusy] = useState(false);
+  const [autoFixed, setAutoFixed] = useState(false);
+
+  useEffect(() => {
+    if (!addressSettings.auto_fix_bulk) return;
+    if (autoFixed) return;
+    if (parsed.length === 0) return;
+    let cancelled = false;
+    const items: { key: string; text: string }[] = [];
+    parsed.forEach((t, i) => {
+      if (t.from_location && t.from_location.length >= 2 && !t.from_place_id) {
+        items.push({ key: `${i}:from`, text: t.from_location });
+      }
+      if (t.to_location && t.to_location.length >= 2 && !t.to_place_id) {
+        items.push({ key: `${i}:to`, text: t.to_location });
+      }
+    });
+    if (items.length === 0) { setAutoFixed(true); return; }
+    setAutoFixBusy(true);
+    resolveFn({ data: { items, bias: toBias(addressSettings) } })
+      .then((res) => {
+        if (cancelled) return;
+        setEdited((prev) => prev.map((t, i) => {
+          const fromR = res.results[`${i}:from`];
+          const toR = res.results[`${i}:to`];
+          const next: ParsedTrip = { ...t };
+          const af: NonNullable<ParsedTrip["autoFixed"]> = { ...(t.autoFixed ?? {}) };
+          if (fromR && fromR.address && fromR.address !== t.from_location) {
+            af.from_location = t.from_location;
+            next.from_location = fromR.address;
+            next.from_place_id = fromR.place_id;
+            next.from_lat = fromR.lat;
+            next.from_lng = fromR.lng;
+          }
+          if (toR && toR.address && toR.address !== t.to_location) {
+            af.to_location = t.to_location;
+            next.to_location = toR.address;
+            next.to_place_id = toR.place_id;
+            next.to_lat = toR.lat;
+            next.to_lng = toR.lng;
+          }
+          if (af.from_location || af.to_location) next.autoFixed = af;
+          return next;
+        }));
+        const fixedCount = Object.values(res.results).filter(Boolean).length;
+        if (fixedCount > 0) toast.message(`Address auto-fix: cleaned ${fixedCount} field${fixedCount === 1 ? "" : "s"}`);
+      })
+      .catch(() => { /* silent — user can still fix manually */ })
+      .finally(() => {
+        if (!cancelled) { setAutoFixBusy(false); setAutoFixed(true); }
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed]);
+
+  // Any new paste resets the auto-fix guard.
+  useEffect(() => { setAutoFixed(false); }, [raw]);
+
   // Chat state for the "Understand with AI" mini-chat
   const [chatOpen, setChatOpen] = useState(false);
   const [chat, setChat] = useState<ChatMsg[]>([]);
