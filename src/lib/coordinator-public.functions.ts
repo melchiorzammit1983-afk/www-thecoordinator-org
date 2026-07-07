@@ -1125,6 +1125,10 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       job: {
         id: job.id, group_id: job.group_id, group_name: job.group_name,
         from_location: job.from_location, to_location: job.to_location,
+        pickup_display_name: (job as any).pickup_display_name ?? null,
+        dropoff_display_name: (job as any).dropoff_display_name ?? null,
+        route_duration_sec: (job as any).route_duration_sec ?? null,
+        route_distance_m: (job as any).route_distance_m ?? null,
         from_flight: job.from_flight, to_flight: job.to_flight,
         date: job.date, time: job.time, pickup_at: job.pickup_at,
         status: job.status, flight_status: job.flight_status,

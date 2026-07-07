@@ -29,6 +29,9 @@ function AdminPortalSettings() {
       require_approval_within_hours: Number(s.require_approval_within_hours),
       max_link_duration_hours: Number(s.max_link_duration_hours),
       allow_coord_pax_chat: !!s.allow_coord_pax_chat,
+      urgency_green_min: Number(s.urgency_green_min),
+      urgency_orange_min: Number(s.urgency_orange_min),
+      urgency_red_min: Number(s.urgency_red_min),
     } });
     setS(r);
     toast.success("Saved");
@@ -46,6 +49,33 @@ function AdminPortalSettings() {
           <div className="flex items-center justify-between"><Label>Allow bulk CSV upload</Label><Switch checked={!!s.allow_bulk} onCheckedChange={(v) => setS({ ...s, allow_bulk: v })} /></div>
           <div className="flex items-center justify-between"><Label>Allow coordinator ↔ passenger chat</Label><Switch checked={!!s.allow_coord_pax_chat} onCheckedChange={(v) => setS({ ...s, allow_coord_pax_chat: v })} /></div>
           <Button onClick={save}>Save</Button>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Urgency glow — unassigned / unaccepted trips</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Unassigned or unaccepted trip cards start glowing as pickup approaches. Higher number = starts earlier.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label>Green glow — start when pickup is within (minutes)</Label>
+            <Input type="number" min={1} max={240} value={s.urgency_green_min ?? 60}
+              onChange={(e) => setS({ ...s, urgency_green_min: e.target.value })} />
+          </div>
+          <div>
+            <Label>Orange glow — start when pickup is within (minutes)</Label>
+            <Input type="number" min={1} max={240} value={s.urgency_orange_min ?? 45}
+              onChange={(e) => setS({ ...s, urgency_orange_min: e.target.value })} />
+          </div>
+          <div>
+            <Label>Red glow (pulsing) — start when pickup is within (minutes)</Label>
+            <Input type="number" min={1} max={240} value={s.urgency_red_min ?? 30}
+              onChange={(e) => setS({ ...s, urgency_red_min: e.target.value })} />
+          </div>
+          <Button onClick={save}>Save thresholds</Button>
         </CardContent>
       </Card>
     </div>

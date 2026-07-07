@@ -13,6 +13,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const GATEWAY = "https://connector-gateway.lovable.dev/google_maps";
 
@@ -236,4 +237,227 @@ export const resolveAddresses = createServerFn({ method: "POST" })
     }
     await Promise.all(Array.from({ length: 8 }, worker));
     return { results };
+  });
+
+// ---------- Billing helpers (shared, only used in server handlers) ----------
+
+async function _admin() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
+async function _companyIdForUser(userId: string): Promise<string | null> {
+  const sb = await _admin();
+  const { data: d } = await sb.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
+  if (d?.company_id) return d.company_id as string;
+  const { data: c } = await sb.from("companies").select("id").eq("owner_user_id", userId).maybeSingle();
+  return (c?.id ?? null) as string | null;
+}
+
+// Feature-gate + point charge. Returns { charged: true } on success or
+// { charged: false, reason } when the feature is disabled/entitlement off/no
+// funds. Callers should skip the enrichment silently and fall back gracefully.
+async function _tryCharge(
+  companyId: string,
+  featureKey: "address_name_resolve" | "route_eta",
+  note: string,
+  jobId?: string,
+): Promise<{ charged: true } | { charged: false; reason: string }> {
+  try {
+    const sb = await _admin();
+    // Feature entitlement gate — table column is `feature`, not `feature_key`.
+    const { data: ent } = await sb.from("company_feature_entitlements")
+      .select("enabled, expires_at")
+      .eq("company_id", companyId).eq("feature", featureKey).maybeSingle();
+    if (ent && ent.enabled === false) return { charged: false, reason: "feature_disabled" };
+    if (ent?.expires_at && new Date(ent.expires_at).getTime() < Date.now()) {
+      return { charged: false, reason: "feature_expired" };
+    }
+    const { error } = await sb.rpc("spend_points" as any, {
+      _company_id: companyId,
+      _feature_key: featureKey,
+      _job_id: (jobId ?? undefined) as unknown as string,
+      _note: note,
+      _cost_override: undefined as unknown as number,
+    } as any);
+    if (error) return { charged: false, reason: error.message || "spend_failed" };
+    return { charged: true };
+  } catch (e: any) {
+    return { charged: false, reason: e?.message ?? "charge_error" };
+  }
+}
+
+// ---------- Route ETA (from → to) ----------
+//
+// Uses the Google Maps Distance Matrix API through the connector gateway to
+// compute a live traffic-aware duration + distance between two addresses.
+// Billed via the "route_eta" feature. When the trip is saved, the caller
+// caches the result on the jobs row (route_duration_sec / route_distance_m)
+// so we don't re-charge on every render.
+export const estimateRouteEta = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      from: z.string().trim().min(2).max(300),
+      to: z.string().trim().min(2).max(300),
+      job_id: z.string().uuid().optional(),
+      cache_on_job: z.boolean().default(false),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
+    const companyId = await _companyIdForUser(context.userId);
+    if (!companyId) throw new Error("no_company");
+
+    const gate = await _tryCharge(companyId, "route_eta", "From→To ETA", data.job_id);
+    if (!gate.charged) {
+      return { ok: false as const, reason: gate.reason };
+    }
+
+    try {
+      const url =
+        `${GATEWAY}/maps/api/distancematrix/json` +
+        `?origins=${encodeURIComponent(data.from)}` +
+        `&destinations=${encodeURIComponent(data.to)}` +
+        `&departure_time=now&traffic_model=best_guess`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+        },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.error(`[estimateRouteEta] ${res.status}: ${body.slice(0, 300)}`);
+        return { ok: false as const, reason: `dm_${res.status}` };
+      }
+      const dm: any = await res.json();
+      const el = dm?.rows?.[0]?.elements?.[0];
+      if (!el || el.status !== "OK") {
+        return { ok: false as const, reason: el?.status?.toLowerCase() ?? "no_route" };
+      }
+      const durationSec: number = el.duration_in_traffic?.value ?? el.duration?.value ?? 0;
+      const distanceM: number = el.distance?.value ?? 0;
+
+      if (data.cache_on_job && data.job_id) {
+        const sb = await _admin();
+        await sb.from("jobs").update({
+          route_duration_sec: durationSec,
+          route_distance_m: distanceM,
+          route_computed_at: new Date().toISOString(),
+        } as any).eq("id", data.job_id);
+      }
+
+      return {
+        ok: true as const,
+        duration_sec: durationSec,
+        distance_m: distanceM,
+        duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+        distance_text: el.distance?.text ?? "",
+      };
+    } catch (e: any) {
+      console.error("[estimateRouteEta] exception", e);
+      return { ok: false as const, reason: "exception" };
+    }
+  });
+
+// ---------- Background name resolver ----------
+//
+// For a given job id, fill in pickup_display_name / dropoff_display_name when
+// missing. Billed once per lookup via "address_name_resolve". Uses cached
+// place_id when we have it; otherwise runs an autocomplete on the raw address
+// text and takes the top match.
+export const resolveJobPlaceNames = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ job_id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
+    const companyId = await _companyIdForUser(context.userId);
+    if (!companyId) throw new Error("no_company");
+    const sb = await _admin();
+    const { data: job } = await sb.from("jobs")
+      .select("id, company_id, from_location, to_location, pickup_place_id, dropoff_place_id, pickup_display_name, dropoff_display_name")
+      .eq("id", data.job_id).maybeSingle();
+    if (!job) throw new Error("not_found");
+    if ((job as any).company_id !== companyId) throw new Error("forbidden");
+
+    async function lookupByText(text: string): Promise<{ place_id: string | null; display_name: string | null; address: string } | null> {
+      if (!text) return null;
+      try {
+        const r = await fetch(`${GATEWAY}/places/v1/places:autocomplete`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ input: text, ...biasBody(undefined) }),
+        });
+        if (!r.ok) return null;
+        const j: any = await r.json();
+        const first = j?.suggestions?.[0]?.placePrediction;
+        if (!first?.placeId) return null;
+        const det = await fetch(`${GATEWAY}/places/v1/places/${encodeURIComponent(first.placeId)}`, {
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+            "X-Goog-FieldMask": "id,formattedAddress,displayName",
+          },
+        });
+        if (!det.ok) return null;
+        const d: any = await det.json();
+        return {
+          place_id: d.id ?? first.placeId,
+          display_name: d.displayName?.text ?? first.structuredFormat?.mainText?.text ?? null,
+          address: d.formattedAddress ?? text,
+        };
+      } catch { return null; }
+    }
+
+    async function lookupById(placeId: string): Promise<{ display_name: string | null; address: string } | null> {
+      try {
+        const det = await fetch(`${GATEWAY}/places/v1/places/${encodeURIComponent(placeId)}`, {
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+            "X-Goog-FieldMask": "id,formattedAddress,displayName",
+          },
+        });
+        if (!det.ok) return null;
+        const d: any = await det.json();
+        return {
+          display_name: d.displayName?.text ?? null,
+          address: d.formattedAddress ?? "",
+        };
+      } catch { return null; }
+    }
+
+    const patch: Record<string, any> = {};
+    const needPickup = !(job as any).pickup_display_name && !!(job as any).from_location;
+    const needDropoff = !(job as any).dropoff_display_name && !!(job as any).to_location;
+
+    for (const side of ["pickup", "dropoff"] as const) {
+      const need = side === "pickup" ? needPickup : needDropoff;
+      if (!need) continue;
+      const gate = await _tryCharge(companyId, "address_name_resolve", `Resolve ${side} name`, data.job_id);
+      if (!gate.charged) continue;
+      const placeId = side === "pickup" ? (job as any).pickup_place_id : (job as any).dropoff_place_id;
+      const text = side === "pickup" ? (job as any).from_location : (job as any).to_location;
+      const result = placeId ? await lookupById(placeId) : await lookupByText(text);
+      if (!result) continue;
+      if (side === "pickup") {
+        patch.pickup_display_name = result.display_name;
+        if ("place_id" in (result as any) && (result as any).place_id) patch.pickup_place_id = (result as any).place_id;
+      } else {
+        patch.dropoff_display_name = result.display_name;
+        if ("place_id" in (result as any) && (result as any).place_id) patch.dropoff_place_id = (result as any).place_id;
+      }
+    }
+
+    if (Object.keys(patch).length) {
+      await sb.from("jobs").update(patch as any).eq("id", data.job_id);
+    }
+    return { ok: true, patch };
   });

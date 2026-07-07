@@ -231,7 +231,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     try { await syncVirtualDrivers(context, c.id); } catch { /* best effort */ }
     const supabaseAdmin = await getAdminClient();
-    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+    const cols = "id, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, route_duration_sec, route_distance_m, route_computed_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols)
       .eq("company_id", c.id).order("pickup_at", { ascending: true });
@@ -375,6 +375,12 @@ const jobInput = z.object({
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
+  // From Google Places pick — persisted so we can render the hotel/business
+  // name instead of the raw address, and re-lookup ETAs without re-charging.
+  pickup_place_id: z.string().trim().max(200).optional().nullable(),
+  dropoff_place_id: z.string().trim().max(200).optional().nullable(),
+  pickup_display_name: z.string().trim().max(200).optional().nullable(),
+  dropoff_display_name: z.string().trim().max(200).optional().nullable(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
@@ -416,7 +422,11 @@ export const createJob = createServerFn({ method: "POST" })
       vehicle: data.vehicle || null,
       contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
-    }).select().single();
+      pickup_place_id: data.pickup_place_id || null,
+      dropoff_place_id: data.dropoff_place_id || null,
+      pickup_display_name: data.pickup_display_name || null,
+      dropoff_display_name: data.dropoff_display_name || null,
+    } as any).select().single();
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
@@ -430,10 +440,13 @@ export const updateJob = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
-      .from("jobs").select("id").eq("id", data.id).eq("company_id", c.id).single();
+      .from("jobs").select("id, from_location, to_location").eq("id", data.id).eq("company_id", c.id).single();
     if (e1 || !existing) throw new Error("Job not found");
     const pickup_at = makePickupIso(data.date, data.time);
-    const { error } = await supabaseAdmin.from("jobs").update({
+    // If the address changed, invalidate cached name + ETA so we recompute.
+    const fromChanged = (existing as any).from_location !== data.from_location;
+    const toChanged = (existing as any).to_location !== data.to_location;
+    const patch: Record<string, any> = {
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: data.time, pickup_at,
       flightorship: data.flightorship || data.from_flight || data.to_flight || null,
@@ -443,7 +456,25 @@ export const updateJob = createServerFn({ method: "POST" })
       qr_strict_mode: data.qr_strict_mode, tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null, contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
-    }).eq("id", data.id);
+    };
+    if (data.pickup_place_id !== undefined) patch.pickup_place_id = data.pickup_place_id || null;
+    if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
+    if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
+    if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
+    if (fromChanged) {
+      patch.pickup_display_name = data.pickup_display_name || null;
+      patch.pickup_place_id = data.pickup_place_id || null;
+    }
+    if (toChanged) {
+      patch.dropoff_display_name = data.dropoff_display_name || null;
+      patch.dropoff_place_id = data.dropoff_place_id || null;
+    }
+    if (fromChanged || toChanged) {
+      patch.route_duration_sec = null;
+      patch.route_distance_m = null;
+      patch.route_computed_at = null;
+    }
+    const { error } = await supabaseAdmin.from("jobs").update(patch as any).eq("id", data.id);
     if (error) {
       if (error.message?.includes("partner_must_accept_first")) {
         throw new Error("This trip was dispatched to a partner company — they must accept it before a driver can be assigned.");

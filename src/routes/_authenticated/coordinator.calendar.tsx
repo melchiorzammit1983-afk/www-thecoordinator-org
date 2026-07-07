@@ -15,7 +15,11 @@ import {
   listConnections, dispatchJobToPartner, recallPartnerDispatch,
   listIncomingDispatches, listOutboundDispatches, respondToDispatch,
 } from "@/lib/collab.functions";
-import { listPortalBookings, acceptPortalBooking, rejectPortalBooking } from "@/lib/portal.functions";
+import { listPortalBookings, acceptPortalBooking, rejectPortalBooking, getPortalSettings } from "@/lib/portal.functions";
+import {
+  displayLocation, formatEta,
+  urgencyTier, urgencyClasses, DEFAULT_URGENCY, type UrgencyThresholds,
+} from "@/lib/trip-display";
 
 
 import {
@@ -140,6 +144,12 @@ type Job = {
   traffic_severity?: string | null;
   leave_by_at?: string | null;
   pickup_shift_reason?: string | null;
+  pickup_display_name?: string | null;
+  dropoff_display_name?: string | null;
+  pickup_place_id?: string | null;
+  dropoff_place_id?: string | null;
+  route_duration_sec?: number | null;
+  route_distance_m?: number | null;
 };
 
 
@@ -447,6 +457,25 @@ function CalendarPage() {
   const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
 
+  // Fetch admin urgency thresholds once. Falls back to defaults if not readable.
+  const portalSettingsFn = useServerFn(getPortalSettings);
+  const { data: portalSettings } = useQuery({
+    queryKey: ["portal-settings-urgency"],
+    queryFn: () => portalSettingsFn() as Promise<any>,
+    staleTime: 5 * 60_000,
+  });
+  const urgency: UrgencyThresholds = {
+    green_min: Number(portalSettings?.urgency_green_min ?? DEFAULT_URGENCY.green_min),
+    orange_min: Number(portalSettings?.urgency_orange_min ?? DEFAULT_URGENCY.orange_min),
+    red_min: Number(portalSettings?.urgency_red_min ?? DEFAULT_URGENCY.red_min),
+  };
+  // Bump every 60s so unassigned cards re-evaluate their glow tier.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const cardCtx: CardCtx = {
     onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
     onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
@@ -463,6 +492,8 @@ function CalendarPage() {
     tripFlags: tripFlags ?? {},
     onDismissFlag: (job_id, kind) => dismissFlagMut.mutate({ job_id, kind }),
     onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
+    urgency,
+    nowTick,
   };
 
 
@@ -754,6 +785,8 @@ type CardCtx = {
   tripFlags?: Record<string, TripFlagInfo>;
   onDismissFlag?: (jobId: string, kind: "duplicate" | "suspicious") => void;
   onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
+  urgency: UrgencyThresholds;
+  nowTick: number; // ms — bumped every minute so cards re-evaluate glow
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
@@ -1754,12 +1787,23 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
   };
 
+  // Urgency glow — unassigned / unaccepted trips only, tiered by minutes to pickup.
+  // `nowTick` is bumped every 60s so this re-evaluates without extra data fetches.
+  const _tickReadForRerender = ctx.nowTick;
+  const uTier = urgencyTier(job.pickup_at, {
+    assigned: !!job.driver_id,
+    accepted: !!job.driver_accepted_at,
+    now: _tickReadForRerender,
+    thresholds: ctx.urgency,
+  });
+  const uClass = urgencyClasses(uTier);
+
   return (
     <div
       ref={setNodeRef}
       data-job-id={job.id}
       style={style}
-      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
 
       <LabelStripe labels={labels} />
@@ -1835,8 +1879,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
-              {job.from_location} <span className="text-muted-foreground">→</span> {job.to_location}
+              {displayLocation(job.from_location, job.pickup_display_name)} <span className="text-muted-foreground">→</span> {displayLocation(job.to_location, job.dropoff_display_name)}
             </div>
+            {(job.route_duration_sec ?? 0) > 0 && (
+              <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5">
+                  {formatEta(job.route_duration_sec)}
+                  {job.route_distance_m ? ` · ${(job.route_distance_m / 1000).toFixed(1)} km` : ""}
+                </span>
+              </div>
+            )}
             {job.clientcompanyname && (
               <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
             )}

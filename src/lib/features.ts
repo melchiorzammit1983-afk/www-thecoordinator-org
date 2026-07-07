@@ -21,7 +21,9 @@ export type FeatureKey =
   | "client_eta"
   | "client_sos"
   | "client_offline_mode"
-  | "branding_advert";
+  | "branding_advert"
+  | "address_name_resolve"
+  | "route_eta";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -47,6 +49,8 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "client_sos",      label: "Client SOS button", description: "Emergency SOS on client portal with location broadcast to coordinator" },
   { key: "client_offline_mode", label: "Client offline mode", description: "Cache last trip data so the portal works with no signal" },
   { key: "branding_advert",  label: "Branding & advert",   description: "Coordinator logo + advert banner shown at bottom of driver and client apps" },
+  { key: "address_name_resolve", label: "Address name lookup", description: "Show hotel / business name (from Google Places) instead of plus-codes or coordinates on cards, sheets, and client portal. Coordinates stay stored for routing." },
+  { key: "route_eta",        label: "From → To ETA",      description: "Estimate driving time & distance between pickup and dropoff. Shown in the trip form, on calendar cards, and in the client portal." },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];

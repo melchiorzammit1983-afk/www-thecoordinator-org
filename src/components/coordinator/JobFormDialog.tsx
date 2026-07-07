@@ -28,8 +28,10 @@ import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown, Undo2, Wand2 } 
 import { useFeature } from "@/hooks/use-features";
 import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
-import { resolveAddresses } from "@/lib/places.functions";
+import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
+import { formatEta } from "@/lib/trip-display";
+import { Clock } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -45,6 +47,12 @@ type Job = {
   contact_phone: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
+  pickup_place_id?: string | null;
+  dropoff_place_id?: string | null;
+  pickup_display_name?: string | null;
+  dropoff_display_name?: string | null;
+  route_duration_sec?: number | null;
+  route_distance_m?: number | null;
   labels?: { id: string; name: string; color: string }[];
 };
 
@@ -122,9 +130,11 @@ function ManualForm({
 }: { drivers: Driver[]; job?: Job; prefill?: Prefill; onSaved: (createdDate?: string) => void; onCancel: () => void }) {
 
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
-  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(job?.pickup_place_id ?? null);
+  const [fromDisplayName, setFromDisplayName] = useState<string | null>(job?.pickup_display_name ?? null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
-  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
+  const [toPlaceId, setToPlaceId] = useState<string | null>(job?.dropoff_place_id ?? null);
+  const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
@@ -227,6 +237,10 @@ function ManualForm({
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
+        pickup_place_id: fromPlaceId,
+        dropoff_place_id: toPlaceId,
+        pickup_display_name: fromDisplayName,
+        dropoff_display_name: toDisplayName,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
       const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -250,6 +264,59 @@ function ManualForm({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Live from→to ETA badge. Debounced auto-fetch so we only ping Google once
+  // the user has stopped typing. Charged as "route_eta" — if the company has
+  // it disabled or out of points, we silently show nothing.
+  const etaFn = useServerFn(estimateRouteEta);
+  const [etaLoading, setEtaLoading] = useState(false);
+  const [etaResult, setEtaResult] = useState<{
+    duration_sec: number; distance_m: number; duration_text: string; distance_text: string;
+  } | { error: string } | null>(() => {
+    if (job?.route_duration_sec) {
+      return {
+        duration_sec: job.route_duration_sec,
+        distance_m: job.route_distance_m ?? 0,
+        duration_text: formatEta(job.route_duration_sec) ?? "",
+        distance_text: job.route_distance_m ? `${(job.route_distance_m / 1000).toFixed(1)} km` : "",
+      };
+    }
+    return null;
+  });
+  const etaKeyRef = useRef<string>("");
+  useEffect(() => {
+    const key = `${from}||${to}`;
+    if (!from.trim() || !to.trim() || from.trim().length < 3 || to.trim().length < 3) {
+      etaKeyRef.current = key;
+      return;
+    }
+    if (etaKeyRef.current === key) return;
+    const timer = setTimeout(async () => {
+      etaKeyRef.current = key;
+      setEtaLoading(true);
+      try {
+        const r = await etaFn({ data: {
+          from, to,
+          job_id: job?.id,
+          cache_on_job: !!job?.id,
+        } });
+        if ((r as any).ok) {
+          setEtaResult({
+            duration_sec: (r as any).duration_sec,
+            distance_m: (r as any).distance_m,
+            duration_text: (r as any).duration_text,
+            distance_text: (r as any).distance_text,
+          });
+        } else {
+          setEtaResult({ error: (r as any).reason ?? "unavailable" });
+        }
+      } catch {
+        setEtaResult({ error: "network" });
+      } finally {
+        setEtaLoading(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [from, to, etaFn, job?.id]);
 
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
@@ -264,7 +331,11 @@ function ManualForm({
           <AddressAutocomplete
             value={from}
             placeId={fromPlaceId}
-            onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
+            onChange={(v) => {
+              setFrom(v.address);
+              setFromPlaceId(v.place_id);
+              setFromDisplayName(v.display_name ?? null);
+            }}
             onBlur={() => handleLocationBlur("from")}
             placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
           />
@@ -284,7 +355,11 @@ function ManualForm({
           <AddressAutocomplete
             value={to}
             placeId={toPlaceId}
-            onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}
+            onChange={(v) => {
+              setTo(v.address);
+              setToPlaceId(v.place_id);
+              setToDisplayName(v.display_name ?? null);
+            }}
             onBlur={() => handleLocationBlur("to")}
             placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
@@ -314,6 +389,29 @@ function ManualForm({
           </Select>
         </div>
       </div>
+      {/* Live from → to ETA (from Google, billed via `route_eta` feature) */}
+      {(from.trim().length >= 3 && to.trim().length >= 3) && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
+          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {etaLoading ? (
+            <span className="text-muted-foreground">Estimating drive time…</span>
+          ) : etaResult && "duration_sec" in etaResult ? (
+            <>
+              <span className="font-semibold text-foreground">
+                {formatEta(etaResult.duration_sec) ?? etaResult.duration_text}
+              </span>
+              {etaResult.distance_text && (
+                <span className="text-muted-foreground">· {etaResult.distance_text}</span>
+              )}
+              <span className="ml-auto text-[10px] text-muted-foreground">estimated drive time</span>
+            </>
+          ) : etaResult && "error" in etaResult ? (
+            <span className="text-muted-foreground">ETA unavailable</span>
+          ) : (
+            <span className="text-muted-foreground">Estimated drive time will show here</span>
+          )}
+        </div>
+      )}
       {!job && (
         <div className="space-y-1.5">
           <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (one per line, optional)</Label>

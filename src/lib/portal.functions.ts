@@ -392,6 +392,9 @@ export const updatePortalSettings = createServerFn({ method: "POST" })
     require_approval_within_hours: z.number().min(0).max(48).optional(),
     max_link_duration_hours: z.number().min(1).max(87600).optional(),
     allow_coord_pax_chat: z.boolean().optional(),
+    urgency_green_min: z.number().int().min(1).max(240).optional(),
+    urgency_orange_min: z.number().int().min(1).max(240).optional(),
+    urgency_red_min: z.number().int().min(1).max(240).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase.from("admin_portal_settings" as any)
