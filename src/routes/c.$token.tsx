@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
+import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 
 export const Route = createFileRoute("/c/$token")({
   head: ({ loaderData }) => {
@@ -65,6 +66,8 @@ function PublicBookingPage() {
     name: "", surname: "", client_email: "", room_number: "",
     from_location: "", to_location: "", time: "",
   });
+  const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
+  const [toPlaceId, setToPlaceId] = useState<string | null>(null);
 
   const mut = useMutation({
     mutationFn: () => submitFn({ data: { token: params.token, ...form, promo_note: promo || undefined } as any }),
@@ -138,11 +141,25 @@ function PublicBookingPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-from">Pickup location</Label>
-                  <Input id="b-from" value={form.from_location} onChange={(e) => update("from_location", e.target.value)} required maxLength={255} />
+                  <AddressAutocomplete
+                    id="b-from"
+                    value={form.from_location}
+                    placeId={fromPlaceId}
+                    onChange={(v) => { update("from_location", v.address); setFromPlaceId(v.place_id); }}
+                    required
+                    placeholder="Hotel, address, port…"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-to">Drop-off location</Label>
-                  <Input id="b-to" value={form.to_location} onChange={(e) => update("to_location", e.target.value)} required maxLength={255} />
+                  <AddressAutocomplete
+                    id="b-to"
+                    value={form.to_location}
+                    placeId={toPlaceId}
+                    onChange={(v) => { update("to_location", v.address); setToPlaceId(v.place_id); }}
+                    required
+                    placeholder="Airport, hotel, address…"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-time">Time (24h)</Label>
