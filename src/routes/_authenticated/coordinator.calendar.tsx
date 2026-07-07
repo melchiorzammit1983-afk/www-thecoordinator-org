@@ -1787,12 +1787,23 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
     ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
   };
 
+  // Urgency glow — unassigned / unaccepted trips only, tiered by minutes to pickup.
+  // `nowTick` is bumped every 60s so this re-evaluates without extra data fetches.
+  const _tickReadForRerender = ctx.nowTick;
+  const uTier = urgencyTier(job.pickup_at, {
+    assigned: !!job.driver_id,
+    accepted: !!job.driver_accepted_at,
+    now: _tickReadForRerender,
+    thresholds: ctx.urgency,
+  });
+  const uClass = urgencyClasses(uTier);
+
   return (
     <div
       ref={setNodeRef}
       data-job-id={job.id}
       style={style}
-      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-colors ${tone} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
 
       <LabelStripe labels={labels} />
@@ -1868,8 +1879,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
-              {job.from_location} <span className="text-muted-foreground">→</span> {job.to_location}
+              {displayLocation(job.from_location, job.pickup_display_name)} <span className="text-muted-foreground">→</span> {displayLocation(job.to_location, job.dropoff_display_name)}
             </div>
+            {(job.route_duration_sec ?? 0) > 0 && (
+              <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5">
+                  {formatEta(job.route_duration_sec)}
+                  {job.route_distance_m ? ` · ${(job.route_distance_m / 1000).toFixed(1)} km` : ""}
+                </span>
+              </div>
+            )}
             {job.clientcompanyname && (
               <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
             )}
