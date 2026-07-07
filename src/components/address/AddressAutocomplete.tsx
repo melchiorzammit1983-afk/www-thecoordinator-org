@@ -19,6 +19,7 @@ export type AddressPick = {
   place_id: string | null;
   lat: number | null;
   lng: number | null;
+  display_name?: string | null;
 };
 
 type Suggestion = {
@@ -124,7 +125,14 @@ export function AddressAutocomplete({
   async function pick(s: Suggestion) {
     setOpen(false);
     // Optimistically populate with the display text so the input is never blank.
-    onChange({ address: s.text, place_id: s.place_id, lat: null, lng: null });
+    // s.main is the hotel/POI name when Google returns structured formatting.
+    onChange({
+      address: s.text,
+      place_id: s.place_id,
+      lat: null,
+      lng: null,
+      display_name: s.main || null,
+    });
     try {
       const det = await detailsFn({
         data: { place_id: s.place_id, session_token: sessionRef.current },
@@ -134,6 +142,7 @@ export function AddressAutocomplete({
         place_id: det.place_id,
         lat: det.lat,
         lng: det.lng,
+        display_name: det.display_name ?? s.main ?? null,
       });
     } catch {
       /* keep the optimistic pick — coords just aren't stored */
