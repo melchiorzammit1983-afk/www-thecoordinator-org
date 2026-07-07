@@ -16,14 +16,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — Crew Change" },
-      { name: "description", content: "Sign in to your Crew Change coordinator or admin console." },
-      { property: "og:title", content: "Sign in — Crew Change" },
-      { property: "og:description", content: "Sign in to your Crew Change coordinator or admin console." },
-      { property: "og:url", content: "https://transfersmt.lovable.app/auth" },
+      { title: "Sign in — The Coordinators" },
+      { name: "description", content: "Welcome to your hub — sign in to The Coordinators to run today's transfers." },
+      { property: "og:title", content: "Sign in — The Coordinators" },
+      { property: "og:description", content: "Welcome to your hub — sign in to The Coordinators to run today's transfers." },
+      { property: "og:url", content: "https://www.thecoordinator.org/auth" },
       { name: "robots", content: "noindex" },
     ],
-    links: [{ rel: "canonical", href: "https://transfersmt.lovable.app/auth" }],
+    links: [{ rel: "canonical", href: "https://www.thecoordinator.org/auth" }],
   }),
   component: AuthPage,
 });
@@ -56,42 +56,87 @@ function AuthPage() {
     };
   }, [navigate, whoAmIFn]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-primary-foreground font-bold text-lg">
-            CC
-          </div>
-          <h1 className="mt-4 text-2xl font-semibold">Crew Change Admin</h1>
-          <p className="text-sm text-muted-foreground mt-1">Operations console</p>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use the phone number and password from your administrator</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SignInForm />
-          </CardContent>
-        </Card>
+  const greeting = useGreeting();
 
-        <p className="text-xs text-muted-foreground text-center mt-6">
-          <Link to="/" className="hover:underline">Back home</Link>
-        </p>
-        <div className="mt-10 pt-6 border-t border-border/60 text-center">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Administrator</p>
-          <Link
-            to="/admin-auth"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            🔒 Admin sign in
+  return (
+    <div className="relative min-h-screen w-full overflow-hidden bg-slate-950">
+      {/* Malta map background */}
+      <iframe
+        title="Malta map"
+        aria-hidden="true"
+        tabIndex={-1}
+        src="https://maps.google.com/maps?q=Malta&z=11&t=m&output=embed&iwloc=near"
+        className="absolute inset-0 h-full w-full border-0 pointer-events-none select-none"
+        loading="lazy"
+      />
+      {/* Wash: dim + brand tint so the map reads as texture, not content */}
+      <div className="absolute inset-0 bg-gradient-to-br from-teal-950/85 via-slate-950/80 to-teal-900/85" />
+      <div className="absolute inset-0 backdrop-blur-[2px]" />
+      {/* Soft radial highlight behind the card */}
+      <div
+        aria-hidden="true"
+        className="absolute left-1/2 top-1/2 h-[680px] w-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-400/15 blur-3xl"
+      />
+
+      <div className="relative z-10 min-h-screen flex flex-col">
+        <header className="flex items-center justify-between px-6 py-5">
+          <Link to="/" className="flex items-center gap-2 text-white/90 hover:text-white transition-colors">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 border border-white/20 backdrop-blur-md font-semibold text-sm tracking-tight">
+              tC
+            </span>
+            <span className="text-sm font-medium tracking-wide">The Coordinators</span>
           </Link>
-        </div>
+          <div className="hidden sm:block text-[11px] uppercase tracking-[0.2em] text-white/60">
+            Operations hub
+          </div>
+        </header>
+
+        <main className="flex-1 grid place-items-center px-4 pb-16">
+          <div className="w-full max-w-md">
+            <div className="mb-6 text-center text-white">
+              <div className="text-[11px] uppercase tracking-[0.3em] text-teal-200/80">{greeting}</div>
+              <h1 className="mt-2 text-3xl sm:text-4xl font-semibold tracking-tight">Welcome to your hub</h1>
+              <p className="mt-2 text-sm text-white/70">Let's make it a better day for every crew on the road.</p>
+            </div>
+
+            <Card className="border-white/15 bg-white/95 backdrop-blur-xl shadow-2xl shadow-teal-950/40 rounded-2xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xl">Log in</CardTitle>
+                <CardDescription>Use the phone number and password from your administrator.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SignInForm />
+              </CardContent>
+            </Card>
+
+            <p className="text-xs text-white/60 text-center mt-6">
+              <Link to="/" className="hover:text-white transition-colors">Back to homepage</Link>
+            </p>
+          </div>
+        </main>
+
+        <footer className="relative z-10 px-6 pb-6">
+          <div className="mx-auto max-w-md flex items-center justify-between text-[11px] text-white/50">
+            <Link to="/admin-auth" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+              <span aria-hidden>🔒</span> Admin sign in
+            </Link>
+            <span className="tracking-wider uppercase">Malta · Operations</span>
+          </div>
+        </footer>
       </div>
     </div>
   );
 }
+
+function useGreeting() {
+  const [g, setG] = useState("Welcome back");
+  useEffect(() => {
+    const h = new Date().getHours();
+    setG(h < 5 ? "Good night shift" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 22 ? "Good evening" : "Good night shift");
+  }, []);
+  return g;
+}
+
 
 function SignInForm() {
   const [phone, setPhone] = useState("+");
