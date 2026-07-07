@@ -283,14 +283,23 @@ export function TripDetailsSheet({
             )}
           </SheetHeader>
 
-          <TrafficBadge
-            info={{
-              traffic_delay_minutes: job.traffic_delay_minutes,
-              traffic_severity: job.traffic_severity,
-              leave_by_at: job.leave_by_at,
-              pickup_shift_reason: job.pickup_shift_reason,
-            }}
-          />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                Live status
+              </div>
+              <RefreshLiveStatusButton jobId={job.id} />
+            </div>
+            <TrafficBadge
+              info={{
+                traffic_delay_minutes: job.traffic_delay_minutes,
+                traffic_severity: job.traffic_severity,
+                leave_by_at: job.leave_by_at,
+                pickup_shift_reason: job.pickup_shift_reason,
+              }}
+            />
+          </div>
+
 
 
           {/* Progress */}
