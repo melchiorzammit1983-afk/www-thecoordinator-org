@@ -85,7 +85,7 @@ function AbstractMaltaMap() {
   return (
     <svg
       viewBox="0 0 400 400"
-      className="absolute inset-0 w-full h-full opacity-60"
+      className="absolute inset-0 w-full h-full opacity-30"
       style={{ filter: "url(#glow)" }}
     >
       <defs>
@@ -97,8 +97,8 @@ function AbstractMaltaMap() {
           </feMerge>
         </filter>
         <linearGradient id="maltaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={COLORS.yellow} stopOpacity="0.4" />
-          <stop offset="100%" stopColor={COLORS.yellowGlow} stopOpacity="0.2" />
+          <stop offset="0%" stopColor={COLORS.yellow} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={COLORS.yellowGlow} stopOpacity="0.1" />
         </linearGradient>
       </defs>
 
@@ -108,7 +108,7 @@ function AbstractMaltaMap() {
         fill="none"
         stroke={COLORS.yellow}
         strokeWidth="1.5"
-        opacity="0.6"
+        opacity="0.4"
       />
 
       {/* Gozo outline */}
@@ -117,7 +117,7 @@ function AbstractMaltaMap() {
         fill="none"
         stroke={COLORS.yellowGlow}
         strokeWidth="1"
-        opacity="0.5"
+        opacity="0.3"
       />
 
       {/* Network nodes - transport hubs */}
@@ -129,7 +129,7 @@ function AbstractMaltaMap() {
         { x: 175, y: 160, r: 2, label: "West" },
       ].map((node, i) => (
         <g key={i}>
-          <circle cx={node.x} cy={node.y} r={node.r} fill={COLORS.yellow} opacity="0.7" />
+          <circle cx={node.x} cy={node.y} r={node.r} fill={COLORS.yellow} opacity="0.6" />
           <circle
             cx={node.x}
             cy={node.y}
@@ -137,13 +137,13 @@ function AbstractMaltaMap() {
             fill="none"
             stroke={COLORS.yellow}
             strokeWidth="0.8"
-            opacity="0.4"
+            opacity="0.3"
           />
         </g>
       ))}
 
       {/* Connection lines - transport routes */}
-      <g stroke={COLORS.yellow} strokeWidth="0.8" opacity="0.3" strokeDasharray="2,2">
+      <g stroke={COLORS.yellow} strokeWidth="0.8" opacity="0.2" strokeDasharray="2,2">
         <line x1="200" y1="130" x2="160" y2="145" />
         <line x1="200" y1="130" x2="220" y2="140" />
         <line x1="200" y1="130" x2="180" y2="100" />
@@ -152,20 +152,20 @@ function AbstractMaltaMap() {
         <line x1="220" y1="140" x2="175" y2="160" />
       </g>
 
-      {/* Animated moving dots (trips in progress) - BIGGER & MORE VISIBLE */}
-      <circle cx="190" cy="125" r="2.5" fill={COLORS.yellowBright} opacity="0.9">
-        <animate attributeName="r" values="2.5;4.5;2.5" dur="3s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.9;0.4;0.9" dur="3s" repeatCount="indefinite" />
+      {/* Animated moving dots (trips in progress) */}
+      <circle cx="190" cy="125" r="1.5" fill={COLORS.yellowBright} opacity="0.8">
+        <animate attributeName="r" values="1.5;3;1.5" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.8;0.3;0.8" dur="3s" repeatCount="indefinite" />
       </circle>
 
-      <circle cx="210" cy="140" r="2" fill={COLORS.yellowBright} opacity="0.7">
-        <animate attributeName="r" values="2;3.5;2" dur="4s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.7;0.3;0.7" dur="4s" repeatCount="indefinite" />
+      <circle cx="210" cy="140" r="1.2" fill={COLORS.yellowBright} opacity="0.6">
+        <animate attributeName="r" values="1.2;2.5;1.2" dur="4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.6;0.2;0.6" dur="4s" repeatCount="indefinite" />
       </circle>
 
-      <circle cx="170" cy="150" r="1.5" fill={COLORS.yellowBright} opacity="0.6">
-        <animate attributeName="r" values="1.5;3;1.5" dur="5s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.6;0.2;0.6" dur="5s" repeatCount="indefinite" />
+      <circle cx="170" cy="150" r="1" fill={COLORS.yellowBright} opacity="0.5">
+        <animate attributeName="r" values="1;2;1" dur="5s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.5;0.15;0.5" dur="5s" repeatCount="indefinite" />
       </circle>
     </svg>
   );
@@ -210,14 +210,14 @@ function Nav() {
             style={{
               backgroundColor: COLORS.yellow,
               color: COLORS.black,
-              boxShadow: `0 0 12px ${COLORS.yellow}30`,
+              boxShadow: `0 0 20px ${COLORS.yellow}40`,
             }}
             onMouseEnter={(e) => {
-              (e.target as HTMLElement).style.boxShadow = `0 0 20px ${COLORS.yellow}50`;
+              (e.target as HTMLElement).style.boxShadow = `0 0 30px ${COLORS.yellow}80`;
               (e.target as HTMLElement).style.transform = "translateY(-2px)";
             }}
             onMouseLeave={(e) => {
-              (e.target as HTMLElement).style.boxShadow = `0 0 12px ${COLORS.yellow}30`;
+              (e.target as HTMLElement).style.boxShadow = `0 0 20px ${COLORS.yellow}40`;
               (e.target as HTMLElement).style.transform = "translateY(0)";
             }}
           >
@@ -232,7 +232,7 @@ function Nav() {
 /* ============================ HERO ============================ */
 function Hero() {
   return (
-    <section className="relative overflow-hidden min-h-[85vh] flex items-center">
+    <section className="relative overflow-hidden min-h-[80vh] flex items-center">
       {/* Abstract Malta Map Background */}
       <div className="absolute inset-0 -z-10">
         <AbstractMaltaMap />
@@ -240,13 +240,13 @@ function Hero() {
         <div
           className="absolute inset-0"
           style={{
-            background: `radial-gradient(circle at 50% 50%, ${COLORS.blackLight}aa, ${COLORS.black}ff)`,
+            background: `radial-gradient(circle at 50% 50%, ${COLORS.blackLight}99, ${COLORS.black}ff)`,
           }}
         />
       </div>
 
-      <div className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24 w-full relative z-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
+      <div className="mx-auto max-w-6xl px-5 py-12 md:px-6 md:py-20 w-full relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-center">
           {/* Text Content */}
           <div className="text-center md:text-left">
             {/* Badge */}
@@ -263,34 +263,34 @@ function Hero() {
             </div>
 
             {/* Main Heading */}
-            <h1 className="mt-6 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
+            <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
               <span style={{ color: COLORS.white }}>Stop manually dispatching.</span>
               <br />
               <span style={{ color: COLORS.yellow }}>Start collaborating.</span>
             </h1>
 
             {/* Description */}
-            <p className="mx-auto md:mx-0 mt-5 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
+            <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
               The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips,
               track flights, and share jobs instantly—without forcing your drivers to download an app.
             </p>
 
             {/* CTA Buttons */}
-            <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-3">
+            <div className="mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-2.5">
               <Link
                 to="/request-access"
-                className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition-all"
+                className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition-all"
                 style={{
                   backgroundColor: COLORS.yellow,
                   color: COLORS.black,
-                  boxShadow: `0 8px 24px ${COLORS.yellow}35`,
+                  boxShadow: `0 10px 30px ${COLORS.yellow}40`,
                 }}
               >
                 Get Started <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#how"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border px-6 py-3.5 text-sm font-semibold transition-all hover:bg-opacity-10"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3.5 text-sm font-semibold transition-all hover:bg-opacity-10"
                 style={{
                   borderColor: COLORS.yellow,
                   color: COLORS.yellow,
@@ -301,10 +301,10 @@ function Hero() {
             </div>
 
             {/* Features List */}
-            <div className="mt-6 flex flex-wrap items-center justify-center md:justify-start gap-x-5 gap-y-2 text-[11px] md:text-xs">
+            <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs">
               {["Pay as you go", "No driver app required", "Live flight tracking"].map((feature) => (
-                <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.white }}>
-                  <Check className="h-3.5 w-3.5" style={{ color: COLORS.yellow }} /> {feature}
+                <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.yellow }}>
+                  <Check className="h-3.5 w-3.5" /> {feature}
                 </span>
               ))}
             </div>
@@ -313,9 +313,9 @@ function Hero() {
           {/* Phone Mockup */}
           <div className="relative flex justify-center">
             <div
-              className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-40"
+              className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-50"
               style={{
-                background: `linear-gradient(135deg, ${COLORS.yellow}25, ${COLORS.yellowGlow}08)`,
+                background: `linear-gradient(135deg, ${COLORS.yellow}30, ${COLORS.yellowGlow}10)`,
               }}
             />
             <ClientPortalPhone />
@@ -421,17 +421,17 @@ function ClientPortalPhone({ compact = false }: { compact?: boolean }) {
 /* ==================== PROBLEM vs SOLUTION ==================== */
 function ProblemSolution() {
   return (
-    <section className="mx-auto max-w-6xl px-5 py-20 md:px-6 md:py-32">
+    <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center">
         <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           The shift
         </div>
-        <h2 className="mt-4 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           From WhatsApp chaos to total control.
         </h2>
       </div>
 
-      <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
         {/* Old Way */}
         <div
           className="rounded-2xl border p-6 md:p-8"
@@ -454,10 +454,10 @@ function ProblemSolution() {
           className="rounded-2xl border p-6 md:p-8"
           style={{
             borderColor: COLORS.yellow,
-            backgroundColor: `${COLORS.yellow}10`,
+            backgroundColor: `${COLORS.yellow}15`,
           }}
         >
-          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: `${COLORS.yellow}25`, color: COLORS.yellow }}>
+          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: `${COLORS.yellow}30`, color: COLORS.yellow }}>
             <Check className="h-3.5 w-3.5" /> The new way
           </div>
           <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
@@ -500,20 +500,20 @@ function HowItWorks() {
   ];
 
   return (
-    <section id="how" className="mx-auto max-w-6xl px-5 py-20 md:px-6 md:py-32">
+    <section id="how" className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center max-w-2xl mx-auto">
         <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           How it works
         </div>
-        <h2 className="mt-4 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           From booking to billed in one flow.
         </h2>
-        <p className="mt-4 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
+        <p className="mt-3 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
           The exact workflow every coordinator on the platform runs, every day.
         </p>
       </div>
 
-      <ol className="mt-14 grid grid-cols-1 md:grid-cols-4 gap-5">
+      <ol className="mt-12 grid grid-cols-1 md:grid-cols-4 gap-4">
         {steps.map((s) => (
           <li
             key={s.n}
@@ -543,7 +543,7 @@ function HowItWorks() {
             <h3 className="mt-4 text-base font-semibold" style={{ color: COLORS.white }}>
               {s.title}
             </h3>
-            <p className="mt-2 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
               {s.body}
             </p>
           </li>
@@ -652,20 +652,20 @@ function StepTrackVisual() {
 /* ============================ BENTO ============================ */
 function Bento() {
   return (
-    <section className="mx-auto max-w-6xl px-5 py-20 md:px-6 md:py-32">
+    <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
       <div className="text-center max-w-2xl mx-auto">
         <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
           Features
         </div>
-        <h2 className="mt-4 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
+        <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-tight" style={{ color: COLORS.white }}>
           Everything a transport network needs.
         </h2>
-        <p className="mt-4 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
+        <p className="mt-3 text-base md:text-lg" style={{ color: COLORS.greyLight }}>
           Purpose-built for the pace and pressure of Malta's transfer market.
         </p>
       </div>
 
-      <div className="mt-12 grid grid-cols-1 md:grid-cols-6 gap-5 md:auto-rows-[220px]">
+      <div className="mt-10 grid grid-cols-1 md:grid-cols-6 gap-4 md:auto-rows-[220px]">
         <BentoCard
           className="md:col-span-3"
           icon={<Network className="h-5 w-5" />}
@@ -793,7 +793,7 @@ function AIVisual() {
       </div>
       <div className="mt-1 space-y-0.5">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-1 rounded w-16" style={{ backgroundColor: COLORS.yellow + "30" }} />
+          <div key={i} className="h-1 rounded w-16" style={{ backgroundColor: COLORS.yellow + "40" }} />
         ))}
       </div>
     </div>
@@ -805,13 +805,13 @@ function AdVisual() {
     <div className="pointer-events-none absolute right-4 bottom-4 flex gap-2">
       <div className="rounded-lg border p-2 shadow-md w-24 md:w-28" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
         <div className="h-10 rounded bg-gradient-to-br" style={{ backgroundImage: `linear-gradient(135deg, ${COLORS.black}, ${COLORS.yellow})` }} />
-        <div className="mt-1.5 h-1 rounded w-3/4" style={{ backgroundColor: COLORS.yellow + "30" }} />
-        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "30" }} />
+        <div className="mt-1.5 h-1 rounded w-3/4" style={{ backgroundColor: COLORS.yellow + "40" }} />
+        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "40" }} />
       </div>
       <div className="rounded-lg border p-2 shadow-md w-24 md:w-28" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
         <div className="h-10 rounded bg-gradient-to-br from-emerald-500 to-teal-600" />
-        <div className="mt-1.5 h-1 rounded w-2/3" style={{ backgroundColor: COLORS.yellow + "30" }} />
-        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "30" }} />
+        <div className="mt-1.5 h-1 rounded w-2/3" style={{ backgroundColor: COLORS.yellow + "40" }} />
+        <div className="mt-1 h-1 rounded w-1/2" style={{ backgroundColor: COLORS.yellow + "40" }} />
       </div>
     </div>
   );
@@ -820,26 +820,26 @@ function AdVisual() {
 /* ==================== CLIENT EXPERIENCE ==================== */
 function ClientExperience() {
   return (
-    <section className="mx-auto max-w-6xl px-5 py-20 md:px-6 md:py-32">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16 items-center">
+    <section className="mx-auto max-w-6xl px-5 py-16 md:px-6 md:py-24">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-center">
         <div className="text-center md:text-left">
           <div className="text-[11px] md:text-xs font-semibold uppercase tracking-widest" style={{ color: COLORS.yellow }}>
             The client experience
           </div>
-          <h2 className="mt-4 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
+          <h2 className="mt-3 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
             Put the trip in <span style={{ color: COLORS.yellow }}>their pocket.</span>
           </h2>
-          <p className="mt-5 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
+          <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
             Send a secure booking link straight to your VIP corporate client or hotel guest. They confirm in one tap, then get live driver location, private chat with the driver, and a one-tap SOS safety button — no app to install.
           </p>
-          <ul className="mt-7 space-y-3 text-sm max-w-md mx-auto md:mx-0 text-left">
+          <ul className="mt-6 space-y-3 text-sm max-w-md mx-auto md:mx-0 text-left">
             {[
               ["Live driver GPS + accurate ETA", MapPin],
               ["Private chat per trip — no WhatsApp mess", MessageCircle],
               ["One-tap SOS safety button", ShieldAlert],
             ].map(([t, Icon]: any) => (
               <li key={t} className="flex items-center gap-3">
-                <span className="grid h-8 w-8 place-items-center rounded-lg shrink-0" style={{ backgroundColor: `${COLORS.yellow}15`, color: COLORS.yellow }}>
+                <span className="grid h-8 w-8 place-items-center rounded-lg shrink-0" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
                   <Icon className="h-4 w-4" />
                 </span>
                 <span style={{ color: COLORS.white }}>{t}</span>
@@ -850,9 +850,9 @@ function ClientExperience() {
 
         <div className="relative flex justify-center">
           <div
-            className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-35"
+            className="absolute -inset-6 -z-10 rounded-[3rem] blur-2xl opacity-50"
             style={{
-              background: `linear-gradient(135deg, ${COLORS.yellow}20, ${COLORS.yellowGlow}05)`,
+              background: `linear-gradient(135deg, ${COLORS.yellow}30, ${COLORS.yellowGlow}10)`,
             }}
           />
           <ClientPortalPhone />
@@ -865,36 +865,36 @@ function ClientExperience() {
 /* ============================ FINAL CTA ============================ */
 function FinalCta() {
   return (
-    <section className="px-5 py-14 md:px-6 md:py-20">
+    <section className="px-5 py-12 md:px-6 md:py-16">
       <div
-        className="mx-auto max-w-6xl overflow-hidden rounded-3xl p-10 md:p-24 text-center relative"
+        className="mx-auto max-w-6xl overflow-hidden rounded-3xl p-8 md:p-20 text-center relative"
         style={{
           backgroundColor: COLORS.blackLight,
           background: `linear-gradient(135deg, ${COLORS.blackLight}, ${COLORS.black})`,
         }}
       >
         <div
-          className="absolute inset-0 opacity-15"
+          className="absolute inset-0 opacity-20"
           style={{
             background: `radial-gradient(circle at 50% 50%, ${COLORS.yellow}40, transparent 70%)`,
           }}
         />
         <div className="relative">
-          <img src={logoAsset.url} alt="" className="mx-auto h-14 md:h-16 w-auto rounded-xl p-1" style={{ backgroundColor: `${COLORS.yellow}12` }} />
-          <h2 className="mt-6 md:mt-8 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
+          <img src={logoAsset.url} alt="" className="mx-auto h-14 md:h-16 w-auto rounded-xl p-1" style={{ backgroundColor: `${COLORS.yellow}15` }} />
+          <h2 className="mt-5 md:mt-6 text-[1.75rem] md:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.05]" style={{ color: COLORS.white }}>
             Built for the realities of Maltese transport.
           </h2>
-          <p className="mt-5 max-w-2xl mx-auto text-base md:text-lg" style={{ color: COLORS.greyLight }}>
+          <p className="mt-4 max-w-2xl mx-auto text-base md:text-lg" style={{ color: COLORS.greyLight }}>
             Stop turning away jobs because you don't have enough cars. Connect your network today.
           </p>
-          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
+          <div className="mt-7 flex flex-col sm:flex-row justify-center gap-2.5">
             <Link
               to="/request-access"
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-sm font-bold shadow-lg transition-all"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold shadow-xl transition-all"
               style={{
                 backgroundColor: COLORS.yellow,
                 color: COLORS.black,
-                boxShadow: `0 8px 24px ${COLORS.yellow}30`,
+                boxShadow: `0 0 30px ${COLORS.yellow}40`,
               }}
             >
               Get Started <ArrowRight className="h-4 w-4" />
@@ -902,14 +902,14 @@ function FinalCta() {
             <Link
               to="/request-access"
               search={{ demo: "1" }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-sm font-semibold transition-all"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition-all"
               style={{
                 borderColor: COLORS.yellow,
                 color: COLORS.yellow,
                 border: `1px solid ${COLORS.yellow}`,
               }}
               onMouseEnter={(e) => {
-                (e.target as HTMLElement).style.backgroundColor = `${COLORS.yellow}12`;
+                (e.target as HTMLElement).style.backgroundColor = `${COLORS.yellow}15`;
               }}
               onMouseLeave={(e) => {
                 (e.target as HTMLElement).style.backgroundColor = "transparent";
@@ -934,20 +934,20 @@ function HowPointsWork() {
 
   return (
     <section id="pricing" className="border-t" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
-      <div className="mx-auto max-w-6xl px-5 md:px-6 py-16 md:py-24">
+      <div className="mx-auto max-w-6xl px-5 md:px-6 py-14 md:py-20">
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ backgroundColor: `${COLORS.yellow}15`, color: COLORS.yellow }}>
+          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
             Pay as you go
           </div>
-          <h2 className="mt-4 text-3xl md:text-4xl font-bold tracking-tight" style={{ color: COLORS.white }}>
+          <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight" style={{ color: COLORS.white }}>
             Simple points-based pricing
           </h2>
-          <p className="mt-4" style={{ color: COLORS.greyLight }}>
+          <p className="mt-3" style={{ color: COLORS.greyLight }}>
             No subscriptions. No wasted seats. You only pay for the actions your team actually takes.
           </p>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
           {items.map((it) => (
             <div
               key={it.title}
@@ -957,7 +957,7 @@ function HowPointsWork() {
                 backgroundColor: COLORS.black,
               }}
             >
-              <div className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `${COLORS.yellow}15`, color: COLORS.yellow }}>
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>
                 pts
               </div>
               <h3 className="mt-4 font-semibold" style={{ color: COLORS.white }}>
@@ -970,14 +970,14 @@ function HowPointsWork() {
           ))}
         </div>
 
-        <div className="mt-10 text-center">
+        <div className="mt-8 text-center">
           <Link
             to="/request-access"
-            className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all"
+            className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-all"
             style={{
               backgroundColor: COLORS.yellow,
               color: COLORS.black,
-              boxShadow: `0 6px 20px ${COLORS.yellow}25`,
+              boxShadow: `0 0 20px ${COLORS.yellow}40`,
             }}
           >
             Get Started <ArrowRight className="h-4 w-4" />
@@ -992,11 +992,11 @@ function HowPointsWork() {
 function TrustStrip() {
   return (
     <section className="border-t" style={{ borderColor: COLORS.yellow }}>
-      <div className="mx-auto max-w-6xl px-5 md:px-6 py-14 md:py-20">
+      <div className="mx-auto max-w-6xl px-5 md:px-6 py-12 md:py-16">
         <p className="text-center text-xs uppercase tracking-[0.15em] font-semibold" style={{ color: COLORS.greyMed }}>
           Trusted by operators across Malta
         </p>
-        <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
@@ -1011,7 +1011,7 @@ function TrustStrip() {
             </div>
           ))}
         </div>
-        <blockquote className="mt-12 max-w-3xl mx-auto rounded-2xl border p-7 md:p-10 text-center" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+        <blockquote className="mt-10 max-w-3xl mx-auto rounded-2xl border p-6 md:p-8 text-center" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
           <p className="text-base md:text-lg leading-relaxed" style={{ color: COLORS.white }}>
             "We stopped losing jobs on busy weekends. The Coordinator lets us push overflow to trusted partners in seconds."
           </p>
@@ -1051,17 +1051,17 @@ function FaqSection() {
 
   return (
     <section className="border-t" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
-      <div className="mx-auto max-w-3xl px-5 md:px-6 py-16 md:py-24">
+      <div className="mx-auto max-w-3xl px-5 md:px-6 py-14 md:py-20">
         <div className="text-center">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight" style={{ color: COLORS.white }}>
             Frequently asked questions
           </h2>
         </div>
-        <div className="mt-10 space-y-3">
+        <div className="mt-8 space-y-3">
           {faqs.map((f) => (
             <details
               key={f.q}
-              className="group rounded-xl border p-5 md:p-6 open:shadow-sm"
+              className="group rounded-xl border p-4 md:p-5 open:shadow-sm"
               style={{
                 borderColor: COLORS.yellow,
                 backgroundColor: COLORS.black,
@@ -1075,14 +1075,14 @@ function FaqSection() {
                 <span
                   className="h-6 w-6 rounded-full flex items-center justify-center group-open:rotate-45 transition-transform"
                   style={{
-                    backgroundColor: `${COLORS.yellow}15`,
+                    backgroundColor: `${COLORS.yellow}20`,
                     color: COLORS.yellow,
                   }}
                 >
                   +
                 </span>
               </summary>
-              <p className="mt-4 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
+              <p className="mt-3 text-sm leading-relaxed" style={{ color: COLORS.greyLight }}>
                 {f.a}
               </p>
             </details>
@@ -1097,15 +1097,15 @@ function FaqSection() {
 function Footer() {
   return (
     <footer className="border-t" style={{ borderColor: COLORS.yellow }}>
-      <div className="mx-auto max-w-6xl px-5 md:px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="mx-auto max-w-6xl px-5 md:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <img src={logoAsset.url} alt="" className="h-7 w-7 object-contain" />
           <div className="text-xs md:text-sm text-center sm:text-left" style={{ color: COLORS.greyMed }}>
             © {new Date().getFullYear()} The Coordinators · Transport Network Hub
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs md:text-sm">
-          <Link to="/auth" style={{ color: COLORS.yellow }}>
+        <div className="flex items-center gap-4 text-xs md:text-sm" style={{ color: COLORS.greyMed }}>
+          <Link to="/auth" className="hover:" style={{ color: COLORS.yellow }}>
             Login
           </Link>
           <a href="mailto:hello@coordinatormt.com" style={{ color: COLORS.yellow }}>
