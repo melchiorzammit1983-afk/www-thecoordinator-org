@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot, KeyRound, Gift, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot, KeyRound, Gift, AlertTriangle, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ const NAV: NavItem[] = [
   { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
   { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
   { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
+  { to: "/coordinator/address-settings", label: "Address & Map", icon: MapPin, exact: false, feature: null },
 ];
 
 
