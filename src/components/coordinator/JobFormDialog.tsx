@@ -945,18 +945,72 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                     <Input type="time" value={t.time} className="h-7 text-xs"
                       onChange={(e) => patch({ time: e.target.value })} />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-[10px] text-muted-foreground">Pickup</span>
-                    <Input value={t.from_location} className="h-7 text-xs"
+                  <div className="space-y-1 col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">Pickup</span>
+                      {t.autoFixed?.from_location && (
+                        <button type="button"
+                          className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:underline"
+                          onClick={() => {
+                            const original = t.autoFixed!.from_location!;
+                            const nextAf = { ...(t.autoFixed ?? {}) };
+                            delete nextAf.from_location;
+                            patch({
+                              from_location: original,
+                              from_place_id: null, from_lat: null, from_lng: null,
+                              autoFixed: (nextAf.from_location || nextAf.to_location) ? nextAf : undefined,
+                            });
+                          }}
+                          title={`Undo — restore "${t.autoFixed.from_location}"`}
+                        >
+                          <Undo2 className="h-3 w-3" /> Auto-fixed · undo
+                        </button>
+                      )}
+                    </div>
+                    <AddressAutocomplete
+                      value={t.from_location}
+                      placeId={t.from_place_id ?? null}
+                      onChange={(v) => patch({
+                        from_location: v.address,
+                        from_place_id: v.place_id, from_lat: v.lat, from_lng: v.lng,
+                      })}
                       placeholder="Pickup address"
-                      onChange={(e) => patch({ from_location: e.target.value })} />
-                  </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-[10px] text-muted-foreground">Delivery</span>
-                    <Input value={t.to_location} className="h-7 text-xs"
+                      inputClassName="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">Delivery</span>
+                      {t.autoFixed?.to_location && (
+                        <button type="button"
+                          className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:underline"
+                          onClick={() => {
+                            const original = t.autoFixed!.to_location!;
+                            const nextAf = { ...(t.autoFixed ?? {}) };
+                            delete nextAf.to_location;
+                            patch({
+                              to_location: original,
+                              to_place_id: null, to_lat: null, to_lng: null,
+                              autoFixed: (nextAf.from_location || nextAf.to_location) ? nextAf : undefined,
+                            });
+                          }}
+                          title={`Undo — restore "${t.autoFixed.to_location}"`}
+                        >
+                          <Undo2 className="h-3 w-3" /> Auto-fixed · undo
+                        </button>
+                      )}
+                    </div>
+                    <AddressAutocomplete
+                      value={t.to_location}
+                      placeId={t.to_place_id ?? null}
+                      onChange={(v) => patch({
+                        to_location: v.address,
+                        to_place_id: v.place_id, to_lat: v.lat, to_lng: v.lng,
+                      })}
                       placeholder="Delivery address"
-                      onChange={(e) => patch({ to_location: e.target.value })} />
-                  </label>
+                      inputClassName="h-8 text-xs"
+                    />
+                  </div>
                   <label className="space-y-1">
                     <span className="text-[10px] text-muted-foreground">Company</span>
                     <Input value={t.clientcompanyname} className="h-7 text-xs"
