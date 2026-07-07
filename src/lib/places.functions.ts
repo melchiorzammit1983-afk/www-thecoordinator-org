@@ -17,7 +17,8 @@ import { z } from "zod";
 const GATEWAY = "https://connector-gateway.lovable.dev/google_maps";
 
 const MALTA_CENTER = { latitude: 35.9375, longitude: 14.3754 };
-const DEFAULT_RADIUS_M = 60_000;
+const DEFAULT_RADIUS_M = 50_000;
+const MAX_RADIUS_M = 50_000; // Places (New) autocomplete hard cap.
 
 type Bias = {
   lat?: number;
@@ -30,7 +31,7 @@ type Bias = {
 function biasBody(bias?: Bias) {
   const lat = bias?.lat ?? MALTA_CENTER.latitude;
   const lng = bias?.lng ?? MALTA_CENTER.longitude;
-  const radius = Math.max(1000, Math.min(bias?.radius_m ?? DEFAULT_RADIUS_M, 500_000));
+  const radius = Math.max(1000, Math.min(bias?.radius_m ?? DEFAULT_RADIUS_M, MAX_RADIUS_M));
   return {
     locationBias: {
       circle: { center: { latitude: lat, longitude: lng }, radius },
@@ -53,7 +54,7 @@ const BiasSchema = z
   .object({
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
-    radius_m: z.number().min(1000).max(500_000).optional(),
+    radius_m: z.number().min(1000).max(50_000).optional(),
     region: z.string().min(2).max(4).optional(),
     language: z.string().min(2).max(8).optional(),
   })
