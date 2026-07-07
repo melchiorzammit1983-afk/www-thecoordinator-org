@@ -12,6 +12,7 @@ import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
 import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -45,6 +46,10 @@ export type DetailsJob = {
   traffic_severity?: string | null;
   leave_by_at?: string | null;
   pickup_shift_reason?: string | null;
+  pickup_display_name?: string | null;
+  dropoff_display_name?: string | null;
+  route_duration_sec?: number | null;
+  route_distance_m?: number | null;
   drivers?: DriverEmbed | null;
   pax?: Pax[];
   labels?: TLabel[];
@@ -270,8 +275,14 @@ export function TripDetailsSheet({
               )}
             </div>
             <SheetTitle className="text-base leading-tight">
-              {job.from_location} → {job.to_location}
+              {displayLocation(job.from_location, job.pickup_display_name)} → {displayLocation(job.to_location, job.dropoff_display_name)}
             </SheetTitle>
+            {(job.route_duration_sec ?? 0) > 0 && (
+              <div className="text-[11px] text-muted-foreground">
+                {formatEta(job.route_duration_sec)}
+                {job.route_distance_m ? ` · ${(job.route_distance_m / 1000).toFixed(1)} km` : ""}
+              </div>
+            )}
             {job.clientcompanyname && (
               <SheetDescription>{job.clientcompanyname}</SheetDescription>
             )}
