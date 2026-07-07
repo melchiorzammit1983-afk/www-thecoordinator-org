@@ -350,6 +350,42 @@ function ClientTripPortal() {
   );
 }
 
+/* ---------------- Route traffic / ETA card ---------------- */
+
+function TripTrafficCard({ job }: { job: any }) {
+  const delay: number | null = job.traffic_delay_minutes ?? null;
+  const sev: string | null = job.traffic_severity ?? null;
+  const leaveBy: string | null = job.leave_by_at ?? null;
+  if (delay == null && !leaveBy) return null;
+  const color = sev === "severe"
+    ? "border-red-200 bg-red-50 text-red-800"
+    : sev === "heavy"
+    ? "border-orange-200 bg-orange-50 text-orange-800"
+    : sev === "moderate"
+    ? "border-amber-200 bg-amber-50 text-amber-800"
+    : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const leaveByTxt = leaveBy
+    ? formatMaltaDateTime(leaveBy, { hour: "2-digit", minute: "2-digit" })
+    : null;
+  return (
+    <section className={cn("rounded-2xl border p-4 shadow-sm", color)}>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase opacity-70 mb-1">
+        <MapPin className="h-3.5 w-3.5" /> Route traffic
+      </div>
+      <div className="text-sm font-medium">
+        {delay != null && delay > 0
+          ? `+${delay} min delay on the way to pickup`
+          : delay === 0
+          ? "Route is clear"
+          : "Route ETA updated"}
+      </div>
+      {leaveByTxt && (
+        <div className="text-xs opacity-80 mt-0.5">Recommend leaving by {leaveByTxt}</div>
+      )}
+    </section>
+  );
+}
+
 /* ---------------- Flight status card ---------------- */
 
 function FlightCard({ job }: { job: any }) {
