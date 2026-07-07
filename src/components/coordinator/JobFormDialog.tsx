@@ -900,6 +900,11 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
           <div className="font-medium">⚠ The AI had trouble reading parts of this request.</div>
           <div className="mt-0.5">Please review and complete the fields below before creating trips.</div>
         </div>
+      {autoFixBusy && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          <Wand2 className="h-3.5 w-3.5 animate-pulse text-primary" />
+          Address auto-fix: matching pickup/drop-off with Google…
+        </div>
       )}
       {withErrors.length > 0 && (
         <div className="space-y-2 max-h-[380px] overflow-auto rounded-md border p-2">
