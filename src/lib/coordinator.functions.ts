@@ -1496,50 +1496,68 @@ export const previewTripStatus = createServerFn({ method: "POST" })
       reason?: string;
     } | null = null;
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    const lovableKey = process.env.LOVABLE_API_KEY;
     if (data.from_location && data.to_location) {
-      if (!apiKey) {
+      if (!apiKey || !lovableKey) {
         traffic = { ok: false, reason: "not_configured" };
       } else {
         try {
-          // For future pickups, Google requires a Unix timestamp in the future.
-          // If pickup is in the past or missing, use "now" for a real-time estimate.
+          // For future pickups Google needs a Unix timestamp in the future;
+          // for past/missing pickup fall back to "now".
           const nowMs = Date.now();
           const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
-          const depTime = pickupMs > nowMs + 60_000 ? Math.floor(pickupMs / 1000) : "now";
+          const depTime = pickupMs > nowMs + 60_000 ? String(Math.floor(pickupMs / 1000)) : "now";
+          // Route via the Lovable Google Maps connector gateway (same as places.functions.ts).
           const dmUrl =
-            `https://maps.googleapis.com/maps/api/distancematrix/json` +
+            `https://connector-gateway.lovable.dev/google_maps/maps/api/distancematrix/json` +
             `?origins=${encodeURIComponent(data.from_location)}` +
             `&destinations=${encodeURIComponent(data.to_location)}` +
-            `&departure_time=${depTime}&traffic_model=best_guess&key=${apiKey}`;
-          const dm: any = await (await fetch(dmUrl)).json();
-          const el = dm?.rows?.[0]?.elements?.[0];
-          if (!el || el.status !== "OK") {
-            traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
+            `&departure_time=${depTime}&traffic_model=best_guess`;
+          const dmRes = await fetch(dmUrl, {
+            headers: {
+              Authorization: `Bearer ${lovableKey}`,
+              "X-Connection-Api-Key": apiKey,
+            },
+          });
+          if (!dmRes.ok) {
+            const body = await dmRes.text().catch(() => "");
+            console.error(`[previewTripStatus.dm] ${dmRes.status}: ${body.slice(0, 500)}`);
+            traffic = { ok: false, reason: `dm_${dmRes.status}` };
           } else {
-            const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
-            const free = el.duration?.value ?? null;
-            const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
-            const delayMin = Math.round(delaySec / 60);
-            const ratio = free && dur ? dur / free : 1;
-            let severity: "light" | "moderate" | "heavy" | "severe" = "light";
-            if (ratio >= 1.75 || delayMin >= 30) severity = "severe";
-            else if (ratio >= 1.4 || delayMin >= 15) severity = "heavy";
-            else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
-            const leaveBy = pickupIso && dur
-              ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString()
-              : null;
-            traffic = {
-              ok: true,
-              delay_minutes: delayMin,
-              severity,
-              duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
-              duration_seconds: dur ?? undefined,
-              free_seconds: free ?? undefined,
-              distance_text: el.distance?.text ?? "",
-              leave_by_at: leaveBy,
-            };
+            const dm: any = await dmRes.json();
+            const topStatus = String(dm?.status ?? "").toUpperCase();
+            const el = dm?.rows?.[0]?.elements?.[0];
+            if (topStatus && topStatus !== "OK") {
+              traffic = { ok: false, reason: topStatus.toLowerCase() };
+            } else if (!el || el.status !== "OK") {
+              traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
+            } else {
+              const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
+              const free = el.duration?.value ?? null;
+              const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
+              const delayMin = Math.round(delaySec / 60);
+              const ratio = free && dur ? dur / free : 1;
+              let severity: "light" | "moderate" | "heavy" | "severe" = "light";
+              if (ratio >= 1.75 || delayMin >= 30) severity = "severe";
+              else if (ratio >= 1.4 || delayMin >= 15) severity = "heavy";
+              else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
+              const leaveBy = pickupIso && dur
+                ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString()
+                : null;
+              traffic = {
+                ok: true,
+                delay_minutes: delayMin,
+                severity,
+                duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+                duration_seconds: dur ?? undefined,
+                free_seconds: free ?? undefined,
+                distance_text: el.distance?.text ?? "",
+                leave_by_at: leaveBy,
+              };
+            }
           }
-        } catch {
+        } catch (e: any) {
+          console.error("[previewTripStatus.dm] exception", e);
           traffic = { ok: false, reason: "dm_failed" };
         }
       }
@@ -1551,6 +1569,56 @@ export const previewTripStatus = createServerFn({ method: "POST" })
       traffic,
     };
   });
+
+// Persist a fresh live-status snapshot on the trip row. Coordinator-only.
+// Reuses the same traffic + flight logic as previewTripStatus, then writes
+// traffic_* / flight_* columns so the calendar card and client portal reflect
+// the new values without any extra refresh.
+export const refreshJobLiveStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job, error } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (error || !job) throw new Error("Trip not found");
+    if (job.company_id !== c.id) throw new Error("Not allowed");
+
+    const preview = await (previewTripStatus as any).__executeServer({
+      data: {
+        from_location: job.from_location ?? undefined,
+        to_location: job.to_location ?? undefined,
+        date: job.date ?? undefined,
+        time: (job.time ?? "").slice(0, 5) || undefined,
+        from_flight: job.from_flight ?? undefined,
+        to_flight: job.to_flight ?? undefined,
+      },
+      context,
+    });
+
+    const patch: Record<string, any> = {};
+    if (preview.traffic?.ok) {
+      patch.traffic_delay_minutes = preview.traffic.delay_minutes ?? 0;
+      patch.traffic_severity = preview.traffic.severity ?? null;
+      patch.leave_by_at = preview.traffic.leave_by_at ?? null;
+    }
+    if (preview.flight?.ok) {
+      patch.flight_status = preview.flight.status ?? null;
+      patch.flight_status_note = preview.flight.note ?? null;
+      patch.flight_status_updated_at = new Date().toISOString();
+      patch.flight_scheduled_at = preview.flight.scheduled ?? null;
+      patch.flight_estimated_at = preview.flight.estimated ?? null;
+    }
+    if (Object.keys(patch).length) {
+      await supabaseAdmin.from("jobs").update(patch).eq("id", data.job_id);
+    }
+    return preview;
+  });
+
 
 export const listJobPax = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
