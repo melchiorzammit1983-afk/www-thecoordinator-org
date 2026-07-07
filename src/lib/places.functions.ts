@@ -265,10 +265,10 @@ async function _tryCharge(
 ): Promise<{ charged: true } | { charged: false; reason: string }> {
   try {
     const sb = await _admin();
-    // Feature entitlement gate
+    // Feature entitlement gate — table column is `feature`, not `feature_key`.
     const { data: ent } = await sb.from("company_feature_entitlements")
       .select("enabled, expires_at")
-      .eq("company_id", companyId).eq("feature_key", featureKey).maybeSingle();
+      .eq("company_id", companyId).eq("feature", featureKey).maybeSingle();
     if (ent && ent.enabled === false) return { charged: false, reason: "feature_disabled" };
     if (ent?.expires_at && new Date(ent.expires_at).getTime() < Date.now()) {
       return { charged: false, reason: "feature_expired" };
