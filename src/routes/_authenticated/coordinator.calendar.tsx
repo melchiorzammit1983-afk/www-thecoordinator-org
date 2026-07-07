@@ -281,6 +281,36 @@ function CalendarPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [jobs, flightFn, refetch]);
 
+  // Auto-refresh live status (traffic + flight) for trips leaving in the next 6h.
+  // Runs every 5 min while the calendar is open. Each trip is refreshed at most
+  // once every 5 min per session to keep Distance Matrix usage low. Cards read
+  // the persisted columns, so the badge updates automatically.
+  const refreshLiveFn = useServerFn(refreshJobLiveStatus);
+  const refreshedAtRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const tick = async () => {
+      const now = Date.now();
+      const horizon = now + 6 * 60 * 60_000;
+      const candidates = (jobs ?? []).filter((j: any) => {
+        if (!j?.pickup_at || !j.from_location || !j.to_location) return false;
+        const t = new Date(j.pickup_at).getTime();
+        if (Number.isNaN(t) || t < now - 30 * 60_000 || t > horizon) return false;
+        const last = refreshedAtRef.current[j.id] ?? 0;
+        return now - last > 5 * 60_000;
+      }).slice(0, 8);
+      if (!candidates.length) return;
+      for (const j of candidates) {
+        refreshedAtRef.current[j.id] = Date.now();
+        try { await refreshLiveFn({ data: { job_id: j.id } }); } catch { /* ignore */ }
+      }
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    };
+    tick();
+    const id = setInterval(tick, 5 * 60_000);
+    return () => clearInterval(id);
+  }, [jobs, refreshLiveFn, qc]);
+
+
   useEffect(() => {
     const ids = Array.from(new Set((jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))));
     setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
