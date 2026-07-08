@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from "@/components/ui/dialog";
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
+  ResponsiveDialogTitle, ResponsiveDialogDescription, ResponsiveDialogFooter,
+} from "@/components/mobile/ResponsiveDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -119,16 +120,16 @@ export function TripSummaryDialog({ open, onOpenChange, token, job }: Props) {
 
   if (!job) return null;
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!mut.isPending) onOpenChange(v); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <ResponsiveDialog open={open} onOpenChange={(v) => { if (!mut.isPending) onOpenChange(v); }}>
+      <ResponsiveDialogContent className="max-w-md">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Finish trip
-          </DialogTitle>
-          <DialogDescription>
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Confirm what you did on this trip. The coordinator will see the price — the client will not.
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         {/* Summary card */}
         <div className="rounded-lg border p-3 bg-muted/40 text-sm space-y-1.5">
@@ -226,7 +227,7 @@ export function TripSummaryDialog({ open, onOpenChange, token, job }: Props) {
           </Badge>
         )}
 
-        <DialogFooter className="gap-2">
+        <ResponsiveDialogFooter className="gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={mut.isPending}>
             Cancel
           </Button>
@@ -237,8 +238,8 @@ export function TripSummaryDialog({ open, onOpenChange, token, job }: Props) {
             <CheckCircle2 className="h-4 w-4 mr-1.5" />
             {mut.isPending ? "Saving…" : "Finish trip"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
