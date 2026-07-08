@@ -15,6 +15,8 @@ import {
   driverFinalizeTrip, getDriverTripSummaryPrefill,
 } from "@/lib/coordinator-public.functions";
 
+import { displayLocation } from "@/lib/trip-display";
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -23,6 +25,8 @@ type Props = {
     id: string;
     from_location: string;
     to_location: string;
+    pickup_display_name?: string | null;
+    dropoff_display_name?: string | null;
     pickup_at: string | null;
     date?: string;
     time?: string;
@@ -128,7 +132,7 @@ export function TripSummaryDialog({ open, onOpenChange, token, job }: Props) {
 
         {/* Summary card */}
         <div className="rounded-lg border p-3 bg-muted/40 text-sm space-y-1.5">
-          <div className="font-medium leading-tight">{job.from_location} → {job.to_location}</div>
+          <div className="font-medium leading-tight">{displayLocation(job.from_location, job.pickup_display_name)} → {displayLocation(job.to_location, job.dropoff_display_name)}</div>
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" /> Started

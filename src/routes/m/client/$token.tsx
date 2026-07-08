@@ -11,6 +11,8 @@ import { RecurringDialog } from "@/components/client/RecurringDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 
+import { displayLocation } from "@/lib/trip-display";
+
 export const Route = createFileRoute("/m/client/$token")({
   head: () => ({ meta: [{ title: "My Bookings" }] }),
   component: ClientPortal,
@@ -28,6 +30,7 @@ export const Route = createFileRoute("/m/client/$token")({
 type Booking = {
   id: string; name: string; surname: string; client_email: string;
   from_location: string; to_location: string;
+  pickup_display_name?: string | null; dropoff_display_name?: string | null;
   date: string | null; time: string | null; pickup_at: string | null;
   status: string; room_number: string | null;
 };
@@ -100,7 +103,7 @@ function BookingRow({ b, token, onEdit }: { b: Booking; token: string; onEdit: (
       <div className="flex justify-between gap-3 flex-wrap">
         <div>
           <div className="text-xs text-muted-foreground">{b.date ?? "—"} · {b.time?.slice(0,5)}</div>
-          <div className="font-medium">{b.from_location} → {b.to_location}</div>
+          <div className="font-medium">{displayLocation(b.from_location, b.pickup_display_name)} → {displayLocation(b.to_location, b.dropoff_display_name)}</div>
           <div className="text-xs text-muted-foreground">
             {b.name} {b.surname}{b.room_number ? ` · Room ${b.room_number}` : ""} · 1 pax
           </div>

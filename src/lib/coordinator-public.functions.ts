@@ -120,7 +120,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     }
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
@@ -648,7 +648,7 @@ export const getClientBookings = createServerFn({ method: "GET" })
     if (!link) return null;
     const supabaseAdmin = await getAdminClient();
     const q = supabaseAdmin.from("client_bookings")
-      .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number")
+      .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number, jobs!job_id(pickup_display_name, dropoff_display_name)")
       .eq("company_id", link.company_id)
       .order("pickup_at", { ascending: true, nullsFirst: false });
     const filtered = link.subject_label
@@ -657,7 +657,18 @@ export const getClientBookings = createServerFn({ method: "GET" })
     const { data: bookings, error } = await filtered;
     if (error) throw new Error(error.message);
     const branding = await loadCompanyBranding(link.company_id);
-    return { link, bookings: bookings ?? [], branding };
+    // Promote display names from the linked job (if any) up to the booking object.
+    type RawBooking = {
+      jobs?: { pickup_display_name: string | null; dropoff_display_name: string | null } | null;
+      [key: string]: unknown;
+    };
+    const normalised = (bookings as RawBooking[] ?? []).map((b) => ({
+      ...b,
+      pickup_display_name: b.jobs?.pickup_display_name ?? null,
+      dropoff_display_name: b.jobs?.dropoff_display_name ?? null,
+      jobs: undefined,
+    }));
+    return { link, bookings: normalised, branding };
   });
 
 // ---------- Phase 3: Client actions ----------
