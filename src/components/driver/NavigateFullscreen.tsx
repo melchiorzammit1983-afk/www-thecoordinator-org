@@ -434,15 +434,15 @@ export function NavigateFullscreen({
           style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
         >
           <div className="min-w-0 flex-1">
-            <div className="text-2xl sm:text-3xl font-black tabular-nums leading-none text-slate-900">
+            <div className="text-2xl sm:text-3xl font-black tabular-nums leading-none text-foreground">
               ETA {formatEtaMin(live.eta_sec)}
             </div>
             {destination && (
-              <div className="mt-1 truncate text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="mt-1 truncate text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {destination}
               </div>
             )}
-            <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-foreground">
               <span className="tabular-nums">{formatDistance(live.distance_m)}</span>
               {upcomingInstruction && (
                 <>

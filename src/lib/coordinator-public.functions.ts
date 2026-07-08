@@ -854,8 +854,8 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
-    if (data.status === "pending") {
-      if (!["pending", "en_route", "arrived"].includes(job.status ?? "")) {
+    if (data.status === "pending" && job.status !== "pending") {
+      if (!["en_route", "arrived"].includes(job.status ?? "")) {
         throw new Error("trip_cannot_return_to_waiting");
       }
       patch.driver_started_at = null;

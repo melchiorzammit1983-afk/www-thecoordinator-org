@@ -128,6 +128,18 @@ function formatDriverStatusError(error: Error): string {
   return error.message;
 }
 
+function getInstructionText(instruction: string | null | undefined): string | null {
+  if (!instruction) return null;
+  if (typeof document === "undefined") return instruction.trim() || null;
+  const template = document.createElement("template");
+  template.innerHTML = instruction;
+  return template.content.textContent?.replace(/\s+/g, " ").trim() || null;
+}
+
+function canReturnTripToWaiting(status: string | null | undefined): boolean {
+  return status === "en_route" || status === "arrived";
+}
+
 function DriverManifest() {
   const { token } = Route.useParams();
   const fn = useServerFn(getDriverManifest);
@@ -305,10 +317,11 @@ function DriverManifest() {
     if (activeJob) {
       const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
       const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
+      const nextInstructionText = getInstructionText(live.next_instruction);
       const parts = [
         activeJob.status === "in_progress" ? `Driving to ${dest}` : `Heading to pickup at ${dest}`,
         etaMin ? `ETA ${etaMin} minute${etaMin === 1 ? "" : "s"}` : null,
-        live.next_instruction ? `Next: ${live.next_instruction.replace(/<[^>]+>/g, "").trim()}` : null,
+        nextInstructionText ? `Next: ${nextInstructionText}` : null,
       ].filter(Boolean);
       audio.speak(parts.join(". "));
     }
@@ -326,7 +339,7 @@ function DriverManifest() {
           live={live}
           canEnterNavigate={inMotion}
           onEnterNavigate={() => setNavigateMode(true)}
-          canReturnToWaiting={activeJob.status === "en_route" || activeJob.status === "arrived"}
+          canReturnToWaiting={canReturnTripToWaiting(activeJob.status)}
         />
       ),
     }] : []),
@@ -354,7 +367,7 @@ function DriverManifest() {
           liveMeta={{
             eta_sec: live.eta_sec,
             distance_m: live.distance_m,
-            next_instruction: live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null,
+            next_instruction: getInstructionText(live.next_instruction),
             destination_label: routeDestination,
           }}
         />
@@ -750,7 +763,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const nextStatus = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
   const paid = job.payment_status === "paid";
   const accepted = !!job.driver_accepted_at;
-  const canReturnToWaiting = accepted && (job.status === "en_route" || job.status === "arrived");
+  const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
   const paxCount = pax.length;
@@ -1426,7 +1439,12 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
   const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
 
   const showLive = job.status === "en_route" || job.status === "in_progress";
-  const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
+  const stripInstruction = getInstructionText(live.next_instruction);
+  const routeHint = stripInstruction
+    ? `${live.next_step_distance_m != null ? `Next turn in ${formatDistance(live.next_step_distance_m)}` : "Next turn"} · ${stripInstruction}`
+    : live.next_step_distance_m != null
+    ? `Next turn in ${formatDistance(live.next_step_distance_m)}`
+    : null;
 
   return (
     <section
@@ -1452,7 +1470,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         </button>
       )}
 
-      {showLive && (stripInstruction || live.next_step_distance_m != null) && (
+      {showLive && routeHint && (
         <div className="px-5 pt-4">
           <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
             <div className="flex items-start gap-3">
@@ -1463,16 +1481,10 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
                 <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
                   Current route
                 </div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                <div className="text-sm font-semibold text-foreground truncate">
                   To {destinationLabel}
                 </div>
-                {stripInstruction && (
-                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {live.next_step_distance_m != null ? `Next turn in ${formatDistance(live.next_step_distance_m)}` : "Next turn"}
-                    {" · "}
-                    {stripInstruction}
-                  </div>
-                )}
+                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{routeHint}</div>
               </div>
             </div>
           </div>
