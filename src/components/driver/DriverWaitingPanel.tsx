@@ -61,6 +61,7 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
   const adjustments = ((data as any)?.adjustments ?? []) as any[];
   const total = Number((data as any)?.total ?? 0);
   const currency = ((data as any)?.currency ?? "EUR") as string;
+  const canManageAdjustments = active || status === "completed";
 
   // Live-ticking elapsed while a session is open
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -175,7 +176,7 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
     return () => { try { navigator.geolocation.clearWatch(id); } catch { /* noop */ } };
   }, [active, openWait, startMut]);
 
-  if (!active && !adjustments.length) return null;
+  if (!canManageAdjustments && !adjustments.length) return null;
 
   return (
     <section className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-3 space-y-3">
@@ -194,36 +195,47 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
         )}
       </div>
 
-      {active && (
-        <div className="flex gap-2">
-          {openWait ? (
-            <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={() => {
-              setAmount(""); setNote(""); setStopOpen(true);
-            }}>
-              <StopCircle className="h-4 w-4 mr-2" /> Stop waiting
-            </Button>
-          ) : (
-            <Button className="flex-1 bg-amber-500 hover:bg-amber-600 text-white" onClick={() => startMut.mutate("manual")} disabled={startMut.isPending}>
-              <Play className="h-4 w-4 mr-2" /> Start waiting
-            </Button>
+      {canManageAdjustments && (
+        <div className="space-y-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {active && (
+              openWait ? (
+                <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={() => {
+                  setAmount(""); setNote(""); setStopOpen(true);
+                }}>
+                  <StopCircle className="h-4 w-4 mr-2" /> Stop waiting
+                </Button>
+              ) : (
+                <Button className="flex-1 bg-amber-500 hover:bg-amber-600 text-white" onClick={() => startMut.mutate("manual")} disabled={startMut.isPending}>
+                  <Play className="h-4 w-4 mr-2" /> Start waiting
+                </Button>
+              )
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className={active ? "" : "w-full"}>
+                  <Plus className="h-4 w-4 mr-1" /> Add charge
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("extra_stop"); }}>Extra stop</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("toll"); }}>Toll</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("other"); }}>Other</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {status === "completed" && (
+            <p className="text-xs text-amber-900/80">
+              Trip finished — you can still add or remove non-waiting charges here.
+            </p>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline"><Plus className="h-4 w-4 mr-1" /> Add charge</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("extra_stop"); }}>Extra stop</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("toll"); }}>Toll</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setChargeAmount(""); setChargeLabel(""); setChargeNote(""); setChargeOpen("other"); }}>Other</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       )}
 
       {adjustments.length > 0 && (
         <ul className="text-sm divide-y divide-amber-200/70 bg-white/70 rounded-xl">
           {adjustments.map((a) => {
-            const canDelete = active && a.kind !== "waiting";
+            const canDelete = canManageAdjustments && a.kind !== "waiting";
             return (
               <li key={a.id} className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="min-w-0">

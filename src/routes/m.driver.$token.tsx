@@ -38,6 +38,8 @@ import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
+import { type CarouselApi, Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
@@ -118,6 +120,26 @@ const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "in_progress", label: "Passengers on board — en route" },
   { value: "completed", label: "Trip finished" },
 ];
+const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+
+function formatDriverStatusError(error: Error): string {
+  if (error.message === "trip_cannot_return_to_waiting") {
+    return "This trip can only go back to waiting before passengers are on board.";
+  }
+  return error.message;
+}
+
+function getInstructionText(instruction: string | null | undefined): string | null {
+  if (!instruction) return null;
+  if (typeof document === "undefined") return instruction.trim() || null;
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(instruction, "text/html");
+  return parsed.body.textContent?.replace(/\s+/g, " ").trim() || null;
+}
+
+function canReturnTripToWaiting(status: string | null | undefined): boolean {
+  return RETURN_TO_WAITING_STATUSES.has(status ?? "");
+}
 
 function DriverManifest() {
   const { token } = Route.useParams();
@@ -137,6 +159,9 @@ function DriverManifest() {
   }, [data?.driver]);
 
   const [showArchived, setShowArchived] = useState(false);
+  const isMobile = useIsMobile();
+  const [dashboardCarouselApi, setDashboardCarouselApi] = useState<CarouselApi | null>(null);
+  const [dashboardPanelIndex, setDashboardPanelIndex] = useState(0);
   const { activeJobs, archivedJobs } = useMemo(() => {
     if (!data) return { activeJobs: [] as Job[], archivedJobs: [] as Job[] };
     const sorted = [...data.jobs].sort((a, b) => {
@@ -199,6 +224,17 @@ function DriverManifest() {
   useEffect(() => {
     if (!inMotion && navigateMode) setNavigateMode(false);
   }, [inMotion, navigateMode]);
+  useEffect(() => {
+    if (!dashboardCarouselApi) return;
+    const sync = () => setDashboardPanelIndex(dashboardCarouselApi.selectedScrollSnap());
+    sync();
+    dashboardCarouselApi.on("select", sync);
+    dashboardCarouselApi.on("reInit", sync);
+    return () => {
+      dashboardCarouselApi.off("select", sync);
+      dashboardCarouselApi.off("reInit", sync);
+    };
+  }, [dashboardCarouselApi]);
 
   // Hands-free audio layer: dispatch/message chimes + Web Speech readouts.
   const audio = useDriverAudio({ storageKey: `driver:auto-read:${token}` });
@@ -282,14 +318,68 @@ function DriverManifest() {
     if (activeJob) {
       const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
       const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
+      const nextInstructionText = getInstructionText(live.next_instruction);
       const parts = [
         activeJob.status === "in_progress" ? `Driving to ${dest}` : `Heading to pickup at ${dest}`,
         etaMin ? `ETA ${etaMin} minute${etaMin === 1 ? "" : "s"}` : null,
-        live.next_instruction ? `Next: ${live.next_instruction.replace(/<[^>]+>/g, "").trim()}` : null,
+        nextInstructionText ? `Next: ${nextInstructionText}` : null,
       ].filter(Boolean);
       audio.speak(parts.join(". "));
     }
   }, [audio, lastAnnouncement, activeJob, live.eta_sec, live.next_instruction]);
+
+  const dashboardPanels = [
+    ...(activeJob ? [{
+      key: `trip-${activeJob.id}`,
+      label: "Active trip",
+      content: (
+        <NextInstructionCard
+          job={activeJob}
+          token={token}
+          onOpenSummary={() => setOpenJob(activeJob)}
+          live={live}
+          canEnterNavigate={inMotion}
+          onEnterNavigate={() => setNavigateMode(true)}
+          canReturnToWaiting={canReturnTripToWaiting(activeJob.status)}
+        />
+      ),
+    }] : []),
+    ...(activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
+      key: `waiting-${activeJob.id}`,
+      label: "Waiting & charges",
+      content: (
+        <DriverWaitingPanel
+          token={token}
+          jobId={activeJob.id}
+          status={activeJob.status ?? null}
+          fromLocation={activeJob.from_location ?? null}
+          toLocation={activeJob.to_location ?? null}
+        />
+      ),
+    }] : []),
+    {
+      key: "live-share",
+      label: "Share",
+      content: (
+        <DriverLiveShare
+          token={token}
+          hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
+          hidden={navigateMode}
+          liveMeta={{
+            eta_sec: live.eta_sec,
+            distance_m: live.distance_m,
+            next_instruction: getInstructionText(live.next_instruction),
+            destination_label: routeDestination,
+          }}
+        />
+      ),
+    },
+  ];
+  useEffect(() => {
+    if (dashboardPanelIndex < dashboardPanels.length) return;
+    setDashboardPanelIndex(0);
+    dashboardCarouselApi?.scrollTo(0);
+  }, [dashboardCarouselApi, dashboardPanelIndex, dashboardPanels.length]);
 
   if (isLoading) {
     return (
@@ -302,9 +392,6 @@ function DriverManifest() {
     );
   }
   if (!data) return <NotFound />;
-
-
-
 
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
@@ -402,36 +489,56 @@ function DriverManifest() {
       )}
 
       <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
-          {activeJob && (
-            <NextInstructionCard
-              job={activeJob}
-              token={token}
-              onOpenSummary={() => setOpenJob(activeJob)}
-              live={live}
-              canEnterNavigate={inMotion}
-              onEnterNavigate={() => setNavigateMode(true)}
-            />
-          )}
-          {activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") && (
-            <DriverWaitingPanel
-              token={token}
-              jobId={activeJob.id}
-              status={activeJob.status ?? null}
-              fromLocation={activeJob.from_location ?? null}
-              toLocation={activeJob.to_location ?? null}
-            />
-          )}
-          <DriverLiveShare
-            token={token}
-            hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
-            hidden={navigateMode}
-            liveMeta={{
-              eta_sec: live.eta_sec,
-              distance_m: live.distance_m,
-              next_instruction: live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null,
-              destination_label: routeDestination,
-            }}
-          />
+        {isMobile ? (
+          <section aria-label="Driver dashboard panels" className="space-y-2">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                {dashboardPanels.length > 1 ? "Swipe panels" : "Dashboard"}
+              </div>
+              {dashboardPanels.length > 1 && (
+                <div className="text-xs text-muted-foreground">
+                  {dashboardPanelIndex + 1}/{dashboardPanels.length}
+                </div>
+              )}
+            </div>
+            <Carousel setApi={setDashboardCarouselApi} opts={{ align: "start" }} className="-mx-1">
+              <CarouselContent className="ml-0">
+                {dashboardPanels.map((panel) => (
+                  <CarouselItem key={panel.key} className="pl-0">
+                    <div className="px-1">
+                      {panel.content}
+                    </div>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </Carousel>
+            {dashboardPanels.length > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 px-1">
+                {dashboardPanels.map((panel, index) => (
+                  <button
+                    key={panel.key}
+                    type="button"
+                    onClick={() => dashboardCarouselApi?.scrollTo(index)}
+                    aria-pressed={dashboardPanelIndex === index}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      dashboardPanelIndex === index
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground"
+                    }`}
+                  >
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          dashboardPanels.map((panel) => (
+            <div key={panel.key}>
+              {panel.content}
+            </div>
+          ))
+        )}
 
 
           {pendingJobs.length > 0 && (
@@ -638,7 +745,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
     onSuccess: () => { toast.success("Status updated"); invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
   });
   const payMut = useMutation({
     mutationFn: (status: "paid" | "pending") => payFn({ data: { token, job_id: job.id, status } }),
@@ -661,6 +768,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const nextStatus = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
   const paid = job.payment_status === "paid";
   const accepted = !!job.driver_accepted_at;
+  const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
   const paxCount = pax.length;
@@ -830,15 +938,26 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
       {!job.deletion_requested_at && (
         <DriverPricePanel token={token} jobId={job.id} accepted={accepted} />
       )}
+      {accepted && job.status === "completed" && (
+        <div className="px-3 pt-3">
+          <DriverWaitingPanel
+            token={token}
+            jobId={job.id}
+            status={job.status ?? null}
+            fromLocation={job.from_location ?? null}
+            toLocation={job.to_location ?? null}
+          />
+        </div>
+      )}
 
       {/* Actions */}
-      <div className="p-3 pt-3 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 p-3 pt-3 sm:grid-cols-2">
 
         {!accepted && !job.deletion_requested_at && (
           <>
             {/* Route preview strip */}
             {previewEnabled && (
-              <div className="col-span-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3">
+              <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3 sm:col-span-2">
                 <div className="h-10 w-10 grid place-items-center rounded-full bg-primary/15 text-primary shrink-0">
                   <Navigation className="h-5 w-5" />
                 </div>
@@ -870,14 +989,14 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
               </div>
             )}
             {!previewEnabled && isPending && !driverPos && (
-              <div className="col-span-2 rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
+              <div className="rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center sm:col-span-2">
                 Enable location to preview the route to pickup
               </div>
             )}
-            <Button className="col-span-2 h-12 text-base" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
+            <Button className="h-12 text-base sm:col-span-2" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
               {acceptMut.isPending ? "Accepting…" : "Accept trip"}
             </Button>
-            <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+            <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
               onClick={() => setRejectOpen(true)}>
               <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Reject
             </Button>
@@ -886,7 +1005,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
 
         {accepted && !job.deletion_requested_at && (
           <>
-            <Button className="col-span-2 h-11" onClick={onOpen}>
+            <Button className="h-11 sm:col-span-2" onClick={onOpen}>
               <QrCode className="h-4 w-4 mr-1.5" /> Open trip · Board passengers
             </Button>
             {nextStatus && (
@@ -905,8 +1024,18 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
                 <Timer className="h-4 w-4 mr-1.5" /> Running late
               </Button>
             )}
+            {canReturnToWaiting && (
+              <Button
+                variant="outline"
+                className="h-10 sm:col-span-2"
+                disabled={statusMut.isPending}
+                onClick={() => statusMut.mutate("pending")}
+              >
+                <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to waiting
+              </Button>
+            )}
             {job.status !== "in_progress" && job.status !== "completed" && (
-              <Button variant="outline" className="col-span-2 h-10 text-destructive border-destructive/40 hover:bg-destructive/10"
+              <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
                 onClick={() => setRejectOpen(true)}>
                 <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
               </Button>
@@ -928,19 +1057,19 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             </span>
           )}
         </Button>
-        <Button variant="outline" className="col-span-2 h-10" asChild>
+        <Button variant="outline" className="h-10 sm:col-span-2" asChild>
           <Link to="/m/driver/$token/sign/$jobId" params={{ token, jobId: job.id }}>
             <Megaphone className="h-4 w-4 mr-1.5" /> Open Sign Board
           </Link>
         </Button>
         {job.deletion_requested_at && (
-          <Button variant="destructive" className="col-span-2 h-10" disabled={approveDelMut.isPending}
+          <Button variant="destructive" className="h-10 sm:col-span-2" disabled={approveDelMut.isPending}
             onClick={() => setConfirmDelOpen(true)}>
             {approveDelMut.isPending ? "Approving…" : "Approve deletion"}
           </Button>
         )}
 
-        <div className="col-span-2 flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2 pt-1 sm:col-span-2">
           <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
             onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
             {paid ? "Mark pending" : "Mark paid"}
@@ -1286,16 +1415,17 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  * active/accepted trip. Extra-large instruction text + a 64px+ primary
  * action so the button stays tappable while the phone is dashboard-mounted.
  */
-function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate, onEnterNavigate }: {
+function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate, onEnterNavigate, canReturnToWaiting }: {
   job: Job; token: string; onOpenSummary: () => void; live: LiveRouteInfo;
   canEnterNavigate?: boolean; onEnterNavigate?: () => void;
+  canReturnToWaiting?: boolean;
 }) {
   const qc = useQueryClient();
   const statusFn = useServerFn(updateJobStatus);
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
     onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
   });
 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
@@ -1314,7 +1444,12 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
   const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
 
   const showLive = job.status === "en_route" || job.status === "in_progress";
-  const stripInstruction = live.next_instruction?.replace(/<[^>]+>/g, "").trim() ?? null;
+  const stripInstruction = getInstructionText(live.next_instruction);
+  const routeHint = stripInstruction
+    ? `${live.next_step_distance_m != null ? `Next turn in ${formatDistance(live.next_step_distance_m)}` : "Next turn"} · ${stripInstruction}`
+    : live.next_step_distance_m != null
+    ? `Next turn in ${formatDistance(live.next_step_distance_m)}`
+    : null;
 
   return (
     <section
@@ -1340,16 +1475,22 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         </button>
       )}
 
-      {/* Live turn-by-turn strip */}
-      {showLive && stripInstruction && (
-        <div className="flex items-center gap-3 px-5 py-3 bg-primary text-primary-foreground">
-          <ManeuverArrow maneuver={live.next_maneuver} className="h-8 w-8 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] uppercase tracking-widest opacity-80">
-              In {formatDistance(live.next_step_distance_m)}
-            </div>
-            <div className="text-lg sm:text-xl font-bold leading-tight break-words">
-              {stripInstruction}
+      {showLive && routeHint && (
+        <div className="px-5 pt-4">
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-background/90 p-2 text-primary shadow-sm">
+                <ManeuverArrow maneuver={live.next_maneuver} className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
+                  Current route
+                </div>
+                <div className="text-sm font-semibold text-foreground truncate">
+                  To {destinationLabel}
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{routeHint}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1359,7 +1500,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
           {job.status === "in_progress" ? "In progress" : job.status === "arrived" ? "At pickup" : "Next up"}
         </div>
-        <h2 className="mt-1 text-2xl sm:text-3xl font-black leading-tight tracking-tight text-slate-900 dark:text-white break-words">
+        <h2 className="mt-1 text-xl sm:text-3xl font-black leading-tight tracking-tight text-slate-900 dark:text-white break-words">
           {headline}
         </h2>
 
@@ -1368,7 +1509,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">ETA</div>
-              <div className="text-2xl font-black tabular-nums leading-none mt-0.5">
+              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5">
                 {formatEtaMin(live.eta_sec)}
               </div>
               {live.delay_sec >= 120 && (
@@ -1379,7 +1520,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
             </div>
             <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Remaining</div>
-              <div className="text-2xl font-black tabular-nums leading-none mt-0.5">
+              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5">
                 {formatDistance(live.distance_m)}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5 truncate">to {destinationLabel}</div>
@@ -1425,6 +1566,16 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
             <QrCode className="h-5 w-5 mr-2" /> Trip details
           </Button>
         </div>
+        {canReturnToWaiting && (
+          <Button
+            variant="ghost"
+            className="w-full min-h-11 text-sm font-semibold rounded-2xl"
+            disabled={statusMut.isPending}
+            onClick={() => statusMut.mutate("pending")}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to waiting
+          </Button>
+        )}
         {canEnterNavigate && (
           <a
             href={navUrl}

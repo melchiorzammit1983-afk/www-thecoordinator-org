@@ -843,6 +843,8 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
     return pax ?? [];
   });
 
+const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -854,6 +856,13 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
+    if (data.status === "pending" && job.status !== "pending") {
+      if (!DRIVER_RETURN_TO_WAITING_STATUSES.has(job.status ?? "")) {
+        throw new Error("trip_cannot_return_to_waiting");
+      }
+      patch.driver_started_at = null;
+      patch.driver_completed_at = null;
+    }
     // First "on the way" transition starts the trip timer.
     if (data.status === "en_route" && !(job as any).driver_started_at) {
       patch.driver_started_at = new Date().toISOString();
@@ -1949,7 +1958,7 @@ export const deleteTripAdjustment = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    if (job.status === "completed" || job.status === "cancelled") throw new Error("trip_locked");
+    if (job.status === "cancelled") throw new Error("trip_locked");
     const { data: row } = await supabaseAdmin.from("job_adjustments" as any)
       .select("id, kind, wait_session_id, driver_id")
       .eq("id", data.adjustment_id).eq("job_id", job.id).maybeSingle();
