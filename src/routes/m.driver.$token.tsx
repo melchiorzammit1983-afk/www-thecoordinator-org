@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { formatMaltaDateTime, formatMaltaTime } from "@/lib/time";
+import { displayLocation } from "@/lib/trip-display";
 import {
   getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
@@ -76,6 +77,7 @@ export const Route = createFileRoute("/m/driver/$token")({
 type Pax = { id: string; name: string; status: string; boarded_at: string | null };
 type Job = {
   id: string; from_location: string; to_location: string;
+  pickup_display_name?: string | null; dropoff_display_name?: string | null;
   date: string; time: string; pickup_at: string | null;
   flightorship: string | null;
   from_flight: string | null; to_flight: string | null;
@@ -515,7 +517,7 @@ function DriverManifest() {
       <TripChatDialog
         open={!!chatJob} onOpenChange={(v) => !v && setChatJob(null)}
         jobId={chatJob?.id ?? null}
-        title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
+        title={chatJob ? `${displayLocation(chatJob.from_location, chatJob.pickup_display_name)} → ${displayLocation(chatJob.to_location, chatJob.dropoff_display_name)}` : ""}
         role="driver" token={token}
       />
       <BrandingBar branding={data.branding} />
@@ -729,7 +731,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           <div className="flex-1 min-w-0 space-y-2">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pickup</div>
-              <div className="text-base font-bold leading-tight break-words">{job.from_location}</div>
+              <div className="text-base font-bold leading-tight break-words">{displayLocation(job.from_location, job.pickup_display_name)}</div>
               {job.from_flight && (
                 <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
                   <Plane className="h-3 w-3" /> {job.from_flight}
@@ -743,7 +745,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Drop-off</div>
-              <div className="text-base font-bold leading-tight break-words">{job.to_location}</div>
+              <div className="text-base font-bold leading-tight break-words">{displayLocation(job.to_location, job.dropoff_display_name)}</div>
               {job.to_flight && (
                 <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
                   <Plane className="h-3 w-3" /> {job.to_flight}
@@ -1078,6 +1080,8 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           id: job.id,
           from_location: job.from_location,
           to_location: job.to_location,
+          pickup_display_name: job.pickup_display_name,
+          dropoff_display_name: job.dropoff_display_name,
           pickup_at: job.pickup_at,
           date: job.date,
           time: job.time,
@@ -1089,7 +1093,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           mode="preview"
           live={previewLive}
           destination={job.from_location}
-          title={job.from_location}
+          title={displayLocation(job.from_location, job.pickup_display_name)}
           externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
           onExit={() => setPreviewOpen(false)}
           onSpeak={null}
@@ -1298,11 +1302,14 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
   const next = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
 
   const destination = job.status === "in_progress" ? job.to_location : job.from_location;
+  const pickupLabel = displayLocation(job.from_location, job.pickup_display_name);
+  const dropoffLabel = displayLocation(job.to_location, job.dropoff_display_name);
+  const destinationLabel = job.status === "in_progress" ? dropoffLabel : pickupLabel;
   const headline =
-    job.status === "in_progress" ? `DRIVE TO ${job.to_location.toUpperCase()}`
-    : job.status === "arrived"    ? `BOARD PASSENGERS AT ${job.from_location.toUpperCase()}`
-    : job.status === "en_route"   ? `HEAD TO PICKUP · ${job.from_location.toUpperCase()}`
-    :                                `NEXT TRIP · ${job.from_location.toUpperCase()}`;
+    job.status === "in_progress" ? `DRIVE TO ${dropoffLabel.toUpperCase()}`
+    : job.status === "arrived"    ? `BOARD PASSENGERS AT ${pickupLabel.toUpperCase()}`
+    : job.status === "en_route"   ? `HEAD TO PICKUP · ${pickupLabel.toUpperCase()}`
+    :                                `NEXT TRIP · ${pickupLabel.toUpperCase()}`;
 
   const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
 
@@ -1375,14 +1382,14 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
               <div className="text-2xl font-black tabular-nums leading-none mt-0.5">
                 {formatDistance(live.distance_m)}
               </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">to {destination}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">to {destinationLabel}</div>
             </div>
           </div>
         )}
 
         {!showLive && (
           <div className="mt-1 text-sm text-muted-foreground truncate">
-            {job.status === "in_progress" ? `From ${job.from_location}` : `To ${job.to_location}`}
+            {job.status === "in_progress" ? `From ${pickupLabel}` : `To ${dropoffLabel}`}
           </div>
         )}
       </div>
@@ -1884,7 +1891,7 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
     <Dialog open={!!job} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{job?.from_location} → {job?.to_location}</DialogTitle>
+          <DialogTitle>{displayLocation(job?.from_location, job?.pickup_display_name)} → {displayLocation(job?.to_location, job?.dropoff_display_name)}</DialogTitle>
           <DialogDescription>
             Tap "Confirm" for boarding passengers, or "No-show" if someone doesn't turn up.
           </DialogDescription>
