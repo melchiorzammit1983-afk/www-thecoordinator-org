@@ -17,7 +17,7 @@ import {
 } from "@/lib/collab.functions";
 import { listPortalBookings, acceptPortalBooking, rejectPortalBooking, getPortalSettings } from "@/lib/portal.functions";
 import {
-  displayLocation, formatEta,
+  displayLocation, formatEta, formatEtaMinutes,
   urgencyTier, urgencyClasses, DEFAULT_URGENCY, type UrgencyThresholds,
 } from "@/lib/trip-display";
 
@@ -27,7 +27,6 @@ import {
   checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations, listOpenWaitSessions,
   getCardSignalsCoord, markJobViewedCoord,
   ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
-  listActiveSosPoints, acknowledgeSosCoord, acknowledgeAllSosForJob,
   approveClientJob, rejectClientJob,
   computeTripFlags, dismissTripFlag,
   refreshJobLiveStatus,
@@ -55,7 +54,6 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
-import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -159,6 +157,13 @@ type Driver = { id: string; name: string; vehicle: string | null };
 type TripFlagInfo = {
   duplicates: { id: string; date: string | null; time: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
   suspicious: { id: string; date: string | null; time: string | null; flight_number: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+};
+
+type LiveEtaPoint = {
+  job_id: string;
+  captured_at: string;
+  wait_started_at?: string | null;
+  eta_sec?: number | null;
 };
 
 function CalendarPage() {
@@ -605,8 +610,8 @@ function CalendarPage() {
         if (j) setDetailsJob(j as any);
       }} />
 
-      {/* Live driver map */}
-      <LiveMapPanel />
+      {/* Trip list with concise ETA */}
+      <DispatchTripList jobs={visibleJobs} />
 
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
@@ -1624,11 +1629,11 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
   );
 }
 
-function useLiveEtaPoint(jobId: string): LivePoint | null {
+function useLiveEtaPoint(jobId: string): LiveEtaPoint | null {
   const fn = useServerFn(listActiveDriverLocations);
   const { data } = useQuery({
     queryKey: ["live-locations"],
-    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LiveEtaPoint[]>,
     refetchInterval: 30_000,
     staleTime: 20_000,
   });
@@ -1649,7 +1654,7 @@ function computeLateMin(job: Job, etaSec: number | null | undefined): number | n
   return Math.round((projected - pickupMs) / 60000);
 }
 
-function EtaChip({ point, job }: { point: LivePoint | null; job: Job }) {
+function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   if (!point) return null;
   const fresh = Date.now() - new Date(point.captured_at).getTime() < 90_000;
   if (!fresh) return null;
@@ -2416,98 +2421,35 @@ function DetailsSheetHost({
   );
 }
 
-/* ------------------------------ Live map panel ------------------------------ */
+/* ------------------------------ Dispatch trip list ------------------------------ */
 
-function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
-  const liveTrackingEnabled = useFeature("live_tracking");
-  const [open, setOpen] = useState(initialOpen);
-  const fn = useServerFn(listActiveDriverLocations);
-  const sosFn = useServerFn(listActiveSosPoints);
-  const ackFn = useServerFn(acknowledgeSosCoord);
-  const qc = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ["live-locations"],
-    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
-    refetchInterval: 30_000,
-  });
-  const { data: sosData } = useQuery({
-    queryKey: ["active-sos-points"],
-    queryFn: () => sosFn({} as any) as Promise<any[]>,
+function toSimpleStatus(job: Job): "Pending" | "Assigned" | "In progress" | "Done" | "Cancelled" {
+  if (job.status === "cancelled") return "Cancelled";
+  if (job.status === "completed") return "Done";
+  if (job.status === "en_route" || job.status === "arrived" || job.status === "in_progress") return "In progress";
+  if (job.driver_id) return "Assigned";
+  return "Pending";
+}
 
-    refetchInterval: 15_000,
-  });
-  useEffect(() => {
-    const ch = supabase
-      .channel("driver-locations-live")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "driver_locations" }, () => {
-        qc.invalidateQueries({ queryKey: ["live-locations"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_sos_events" }, () => {
-        qc.invalidateQueries({ queryKey: ["active-sos-points"] });
-        qc.invalidateQueries({ queryKey: ["card-signals"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [qc]);
-
-  const ackMut = useMutation({
-    mutationFn: (sos_id: string) => ackFn({ data: { sos_id } }) as Promise<{ ok: true }>,
-    onSuccess: () => {
-      toast.success("SOS dismissed");
-      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
-      qc.invalidateQueries({ queryKey: ["card-signals"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const points = data ?? [];
-  const sosPoints = sosData ?? [];
-  const liveCount = points.filter((p) => Date.now() - new Date(p.captured_at).getTime() < 30_000).length;
-
-  if (!liveTrackingEnabled) return null;
+function DispatchTripList({ jobs }: { jobs: Job[] }) {
+  if (jobs.length === 0) return null;
+  const list = [...jobs].sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")));
   return (
-    <section className={`rounded-lg border bg-card ${sosPoints.length ? "ring-2 ring-red-500/60" : ""}`}>
-      <button
-        type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <span className="relative flex h-2.5 w-2.5">
-          <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${liveCount ? "bg-emerald-500 animate-ping" : "bg-muted"}`} />
-          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${liveCount ? "bg-emerald-600" : "bg-muted-foreground/40"}`} />
-        </span>
-        <span>Live map</span>
-        <Badge variant="secondary" className="ml-1">
-          {liveCount} live · {points.length} tracked
-        </Badge>
-        {sosPoints.length > 0 && (
-          <Badge variant="destructive" className="ml-1 animate-pulse">
-            🆘 {sosPoints.length} SOS
-          </Badge>
-        )}
-        <div className="ml-auto hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" />live</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />paused</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-gray-500" />offline</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-600" />SOS</span>
-        </div>
-      </button>
-      {open && (
-        <div className="p-3 pt-0">
-          {points.length === 0 && sosPoints.length === 0 ? (
-            <div className="text-xs text-muted-foreground border rounded-md p-6 text-center bg-muted/30">
-              No drivers sharing location and no active SOS. Drivers can enable tracking from their manifest.
-            </div>
-          ) : (
-            <DriverLiveMap
-              points={points}
-              sosPoints={sosPoints}
-              height={320}
-              onAcknowledgeSos={(id) => ackMut.mutate(id)}
-            />
-          )}
-        </div>
-      )}
+    <section className="rounded-lg border bg-card p-3 space-y-2">
+      <div className="text-sm font-medium">Trips ({list.length})</div>
+      <ul className="space-y-1.5">
+        {list.map((job) => {
+          const from = displayLocation(job.from_location, job.pickup_display_name);
+          const to = displayLocation(job.to_location, job.dropoff_display_name);
+          const eta = formatEtaMinutes(job.route_duration_sec);
+          return (
+            <li key={job.id} className="rounded-md border bg-background px-2.5 py-2 text-sm flex items-center gap-2">
+              <span className="truncate min-w-0 flex-1">{from} to {to}{eta ? ` · ${eta}` : ""}</span>
+              <Badge variant="outline" className="shrink-0 text-[10px]">{toSimpleStatus(job)}</Badge>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

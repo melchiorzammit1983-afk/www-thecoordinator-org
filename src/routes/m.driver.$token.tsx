@@ -27,7 +27,6 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { NavigateFullscreen } from "@/components/driver/NavigateFullscreen";
 import { DriverDashboardMap, type DriverMapJob } from "@/components/driver/DriverDashboardMap";
 import { TripSummaryDialog } from "@/components/driver/TripSummaryDialog";
@@ -357,23 +356,6 @@ function DriverManifest() {
         />
       ),
     }] : []),
-    {
-      key: "live-share",
-      label: "Share",
-      content: (
-        <DriverLiveShare
-          token={token}
-          hasActiveTrip={jobs.some((j) => ["en_route", "arrived", "in_progress"].includes(j.status ?? ""))}
-          hidden={navigateMode}
-          liveMeta={{
-            eta_sec: live.eta_sec,
-            distance_m: live.distance_m,
-            next_instruction: getInstructionText(live.next_instruction),
-            destination_label: routeDestination,
-          }}
-        />
-      ),
-    },
   ];
   useEffect(() => {
     if (dashboardPanelIndex < dashboardPanels.length) return;

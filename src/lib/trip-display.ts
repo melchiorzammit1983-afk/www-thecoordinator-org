@@ -47,6 +47,11 @@ export function formatEta(seconds: number | null | undefined): string | null {
   return m ? `≈ ${h}h ${m}m` : `≈ ${h}h`;
 }
 
+export function formatEtaMinutes(seconds: number | null | undefined): string | null {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null;
+  return `${Math.max(1, Math.round(seconds / 60))} min`;
+}
+
 export type UrgencyTier = "red" | "orange" | "green" | null;
 
 export type UrgencyThresholds = {
