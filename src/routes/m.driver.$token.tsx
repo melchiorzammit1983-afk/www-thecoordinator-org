@@ -1891,7 +1891,7 @@ function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; to
     <Dialog open={!!job} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{displayLocation(job?.from_location, job?.pickup_display_name)} → {displayLocation(job?.to_location, job?.dropoff_display_name)}</DialogTitle>
+          <DialogTitle>{job ? `${displayLocation(job.from_location, job.pickup_display_name)} → ${displayLocation(job.to_location, job.dropoff_display_name)}` : ""}</DialogTitle>
           <DialogDescription>
             Tap "Confirm" for boarding passengers, or "No-show" if someone doesn't turn up.
           </DialogDescription>

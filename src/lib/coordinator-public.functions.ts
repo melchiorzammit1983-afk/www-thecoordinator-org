@@ -658,7 +658,11 @@ export const getClientBookings = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const branding = await loadCompanyBranding(link.company_id);
     // Promote display names from the linked job (if any) up to the booking object.
-    const normalised = (bookings ?? []).map((b: any) => ({
+    type RawBooking = {
+      jobs?: { pickup_display_name: string | null; dropoff_display_name: string | null } | null;
+      [key: string]: unknown;
+    };
+    const normalised = (bookings as RawBooking[] ?? []).map((b) => ({
       ...b,
       pickup_display_name: b.jobs?.pickup_display_name ?? null,
       dropoff_display_name: b.jobs?.dropoff_display_name ?? null,
