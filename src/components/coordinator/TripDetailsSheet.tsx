@@ -8,13 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
-import { DriverLiveMap, type LivePoint } from "./DriverLiveMap";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { listActiveDriverLocations, getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, refreshJobLiveStatus } from "@/lib/coordinator.functions";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
@@ -664,28 +662,6 @@ export function TripDetailsSheet({
             {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
           </section>
 
-          {/* Live location */}
-          {job.driver_id && !job.external && (
-            <TripLiveLocation
-              driverId={job.driver_id}
-              sosPoints={openSos
-                .filter((s) => s.latitude != null && s.longitude != null)
-                .map((s) => ({
-                  id: s.id,
-                  job_id: s.job_id,
-                  pax_name: s.pax_name,
-                  latitude: s.latitude as number,
-                  longitude: s.longitude as number,
-                  note: s.note,
-                  created_at: s.created_at,
-                  job_from: job.from_location,
-                  job_to: job.to_location,
-                }))}
-              onAcknowledgeSos={(id) => ackOne.mutate(id)}
-            />
-          )}
-
-
           {/* Chain */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Dispatch chain</div>
@@ -780,88 +756,6 @@ function PaxLinkButton({ jobId, paxId, paxName }: { jobId: string; paxId: string
     </span>
   );
 }
-
-function TripLiveLocation({
-  driverId,
-  sosPoints = [],
-  onAcknowledgeSos,
-}: {
-  driverId: string;
-  sosPoints?: import("./DriverLiveMap").SosPoint[];
-  onAcknowledgeSos?: (id: string) => void;
-}) {
-  const fn = useServerFn(listActiveDriverLocations);
-  const qc = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ["live-locations"],
-    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
-    refetchInterval: 30_000,
-  });
-  useEffect(() => {
-    const ch = supabase
-      .channel(`driver-live-${driverId}`)
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "driver_locations", filter: `driver_id=eq.${driverId}` },
-        () => qc.invalidateQueries({ queryKey: ["live-locations"] }))
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [qc, driverId]);
-
-  const points = (data ?? []).filter((p) => p.driver_id === driverId);
-  const p = points[0];
-  const ageSec = p ? Math.max(0, Math.floor((Date.now() - new Date(p.captured_at).getTime()) / 1000)) : null;
-  const state: "live" | "paused" | "offline" | "none" =
-    !p ? "none" : ageSec! < 30 ? "live" : ageSec! < 120 ? "paused" : "offline";
-
-  const etaLabel = p?.eta_sec != null
-    ? (p.eta_sec < 60 ? "<1 min" : p.eta_sec < 3600
-        ? `${Math.max(1, Math.round(p.eta_sec / 60))} min`
-        : `${Math.floor(p.eta_sec / 3600)}h ${Math.round((p.eta_sec % 3600) / 60)}m`)
-    : null;
-  const nextInstr = p?.next_instruction?.trim() || null;
-
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium inline-flex items-center gap-1">
-          <MapPin className="h-3 w-3" /> Live location
-        </div>
-        {state !== "none" && (
-          <Badge
-            className={`text-[10px] ${
-              state === "live" ? "bg-emerald-600 hover:bg-emerald-600" :
-              state === "paused" ? "bg-amber-500 hover:bg-amber-500" :
-              "bg-muted-foreground/70 hover:bg-muted-foreground/70"
-            }`}
-          >
-            {state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
-            {ageSec != null && ageSec >= 5 && ` · ${ageSec < 60 ? `${ageSec}s` : `${Math.floor(ageSec/60)}m`} ago`}
-          </Badge>
-        )}
-      </div>
-      {(etaLabel || nextInstr) && (
-        <div className="rounded-md border bg-primary/5 px-2.5 py-1.5 text-xs flex items-center gap-2 flex-wrap">
-          {etaLabel && (
-            <span className="font-semibold text-primary tabular-nums">ETA {etaLabel}</span>
-          )}
-          {etaLabel && nextInstr && <span className="text-muted-foreground">·</span>}
-          {nextInstr && (
-            <span className="truncate text-muted-foreground">{nextInstr}</span>
-          )}
-        </div>
-      )}
-      {state === "none" && sosPoints.length === 0 ? (
-        <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
-          Driver hasn't shared location yet. They can enable it from their manifest.
-        </div>
-      ) : (
-        <DriverLiveMap points={points} sosPoints={sosPoints} focusDriverId={driverId} height={220} onAcknowledgeSos={onAcknowledgeSos} />
-
-      )}
-    </section>
-  );
-}
-
 
 function FlightStatusPill({ status }: { status: string | null | undefined }) {
   const s = status ?? "unknown";
@@ -1127,4 +1021,3 @@ function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
     </Button>
   );
 }
-
