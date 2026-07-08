@@ -120,6 +120,7 @@ const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "in_progress", label: "Passengers on board — en route" },
   { value: "completed", label: "Trip finished" },
 ];
+const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
 
 function formatDriverStatusError(error: Error): string {
   if (error.message === "trip_cannot_return_to_waiting") {
@@ -131,13 +132,13 @@ function formatDriverStatusError(error: Error): string {
 function getInstructionText(instruction: string | null | undefined): string | null {
   if (!instruction) return null;
   if (typeof document === "undefined") return instruction.trim() || null;
-  const template = document.createElement("template");
-  template.innerHTML = instruction;
-  return template.content.textContent?.replace(/\s+/g, " ").trim() || null;
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(instruction, "text/html");
+  return parsed.body.textContent?.replace(/\s+/g, " ").trim() || null;
 }
 
 function canReturnTripToWaiting(status: string | null | undefined): boolean {
-  return status === "en_route" || status === "arrived";
+  return RETURN_TO_WAITING_STATUSES.has(status ?? "");
 }
 
 function DriverManifest() {
@@ -488,15 +489,17 @@ function DriverManifest() {
       )}
 
       <main className="relative z-10 max-w-3xl mx-auto p-3 space-y-3 pb-24">
-        {isMobile && dashboardPanels.length > 1 ? (
+        {isMobile ? (
           <section aria-label="Driver dashboard panels" className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                Swipe panels
+                {dashboardPanels.length > 1 ? "Swipe panels" : "Dashboard"}
               </div>
-              <div className="text-xs text-muted-foreground">
-                {dashboardPanelIndex + 1}/{dashboardPanels.length}
-              </div>
+              {dashboardPanels.length > 1 && (
+                <div className="text-xs text-muted-foreground">
+                  {dashboardPanelIndex + 1}/{dashboardPanels.length}
+                </div>
+              )}
             </div>
             <Carousel setApi={setDashboardCarouselApi} opts={{ align: "start" }} className="-mx-1">
               <CarouselContent className="ml-0">
@@ -509,23 +512,25 @@ function DriverManifest() {
                 ))}
               </CarouselContent>
             </Carousel>
-            <div className="flex flex-wrap items-center justify-center gap-2 px-1">
-              {dashboardPanels.map((panel, index) => (
-                <button
-                  key={panel.key}
-                  type="button"
-                  onClick={() => dashboardCarouselApi?.scrollTo(index)}
-                  aria-pressed={dashboardPanelIndex === index}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                    dashboardPanelIndex === index
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground"
-                  }`}
-                >
-                  {panel.label}
-                </button>
-              ))}
-            </div>
+            {dashboardPanels.length > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 px-1">
+                {dashboardPanels.map((panel, index) => (
+                  <button
+                    key={panel.key}
+                    type="button"
+                    onClick={() => dashboardCarouselApi?.scrollTo(index)}
+                    aria-pressed={dashboardPanelIndex === index}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      dashboardPanelIndex === index
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground"
+                    }`}
+                  >
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
         ) : (
           dashboardPanels.map((panel) => (
