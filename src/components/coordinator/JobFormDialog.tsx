@@ -282,7 +282,12 @@ function ManualForm({
     }
     return null;
   });
-  const etaKeyRef = useRef<string>("");
+  // Seed the key with the persisted from/to when the job already has a cached
+  // ETA, so simply opening an existing trip doesn't re-charge a "route_eta"
+  // credit. A fetch only fires once the coordinator actually edits an address.
+  const etaKeyRef = useRef<string>(
+    job?.route_duration_sec ? `${job?.from_location ?? ""}||${job?.to_location ?? ""}` : "",
+  );
   useEffect(() => {
     const key = `${from}||${to}`;
     if (!from.trim() || !to.trim() || from.trim().length < 3 || to.trim().length < 3) {

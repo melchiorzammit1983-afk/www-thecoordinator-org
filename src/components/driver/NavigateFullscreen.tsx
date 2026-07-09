@@ -377,17 +377,25 @@ export function NavigateFullscreen({
 
       {/* Top-center: next-maneuver banner (navigate mode) */}
       {!isPreview && displayInstruction && (
-        <div className="absolute top-4 left-20 right-20 z-[9] mx-auto max-w-md">
+        <div className="absolute top-4 left-16 right-16 z-[9] mx-auto max-w-md">
           <div
-            className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
+            className="flex items-start gap-3 rounded-2xl px-3 py-2.5 shadow-lg"
             style={{ background: "rgba(37,99,235,0.95)", color: "#fff", backdropFilter: "blur(8px)" }}
           >
-            <ManeuverArrow maneuver={displayManeuver} className="h-8 w-8 shrink-0" />
+            <ManeuverArrow maneuver={displayManeuver} className="mt-0.5 h-7 w-7 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="text-lg font-bold tabular-nums leading-none">
+              <div className="text-[11px] uppercase tracking-[0.18em] opacity-80">
+                Next turn
+              </div>
+              <div className="mt-1 text-base font-bold tabular-nums leading-none">
                 {formatDistance(displayDistance ?? null)}
               </div>
-              <div className="mt-0.5 truncate text-xs opacity-90">{displayInstruction}</div>
+              <div className="mt-1 text-xs leading-relaxed opacity-90">{displayInstruction}</div>
+              {destination && (
+                <div className="mt-1 truncate text-[11px] opacity-70">
+                  Heading to {destination}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -426,10 +434,15 @@ export function NavigateFullscreen({
           style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" }}
         >
           <div className="min-w-0 flex-1">
-            <div className="text-3xl sm:text-4xl font-black tabular-nums leading-none text-slate-900">
+            <div className="text-2xl sm:text-3xl font-black tabular-nums leading-none text-foreground">
               ETA {formatEtaMin(live.eta_sec)}
             </div>
-            <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-700">
+            {destination && (
+              <div className="mt-1 truncate text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {destination}
+              </div>
+            )}
+            <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-foreground">
               <span className="tabular-nums">{formatDistance(live.distance_m)}</span>
               {upcomingInstruction && (
                 <>

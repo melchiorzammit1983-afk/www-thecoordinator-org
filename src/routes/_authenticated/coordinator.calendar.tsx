@@ -2,50 +2,122 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DndContext, useDraggable, useDroppable, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import {
+  DndContext,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
 import {
-  Plus, Copy, Split, GripVertical, Calendar as CalIcon, Trash2, MessageCircle, Send,
-  Users, MessagesSquare, MoreVertical, ChevronDown, ChevronRight, Inbox, PlaneTakeoff, Link2, Unlink,
-  Pencil, Sparkles, AlertTriangle, Search, X as XIcon, GitMerge, Image as ImageIcon,
+  Plus,
+  Copy,
+  Split,
+  GripVertical,
+  Calendar as CalIcon,
+  Trash2,
+  MessageCircle,
+  Send,
+  Users,
+  MessagesSquare,
+  MoreVertical,
+  ChevronDown,
+  ChevronRight,
+  Inbox,
+  PlaneTakeoff,
+  Link2,
+  Unlink,
+  Pencil,
+  Sparkles,
+  AlertTriangle,
+  Search,
+  X as XIcon,
+  GitMerge,
+  Image as ImageIcon,
+  Filter,
+  Users2,
 } from "lucide-react";
 import {
-  listConnections, dispatchJobToPartner, recallPartnerDispatch,
-  listIncomingDispatches, listOutboundDispatches, respondToDispatch,
+  listConnections,
+  dispatchJobToPartner,
+  recallPartnerDispatch,
+  listIncomingDispatches,
+  listOutboundDispatches,
+  respondToDispatch,
 } from "@/lib/collab.functions";
-import { listPortalBookings, acceptPortalBooking, rejectPortalBooking, getPortalSettings } from "@/lib/portal.functions";
 import {
-  displayLocation, formatEta,
-  urgencyTier, urgencyClasses, DEFAULT_URGENCY, type UrgencyThresholds,
+  listPortalBookings,
+  acceptPortalBooking,
+  rejectPortalBooking,
+  getPortalSettings,
+} from "@/lib/portal.functions";
+import {
+  displayLocation,
+  formatEta,
+  formatEtaMinutes,
+  urgencyTier,
+  urgencyClasses,
+  DEFAULT_URGENCY,
+  type UrgencyThresholds,
 } from "@/lib/trip-display";
 
-
 import {
-  listJobs, listDrivers, assignDriver, cloneJob, splitJob, deleteJob, cancelDeletionRequest,
-  checkFlightStatus, shareJobToDriver, getUnreadCountsCoord, getClientPresenceCoord, listActiveDriverLocations, listOpenWaitSessions,
-  getCardSignalsCoord, markJobViewedCoord,
-  ungroupJobs, groupJobs, shareGroupToDriver, getClientTripLink,
-  listActiveSosPoints, acknowledgeSosCoord, acknowledgeAllSosForJob,
-  approveClientJob, rejectClientJob,
-  computeTripFlags, dismissTripFlag,
+  listJobs,
+  listDrivers,
+  assignDriver,
+  cloneJob,
+  splitJob,
+  deleteJob,
+  cancelDeletionRequest,
+  checkFlightStatus,
+  shareJobToDriver,
+  getUnreadCountsCoord,
+  getClientPresenceCoord,
+  listActiveDriverLocations,
+  listOpenWaitSessions,
+  getCardSignalsCoord,
+  markJobViewedCoord,
+  ungroupJobs,
+  groupJobs,
+  shareGroupToDriver,
+  getClientTripLink,
+  approveClientJob,
+  rejectClientJob,
+  computeTripFlags,
+  dismissTripFlag,
   refreshJobLiveStatus,
 } from "@/lib/coordinator.functions";
 import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
-
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
-  DropdownMenuTrigger, DropdownMenuPortal,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuTrigger,
+  DropdownMenuPortal,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
@@ -55,7 +127,6 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
-import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,7 +135,6 @@ import { GroupDialog } from "@/components/coordinator/GroupDialog";
 import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
 import { useFeature } from "@/hooks/use-features";
 import { IfFeature } from "@/components/billing/IfFeature";
-
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
   head: () => ({ meta: [{ title: "Dispatch — Coordinator" }] }),
@@ -81,7 +151,8 @@ function playAlertBeep(freq = 880, durationSec = 0.3) {
   const ctx = _audioCtx;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  osc.type = "sine"; osc.frequency.value = freq;
+  osc.type = "sine";
+  osc.frequency.value = freq;
   gain.gain.setValueAtTime(0.0001, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationSec);
@@ -100,8 +171,11 @@ function scrollToJob(jobId: string) {
 
 type Job = {
   id: string;
-  from_location: string; to_location: string;
-  date: string; time: string; pickup_at: string | null;
+  from_location: string;
+  to_location: string;
+  date: string;
+  time: string;
+  pickup_at: string | null;
   flightorship: string | null;
   from_flight: string | null;
   to_flight: string | null;
@@ -110,7 +184,8 @@ type Job = {
   flight_status_updated_at: string | null;
   flight_scheduled_at: string | null;
   flight_estimated_at: string | null;
-  tracking_enabled: boolean; qr_strict_mode: boolean;
+  tracking_enabled: boolean;
+  qr_strict_mode: boolean;
   status: string;
   driver_id: string | null;
   vehicle: string | null;
@@ -118,7 +193,13 @@ type Job = {
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
-  drivers?: { name: string; vehicle?: string | null; phone?: string | null; seats_available?: number | null; availability_note?: string | null } | null;
+  drivers?: {
+    name: string;
+    vehicle?: string | null;
+    phone?: string | null;
+    seats_available?: number | null;
+    availability_note?: string | null;
+  } | null;
   pax?: { id: string; name: string; status?: string | null; boarded_at?: string | null }[];
   labels?: TLabel[];
   external?: boolean;
@@ -152,13 +233,33 @@ type Job = {
   route_distance_m?: number | null;
 };
 
-
-
 type Driver = { id: string; name: string; vehicle: string | null };
 
 type TripFlagInfo = {
-  duplicates: { id: string; date: string | null; time: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
-  suspicious: { id: string; date: string | null; time: string | null; flight_number: string | null; from_location: string | null; to_location: string | null; pax_names: string[] }[];
+  duplicates: {
+    id: string;
+    date: string | null;
+    time: string | null;
+    from_location: string | null;
+    to_location: string | null;
+    pax_names: string[];
+  }[];
+  suspicious: {
+    id: string;
+    date: string | null;
+    time: string | null;
+    flight_number: string | null;
+    from_location: string | null;
+    to_location: string | null;
+    pax_names: string[];
+  }[];
+};
+
+type LiveEtaPoint = {
+  job_id: string;
+  captured_at: string;
+  wait_started_at?: string | null;
+  eta_sec?: number | null;
 };
 
 function CalendarPage() {
@@ -174,24 +275,44 @@ function CalendarPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [driverFilter, setDriverFilter] = useState<string>("all"); // "all" | "unassigned" | driver id
+  const toggleStatusFilter = (s: string) =>
+    setStatusFilter((prev) => {
+      const n = new Set(prev);
+      if (n.has(s)) n.delete(s);
+      else n.add(s);
+      return n;
+    });
   const [trafficFilter, setTrafficFilter] = useState<Set<string>>(new Set());
   const [trafficSort, setTrafficSort] = useState<"none" | "leave_by" | "severity">("none");
-  const toggleTrafficFilter = (s: string) => setTrafficFilter((prev) => {
-    const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n;
-  });
+  const toggleTrafficFilter = (s: string) =>
+    setTrafficFilter((prev) => {
+      const n = new Set(prev);
+      if (n.has(s)) n.delete(s);
+      else n.add(s);
+      return n;
+    });
   const qc = useQueryClient();
   const clientPortalEnabled = useFeature("client_trip_portal");
 
+  const toggleExpandedGroup = (gid: string) =>
+    setExpandedGroups((s) => {
+      const n = new Set(s);
+      if (n.has(gid)) n.delete(gid);
+      else n.add(gid);
+      return n;
+    });
 
-  const toggleExpandedGroup = (gid: string) => setExpandedGroups((s) => {
-    const n = new Set(s); if (n.has(gid)) n.delete(gid); else n.add(gid); return n;
-  });
-
-  const toggleSelect = (id: string) => setSelected((s) => {
-    const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n;
-  });
+  const toggleSelect = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const clearSelect = () => setSelected(new Set());
-
 
   const unreadFn = useServerFn(getUnreadCountsCoord);
   const { data: unreadByJob } = useQuery({
@@ -211,10 +332,20 @@ function CalendarPage() {
   const { data: cardSignals } = useQuery({
     queryKey: ["coord-card-signals", presenceJobIds.join(",")],
     enabled: presenceJobIds.length > 0,
-    queryFn: () => signalsFn({ data: { job_ids: presenceJobIds } }) as Promise<Record<string, {
-      unread_client: number; unread_driver: number;
-      client_change: boolean; sos_open: boolean; driver_status_new: boolean; rejected: boolean;
-    }>>,
+    queryFn: () =>
+      signalsFn({ data: { job_ids: presenceJobIds } }) as Promise<
+        Record<
+          string,
+          {
+            unread_client: number;
+            unread_driver: number;
+            client_change: boolean;
+            sos_open: boolean;
+            driver_status_new: boolean;
+            rejected: boolean;
+          }
+        >
+      >,
 
     refetchInterval: 15_000,
   });
@@ -233,7 +364,8 @@ function CalendarPage() {
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
   });
   const { data: drivers } = useQuery({
-    queryKey: ["drivers"], queryFn: () => driversFn() as Promise<Driver[]>,
+    queryKey: ["drivers"],
+    queryFn: () => driversFn() as Promise<Driver[]>,
   });
 
   const flagsFn = useServerFn(computeTripFlags);
@@ -245,15 +377,23 @@ function CalendarPage() {
   const dismissFlagFn = useServerFn(dismissTripFlag);
   const dismissFlagMut = useMutation({
     mutationFn: (v: { job_id: string; kind: "duplicate" | "suspicious" }) => dismissFlagFn({ data: v }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["trip-flags"] }); toast.success("Alert dismissed"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trip-flags"] });
+      toast.success("Alert dismissed");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
-  const [mergeTarget, setMergeTarget] = useState<{ current: MergeCandidate; duplicates: MergeCandidate[] } | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<{ current: MergeCandidate; duplicates: MergeCandidate[] } | null>(
+    null,
+  );
 
   const assignFn = useServerFn(assignDriver);
   const assignMut = useMutation({
     mutationFn: (v: { job_id: string; driver_id: string | null }) => assignFn({ data: v }),
-    onSuccess: () => { toast.success("Assigned"); refetch(); },
+    onSuccess: () => {
+      toast.success("Assigned");
+      refetch();
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -274,7 +414,9 @@ function CalendarPage() {
         qc.invalidateQueries({ queryKey: ["coord-unread"] });
       })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [qc]);
 
   // Poll live flight statuses every 3 min for jobs with a flight in view.
@@ -284,11 +426,19 @@ function CalendarPage() {
     if (!hasFlights) return;
     let cancelled = false;
     const run = async () => {
-      try { await flightFn(); if (!cancelled) refetch(); } catch { /* ignore */ }
+      try {
+        await flightFn();
+        if (!cancelled) refetch();
+      } catch {
+        /* ignore */
+      }
     };
     run();
     const id = setInterval(run, 180_000);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [jobs, flightFn, refetch]);
 
   // Auto-refresh live status (traffic + flight) for trips leaving in the next 6h.
@@ -301,17 +451,23 @@ function CalendarPage() {
     const tick = async () => {
       const now = Date.now();
       const horizon = now + 6 * 60 * 60_000;
-      const candidates = (jobs ?? []).filter((j: any) => {
-        if (!j?.pickup_at || !j.from_location || !j.to_location) return false;
-        const t = new Date(j.pickup_at).getTime();
-        if (Number.isNaN(t) || t < now - 30 * 60_000 || t > horizon) return false;
-        const last = refreshedAtRef.current[j.id] ?? 0;
-        return now - last > 5 * 60_000;
-      }).slice(0, 8);
+      const candidates = (jobs ?? [])
+        .filter((j: any) => {
+          if (!j?.pickup_at || !j.from_location || !j.to_location) return false;
+          const t = new Date(j.pickup_at).getTime();
+          if (Number.isNaN(t) || t < now - 30 * 60_000 || t > horizon) return false;
+          const last = refreshedAtRef.current[j.id] ?? 0;
+          return now - last > 5 * 60_000;
+        })
+        .slice(0, 8);
       if (!candidates.length) return;
       for (const j of candidates) {
         refreshedAtRef.current[j.id] = Date.now();
-        try { await refreshLiveFn({ data: { job_id: j.id } }); } catch { /* ignore */ }
+        try {
+          await refreshLiveFn({ data: { job_id: j.id } });
+        } catch {
+          /* ignore */
+        }
       }
       qc.invalidateQueries({ queryKey: ["jobs"] });
     };
@@ -320,9 +476,14 @@ function CalendarPage() {
     return () => clearInterval(id);
   }, [jobs, refreshLiveFn, qc]);
 
-
   useEffect(() => {
-    const ids = Array.from(new Set((jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))));
+    const ids = Array.from(
+      new Set(
+        (jobs ?? [])
+          .map((j) => j.id)
+          .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)),
+      ),
+    );
     setPresenceJobIds((prev) => (prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids));
   }, [jobs]);
 
@@ -334,7 +495,8 @@ function CalendarPage() {
     const prev = prevSignalsRef.current;
     if (firstSignalsRun.current) {
       const seed: typeof prev = {};
-      for (const [id, s] of Object.entries(cardSignals)) seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change, rejected: !!(s as any).rejected };
+      for (const [id, s] of Object.entries(cardSignals))
+        seed[id] = { sos_open: !!s.sos_open, client_change: !!s.client_change, rejected: !!(s as any).rejected };
       prevSignalsRef.current = seed;
       firstSignalsRun.current = false;
       return;
@@ -342,28 +504,65 @@ function CalendarPage() {
     for (const [id, s] of Object.entries(cardSignals)) {
       const p = prev[id] ?? { sos_open: false, client_change: false, rejected: false };
       if (s.sos_open && !p.sos_open) {
-        try { playAlertBeep(880, 0.35); setTimeout(() => playAlertBeep(660, 0.35), 200); } catch { /* ignore */ }
+        try {
+          playAlertBeep(880, 0.35);
+          setTimeout(() => playAlertBeep(660, 0.35), 200);
+        } catch {
+          /* ignore */
+        }
         const j = (jobs ?? []).find((x) => x.id === id);
         toast.error(`🆘 SOS from client${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
-          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          action: j
+            ? {
+                label: "Open",
+                onClick: () => {
+                  scrollToJob(id);
+                  setDetailsJob(j);
+                },
+              }
+            : undefined,
           duration: 15000,
           description: "Open the trip to see who pressed SOS and dismiss the alert.",
         });
         scrollToJob(id);
-
       } else if (s.client_change && !p.client_change) {
-        try { playAlertBeep(520, 0.15); } catch { /* ignore */ }
+        try {
+          playAlertBeep(520, 0.15);
+        } catch {
+          /* ignore */
+        }
         const j = (jobs ?? []).find((x) => x.id === id);
         toast.warning(`Client requested a change${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
-          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setDetailsJob(j); } } : undefined,
+          action: j
+            ? {
+                label: "Open",
+                onClick: () => {
+                  scrollToJob(id);
+                  setDetailsJob(j);
+                },
+              }
+            : undefined,
           duration: 8000,
         });
         scrollToJob(id);
       } else if ((s as any).rejected && !p.rejected) {
-        try { playAlertBeep(440, 0.25); setTimeout(() => playAlertBeep(330, 0.25), 180); } catch { /* ignore */ }
+        try {
+          playAlertBeep(440, 0.25);
+          setTimeout(() => playAlertBeep(330, 0.25), 180);
+        } catch {
+          /* ignore */
+        }
         const j = (jobs ?? []).find((x) => x.id === id);
         toast.warning(`⚠️ Driver rejected a trip${j ? ` · ${j.from_location} → ${j.to_location}` : ""}`, {
-          action: j ? { label: "Open", onClick: () => { scrollToJob(id); setChatJob(j); } } : undefined,
+          action: j
+            ? {
+                label: "Open",
+                onClick: () => {
+                  scrollToJob(id);
+                  setChatJob(j);
+                },
+              }
+            : undefined,
           duration: 12000,
           description: "The trip is back in Unassigned. Check the chat for the reason.",
         });
@@ -393,7 +592,10 @@ function CalendarPage() {
         if (j) {
           // Ignore synthetic hop cards (already handed off)
           if ((j as any)._origin_job_id) return;
-          if (j.external) { toast.error("This trip is already at a partner"); return; }
+          if (j.external) {
+            toast.error("This trip is already at a partner");
+            return;
+          }
           setDispatchState({ job: j, partnerId: partnerCompanyId });
         }
       }
@@ -412,10 +614,11 @@ function CalendarPage() {
     }
   }
 
-
   const markViewedFn = useServerFn(markJobViewedCoord);
   const handleMarkViewed = (id: string) => {
-    markViewedFn({ data: { job_id: id } }).catch(() => { /* ignore */ });
+    markViewedFn({ data: { job_id: id } }).catch(() => {
+      /* ignore */
+    });
     qc.setQueryData<any>(["coord-card-signals", presenceJobIds.join(",")], (prev: any) => {
       if (!prev || !prev[id]) return prev;
       return { ...prev, [id]: { ...prev[id], driver_status_new: false } };
@@ -424,35 +627,73 @@ function CalendarPage() {
   const hasAlert = (jobId: string) => {
     const s = cardSignals?.[jobId];
     if (!s) return false;
-    return (s.unread_client + s.unread_driver) > 0 || s.client_change || s.sos_open || s.driver_status_new || (s as any).rejected;
+    return (
+      s.unread_client + s.unread_driver > 0 ||
+      s.client_change ||
+      s.sos_open ||
+      s.driver_status_new ||
+      (s as any).rejected
+    );
   };
 
-  const isPendingClient = (j: Job) =>
-    !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
+  const isPendingClient = (j: Job) => !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
   const afterAlerts = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
-  const visibleAll = trafficFilter.size
-    ? afterAlerts.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+  const q = searchQuery.trim().toLowerCase();
+  const afterSearch = q
+    ? afterAlerts.filter((j) => {
+        const hay = [
+          j.from_location,
+          j.to_location,
+          j.from_flight,
+          j.to_flight,
+          j.contact_phone,
+          j.clientcompanyname,
+          j.drivers?.name,
+          ...(j.pax ?? []).map((p) => p.name),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      })
     : afterAlerts;
+  const afterStatus = statusFilter.size
+    ? afterSearch.filter((j) => statusFilter.has(String(j.status ?? "")))
+    : afterSearch;
+  const afterDriver =
+    driverFilter === "all"
+      ? afterStatus
+      : driverFilter === "unassigned"
+        ? afterStatus.filter((j) => !j.driver_id)
+        : afterStatus.filter((j) => j.driver_id === driverFilter);
+  const visibleAll = trafficFilter.size
+    ? afterDriver.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+    : afterDriver;
+  const activeFilterCount =
+    (q ? 1 : 0) + statusFilter.size + (driverFilter !== "all" ? 1 : 0) + trafficFilter.size + (alertsOnly ? 1 : 0);
   const severityCounts: Record<string, number> = { light: 0, moderate: 0, heavy: 0, severe: 0 };
   for (const j of afterAlerts) {
     const s = String(j.traffic_severity ?? "");
     if (s in severityCounts) severityCounts[s]++;
   }
   const SEV_RANK: Record<string, number> = { severe: 4, heavy: 3, moderate: 2, light: 1 };
-  const trafficSorted = trafficSort === "none" ? null : [...visibleAll].sort((a, b) => {
-    if (trafficSort === "severity") {
-      const rb = SEV_RANK[String(b.traffic_severity ?? "")] ?? 0;
-      const ra = SEV_RANK[String(a.traffic_severity ?? "")] ?? 0;
-      if (rb !== ra) return rb - ra;
-      const db = (b.traffic_delay_minutes ?? 0) - (a.traffic_delay_minutes ?? 0);
-      if (db !== 0) return db;
-    } else {
-      const av = a.leave_by_at ? new Date(a.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
-      const bv = b.leave_by_at ? new Date(b.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
-      if (av !== bv) return av - bv;
-    }
-    return ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""));
-  });
+  const trafficSorted =
+    trafficSort === "none"
+      ? null
+      : [...visibleAll].sort((a, b) => {
+          if (trafficSort === "severity") {
+            const rb = SEV_RANK[String(b.traffic_severity ?? "")] ?? 0;
+            const ra = SEV_RANK[String(a.traffic_severity ?? "")] ?? 0;
+            if (rb !== ra) return rb - ra;
+            const db = (b.traffic_delay_minutes ?? 0) - (a.traffic_delay_minutes ?? 0);
+            if (db !== 0) return db;
+          } else {
+            const av = a.leave_by_at ? new Date(a.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+            const bv = b.leave_by_at ? new Date(b.leave_by_at).getTime() : Number.POSITIVE_INFINITY;
+            if (av !== bv) return av - bv;
+          }
+          return ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""));
+        });
   const pendingClientJobs = visibleAll.filter(isPendingClient);
   const visibleJobs = visibleAll.filter((j) => !isPendingClient(j));
   const unassigned = visibleJobs.filter((j) => !j.driver_id);
@@ -477,14 +718,21 @@ function CalendarPage() {
   }, []);
 
   const cardCtx: CardCtx = {
-    onEdit: setEditJob, onPax: setPaxJob, onChat: setChatJob,
-    onOpenDetails: (j) => { handleMarkViewed(j.id); setDetailsJob(j); },
+    onEdit: setEditJob,
+    onPax: setPaxJob,
+    onChat: setChatJob,
+    onOpenDetails: (j) => {
+      handleMarkViewed(j.id);
+      setDetailsJob(j);
+    },
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
-    selected, onToggleSelect: toggleSelect,
-    expandedGroups, onToggleExpandedGroup: toggleExpandedGroup,
+    selected,
+    onToggleSelect: toggleSelect,
+    expandedGroups,
+    onToggleExpandedGroup: toggleExpandedGroup,
     onEditGroup: (groupId, memberJobs) => setEditGroup({ groupId, jobs: memberJobs }),
     clientPortalEnabled,
     clientPresence: clientPresence ?? {},
@@ -496,7 +744,6 @@ function CalendarPage() {
     nowTick,
   };
 
-
   function handleAccepted(res: { id: string; date: string | null }) {
     if (res.date) {
       const [y, m, d] = res.date.split("-").map(Number);
@@ -506,7 +753,6 @@ function CalendarPage() {
     qc.invalidateQueries({ queryKey: ["jobs"] });
     setTimeout(() => setJustAcceptedId((cur) => (cur === res.id ? null : cur)), 4000);
   }
-
 
   return (
     <div className="p-3 sm:p-4 md:p-6 space-y-4">
@@ -520,28 +766,145 @@ function CalendarPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md border overflow-hidden">
-            <button className={`px-3 py-1.5 text-xs ${view==="day"?"bg-primary text-primary-foreground":"bg-background"}`} onClick={() => setView("day")}>Day</button>
-            <button className={`px-3 py-1.5 text-xs ${view==="week"?"bg-primary text-primary-foreground":"bg-background"}`} onClick={() => setView("week")}>Week</button>
+            <button
+              className={`px-3 py-1.5 text-xs ${view === "day" ? "bg-primary text-primary-foreground" : "bg-background"}`}
+              onClick={() => setView("day")}
+            >
+              Day
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs ${view === "week" ? "bg-primary text-primary-foreground" : "bg-background"}`}
+              onClick={() => setView("week")}
+            >
+              Week
+            </button>
           </div>
           <div className="flex items-center gap-1 ml-auto">
-            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? -1 : -7))}>‹</Button>
+            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? -1 : -7))}>
+              ‹
+            </Button>
             <div className="text-xs sm:text-sm font-medium min-w-[130px] text-center flex items-center gap-1 justify-center">
               <CalIcon className="h-3.5 w-3.5" />
-              {view === "day" ? format(anchor, "EEE, d MMM") : `${format(range.days[0], "d MMM")} – ${format(range.days[6], "d MMM")}`}
+              {view === "day"
+                ? format(anchor, "EEE, d MMM")
+                : `${format(range.days[0], "d MMM")} – ${format(range.days[6], "d MMM")}`}
             </div>
-            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>›</Button>
+            <Button size="sm" variant="outline" onClick={() => setAnchor(addDays(anchor, view === "day" ? 1 : 7))}>
+              ›
+            </Button>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search trips… (from, to, flight, driver, passenger)"
+              className="w-full h-8 pl-7 pr-7 text-xs rounded-md border bg-background"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                Status{statusFilter.size > 0 ? ` (${statusFilter.size})` : ""}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel>Filter by status</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {(
+                [
+                  { k: "pending", label: "Pending" },
+                  { k: "active", label: "Active" },
+                  { k: "en_route", label: "En route" },
+                  { k: "arrived", label: "Arrived" },
+                  { k: "in_progress", label: "In progress" },
+                  { k: "completed", label: "Completed" },
+                  { k: "cancelled", label: "Cancelled" },
+                ] as const
+              ).map((o) => (
+                <DropdownMenuCheckboxItem
+                  key={o.k}
+                  checked={statusFilter.has(o.k)}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={() => toggleStatusFilter(o.k)}
+                >
+                  {o.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              {statusFilter.size > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setStatusFilter(new Set())}>Clear status filter</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Users2 className="h-3.5 w-3.5 mr-1" />
+                {driverFilter === "all"
+                  ? "Driver"
+                  : driverFilter === "unassigned"
+                    ? "Unassigned"
+                    : ((drivers ?? []).find((d) => d.id === driverFilter)?.name ?? "Driver")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 max-h-72 overflow-y-auto">
+              <DropdownMenuLabel>Filter by driver</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setDriverFilter("all")}>All drivers</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDriverFilter("unassigned")}>— Unassigned —</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {(drivers ?? []).map((d) => (
+                <DropdownMenuItem key={d.id} onClick={() => setDriverFilter(d.id)}>
+                  {d.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter(new Set());
+                setDriverFilter("all");
+                setTrafficFilter(new Set());
+                setAlertsOnly(false);
+              }}
+              className="px-2 py-1 rounded-md border text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
-          {(["light","moderate","heavy","severe"] as const).map((s) => {
+          {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
             const active = trafficFilter.has(s);
-            const styles: Record<string,string> = {
+            const styles: Record<string, string> = {
               light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
               moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
               heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
               severe: "border-red-500/50 text-red-700 dark:text-red-300",
             };
-            const activeBg: Record<string,string> = {
+            const activeBg: Record<string, string> = {
               light: "bg-emerald-500/15",
               moderate: "bg-amber-500/15",
               heavy: "bg-orange-500/15",
@@ -549,12 +912,14 @@ function CalendarPage() {
             };
             return (
               <button
-                key={s} type="button"
+                key={s}
+                type="button"
                 onClick={() => toggleTrafficFilter(s)}
                 className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
                 title={`Show only ${s} traffic trips`}
               >
-                {active ? "● " : ""}{s} · {severityCounts[s]}
+                {active ? "● " : ""}
+                {s} · {severityCounts[s]}
               </button>
             );
           })}
@@ -568,13 +933,16 @@ function CalendarPage() {
             </button>
           )}
           <div className="flex rounded-md border overflow-hidden text-[11px]">
-            {([
-              { k: "none", label: "Default" },
-              { k: "leave_by", label: "Leave by ↑" },
-              { k: "severity", label: "Severity ↓" },
-            ] as const).map((o) => (
+            {(
+              [
+                { k: "none", label: "Default" },
+                { k: "leave_by", label: "Leave by ↑" },
+                { k: "severity", label: "Severity ↓" },
+              ] as const
+            ).map((o) => (
               <button
-                key={o.k} type="button"
+                key={o.k}
+                type="button"
                 onClick={() => setTrafficSort(o.k)}
                 className={`px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
                 title={`Sort by ${o.label}`}
@@ -600,24 +968,23 @@ function CalendarPage() {
       </header>
 
       {/* Drivers currently on waiting time */}
-      <WaitingNowStrip onJump={(jobId) => {
-        const j = (jobs ?? []).find((x: any) => x.id === jobId);
-        if (j) setDetailsJob(j as any);
-      }} />
+      <WaitingNowStrip
+        onJump={(jobId) => {
+          const j = (jobs ?? []).find((x: any) => x.id === jobId);
+          if (j) setDetailsJob(j as any);
+        }}
+      />
 
-      {/* Live driver map */}
-      <LiveMapPanel />
+      {/* Trip list with concise ETA */}
+      <DispatchTripList jobs={visibleJobs} />
 
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
 
-
       {/* Outbound trips now appear directly in partner lanes below */}
-
 
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
-
 
       <div className="flex justify-end mb-2">
         <AiAutoCoordinateButton />
@@ -627,7 +994,8 @@ function CalendarPage() {
         <div className="rounded-md border bg-card p-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-xs font-medium text-muted-foreground">
-              Traffic view — sorted by {trafficSort === "leave_by" ? "leave-by time" : "severity"} · {trafficSorted.length} trip{trafficSorted.length === 1 ? "" : "s"}
+              Traffic view — sorted by {trafficSort === "leave_by" ? "leave-by time" : "severity"} ·{" "}
+              {trafficSorted.length} trip{trafficSorted.length === 1 ? "" : "s"}
             </div>
             <button
               type="button"
@@ -656,9 +1024,11 @@ function CalendarPage() {
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
             <UnassignedColumn jobs={unassigned} ctx={cardCtx} />
-            {view === "day"
-              ? <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
-              : <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />}
+            {view === "day" ? (
+              <DriverLanes drivers={drivers ?? []} jobs={visibleJobs} ctx={cardCtx} />
+            ) : (
+              <WeekGrid drivers={drivers ?? []} jobs={visibleJobs} days={range.days} ctx={cardCtx} />
+            )}
           </div>
         </DndContext>
       )}
@@ -666,14 +1036,18 @@ function CalendarPage() {
       {dispatchState && (
         <DispatchDialog
           open={!!dispatchState}
-          onOpenChange={(v) => { if (!v) setDispatchState(null); }}
+          onOpenChange={(v) => {
+            if (!v) setDispatchState(null);
+          }}
           job={dispatchState.job}
           preselectedPartnerId={dispatchState.partnerId}
         />
       )}
 
       <JobFormDialog
-        open={openNew} onOpenChange={setOpenNew} drivers={drivers ?? []}
+        open={openNew}
+        onOpenChange={setOpenNew}
+        drivers={drivers ?? []}
         onSaved={(d) => {
           if (d) {
             const [y, m, dd] = d.split("-").map(Number);
@@ -684,8 +1058,10 @@ function CalendarPage() {
         }}
       />
       <JobFormDialog
-        open={!!editJob} onOpenChange={(v) => !v && setEditJob(null)}
-        drivers={drivers ?? []} job={editJob ?? undefined}
+        open={!!editJob}
+        onOpenChange={(v) => !v && setEditJob(null)}
+        drivers={drivers ?? []}
+        job={editJob ?? undefined}
         onSaved={(d) => {
           if (d) {
             const [y, m, dd] = d.split("-").map(Number);
@@ -697,13 +1073,17 @@ function CalendarPage() {
       />
 
       <PaxSplitDialog
-        open={!!paxJob} onOpenChange={(v) => !v && setPaxJob(null)}
+        open={!!paxJob}
+        onOpenChange={(v) => !v && setPaxJob(null)}
         jobId={paxJob?.id ?? null}
-        jobLabel={paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0,5)}` : ""}
+        jobLabel={
+          paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0, 5)}` : ""
+        }
         drivers={drivers ?? []}
       />
       <TripChatDialog
-        open={!!chatJob} onOpenChange={(v) => !v && setChatJob(null)}
+        open={!!chatJob}
+        onOpenChange={(v) => !v && setChatJob(null)}
         jobId={chatJob?.id ?? null}
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="coordinator"
@@ -711,12 +1091,15 @@ function CalendarPage() {
       <DetailsSheetHost
         job={detailsJob}
         onClose={() => setDetailsJob(null)}
-        onEdit={(j) => { setDetailsJob(null); setEditJob(j); }}
+        onEdit={(j) => {
+          setDetailsJob(null);
+          setEditJob(j);
+        }}
         onChat={(j) => setChatJob(j)}
         onPax={(j) => setPaxJob(j)}
         driverName={
           detailsJob
-            ? (drivers ?? []).find((d) => d.id === detailsJob.driver_id)?.name ?? detailsJob.drivers?.name ?? null
+            ? ((drivers ?? []).find((d) => d.id === detailsJob.driver_id)?.name ?? detailsJob.drivers?.name ?? null)
             : null
         }
       />
@@ -745,8 +1128,6 @@ function CalendarPage() {
           onMerged={() => refetch()}
         />
       )}
-
-
 
       {selected.size > 0 && (
         <>
@@ -778,10 +1159,17 @@ type CardCtx = {
   onEditGroup: (groupId: string, jobs: Job[]) => void;
   clientPortalEnabled: boolean;
   clientPresence?: Record<string, string>;
-  signals?: Record<string, {
-    unread_client: number; unread_driver: number;
-    client_change: boolean; sos_open: boolean; driver_status_new: boolean; rejected?: boolean;
-  }>;
+  signals?: Record<
+    string,
+    {
+      unread_client: number;
+      unread_driver: number;
+      client_change: boolean;
+      sos_open: boolean;
+      driver_status_new: boolean;
+      rejected?: boolean;
+    }
+  >;
   tripFlags?: Record<string, TripFlagInfo>;
   onDismissFlag?: (jobId: string, kind: "duplicate" | "suspicious") => void;
   onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
@@ -800,18 +1188,18 @@ function groupStripeStyle(gid: string | null | undefined): React.CSSProperties |
   return { boxShadow: `inset 4px 0 0 hsl(${groupHue(gid)} 70% 50%)` };
 }
 
-
 /* ------------------------------ Grouping helpers ------------------------------ */
 
-type RenderItem =
-  | { kind: "single"; job: Job }
-  | { kind: "group"; group_id: string; jobs: Job[] };
+type RenderItem = { kind: "single"; job: Job } | { kind: "group"; group_id: string; jobs: Job[] };
 
 function bucketByGroup(jobs: Job[]): RenderItem[] {
   const groups = new Map<string, Job[]>();
-  for (const j of jobs) if (j.group_id) {
-    const a = groups.get(j.group_id) ?? []; a.push(j); groups.set(j.group_id, a);
-  }
+  for (const j of jobs)
+    if (j.group_id) {
+      const a = groups.get(j.group_id) ?? [];
+      a.push(j);
+      groups.set(j.group_id, a);
+    }
   const items: RenderItem[] = [];
   const seen = new Set<string>();
   for (const j of jobs) {
@@ -820,11 +1208,14 @@ function bucketByGroup(jobs: Job[]): RenderItem[] {
       seen.add(j.group_id);
       const arr = groups.get(j.group_id)!;
       if (arr.length < 2) items.push({ kind: "single", job: arr[0] });
-      else items.push({
-        kind: "group",
-        group_id: j.group_id,
-        jobs: [...arr].sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? ""))),
-      });
+      else
+        items.push({
+          kind: "group",
+          group_id: j.group_id,
+          jobs: [...arr].sort((a, b) =>
+            ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")),
+          ),
+        });
     } else {
       items.push({ kind: "single", job: j });
     }
@@ -834,17 +1225,23 @@ function bucketByGroup(jobs: Job[]): RenderItem[] {
 
 function renderItems(items: RenderItem[], ctx: CardCtx, driverNameOf?: (j: Job) => string | undefined) {
   return items.map((it) =>
-    it.kind === "single"
-      ? <TripCard key={it.job.id} job={it.job} ctx={ctx} driverName={driverNameOf?.(it.job)} />
-      : <GroupedStackCard key={it.group_id} groupId={it.group_id} jobs={it.jobs} ctx={ctx} driverNameOf={driverNameOf} />,
+    it.kind === "single" ? (
+      <TripCard key={it.job.id} job={it.job} ctx={ctx} driverName={driverNameOf?.(it.job)} />
+    ) : (
+      <GroupedStackCard key={it.group_id} groupId={it.group_id} jobs={it.jobs} ctx={ctx} driverNameOf={driverNameOf} />
+    ),
   );
 }
 
-
-
 /* ------------------------------ Inbound / Outbound ------------------------------ */
 
-function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { id: string; date: string | null }) => void }) {
+function InboundBoard({
+  ctx,
+  onAccepted,
+}: {
+  ctx: CardCtx;
+  onAccepted?: (res: { id: string; date: string | null }) => void;
+}) {
   const listIn = useServerFn(listIncomingDispatches);
   const respond = useServerFn(respondToDispatch);
   const qc = useQueryClient();
@@ -867,13 +1264,16 @@ function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { 
   return (
     <section className="rounded-lg border bg-card">
       <button
-        type="button" onClick={() => setOpen((v) => !v)}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
       >
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         <Inbox className="h-4 w-4 text-primary" />
         <span>Inbound — pending your decision</span>
-        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
+        <Badge variant="secondary" className="ml-1">
+          {items.length}
+        </Badge>
       </button>
       {open && (
         <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
@@ -881,15 +1281,32 @@ function InboundBoard({ ctx, onAccepted }: { ctx: CardCtx; onAccepted?: (res: { 
             <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap text-xs">
                 <Badge variant="outline">from {j.origin?.name ?? "partner"}</Badge>
-                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
+                <span className="font-medium">
+                  {j.date} {j.time?.slice(0, 5)}
+                </span>
                 <span className="ml-auto text-muted-foreground">{(j.pax ?? []).length} pax</span>
               </div>
-              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
+              <div className="text-sm font-medium truncate">
+                {j.from_location} → {j.to_location}
+              </div>
               {j.dispatch_note && <div className="text-xs text-muted-foreground">"{j.dispatch_note}"</div>}
               <ChainTimeline jobId={j.id} />
               <div className="flex gap-2 pt-1">
-                <Button size="sm" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}>Accept</Button>
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}>Reject</Button>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => respondMut.mutate({ job_id: j.id, decision: "accepted" })}
+                >
+                  Accept
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => respondMut.mutate({ job_id: j.id, decision: "rejected" })}
+                >
+                  Reject
+                </Button>
               </div>
             </div>
           ))}
@@ -908,13 +1325,16 @@ function OutboundBoard() {
   return (
     <section className="rounded-lg border bg-card">
       <button
-        type="button" onClick={() => setOpen((v) => !v)}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
       >
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         <PlaneTakeoff className="h-4 w-4 text-primary" />
         <span>Outbound — trips at partners (live)</span>
-        <Badge variant="secondary" className="ml-1">{items.length}</Badge>
+        <Badge variant="secondary" className="ml-1">
+          {items.length}
+        </Badge>
       </button>
       {open && (
         <div className="grid gap-2 p-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
@@ -922,12 +1342,26 @@ function OutboundBoard() {
             <div key={j.id} className="rounded-md border bg-background p-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap text-xs">
                 <Badge variant="outline">at {j.executor?.name ?? "partner"}</Badge>
-                <span className="font-medium">{j.date} {j.time?.slice(0,5)}</span>
-                <Badge variant={j.dispatch_status === "accepted" ? "default" : j.dispatch_status === "rejected" ? "destructive" : "secondary"}>{j.dispatch_status}</Badge>
+                <span className="font-medium">
+                  {j.date} {j.time?.slice(0, 5)}
+                </span>
+                <Badge
+                  variant={
+                    j.dispatch_status === "accepted"
+                      ? "default"
+                      : j.dispatch_status === "rejected"
+                        ? "destructive"
+                        : "secondary"
+                  }
+                >
+                  {j.dispatch_status}
+                </Badge>
                 {j.drivers?.name && <Badge variant="secondary">👤 {j.drivers.name}</Badge>}
                 <span className="ml-auto text-muted-foreground">{j.status}</span>
               </div>
-              <div className="text-sm font-medium truncate">{j.from_location} → {j.to_location}</div>
+              <div className="text-sm font-medium truncate">
+                {j.from_location} → {j.to_location}
+              </div>
               <ChainTimeline jobId={j.id} />
             </div>
           ))}
@@ -953,7 +1387,9 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to approve");
-    } finally { setBusy(null); }
+    } finally {
+      setBusy(null);
+    }
   }
   async function reject(id: string) {
     if (!confirm("Reject this client-requested trip? It will be deleted.")) return;
@@ -964,7 +1400,9 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to reject");
-    } finally { setBusy(null); }
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -974,31 +1412,43 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {jobs.map((j) => {
-          const paxLine = (j.pax ?? []).map((p) => p.name).filter(Boolean).join(", ");
+          const paxLine = (j.pax ?? [])
+            .map((p) => p.name)
+            .filter(Boolean)
+            .join(", ");
           return (
             <div key={j.id} className="rounded-md border bg-card p-2.5 space-y-1.5 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <div className="font-medium truncate">{j.from_location} → {j.to_location}</div>
+                <div className="font-medium truncate">
+                  {j.from_location} → {j.to_location}
+                </div>
                 <Badge variant="outline" className="shrink-0 text-[10px]">
                   {j.source === "client_followup" ? "Follow-up" : "Client"}
                 </Badge>
               </div>
               <div className="text-muted-foreground">
-                {j.date} · {j.time?.slice(0,5)}
+                {j.date} · {j.time?.slice(0, 5)}
                 {(j.pax?.length ?? 0) > 0 && <> · {j.pax!.length} pax</>}
               </div>
               {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
-              {j.clientcompanyname && <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>}
+              {j.clientcompanyname && (
+                <div className="truncate text-muted-foreground">Client: {j.clientcompanyname}</div>
+              )}
               <TripFlagBadges job={j} ctx={ctx} />
               <div className="flex gap-1.5 pt-1">
                 <Button size="sm" className="flex-1 h-7" disabled={busy === j.id} onClick={() => approve(j.id)}>
                   Approve
                 </Button>
-                <Button size="sm" variant="outline" className="flex-1 h-7" disabled={busy === j.id} onClick={() => reject(j.id)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-7"
+                  disabled={busy === j.id}
+                  onClick={() => reject(j.id)}
+                >
                   Reject
                 </Button>
               </div>
-
             </div>
           );
         })}
@@ -1009,18 +1459,16 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
 
 /* ------------------------------ Columns ------------------------------ */
 
-
-
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
   const suggestionsEnabled = useFeature("ai_auto_coordinate");
-  const suggestions = useMemo(
-    () => (suggestionsEnabled ? suggestGroups(jobs) : []),
-    [jobs, suggestionsEnabled],
-  );
+  const suggestions = useMemo(() => (suggestionsEnabled ? suggestGroups(jobs) : []), [jobs, suggestionsEnabled]);
   return (
-    <div ref={setNodeRef} className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}>
+    <div
+      ref={setNodeRef}
+      className={`rounded-lg border bg-card p-3 min-h-[220px] ${isOver ? "ring-2 ring-primary" : ""}`}
+    >
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
@@ -1032,8 +1480,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
           {suggestions.slice(0, 3).map((s, i) => (
             <div key={i} className="flex items-center gap-2 text-[11px]">
               <span className="truncate flex-1">
-                <span className="font-medium">{s.jobs.length} trips</span>{" "}
-                · {s.label}
+                <span className="font-medium">{s.jobs.length} trips</span> · {s.label}
               </span>
               <button
                 className="text-primary hover:underline shrink-0"
@@ -1050,7 +1497,9 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
       )}
       <div className="space-y-2">
         <PendingPortalBookings />
-        {jobs.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>}
+        {jobs.length === 0 && (
+          <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>
+        )}
         {renderItems(items, ctx)}
       </div>
     </div>
@@ -1074,13 +1523,15 @@ function PendingPortalBookings() {
       qc.invalidateQueries({ queryKey: ["portal-bookings"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
-    onError: (e: Error) => e.message === "insufficient_points"
-      ? toast.error("Top-Up required to approve")
-      : toast.error(e.message),
+    onError: (e: Error) =>
+      e.message === "insufficient_points" ? toast.error("Top-Up required to approve") : toast.error(e.message),
   });
   const rejectMut = useMutation({
     mutationFn: (id: string) => rejectFn({ data: { booking_id: id } }),
-    onSuccess: () => { toast.success("Rejected"); qc.invalidateQueries({ queryKey: ["portal-bookings"] }); },
+    onSuccess: () => {
+      toast.success("Rejected");
+      qc.invalidateQueries({ queryKey: ["portal-bookings"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const rows = data ?? [];
@@ -1093,11 +1544,7 @@ function PendingPortalBookings() {
         const payload = b.payload ?? {};
         const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim() || "New booking";
         return (
-          <div
-            key={b.id}
-            className="rounded-md border bg-card p-2.5"
-            style={{ boxShadow: `inset 4px 0 0 ${brand}` }}
-          >
+          <div key={b.id} className="rounded-md border bg-card p-2.5" style={{ boxShadow: `inset 4px 0 0 ${brand}` }}>
             <div className="flex items-start gap-2">
               {portal.logo_url ? (
                 <img
@@ -1121,7 +1568,9 @@ function PendingPortalBookings() {
                   >
                     {portal.name ?? "Portal"}
                   </span>
-                  <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+                  <Badge variant="secondary" className="text-[10px]">
+                    Pending
+                  </Badge>
                 </div>
                 <div className="font-medium text-sm mt-1 truncate">{fullName}</div>
                 <div className="text-xs mt-0.5 truncate">
@@ -1132,11 +1581,12 @@ function PendingPortalBookings() {
                   const t = payload.time
                     ? String(payload.time).slice(0, 5)
                     : payload.pickup_at
-                    ? new Date(payload.pickup_at).toISOString().slice(11, 16)
-                    : null;
+                      ? new Date(payload.pickup_at).toISOString().slice(11, 16)
+                      : null;
                   return (
                     <div className="text-[11px] font-semibold text-foreground">
-                      {d ?? "—"}{t ? ` · ${t}` : ""}
+                      {d ?? "—"}
+                      {t ? ` · ${t}` : ""}
                     </div>
                   );
                 })()}
@@ -1191,7 +1641,7 @@ function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
       if (cluster.length >= 2) {
         const first = cluster[0];
         out.push({
-          label: `${first.date} · ${first.from_location} → ${first.to_location} (${cluster[0].time?.slice(0,5)}–${cluster[cluster.length-1].time?.slice(0,5)})`,
+          label: `${first.date} · ${first.from_location} → ${first.to_location} (${cluster[0].time?.slice(0, 5)}–${cluster[cluster.length - 1].time?.slice(0, 5)})`,
           jobs: [...cluster],
         });
       }
@@ -1202,7 +1652,10 @@ function suggestGroups(jobs: Job[]): { label: string; jobs: Job[] }[] {
       const cur = sorted[i].time ?? "00:00";
       const diff = minutesBetween(prev, cur);
       if (diff <= 60) cluster.push(sorted[i]);
-      else { flush(); cluster = [sorted[i]]; }
+      else {
+        flush();
+        cluster = [sorted[i]];
+      }
     }
     flush();
   }
@@ -1216,13 +1669,11 @@ function partnerColor(id: string | null | undefined): string {
   return `hsl(${h % 360} 78% 48%)`;
 }
 
-
 function minutesBetween(a: string, b: string): number {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
-  return Math.abs((bh * 60 + (bm || 0)) - (ah * 60 + (am || 0)));
+  return Math.abs(bh * 60 + (bm || 0) - (ah * 60 + (am || 0)));
 }
-
 
 function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; ctx: CardCtx }) {
   const listConn = useServerFn(listConnections);
@@ -1233,23 +1684,42 @@ function DriverLanes({ drivers, jobs, ctx }: { drivers: Driver[]; jobs: Job[]; c
       <div className="grid gap-3 sm:auto-cols-[minmax(240px,1fr)] sm:grid-flow-col">
         {partners.map((c: any) => {
           const laneJobs = jobs.filter((j) => {
-            const chain: string[] = Array.isArray((j as any).dispatch_chain_company_ids) ? (j as any).dispatch_chain_company_ids : [];
+            const chain: string[] = Array.isArray((j as any).dispatch_chain_company_ids)
+              ? (j as any).dispatch_chain_company_ids
+              : [];
             return chain.includes(c.other.id) || (j as any).executor_company_id === c.other.id;
           });
-          return <PartnerLane key={c.other.id} partnerId={c.other.id} partnerName={c.other.name} jobs={laneJobs} ctx={ctx} />;
+          return (
+            <PartnerLane key={c.other.id} partnerId={c.other.id} partnerName={c.other.name} jobs={laneJobs} ctx={ctx} />
+          );
         })}
         {drivers.length === 0 && partners.length === 0 && (
           <div className="text-sm text-muted-foreground p-8 text-center">Add drivers or partners to see lanes.</div>
         )}
         {drivers.map((d) => (
-          <DriverLane key={d.id} driver={d} jobs={jobs.filter((j) => j.driver_id === d.id && !(j as any)._origin_job_id)} ctx={ctx} />
+          <DriverLane
+            key={d.id}
+            driver={d}
+            jobs={jobs.filter((j) => j.driver_id === d.id && !(j as any)._origin_job_id)}
+            ctx={ctx}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string; partnerName: string; jobs: Job[]; ctx: CardCtx }) {
+function PartnerLane({
+  partnerId,
+  partnerName,
+  jobs,
+  ctx,
+}: {
+  partnerId: string;
+  partnerName: string;
+  jobs: Job[];
+  ctx: CardCtx;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: `partner:${partnerId}` });
   const items = bucketByGroup(jobs);
   const color = partnerColor(partnerId);
@@ -1265,25 +1735,27 @@ function PartnerLane({ partnerId, partnerName, jobs, ctx }: { partnerId: string;
       </div>
       <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
       <div className="space-y-2">
-        {jobs.length === 0
-          ? <div className="text-xs text-muted-foreground text-center py-6">No trips at this partner</div>
-          : renderItems(items, ctx)}
+        {jobs.length === 0 ? (
+          <div className="text-xs text-muted-foreground text-center py-6">No trips at this partner</div>
+        ) : (
+          renderItems(items, ctx)
+        )}
       </div>
     </div>
   );
 }
 
-
 function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: `driver:${driver.id}` });
   const items = bucketByGroup(jobs);
   return (
-    <div ref={setNodeRef} className={`rounded-md border p-2 min-h-[220px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
+    <div
+      ref={setNodeRef}
+      className={`rounded-md border p-2 min-h-[220px] ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}
+    >
       <div className="text-sm font-medium truncate">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2 truncate">{driver.vehicle ?? "—"}</div>
-      <div className="space-y-2">
-        {renderItems(items, ctx)}
-      </div>
+      <div className="space-y-2">{renderItems(items, ctx)}</div>
     </div>
   );
 }
@@ -1301,9 +1773,7 @@ function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]
             <div key={key} className="rounded-md border p-2 min-h-[220px]">
               <div className="text-sm font-medium">{format(d, "EEE")}</div>
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
-              <div className="space-y-2">
-                {renderItems(items, ctx, driverName)}
-              </div>
+              <div className="space-y-2">{renderItems(items, ctx, driverName)}</div>
             </div>
           );
         })}
@@ -1315,7 +1785,10 @@ function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]
 /* ------------------------------ Grouped stack card ------------------------------ */
 
 function GroupedStackCard({
-  groupId, jobs, ctx, driverNameOf,
+  groupId,
+  jobs,
+  ctx,
+  driverNameOf,
 }: {
   groupId: string;
   jobs: Job[];
@@ -1338,10 +1811,10 @@ function GroupedStackCard({
   const tone = anyProblem
     ? "border-destructive bg-destructive/10"
     : allAccepted
-    ? "border-emerald-500/70 bg-emerald-500/5"
-    : anyAssigned
-    ? "border-amber-500/70 bg-amber-500/5"
-    : "border-border bg-background";
+      ? "border-emerald-500/70 bg-emerald-500/5"
+      : anyAssigned
+        ? "border-amber-500/70 bg-amber-500/5"
+        : "border-border bg-background";
 
   const allSelected = jobs.every((j) => ctx.selected.has(j.id));
   const someSelected = !allSelected && jobs.some((j) => ctx.selected.has(j.id));
@@ -1380,7 +1853,10 @@ function GroupedStackCard({
         const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
         lines.push(`• ${when} — ${from} → ${to} (${j.pax_count}p)`);
       }
-      if (res.group_note) { lines.push(""); lines.push(`📝 ${res.group_note}`); }
+      if (res.group_note) {
+        lines.push("");
+        lines.push(`📝 ${res.group_note}`);
+      }
       lines.push("", `Open manifest: ${url}`);
       window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`, "_blank", "noopener");
     },
@@ -1407,11 +1883,15 @@ function GroupedStackCard({
           />
           <div className="text-[11px] uppercase tracking-wide font-semibold text-primary flex items-center gap-1 min-w-0">
             <Link2 className="h-3 w-3 shrink-0" />
-            <span className="truncate">{groupName || "Grouped"} · {jobs.length}</span>
+            <span className="truncate">
+              {groupName || "Grouped"} · {jobs.length}
+            </span>
           </div>
           <div className="ml-auto flex items-center gap-1">
             <Button
-              size="sm" variant="ghost" className="h-7 px-2 text-[11px]"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px]"
               onClick={() => ctx.onEditGroup(groupId, jobs)}
               title="Edit group name, note, driver"
             >
@@ -1419,8 +1899,11 @@ function GroupedStackCard({
             </Button>
             {jobs.every((j) => j.driver_id === jobs[0].driver_id) && jobs[0].driver_id && (
               <Button
-                size="sm" variant="ghost" className="h-7 px-2 text-[11px] text-emerald-600"
-                onClick={() => shareGroupMut.mutate()} disabled={shareGroupMut.isPending}
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] text-emerald-600"
+                onClick={() => shareGroupMut.mutate()}
+                disabled={shareGroupMut.isPending}
                 title="Share whole group on WhatsApp"
               >
                 <MessageCircle className="h-3.5 w-3.5 mr-1" /> WhatsApp
@@ -1434,11 +1917,11 @@ function GroupedStackCard({
             </button>
           </div>
         </div>
-        {groupNote && (
-          <div className="text-[11px] text-muted-foreground italic px-1">{groupNote}</div>
-        )}
+        {groupNote && <div className="text-[11px] text-muted-foreground italic px-1">{groupNote}</div>}
         <div className="space-y-2">
-          {jobs.map((j) => <TripCard key={j.id} job={j} ctx={ctx} driverName={driverNameOf?.(j)} />)}
+          {jobs.map((j) => (
+            <TripCard key={j.id} job={j} ctx={ctx} driverName={driverNameOf?.(j)} />
+          ))}
         </div>
       </div>
     );
@@ -1466,21 +1949,20 @@ function GroupedStackCard({
         {/* Drag handle */}
         <button
           className="absolute top-1.5 right-1 text-muted-foreground p-1 touch-none hidden sm:inline-flex"
-          {...attributes} {...listeners}
+          {...attributes}
+          {...listeners}
           aria-label="Drag group"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          onClick={() => ctx.onToggleExpandedGroup(groupId)}
-          className="w-full text-left pr-6"
-        >
+        <button type="button" onClick={() => ctx.onToggleExpandedGroup(groupId)} className="w-full text-left pr-6">
           <div className="flex items-center gap-2 text-[11px] text-primary font-semibold uppercase tracking-wide">
             <Link2 className="h-3 w-3" />
             <span className="truncate">{groupName || "Grouped"}</span>
-            <Badge variant="secondary" className="ml-auto text-[10px]">{jobs.length} trips · {totalPax} pax</Badge>
+            <Badge variant="secondary" className="ml-auto text-[10px]">
+              {jobs.length} trips · {totalPax} pax
+            </Badge>
           </div>
           {driverNames.length > 0 && (
             <div className="text-[11px] mt-0.5 truncate">
@@ -1495,18 +1977,12 @@ function GroupedStackCard({
                 <span className="truncate">
                   {j.from_location} <span className="text-muted-foreground">→</span> {j.to_location}
                 </span>
-                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
-                  {j.pax?.length ?? 0}p
-                </span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{j.pax?.length ?? 0}p</span>
               </div>
             ))}
-            {jobs.length > 4 && (
-              <div className="text-[10px] text-muted-foreground">+ {jobs.length - 4} more…</div>
-            )}
+            {jobs.length > 4 && <div className="text-[10px] text-muted-foreground">+ {jobs.length - 4} more…</div>}
           </div>
-          {groupNote && (
-            <div className="text-[11px] text-muted-foreground italic mt-1 truncate">{groupNote}</div>
-          )}
+          {groupNote && <div className="text-[11px] text-muted-foreground italic mt-1 truncate">{groupNote}</div>}
           <div className="text-[10px] text-primary/70 mt-1">Tap to expand · drag to assign</div>
         </button>
       </div>
@@ -1516,8 +1992,16 @@ function GroupedStackCard({
 
 /* ---------- Collapsed strip for completed / cancelled trips ---------- */
 function CompletedStrip({
-  job, ctx, driverName, isSelected,
-}: { job: Job; ctx: CardCtx; driverName?: string; isSelected: boolean }) {
+  job,
+  ctx,
+  driverName,
+  isSelected,
+}: {
+  job: Job;
+  ctx: CardCtx;
+  driverName?: string;
+  isSelected: boolean;
+}) {
   const cancelled = job.status === "cancelled";
   const paxCount = job.pax?.length ?? 0;
   return (
@@ -1529,11 +2013,7 @@ function CompletedStrip({
       } ${isSelected ? "ring-2 ring-primary" : ""}`}
     >
       <div onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={() => ctx.onToggleSelect(job.id)}
-          aria-label="Select trip"
-        />
+        <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
       <button
         type="button"
@@ -1541,7 +2021,7 @@ function CompletedStrip({
         className="flex-1 flex items-center gap-2 min-w-0 text-left"
         title={cancelled ? "Cancelled" : "Completed"}
       >
-        <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
+        <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
         <span className="truncate">
           {job.from_location} → {job.to_location}
         </span>
@@ -1559,8 +2039,6 @@ function CompletedStrip({
   );
 }
 
-
-
 /* ------------------------------ Trip card ------------------------------ */
 
 function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
@@ -1571,8 +2049,11 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
   if (!hasDup && !hasSus) return null;
   const currentPax = (job.pax ?? []).map((p) => p.name).filter(Boolean) as string[];
   const current: MergeCandidate = {
-    id: job.id, date: job.date, time: job.time,
-    from_location: job.from_location, to_location: job.to_location,
+    id: job.id,
+    date: job.date,
+    time: job.time,
+    from_location: job.from_location,
+    to_location: job.to_location,
     pax_names: currentPax,
   };
   return (
@@ -1581,9 +2062,7 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
         <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1">
           <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />
           <span className="text-[10px] font-semibold text-destructive">⚠️ Potential Duplicate Trip</span>
-          <span className="text-[10px] text-destructive/80">
-            × {flags.duplicates.length}
-          </span>
+          <span className="text-[10px] text-destructive/80">× {flags.duplicates.length}</span>
           <div className="ml-auto flex items-center gap-1">
             <button
               type="button"
@@ -1624,11 +2103,11 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
   );
 }
 
-function useLiveEtaPoint(jobId: string): LivePoint | null {
+function useLiveEtaPoint(jobId: string): LiveEtaPoint | null {
   const fn = useServerFn(listActiveDriverLocations);
   const { data } = useQuery({
     queryKey: ["live-locations"],
-    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
+    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LiveEtaPoint[]>,
     refetchInterval: 30_000,
     staleTime: 20_000,
   });
@@ -1649,7 +2128,7 @@ function computeLateMin(job: Job, etaSec: number | null | undefined): number | n
   return Math.round((projected - pickupMs) / 60000);
 }
 
-function EtaChip({ point, job }: { point: LivePoint | null; job: Job }) {
+function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   if (!point) return null;
   const fresh = Date.now() - new Date(point.captured_at).getTime() < 90_000;
   if (!fresh) return null;
@@ -1695,7 +2174,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const paxCount = job.pax?.length ?? 0;
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
   const unread = unreadCounts.total;
-  const flightIssue = job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
+  const flightIssue =
+    job.flight_status === "delayed" || job.flight_status === "cancelled" || job.flight_status === "time_mismatch";
   const flightEarly = job.flight_status === "early";
   const problem = flightIssue || !!job.deletion_requested_at;
   const assignedAccepted = !!job.driver_id && !!job.driver_accepted_at;
@@ -1709,11 +2189,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const driverStatusNew = !!sig?.driver_status_new && !!job.driver_id;
   const rejected = !!(sig as any)?.rejected;
 
-
   // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
-  const partnerPending = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "pending";
+  const partnerPending =
+    (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "pending";
   const partnerRejected = job.dispatch_status === "rejected";
-  const partnerAccepted = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
+  const partnerAccepted =
+    (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.dispatch_status === "accepted";
 
   const livePoint = useLiveEtaPoint(job.id);
   const isLatePickup = (() => {
@@ -1726,46 +2207,61 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   })();
 
   // Color priority: red > blue(unread) > partner state > late > driver-accepted > driver-pending > default
-  const tone = problem || partnerRejected
-    ? "border-destructive bg-destructive/10"
-    : unread > 0 || hasUnread
-    ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
-    : partnerPending
-    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
-    : isLatePickup
-    ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
-    : partnerAccepted
-    ? "border-emerald-500/70 bg-emerald-500/5"
-    : assignedAccepted
-    ? "border-emerald-500/70 bg-emerald-500/5"
-    : assignedPending
-    ? "border-amber-500/70 bg-amber-500/5"
-    : "border-border bg-background";
+  const tone =
+    problem || partnerRejected
+      ? "border-destructive bg-destructive/10"
+      : unread > 0 || hasUnread
+        ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40"
+        : partnerPending
+          ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+          : isLatePickup
+            ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
+            : partnerAccepted
+              ? "border-emerald-500/70 bg-emerald-500/5"
+              : assignedAccepted
+                ? "border-emerald-500/70 bg-emerald-500/5"
+                : assignedPending
+                  ? "border-amber-500/70 bg-amber-500/5"
+                  : "border-border bg-background";
 
   // Colored left rim shows which partner currently holds the trip (creator's-eye view).
-  const rimColor = (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.executor_company_id
-    ? partnerColor(job.executor_company_id)
-    : null;
-
+  const rimColor =
+    (job.chain_role === "creator_watching" || job.chain_role === "hop_watching") && job.executor_company_id
+      ? partnerColor(job.executor_company_id)
+      : null;
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
-    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+    try {
+      return isoToMaltaDateTime(iso).time;
+    } catch {
+      return "";
+    }
   })();
   const schedTime = (() => {
     const iso = job.flight_scheduled_at;
     if (!iso) return "";
-    try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
+    try {
+      return isoToMaltaDateTime(iso).time;
+    } catch {
+      return "";
+    }
   })();
   const flightMsg =
-    job.flight_status === "cancelled" ? "CANCELLED" :
-    job.flight_status === "time_mismatch" ? (job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH")) :
-    job.flight_status === "delayed" ? (job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED")) :
-    flightEarly ? (newTime ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}` : (job.flight_status_note || "EARLY")) :
-    "";
+    job.flight_status === "cancelled"
+      ? "CANCELLED"
+      : job.flight_status === "time_mismatch"
+        ? job.flight_status_note || (newTime ? `flight ${newTime} ≠ pickup` : "TIME MISMATCH")
+        : job.flight_status === "delayed"
+          ? job.flight_status_note || (newTime ? `DELAYED → ${newTime}` : "DELAYED")
+          : flightEarly
+            ? newTime
+              ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}`
+              : job.flight_status_note || "EARLY"
+            : "";
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
 
@@ -1773,16 +2269,16 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   // Collapsed strip for finished / cancelled trips
   if (isFinished) {
-    return (
-      <CompletedStrip job={job} ctx={ctx} driverName={shownDriver ?? undefined} isSelected={isSelected} />
-    );
+    return <CompletedStrip job={job} ctx={ctx} driverName={shownDriver ?? undefined} isSelected={isSelected} />;
   }
 
   const totalUnreadSignal = (sig?.unread_client ?? 0) + (sig?.unread_driver ?? 0);
 
   const gStripe = groupStripeStyle(job.group_id);
   const style: React.CSSProperties = {
-    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 } : {}),
+    ...(transform
+      ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.7 : 1 }
+      : {}),
     ...(gStripe ?? {}),
     ...(rimColor ? { borderLeftColor: rimColor, borderLeftWidth: 6 } : {}),
   };
@@ -1805,7 +2301,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       style={style}
       className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
-
       <LabelStripe labels={labels} />
 
       {/* Signal overlays */}
@@ -1823,35 +2318,34 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       {sosOpen ? (
         <span className="signal-corner-sos" title="SOS from client" aria-label="SOS from client" />
       ) : rejected ? (
-        <span className="signal-corner-rejected" title="Driver rejected — back in Unassigned" aria-label="Driver rejected" />
+        <span
+          className="signal-corner-rejected"
+          title="Driver rejected — back in Unassigned"
+          aria-label="Driver rejected"
+        />
       ) : clientChange ? (
         <span className="signal-corner-change" title="Client requested a change" aria-label="Client change" />
       ) : null}
 
-
       {/* Multi-select checkbox */}
       <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={() => ctx.onToggleSelect(job.id)}
-          aria-label="Select trip"
-        />
+        <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
 
       {/* Tap area — opens details sheet */}
-      <button
-        type="button"
-        onClick={() => ctx.onOpenDetails(job)}
-        className="w-full text-left"
-      >
+      <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="font-medium text-foreground">{job.time?.slice(0,5)}</span>
+              <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
               <span>·</span>
               <span>{job.date}</span>
               {job.client_confirmed_at && (
-                <span title="Client confirmed" className="inline-flex items-center text-emerald-600" aria-label="Client confirmed">
+                <span
+                  title="Client confirmed"
+                  className="inline-flex items-center text-emerald-600"
+                  aria-label="Client confirmed"
+                >
                   ✓
                 </span>
               )}
@@ -1860,26 +2354,40 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 if (!seen) return null;
                 const ageMs = Date.now() - new Date(seen).getTime();
                 if (ageMs > 2 * 60_000) return null;
-                return <span title="Client online" className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-label="Client online" />;
+                return (
+                  <span
+                    title="Client online"
+                    className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"
+                    aria-label="Client online"
+                  />
+                );
               })()}
               {driverStatusNew && (
                 <span className="signal-dot-driver" title="Driver status updated" aria-label="Driver status updated" />
               )}
               <span className="ml-auto flex items-center gap-1">
                 {unreadCounts.driver > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium" title="Unread driver messages">
+                  <span
+                    className="inline-flex items-center gap-0.5 text-blue-600 font-medium"
+                    title="Unread driver messages"
+                  >
                     <MessagesSquare className="h-3 w-3" /> {unreadCounts.driver}
                   </span>
                 )}
                 {unreadCounts.client > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-sky-600 font-medium" title="Unread client messages">
+                  <span
+                    className="inline-flex items-center gap-0.5 text-sky-600 font-medium"
+                    title="Unread client messages"
+                  >
                     <MessageCircle className="h-3 w-3" /> {unreadCounts.client}
                   </span>
                 )}
               </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
-              {displayLocation(job.from_location, job.pickup_display_name)} <span className="text-muted-foreground">→</span> {displayLocation(job.to_location, job.dropoff_display_name)}
+              {displayLocation(job.from_location, job.pickup_display_name)}{" "}
+              <span className="text-muted-foreground">→</span>{" "}
+              {displayLocation(job.to_location, job.dropoff_display_name)}
             </div>
             {(job.route_duration_sec ?? 0) > 0 && (
               <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
@@ -1894,7 +2402,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             )}
             {shownDriver && (
               <div className="text-[11px] mt-0.5 truncate">
-                <span className="text-muted-foreground">Driver:</span> <span className="font-medium">{shownDriver}</span>
+                <span className="text-muted-foreground">Driver:</span>{" "}
+                <span className="font-medium">{shownDriver}</span>
                 {assignedAccepted && <span className="ml-1 text-emerald-600">✓ accepted</span>}
                 {assignedPending && <span className="ml-1 text-amber-600">• pending</span>}
               </div>
@@ -1909,7 +2418,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
-            {(job.status && job.status !== "pending" && job.status !== "active") && (
+            {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
                 <EtaChip point={livePoint} job={job} />
@@ -1926,28 +2435,41 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               className="mt-1"
             />
             <div className="flex flex-wrap gap-1 mt-1">
-              {paxCount > 0 && (() => {
-                const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
-                const allAboard = onboard === paxCount;
-                return (
-                  <Badge
-                    variant={allAboard ? "default" : "secondary"}
-                    className={`text-[10px] gap-1 ${allAboard ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
-                  >
-                    <Users className="h-3 w-3" /> {onboard > 0 ? `${onboard}/${paxCount}` : paxCount}
-                    {allAboard && " ✓"}
-                  </Badge>
-                );
-              })()}
+              {paxCount > 0 &&
+                (() => {
+                  const onboard = (job.pax ?? []).filter((p) => p.status === "onboard").length;
+                  const allAboard = onboard === paxCount;
+                  return (
+                    <Badge
+                      variant={allAboard ? "default" : "secondary"}
+                      className={`text-[10px] gap-1 ${allAboard ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+                    >
+                      <Users className="h-3 w-3" /> {onboard > 0 ? `${onboard}/${paxCount}` : paxCount}
+                      {allAboard && " ✓"}
+                    </Badge>
+                  );
+                })()}
               {(job.group_id || (job.grouped_count ?? 0) >= 2) && (
                 <Badge className="text-[10px] gap-1 bg-primary/15 text-primary hover:bg-primary/15 border border-primary/30">
                   <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
-              {flightCode && !delayed && !flightEarly && <Badge variant="outline" className="text-[10px]">✈ {flightCode}</Badge>}
-              {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Track</Badge>}
-              
-              {job.deletion_requested_at && <Badge variant="destructive" className="text-[10px]">Delete pending</Badge>}
+              {flightCode && !delayed && !flightEarly && (
+                <Badge variant="outline" className="text-[10px]">
+                  ✈ {flightCode}
+                </Badge>
+              )}
+              {job.tracking_enabled && (
+                <Badge variant="outline" className="text-[10px]">
+                  Track
+                </Badge>
+              )}
+
+              {job.deletion_requested_at && (
+                <Badge variant="destructive" className="text-[10px]">
+                  Delete pending
+                </Badge>
+              )}
               {job.chain_role === "creator_watching" && (
                 <Badge variant="outline" className="text-[10px] border-amber-500/60 text-amber-700 dark:text-amber-400">
                   Watching · handed to {job.executor_name ?? "partner"}
@@ -1955,23 +2477,33 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {job.chain_role === "hop_watching" && job.external && (
                 <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
+                  Partner: {job.executor_name}
+                  {job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
                 </Badge>
               )}
               {job.external && !job.chain_role && (
                 <Badge variant="outline" className="text-[10px] border-primary/60 text-primary">
-                  Partner: {job.executor_name}{job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
+                  Partner: {job.executor_name}
+                  {job.external_driver_name ? ` · ${job.external_driver_name}` : ""}
                 </Badge>
               )}
-              {labels.map((l) => <LabelChip key={l.id} label={l} />)}
+              {labels.map((l) => (
+                <LabelChip key={l.id} label={l} />
+              ))}
             </div>
             <TripFlagBadges job={job} ctx={ctx} />
 
             {job.chain_names && job.chain_names.length >= 2 && (
-              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground" aria-label="Trip chain">
+              <div
+                className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground"
+                aria-label="Trip chain"
+              >
                 {job.chain_names.map((name, i) => {
-                  const isLast = i === (job.chain_names!.length - 1);
-                  const dotColor = i === 0 ? "hsl(var(--muted-foreground))" : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
+                  const isLast = i === job.chain_names!.length - 1;
+                  const dotColor =
+                    i === 0
+                      ? "hsl(var(--muted-foreground))"
+                      : partnerColor((job.dispatch_chain_company_ids ?? [])[i] ?? null);
                   return (
                     <span key={`${i}-${name}`} className="inline-flex items-center gap-1">
                       <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
@@ -1982,7 +2514,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 })}
               </div>
             )}
-
           </div>
         </div>
       </button>
@@ -1991,13 +2522,15 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
         <button
           className="hidden sm:inline-flex text-muted-foreground p-1 touch-none"
-          {...attributes} {...listeners}
+          {...attributes}
+          {...listeners}
           aria-label="Drag"
         >
           <GripVertical className="h-4 w-4" />
         </button>
         <TripMenu
-          job={job} ctx={ctx}
+          job={job}
+          ctx={ctx}
           onOpenSplit={() => setOpenSplit(true)}
           onOpenClone={() => setOpenClone(true)}
           onOpenDispatch={() => setOpenDispatch(true)}
@@ -2013,10 +2546,18 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 }
 
 function TripMenu({
-  job, ctx, onOpenSplit, onOpenClone, onOpenDispatch, driverName,
+  job,
+  ctx,
+  onOpenSplit,
+  onOpenClone,
+  onOpenDispatch,
+  driverName,
 }: {
-  job: Job; ctx: CardCtx;
-  onOpenSplit: () => void; onOpenClone: () => void; onOpenDispatch: () => void;
+  job: Job;
+  ctx: CardCtx;
+  onOpenSplit: () => void;
+  onOpenClone: () => void;
+  onOpenDispatch: () => void;
   driverName?: string;
 }) {
   const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
@@ -2027,14 +2568,23 @@ function TripMenu({
   const delMut = useMutation({
     mutationFn: () => delFn({ data: { job_id: job.id } }),
     onSuccess: (res: { deleted: boolean; pending: boolean; missing?: boolean }) => {
-      toast.success(res.missing ? "Trip already changed — board refreshed" : res.pending ? "Deletion requested — awaiting driver approval" : "Deleted");
+      toast.success(
+        res.missing
+          ? "Trip already changed — board refreshed"
+          : res.pending
+            ? "Deletion requested — awaiting driver approval"
+            : "Deleted",
+      );
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
   const cancelMut = useMutation({
     mutationFn: () => cancelFn({ data: { job_id: job.id } }),
-    onSuccess: () => { toast.success("Deletion cancelled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onSuccess: () => {
+      toast.success("Deletion cancelled");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -2042,7 +2592,11 @@ function TripMenu({
   const ungroupMut = useMutation({
     mutationFn: () => ungroupFn({ data: { job_id: job.id } }) as Promise<{ cleared: number; missing?: boolean }>,
     onSuccess: (r) => {
-      toast.success(r.missing ? "Trip already changed — board refreshed" : `Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`);
+      toast.success(
+        r.missing
+          ? "Trip already changed — board refreshed"
+          : `Ungrouped ${r.cleared} trip${r.cleared === 1 ? "" : "s"}`,
+      );
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2051,11 +2605,13 @@ function TripMenu({
   const recallFn = useServerFn(recallPartnerDispatch);
   const recallMut = useMutation({
     mutationFn: () => recallFn({ data: { job_id: (job as any)._origin_job_id ?? job.id } }),
-    onSuccess: () => { toast.success("Hand-off recalled"); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onSuccess: () => {
+      toast.success("Hand-off recalled");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const canRecall = job.chain_role === "creator_watching" && job.dispatch_status === "pending";
-
 
   const shareFn = useServerFn(shareJobToDriver);
   const shareMut = useMutation({
@@ -2063,7 +2619,13 @@ function TripMenu({
     onSuccess: (res: any) => {
       const url = `${window.location.origin}/m/driver/${res.token}`;
       const when = res.job.pickup_at
-        ? formatMaltaDateTime(res.job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        ? formatMaltaDateTime(res.job.pickup_at, {
+            weekday: "short",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
         : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
       const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
       const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
@@ -2071,7 +2633,7 @@ function TripMenu({
         `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
         `🕒 ${when}`,
         `📍 ${from || "?"} → ${to || "?"}`,
-        `👥 ${res.job.pax_count ?? (job.pax?.length ?? 0)} pax`,
+        `👥 ${res.job.pax_count ?? job.pax?.length ?? 0} pax`,
       ];
       if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
       lines.push("", `Open your manifest: ${url}`);
@@ -2090,11 +2652,19 @@ function TripMenu({
         toast.success("Link copied");
       } catch {
         const ta = document.createElement("textarea");
-        ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
-        document.body.appendChild(ta); ta.select();
-        try { document.execCommand("copy"); toast.success("Link copied"); }
-        catch { toast.error("Copy failed — " + url); }
-        finally { document.body.removeChild(ta); }
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+          toast.success("Link copied");
+        } catch {
+          toast.error("Copy failed — " + url);
+        } finally {
+          document.body.removeChild(ta);
+        }
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2105,7 +2675,13 @@ function TripMenu({
     const url = `${window.location.origin}/t/${res.token}`;
     const j = res.job;
     const when = j.pickup_at
-      ? formatMaltaDateTime(j.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+      ? formatMaltaDateTime(j.pickup_at, {
+          weekday: "short",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
       : `${j.date}${j.time ? " " + j.time.slice(0, 5) : ""}`;
     const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
     const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
@@ -2131,8 +2707,12 @@ function TripMenu({
     mutationFn: () => clientLinkFn({ data: { job_id: job.id } }) as Promise<any>,
     onSuccess: async (res) => {
       const { url } = buildClientWhatsappText(res);
-      try { await navigator.clipboard.writeText(url); toast.success("Client link copied"); }
-      catch { toast.error("Copy failed — " + url); }
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Client link copied");
+      } catch {
+        toast.error("Copy failed — " + url);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -2163,12 +2743,11 @@ function TripMenu({
             <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-56">
               <DropdownMenuItem onClick={() => ctx.onAssign(job, null)}>— Unassign —</DropdownMenuItem>
               <DropdownMenuSeparator />
-              {ctx.drivers.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No drivers</div>
-              )}
+              {ctx.drivers.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No drivers</div>}
               {ctx.drivers.map((d) => (
                 <DropdownMenuItem key={d.id} onClick={() => ctx.onAssign(job, d.id)}>
-                  {d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}
+                  {d.name}
+                  {d.vehicle ? ` · ${d.vehicle}` : ""}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>
@@ -2187,7 +2766,9 @@ function TripMenu({
         {ctx.clientPortalEnabled && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Client</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Client
+            </DropdownMenuLabel>
             <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
               <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
             </DropdownMenuItem>
@@ -2213,7 +2794,9 @@ function TripMenu({
         </DropdownMenuItem>
         {canRecall && (
           <DropdownMenuItem
-            onClick={() => { if (confirm("Recall this hand-off before the partner accepts?")) recallMut.mutate(); }}
+            onClick={() => {
+              if (confirm("Recall this hand-off before the partner accepts?")) recallMut.mutate();
+            }}
             disabled={recallMut.isPending}
             className="text-amber-600"
           >
@@ -2229,7 +2812,9 @@ function TripMenu({
         <DropdownMenuSeparator />
         {pending ? (
           <DropdownMenuItem
-            onClick={() => { if (confirm("Cancel the pending deletion request?")) cancelMut.mutate(); }}
+            onClick={() => {
+              if (confirm("Cancel the pending deletion request?")) cancelMut.mutate();
+            }}
             className="text-amber-600"
           >
             <Trash2 className="h-4 w-4 mr-2" /> Cancel deletion request
@@ -2260,18 +2845,29 @@ function CloneDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   const fn = useServerFn(cloneJob);
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, target_date: target } }),
-    onSuccess: () => { toast.success("Cloned"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onSuccess: () => {
+      toast.success("Cloned");
+      onOpenChange(false);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Clone trip</DialogTitle><DialogDescription>Choose a target date.</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Clone trip</DialogTitle>
+          <DialogDescription>Choose a target date.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-2">
           <Label>Target date</Label>
           <Input type="date" value={target} onChange={(e) => setTarget(e.target.value)} />
         </div>
-        <DialogFooter><Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending?"Cloning…":"Clone"}</Button></DialogFooter>
+        <DialogFooter>
+          <Button disabled={mut.isPending} onClick={() => mut.mutate()}>
+            {mut.isPending ? "Cloning…" : "Clone"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -2283,30 +2879,64 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   const fn = useServerFn(splitJob);
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, splits: labels.filter(Boolean).map((l) => ({ label: l })) } }),
-    onSuccess: () => { toast.success("Split into new jobs"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onSuccess: () => {
+      toast.success("Split into new jobs");
+      onOpenChange(false);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Split trip into vehicles</DialogTitle>
-          <DialogDescription>Creates one new job per row. Original stays.</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Split trip into vehicles</DialogTitle>
+          <DialogDescription>Creates one new job per row. Original stays.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-2">
           {labels.map((l, i) => (
-            <Input key={i} value={l} onChange={(e) => setLabels(labels.map((x, j) => j===i? e.target.value : x))} />
+            <Input
+              key={i}
+              value={l}
+              onChange={(e) => setLabels(labels.map((x, j) => (j === i ? e.target.value : x)))}
+            />
           ))}
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setLabels([...labels, `Vehicle ${String.fromCharCode(65+labels.length)}`])}>Add row</Button>
-            {labels.length > 2 && <Button size="sm" variant="ghost" onClick={() => setLabels(labels.slice(0, -1))}>Remove</Button>}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setLabels([...labels, `Vehicle ${String.fromCharCode(65 + labels.length)}`])}
+            >
+              Add row
+            </Button>
+            {labels.length > 2 && (
+              <Button size="sm" variant="ghost" onClick={() => setLabels(labels.slice(0, -1))}>
+                Remove
+              </Button>
+            )}
           </div>
         </div>
-        <DialogFooter><Button disabled={mut.isPending} onClick={() => mut.mutate()}>{mut.isPending?"Splitting…":"Split"}</Button></DialogFooter>
+        <DialogFooter>
+          <Button disabled={mut.isPending} onClick={() => mut.mutate()}>
+            {mut.isPending ? "Splitting…" : "Split"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job; preselectedPartnerId?: string }) {
+function DispatchDialog({
+  open,
+  onOpenChange,
+  job,
+  preselectedPartnerId,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  job: Job;
+  preselectedPartnerId?: string;
+}) {
   const [partnerId, setPartnerId] = useState<string>("");
   const [note, setNote] = useState("");
   const qc = useQueryClient();
@@ -2315,29 +2945,51 @@ function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { ope
   const conns = useQuery({ queryKey: ["collab", "connections"], queryFn: () => listConn(), enabled: open });
   useEffect(() => {
     if (open && preselectedPartnerId) setPartnerId(preselectedPartnerId);
-    if (!open) { setPartnerId(""); setNote(""); }
+    if (!open) {
+      setPartnerId("");
+      setNote("");
+    }
   }, [open, preselectedPartnerId]);
   const mut = useMutation({
-    mutationFn: async () => await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
-    onSuccess: () => { toast.success("Sent to partner"); onOpenChange(false); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["collab"] }); },
+    mutationFn: async () =>
+      await dispatchFn({ data: { job_id: job.id, partner_company_id: partnerId, note: note || undefined } }),
+    onSuccess: () => {
+      toast.success("Sent to partner");
+      onOpenChange(false);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["collab"] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Dispatch to partner</DialogTitle>
-          <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Dispatch to partner</DialogTitle>
+          <DialogDescription>Send this trip to a connected coordinator. Costs 1 point.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-3">
-          {(conns.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>}
+          {(conns.data ?? []).length === 0 && (
+            <p className="text-sm text-muted-foreground">No partners yet. Go to Collaborate to invite one.</p>
+          )}
           <div className="space-y-1">
-            {(conns.data ?? []).filter((c: any) => c.status === "active").map((c: any) => (
-              <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
-                <input type="radio" name="partner" checked={partnerId === c.other.id} onChange={() => setPartnerId(c.other.id)} />
-                <span className="font-medium">{c.other?.name}</span>
-                <Badge variant="outline" className="ml-auto">{c.mode}</Badge>
-              </label>
-            ))}
+            {(conns.data ?? [])
+              .filter((c: any) => c.status === "active")
+              .map((c: any) => (
+                <label key={c.id} className="flex items-center gap-2 border rounded p-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="partner"
+                    checked={partnerId === c.other.id}
+                    onChange={() => setPartnerId(c.other.id)}
+                  />
+                  <span className="font-medium">{c.other?.name}</span>
+                  <Badge variant="outline" className="ml-auto">
+                    {c.mode}
+                  </Badge>
+                </label>
+              ))}
           </div>
           <div>
             <Label>Note (optional)</Label>
@@ -2345,7 +2997,9 @@ function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { ope
           </div>
         </div>
         <DialogFooter>
-          <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>Dispatch</Button>
+          <Button disabled={!partnerId || mut.isPending} onClick={() => mut.mutate()}>
+            Dispatch
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -2355,7 +3009,12 @@ function DispatchDialog({ open, onOpenChange, job, preselectedPartnerId }: { ope
 /* ------------------------------ Details sheet host ------------------------------ */
 
 function DetailsSheetHost({
-  job, onClose, onEdit, onChat, onPax, driverName,
+  job,
+  onClose,
+  onEdit,
+  onChat,
+  onPax,
+  driverName,
 }: {
   job: Job | null;
   onClose: () => void;
@@ -2370,7 +3029,13 @@ function DetailsSheetHost({
     onSuccess: (res: any) => {
       const url = `${window.location.origin}/m/driver/${res.token}`;
       const when = res.job.pickup_at
-        ? formatMaltaDateTime(res.job.pickup_at, { weekday: "short", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        ? formatMaltaDateTime(res.job.pickup_at, {
+            weekday: "short",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
         : `${res.job.date}${res.job.time ? " " + res.job.time.slice(0, 5) : ""}`;
       const from = [res.job.from_location, res.job.from_flight].filter(Boolean).join(" ");
       const to = [res.job.to_location, res.job.to_flight].filter(Boolean).join(" ");
@@ -2405,7 +3070,9 @@ function DetailsSheetHost({
     <TripDetailsSheet
       job={job}
       open={!!job}
-      onOpenChange={(v) => { if (!v) onClose(); }}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
       onEdit={() => job && onEdit(job)}
       onChat={() => job && onChat(job)}
       onPax={() => job && onPax(job)}
@@ -2416,112 +3083,63 @@ function DetailsSheetHost({
   );
 }
 
-/* ------------------------------ Live map panel ------------------------------ */
+/* ------------------------------ Dispatch trip list ------------------------------ */
 
-function LiveMapPanel({ initialOpen = true }: { initialOpen?: boolean }) {
-  const liveTrackingEnabled = useFeature("live_tracking");
-  const [open, setOpen] = useState(initialOpen);
-  const fn = useServerFn(listActiveDriverLocations);
-  const sosFn = useServerFn(listActiveSosPoints);
-  const ackFn = useServerFn(acknowledgeSosCoord);
-  const qc = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ["live-locations"],
-    queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>,
-    refetchInterval: 30_000,
-  });
-  const { data: sosData } = useQuery({
-    queryKey: ["active-sos-points"],
-    queryFn: () => sosFn({} as any) as Promise<any[]>,
+function toSimpleStatus(job: Job): "Pending" | "Assigned" | "In progress" | "Done" | "Cancelled" {
+  if (job.status === "cancelled") return "Cancelled";
+  if (job.status === "completed") return "Done";
+  if (job.status === "en_route" || job.status === "arrived" || job.status === "in_progress") return "In progress";
+  if (job.driver_id) return "Assigned";
+  return "Pending";
+}
 
-    refetchInterval: 15_000,
-  });
-  useEffect(() => {
-    const ch = supabase
-      .channel("driver-locations-live")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "driver_locations" }, () => {
-        qc.invalidateQueries({ queryKey: ["live-locations"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_sos_events" }, () => {
-        qc.invalidateQueries({ queryKey: ["active-sos-points"] });
-        qc.invalidateQueries({ queryKey: ["card-signals"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [qc]);
-
-  const ackMut = useMutation({
-    mutationFn: (sos_id: string) => ackFn({ data: { sos_id } }) as Promise<{ ok: true }>,
-    onSuccess: () => {
-      toast.success("SOS dismissed");
-      qc.invalidateQueries({ queryKey: ["active-sos-points"] });
-      qc.invalidateQueries({ queryKey: ["card-signals"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const points = data ?? [];
-  const sosPoints = sosData ?? [];
-  const liveCount = points.filter((p) => Date.now() - new Date(p.captured_at).getTime() < 30_000).length;
-
-  if (!liveTrackingEnabled) return null;
+function DispatchTripList({ jobs }: { jobs: Job[] }) {
+  if (jobs.length === 0) return null;
+  const list = [...jobs].sort((a, b) =>
+    ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")),
+  );
   return (
-    <section className={`rounded-lg border bg-card ${sosPoints.length ? "ring-2 ring-red-500/60" : ""}`}>
-      <button
-        type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium"
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <span className="relative flex h-2.5 w-2.5">
-          <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${liveCount ? "bg-emerald-500 animate-ping" : "bg-muted"}`} />
-          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${liveCount ? "bg-emerald-600" : "bg-muted-foreground/40"}`} />
-        </span>
-        <span>Live map</span>
-        <Badge variant="secondary" className="ml-1">
-          {liveCount} live · {points.length} tracked
-        </Badge>
-        {sosPoints.length > 0 && (
-          <Badge variant="destructive" className="ml-1 animate-pulse">
-            🆘 {sosPoints.length} SOS
-          </Badge>
-        )}
-        <div className="ml-auto hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-600" />live</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />paused</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-gray-500" />offline</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-600" />SOS</span>
-        </div>
-      </button>
-      {open && (
-        <div className="p-3 pt-0">
-          {points.length === 0 && sosPoints.length === 0 ? (
-            <div className="text-xs text-muted-foreground border rounded-md p-6 text-center bg-muted/30">
-              No drivers sharing location and no active SOS. Drivers can enable tracking from their manifest.
-            </div>
-          ) : (
-            <DriverLiveMap
-              points={points}
-              sosPoints={sosPoints}
-              height={320}
-              onAcknowledgeSos={(id) => ackMut.mutate(id)}
-            />
-          )}
-        </div>
-      )}
+    <section className="rounded-lg border bg-card p-3 space-y-2">
+      <div className="text-sm font-medium">Trips ({list.length})</div>
+      <ul className="space-y-1.5">
+        {list.map((job) => {
+          const from = displayLocation(job.from_location, job.pickup_display_name);
+          const to = displayLocation(job.to_location, job.dropoff_display_name);
+          const eta = formatEtaMinutes(job.route_duration_sec);
+          return (
+            <li key={job.id} className="rounded-md border bg-background px-2.5 py-2 text-sm flex items-center gap-2">
+              <span className="truncate min-w-0 flex-1">
+                {from} to {to}
+                {eta ? ` · ${eta}` : ""}
+              </span>
+              <Badge variant="outline" className="shrink-0 text-[10px]">
+                {toSimpleStatus(job)}
+              </Badge>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
-
 
 /* ------------------------------ Waiting-now strip ------------------------------ */
 function WaitingNowStrip({ onJump }: { onJump: (jobId: string) => void }) {
   const fn = useServerFn(listOpenWaitSessions);
   const { data } = useQuery({
     queryKey: ["open-wait-sessions"],
-    queryFn: () => fn() as Promise<Array<{
-      session_id: string; job_id: string; driver_name: string;
-      started_at: string; elapsed_sec: number; from_location: string | null; to_location: string | null;
-    }>>,
+    queryFn: () =>
+      fn() as Promise<
+        Array<{
+          session_id: string;
+          job_id: string;
+          driver_name: string;
+          started_at: string;
+          elapsed_sec: number;
+          from_location: string | null;
+          to_location: string | null;
+        }>
+      >,
     refetchInterval: 5_000,
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -2559,7 +3177,8 @@ function WaitingNowStrip({ onJump }: { onJump: (jobId: string) => void }) {
                   <div className="font-mono text-amber-700 dark:text-amber-300 shrink-0">⏱ {label}</div>
                 </div>
                 <div className="text-[11px] text-muted-foreground truncate">
-                  {(w.from_location ?? "")}{w.to_location ? ` → ${w.to_location}` : ""}
+                  {w.from_location ?? ""}
+                  {w.to_location ? ` → ${w.to_location}` : ""}
                 </div>
               </button>
             </li>

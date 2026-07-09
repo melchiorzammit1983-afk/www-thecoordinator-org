@@ -1,6 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
+import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
+
+/**
+ * Haversine great-circle distance in metres.
+ */
+function haversineMeters(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -120,7 +138,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     }
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
@@ -648,7 +666,7 @@ export const getClientBookings = createServerFn({ method: "GET" })
     if (!link) return null;
     const supabaseAdmin = await getAdminClient();
     const q = supabaseAdmin.from("client_bookings")
-      .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number")
+      .select("id, name, surname, client_email, from_location, to_location, date, time, pickup_at, status, room_number, jobs!job_id(pickup_display_name, dropoff_display_name)")
       .eq("company_id", link.company_id)
       .order("pickup_at", { ascending: true, nullsFirst: false });
     const filtered = link.subject_label
@@ -657,7 +675,18 @@ export const getClientBookings = createServerFn({ method: "GET" })
     const { data: bookings, error } = await filtered;
     if (error) throw new Error(error.message);
     const branding = await loadCompanyBranding(link.company_id);
-    return { link, bookings: bookings ?? [], branding };
+    // Promote display names from the linked job (if any) up to the booking object.
+    type RawBooking = {
+      jobs?: { pickup_display_name: string | null; dropoff_display_name: string | null } | null;
+      [key: string]: unknown;
+    };
+    const normalised = (bookings as RawBooking[] ?? []).map((b) => ({
+      ...b,
+      pickup_display_name: b.jobs?.pickup_display_name ?? null,
+      dropoff_display_name: b.jobs?.dropoff_display_name ?? null,
+      jobs: undefined,
+    }));
+    return { link, bookings: normalised, branding };
   });
 
 // ---------- Phase 3: Client actions ----------
@@ -832,6 +861,8 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
     return pax ?? [];
   });
 
+const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -843,10 +874,93 @@ export const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const patch: Record<string, unknown> = { status: data.status };
+    if (data.status === "pending" && job.status !== "pending") {
+      if (!DRIVER_RETURN_TO_WAITING_STATUSES.has(job.status ?? "")) {
+        throw new Error("trip_cannot_return_to_waiting");
+      }
+      patch.driver_started_at = null;
+      patch.driver_completed_at = null;
+    }
     // First "on the way" transition starts the trip timer.
     if (data.status === "en_route" && !(job as any).driver_started_at) {
       patch.driver_started_at = new Date().toISOString();
     }
+
+    // ── Arrival gate: only fires on the en_route → arrived transition ──────────
+    if (data.status === "arrived" && (job as any).status === "en_route") {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      const driverId = (job as any).driver_id as string | null;
+
+      // 1. Resolve the effective arrival radius for this company.
+      //    Falls back to DEFAULT_ARRIVAL_RADIUS_M when the company has no override.
+      const { data: company } = await supabaseAdmin
+        .from("companies")
+        .select("arrival_radius_m")
+        .eq("id", (job as any).company_id)
+        .maybeSingle();
+      const arrivalRadius = company?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M;
+
+      // 2. Require a fresh GPS point from driver_locations (within ARRIVAL_GPS_FRESH_MS).
+      const since = new Date(Date.now() - ARRIVAL_GPS_FRESH_MS).toISOString();
+      const { data: pts } = driverId
+        ? await supabaseAdmin
+            .from("driver_locations")
+            .select("latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
+            .eq("driver_id", driverId)
+            .eq("job_id", data.job_id)
+            .gte("captured_at", since)
+            .order("captured_at", { ascending: false })
+            .limit(1)
+        : { data: null };
+      const pt = pts?.[0];
+      if (!pt) throw new Error("arrival_no_gps");
+
+      // 3. Accuracy check: reject if the reported circle is larger than the arrival radius.
+      if (pt.accuracy_m != null && pt.accuracy_m > arrivalRadius) {
+        throw new Error(`arrival_weak_gps:${Math.round(pt.accuracy_m)}:${arrivalRadius}`);
+      }
+
+      // 4. Resolve pickup target: prefer stored coords, fall back to geocoding from_location.
+      let destLat: number | null = (job as any).pickup_lat ?? null;
+      let destLng: number | null = (job as any).pickup_lng ?? null;
+      if ((destLat == null || destLng == null) && job.from_location && apiKey) {
+        try {
+          const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
+          const gj: any = await (await fetch(geoUrl)).json();
+          const loc = gj?.results?.[0]?.geometry?.location;
+          if (loc) { destLat = loc.lat; destLng = loc.lng; }
+        } catch { /* fall through — skip distance check */ }
+      }
+
+      // 5. Distance check (only when we have a valid pickup target).
+      if (destLat != null && destLng != null) {
+        const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
+        if (distM > arrivalRadius) {
+          throw new Error(`arrival_outside_radius:${Math.round(distM)}:${arrivalRadius}`);
+        }
+        patch.arrival_distance_m = Math.round(distM);
+      }
+
+      // 6. Reverse-geocode the driver's actual position (best-effort — never blocks arrival).
+      let streetAddress: string | null = null;
+      if (apiKey) {
+        try {
+          const rgUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.latitude},${pt.longitude}&key=${apiKey}`;
+          const rj: any = await (await fetch(rgUrl)).json();
+          streetAddress = rj?.results?.[0]?.formatted_address ?? null;
+        } catch { /* best-effort */ }
+      }
+
+      // 7. Persist verified telemetry alongside the status update.
+      patch.arrival_verified_at   = new Date().toISOString();
+      patch.arrival_lat           = pt.latitude;
+      patch.arrival_lng           = pt.longitude;
+      patch.arrival_accuracy_m    = pt.accuracy_m ?? null;
+      patch.arrival_heading       = pt.heading ?? null;
+      patch.arrival_speed_mps     = pt.speed_mps ?? null;
+      patch.arrival_street_address = streetAddress;
+    }
+    // ── End arrival gate ─────────────────────────────────────────────────────
     if (data.status === "completed") {
       // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
@@ -2097,7 +2211,7 @@ export const deleteTripAdjustment = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    if (job.status === "completed" || job.status === "cancelled") throw new Error("trip_locked");
+    if (job.status === "cancelled") throw new Error("trip_locked");
     const { data: row } = await supabaseAdmin.from("job_adjustments" as any)
       .select("id, kind, wait_session_id, driver_id")
       .eq("id", data.adjustment_id).eq("job_id", job.id).maybeSingle();
