@@ -1,6 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
+import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
+
+/**
+ * Haversine great-circle distance in metres.
+ */
+function haversineMeters(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -867,6 +885,74 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     if (data.status === "en_route" && !(job as any).driver_started_at) {
       patch.driver_started_at = new Date().toISOString();
     }
+
+    // ── Arrival gate: only fires on the en_route → arrived transition ──────────
+    if (data.status === "arrived" && (job as any).status === "en_route") {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      const driverId = (job as any).driver_id as string | null;
+
+      // 1. Require a fresh GPS point from driver_locations (within ARRIVAL_GPS_FRESH_MS).
+      const since = new Date(Date.now() - ARRIVAL_GPS_FRESH_MS).toISOString();
+      const { data: pts } = driverId
+        ? await supabaseAdmin
+            .from("driver_locations")
+            .select("latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
+            .eq("driver_id", driverId)
+            .eq("job_id", data.job_id)
+            .gte("captured_at", since)
+            .order("captured_at", { ascending: false })
+            .limit(1)
+        : { data: null };
+      const pt = pts?.[0];
+      if (!pt) throw new Error("arrival_no_gps");
+
+      // 2. Accuracy check: reject if the reported circle is larger than the arrival radius.
+      const arrivalRadius = DEFAULT_ARRIVAL_RADIUS_M;
+      if (pt.accuracy_m != null && pt.accuracy_m > arrivalRadius) {
+        throw new Error(`arrival_weak_gps:${Math.round(pt.accuracy_m)}:${arrivalRadius}`);
+      }
+
+      // 3. Resolve pickup target: prefer stored coords, fall back to geocoding from_location.
+      let destLat: number | null = (job as any).pickup_lat ?? null;
+      let destLng: number | null = (job as any).pickup_lng ?? null;
+      if ((destLat == null || destLng == null) && job.from_location && apiKey) {
+        try {
+          const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
+          const gj: any = await (await fetch(geoUrl)).json();
+          const loc = gj?.results?.[0]?.geometry?.location;
+          if (loc) { destLat = loc.lat; destLng = loc.lng; }
+        } catch { /* fall through — skip distance check */ }
+      }
+
+      // 4. Distance check (only when we have a valid pickup target).
+      if (destLat != null && destLng != null) {
+        const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
+        if (distM > arrivalRadius) {
+          throw new Error(`arrival_outside_radius:${Math.round(distM)}:${arrivalRadius}`);
+        }
+        patch.arrival_distance_m = Math.round(distM);
+      }
+
+      // 5. Reverse-geocode the driver's actual position (best-effort — never blocks arrival).
+      let streetAddress: string | null = null;
+      if (apiKey) {
+        try {
+          const rgUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.latitude},${pt.longitude}&key=${apiKey}`;
+          const rj: any = await (await fetch(rgUrl)).json();
+          streetAddress = rj?.results?.[0]?.formatted_address ?? null;
+        } catch { /* best-effort */ }
+      }
+
+      // 6. Persist verified telemetry alongside the status update.
+      patch.arrival_verified_at   = new Date().toISOString();
+      patch.arrival_lat           = pt.latitude;
+      patch.arrival_lng           = pt.longitude;
+      patch.arrival_accuracy_m    = pt.accuracy_m ?? null;
+      patch.arrival_heading       = pt.heading ?? null;
+      patch.arrival_speed_mps     = pt.speed_mps ?? null;
+      patch.arrival_street_address = streetAddress;
+    }
+    // ── End arrival gate ─────────────────────────────────────────────────────
     if (data.status === "completed") {
       // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
