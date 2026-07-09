@@ -122,10 +122,26 @@ const STATUS_FLOW: Array<{ value: string; label: string }> = [
 const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
 
 function formatDriverStatusError(error: Error): string {
-  if (error.message === "trip_cannot_return_to_waiting") {
+  const msg = error.message ?? "";
+  if (msg === "trip_cannot_return_to_waiting") {
     return "This trip can only go back to waiting before passengers are on board.";
   }
-  return error.message;
+  if (msg === "arrival_no_gps") {
+    return "No recent GPS location found. Make sure location sharing is active and try again.";
+  }
+  if (msg.startsWith("arrival_weak_gps:")) {
+    const parts = msg.split(":");
+    const accuracyStr = parts[1];
+    const radiusStr   = parts[2];
+    return `GPS accuracy is too weak (±${accuracyStr}m, need ±${radiusStr}m). Wait for a better signal and try again.`;
+  }
+  if (msg.startsWith("arrival_outside_radius:")) {
+    const parts = msg.split(":");
+    const distStr   = parts[1];
+    const radiusStr = parts[2];
+    return `You're ${distStr}m from the pickup (${radiusStr}m required). Move closer and try again.`;
+  }
+  return msg;
 }
 
 function getInstructionText(instruction: string | null | undefined): string | null {
@@ -1528,6 +1544,11 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
           >
             {statusMut.isPending ? "Updating…" : next.label.toUpperCase()}
           </Button>
+        )}
+        {statusMut.isError && next?.value === "arrived" && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900">
+            {formatDriverStatusError(statusMut.error as Error)}
+          </div>
         )}
         <div className="grid grid-cols-2 gap-2">
           {canEnterNavigate && onEnterNavigate ? (
