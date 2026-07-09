@@ -34,6 +34,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
+import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
