@@ -5,18 +5,24 @@ import { formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { TripProgress, TRIP_STAGES } from "./TripProgress";
 import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus } from "@/lib/coordinator.functions";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
 
 
@@ -916,8 +922,13 @@ function fmtElapsedShort(sec: number) {
 }
 
 function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
   const listFn = useServerFn(listJobAdjustments);
   const openFn = useServerFn(listOpenWaitSessions);
+  const proposalsFn = useServerFn(listWaitProposals);
+  const proposeFn = useServerFn(proposeWaitAdjustment);
+  const cancelFn = useServerFn(cancelWaitProposal);
+
   const { data } = useQuery({
     queryKey: ["trip-adjustments", jobId],
     queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<{ adjustments: any[]; wait_sessions: any[] }>,
@@ -928,7 +939,13 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
     queryFn: () => openFn() as Promise<any[]>,
     refetchInterval: 5_000,
   });
-  const openHere = (openWaits ?? []).find((w) => w.job_id === jobId) ?? null;
+  const { data: proposals } = useQuery({
+    queryKey: ["wait-proposals", jobId],
+    queryFn: () => proposalsFn({ data: { job_id: jobId } }) as Promise<any[]>,
+    refetchInterval: 8_000,
+  });
+
+  const openHere = (openWaits ?? []).find((w: any) => w.job_id === jobId) ?? null;
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -938,10 +955,47 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
   }, [openHere]);
   const elapsedSec = openHere ? Math.floor((nowMs - new Date(openHere.started_at).getTime()) / 1000) : 0;
 
+  // Free-window indicator
+  const freeRemainingMs = openHere?.free_ends_at
+    ? Math.max(0, new Date(openHere.free_ends_at).getTime() - nowMs)
+    : null;
+  const inFreeWindow = freeRemainingMs !== null && freeRemainingMs > 0;
+
   const adjustments = data?.adjustments ?? [];
   const totalAdj = adjustments.reduce((s: number, a: any) => s + Number(a.amount ?? 0), 0);
+  const pendingProposals = ((proposals ?? []) as any[]).filter((p: any) => p.status === "pending");
 
-  if (!openHere && adjustments.length === 0) return null;
+  // Propose-adjustment dialog
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [proposeAmount, setProposeAmount] = useState("");
+  const [proposeNote, setProposeNote] = useState("");
+
+  const proposeMut = useMutation({
+    mutationFn: () => {
+      const openSession = data?.wait_sessions?.find((s: any) => !s.ended_at) ?? null;
+      return proposeFn({
+        data: {
+          job_id: jobId,
+          session_id: openSession?.id ?? undefined,
+          proposed_amount: Number(proposeAmount || 0),
+          note: proposeNote.trim() || undefined,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Proposal sent to driver");
+      setProposeOpen(false); setProposeAmount(""); setProposeNote("");
+      qc.invalidateQueries({ queryKey: ["wait-proposals", jobId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const cancelMut = useMutation({
+    mutationFn: (proposalId: string) => cancelFn({ data: { job_id: jobId, proposal_id: proposalId } }),
+    onSuccess: () => { toast.success("Proposal cancelled"); qc.invalidateQueries({ queryKey: ["wait-proposals", jobId] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!openHere && adjustments.length === 0 && pendingProposals.length === 0) return null;
 
   return (
     <section className="rounded-md border p-3 space-y-2 bg-amber-50/60 dark:bg-amber-950/10 border-amber-500/40">
@@ -949,39 +1003,133 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
         <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-amber-800 dark:text-amber-300">
           <MapPin className="h-3 w-3" /> Waiting & driver adjustments
         </div>
-        {openHere && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white text-[11px] px-2 py-0.5 font-mono">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+        <div className="flex items-center gap-2">
+          {openHere && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white text-[11px] px-2 py-0.5 font-mono">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+              </span>
+              Waiting {fmtElapsedShort(elapsedSec)}
             </span>
-            Waiting {fmtElapsedShort(elapsedSec)}
-          </span>
-        )}
+          )}
+          {openHere && pendingProposals.length === 0 && (
+            <Button size="sm" variant="outline" className="h-6 text-[11px] px-2"
+              onClick={() => { setProposeAmount(""); setProposeNote(""); setProposeOpen(true); }}>
+              <SendHorizonal className="h-3 w-3 mr-1" /> Propose
+            </Button>
+          )}
+        </div>
       </div>
 
-      {adjustments.length === 0 ? (
-        <div className="text-xs text-muted-foreground">Driver is waiting — no charges saved yet.</div>
+      {/* Free-window badge */}
+      {openHere && (
+        <div className="text-[11px]">
+          {inFreeWindow ? (
+            <span className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 font-medium">
+              Free window — {fmtElapsedShort(Math.floor((freeRemainingMs ?? 0) / 1000))} remaining
+            </span>
+          ) : (
+            <span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 font-medium">
+              Chargeable since {openHere.free_ends_at
+                ? new Date(openHere.free_ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "start"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Pending proposals */}
+      {pendingProposals.map((p: any) => (
+        <div key={p.id} className="rounded border border-blue-200 bg-blue-50/60 p-2 text-[11px] flex items-start justify-between gap-2">
+          <div>
+            <span className="font-semibold text-blue-900">Proposed EUR {Number(p.proposed_amount).toFixed(2)}</span>
+            {p.note && <span className="text-blue-700 ml-1">— {p.note}</span>}
+            <div className="text-muted-foreground">Waiting for driver response</div>
+          </div>
+          <button className="text-slate-400 hover:text-rose-600 shrink-0" onClick={() => cancelMut.mutate(p.id)} aria-label="Cancel proposal">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+
+      {/* Recent accepted/rejected proposals */}
+      {((proposals ?? []) as any[]).filter((p: any) => p.status !== "pending").slice(0, 3).map((p: any) => (
+        <div key={p.id} className="text-[11px] flex items-center justify-between gap-2 text-muted-foreground">
+          <span>
+            Proposal EUR {Number(p.proposed_amount).toFixed(2)}{" "}
+            <span className={p.status === "accepted" ? "text-emerald-700 font-medium" : "text-rose-600 font-medium"}>
+              {p.status}
+            </span>
+            {p.driver_response_note && <span> — "{p.driver_response_note}"</span>}
+          </span>
+        </div>
+      ))}
+
+      {adjustments.length === 0 && !openHere ? (
+        <div className="text-xs text-muted-foreground">No charges yet.</div>
       ) : (
         <ul className="divide-y text-xs">
-          {adjustments.map((a: any) => (
-            <li key={a.id} className="flex items-center justify-between py-1.5">
-              <div className="min-w-0">
-                <div className="capitalize">
-                  <span className="font-medium">{a.kind.replace("_", " ")}</span>
-                  {a.label && <span className="text-muted-foreground"> — {a.label}</span>}
+          {adjustments.map((a: any) => {
+            // For waiting adjustments, show both calculated and agreed amounts if they differ
+            const waitSession = a.kind === "waiting" && a.wait_session_id
+              ? data?.wait_sessions?.find((s: any) => s.id === a.wait_session_id)
+              : null;
+            const calcAmt = waitSession?.calculated_amount != null ? Number(waitSession.calculated_amount) : null;
+            const agreedAmt = Number(a.amount);
+            const hasAdjustment = calcAmt !== null && Math.abs(calcAmt - agreedAmt) > 0.005;
+            return (
+              <li key={a.id} className="flex items-start justify-between py-1.5 gap-2">
+                <div className="min-w-0">
+                  <div className="capitalize">
+                    <span className="font-medium">{a.kind.replace("_", " ")}</span>
+                    {a.label && <span className="text-muted-foreground"> — {a.label}</span>}
+                  </div>
+                  {hasAdjustment && (
+                    <div className="text-[10px] text-muted-foreground">
+                      Calculated: EUR {calcAmt!.toFixed(2)} → Agreed: EUR {agreedAmt.toFixed(2)}
+                    </div>
+                  )}
+                  {a.driver_note && <div className="text-[11px] text-muted-foreground truncate">"{a.driver_note}"</div>}
                 </div>
-                {a.driver_note && <div className="text-[11px] text-muted-foreground truncate">"{a.driver_note}"</div>}
-              </div>
-              <div className="font-mono">{(a.currency ?? "EUR")} {Number(a.amount).toFixed(2)}</div>
+                <div className="font-mono shrink-0">{(a.currency ?? "EUR")} {agreedAmt.toFixed(2)}</div>
+              </li>
+            );
+          })}
+          {adjustments.length > 0 && (
+            <li className="flex items-center justify-between pt-1.5 text-xs font-semibold">
+              <span>Adjustments total</span>
+              <span className="font-mono">EUR {totalAdj.toFixed(2)}</span>
             </li>
-          ))}
-          <li className="flex items-center justify-between pt-1.5 text-xs font-semibold">
-            <span>Adjustments total</span>
-            <span className="font-mono">EUR {totalAdj.toFixed(2)}</span>
-          </li>
+          )}
         </ul>
       )}
+
+      {/* Propose-adjustment dialog */}
+      <Dialog open={proposeOpen} onOpenChange={setProposeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Propose waiting adjustment</DialogTitle>
+            <DialogDescription>The driver will see this proposal and can accept or reject it.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="prop-amount">Proposed amount (EUR) *</Label>
+              <Input id="prop-amount" type="number" min={0} step="0.01" inputMode="decimal"
+                value={proposeAmount} onChange={(e) => setProposeAmount(e.target.value)} placeholder="0.00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prop-note">Note (optional)</Label>
+              <Textarea id="prop-note" value={proposeNote} onChange={(e) => setProposeNote(e.target.value)} maxLength={500}
+                placeholder="e.g. Flight landed early, adjusted accordingly" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setProposeOpen(false)}>Cancel</Button>
+            <Button onClick={() => proposeMut.mutate()} disabled={proposeMut.isPending || proposeAmount === ""}>Send proposal</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

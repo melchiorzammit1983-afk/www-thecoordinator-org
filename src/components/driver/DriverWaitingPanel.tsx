@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Clock, Play, StopCircle, Plus, Trash2, Receipt } from "lucide-react";
+import { Clock, Play, StopCircle, Plus, Trash2, Receipt, CheckCircle2, XCircle } from "lucide-react";
 import {
   startWaitSession, stopWaitSession, addTripAdjustment, deleteTripAdjustment, getDriverJobPricing,
+  getWaitProposalsForDriver, respondWaitProposal,
 } from "@/lib/coordinator-public.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,11 +44,14 @@ function money(n: number, currency = "EUR") {
 export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocation }: Props) {
   const qc = useQueryClient();
   const key = ["driver-pricing", token, jobId];
+  const propKey = ["driver-wait-proposals", token, jobId];
   const pricingFn = useServerFn(getDriverJobPricing);
   const startFn = useServerFn(startWaitSession);
   const stopFn = useServerFn(stopWaitSession);
   const addFn = useServerFn(addTripAdjustment);
   const delFn = useServerFn(deleteTripAdjustment);
+  const proposalsFn = useServerFn(getWaitProposalsForDriver);
+  const respondFn = useServerFn(respondWaitProposal);
 
   const active = status === "arrived" || status === "in_progress";
   const { data } = useQuery({
@@ -56,11 +60,21 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
     refetchInterval: 5_000,
     enabled: active || status === "completed",
   });
+  const { data: proposals } = useQuery({
+    queryKey: propKey,
+    queryFn: () => proposalsFn({ data: { token, job_id: jobId } }),
+    refetchInterval: 10_000,
+    enabled: active || status === "completed",
+  });
 
-  const openWait = (data as any)?.open_wait as null | { id: string; started_at: string };
+  const openWait = (data as any)?.open_wait as null | { id: string; started_at: string; free_ends_at: string | null };
   const adjustments = ((data as any)?.adjustments ?? []) as any[];
   const total = Number((data as any)?.total ?? 0);
   const currency = ((data as any)?.currency ?? "EUR") as string;
+  const freeWaitMinutes: number = Number((data as any)?.free_wait_minutes ?? 5);
+  const ratePerMinute: number = Number((data as any)?.waiting_rate_per_minute ?? 0);
+  const serverLiveCharge: number = Number((data as any)?.live_charge ?? 0);
+  const pendingProposals = ((proposals ?? []) as any[]).filter((p: any) => p.status === "pending");
   const canManageAdjustments = active || status === "completed";
 
   // Live-ticking elapsed while a session is open
@@ -71,6 +85,27 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
     return () => clearInterval(id);
   }, [openWait]);
   const elapsedSec = openWait ? Math.floor((nowMs - new Date(openWait.started_at).getTime()) / 1000) : 0;
+
+  // Live charge computed client-side (mirrors server calculation, updates every second)
+  const liveCharge = useMemo(() => {
+    if (!openWait || ratePerMinute === 0) return serverLiveCharge;
+    const elapsedMs = nowMs - new Date(openWait.started_at).getTime();
+    let chargeableMs: number;
+    if (openWait.free_ends_at) {
+      chargeableMs = Math.max(0, nowMs - new Date(openWait.free_ends_at).getTime());
+    } else {
+      chargeableMs = Math.max(0, elapsedMs - freeWaitMinutes * 60000);
+    }
+    return Math.round((chargeableMs / 60000) * ratePerMinute * 100) / 100;
+  }, [nowMs, openWait, ratePerMinute, freeWaitMinutes, serverLiveCharge]);
+
+  // Free-window remaining (ms until free_ends_at, or 0 if already elapsed)
+  const freeRemainingMs = useMemo(() => {
+    if (!openWait?.free_ends_at) return null;
+    const rem = new Date(openWait.free_ends_at).getTime() - nowMs;
+    return rem > 0 ? rem : 0;
+  }, [nowMs, openWait]);
+  const inFreeWindow = freeRemainingMs !== null && freeRemainingMs > 0;
 
   // Stop-waiting sheet
   const [stopOpen, setStopOpen] = useState(false);
@@ -120,6 +155,16 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
   const delMut = useMutation({
     mutationFn: (id: string) => delFn({ data: { token, job_id: jobId, adjustment_id: id } }),
     onSuccess: () => { toast.success("Removed"); qc.invalidateQueries({ queryKey: key }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const respondMut = useMutation({
+    mutationFn: ({ proposalId, accept, driverNote }: { proposalId: string; accept: boolean; driverNote?: string }) =>
+      respondFn({ data: { token, job_id: jobId, proposal_id: proposalId, accept, driver_note: driverNote } }),
+    onSuccess: (_, vars) => {
+      toast.success(vars.accept ? "Proposal accepted" : "Proposal rejected");
+      qc.invalidateQueries({ queryKey: propKey });
+      qc.invalidateQueries({ queryKey: key });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -176,7 +221,7 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
     return () => { try { navigator.geolocation.clearWatch(id); } catch { /* noop */ } };
   }, [active, openWait, startMut]);
 
-  if (!canManageAdjustments && !adjustments.length) return null;
+  if (!canManageAdjustments && !adjustments.length && !pendingProposals.length) return null;
 
   return (
     <section className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-3 space-y-3">
@@ -195,13 +240,58 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
         )}
       </div>
 
+      {/* Free-window / live-charge indicator */}
+      {openWait && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {inFreeWindow ? (
+            <span className="text-xs rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 font-medium">
+              Free window — {fmtHMS(Math.floor((freeRemainingMs ?? 0) / 1000))} remaining
+            </span>
+          ) : (
+            <span className="text-xs rounded-full bg-rose-100 text-rose-700 px-2.5 py-1 font-medium">
+              Chargeable
+            </span>
+          )}
+          {ratePerMinute > 0 && (
+            <span className="text-xs font-mono text-amber-900">
+              Est. {money(liveCharge, currency)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Coordinator proposals */}
+      {pendingProposals.length > 0 && (
+        <div className="space-y-2">
+          {pendingProposals.map((p: any) => (
+            <div key={p.id} className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm space-y-1.5">
+              <div className="font-semibold text-blue-900">Coordinator proposes {money(Number(p.proposed_amount), currency)}</div>
+              {p.note && <div className="text-xs text-blue-700 italic">"{p.note}"</div>}
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-8"
+                  onClick={() => respondMut.mutate({ proposalId: p.id, accept: true })}
+                  disabled={respondMut.isPending}>
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Accept
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 border-rose-300 text-rose-700 hover:bg-rose-50"
+                  onClick={() => respondMut.mutate({ proposalId: p.id, accept: false })}
+                  disabled={respondMut.isPending}>
+                  <XCircle className="h-3.5 w-3.5 mr-1" /> Reject
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {canManageAdjustments && (
         <div className="space-y-2">
           <div className="flex flex-col gap-2 sm:flex-row">
             {active && (
               openWait ? (
                 <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={() => {
-                  setAmount(""); setNote(""); setStopOpen(true);
+                  setAmount(liveCharge > 0 ? liveCharge.toFixed(2) : "");
+                  setNote(""); setStopOpen(true);
                 }}>
                   <StopCircle className="h-4 w-4 mr-2" /> Stop waiting
                 </Button>
@@ -268,10 +358,20 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Stop waiting</DialogTitle>
-            <DialogDescription>Enter the waiting charge you agreed with the coordinator.</DialogDescription>
+            <DialogDescription>
+              {ratePerMinute > 0
+                ? "Calculated charge is pre-filled. You can adjust the agreed amount before saving."
+                : "Enter the waiting charge you agreed with the coordinator."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-sm">Waited <span className="font-mono font-semibold">{fmtHMS(elapsedSec)}</span></div>
+            {ratePerMinute > 0 && (
+              <div className="text-xs text-slate-500">
+                Calculated: <span className="font-mono font-medium text-slate-700">{money(liveCharge, currency)}</span>
+                {" "}({freeWaitMinutes > 0 ? `after ${freeWaitMinutes} min free` : "no free window"}, {money(ratePerMinute, currency)}/min)
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="wait-amount">Agreed charge ({currency}) *</Label>
               <Input id="wait-amount" type="number" min={0} step="0.01" inputMode="decimal"
