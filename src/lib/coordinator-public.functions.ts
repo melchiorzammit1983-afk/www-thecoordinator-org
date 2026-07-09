@@ -891,7 +891,16 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       const apiKey = process.env.GOOGLE_MAPS_API_KEY;
       const driverId = (job as any).driver_id as string | null;
 
-      // 1. Require a fresh GPS point from driver_locations (within ARRIVAL_GPS_FRESH_MS).
+      // 1. Resolve the effective arrival radius for this company.
+      //    Falls back to DEFAULT_ARRIVAL_RADIUS_M when the company has no override.
+      const { data: company } = await supabaseAdmin
+        .from("companies")
+        .select("arrival_radius_m")
+        .eq("id", (job as any).company_id)
+        .maybeSingle();
+      const arrivalRadius = company?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M;
+
+      // 2. Require a fresh GPS point from driver_locations (within ARRIVAL_GPS_FRESH_MS).
       const since = new Date(Date.now() - ARRIVAL_GPS_FRESH_MS).toISOString();
       const { data: pts } = driverId
         ? await supabaseAdmin
@@ -906,13 +915,12 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       const pt = pts?.[0];
       if (!pt) throw new Error("arrival_no_gps");
 
-      // 2. Accuracy check: reject if the reported circle is larger than the arrival radius.
-      const arrivalRadius = DEFAULT_ARRIVAL_RADIUS_M;
+      // 3. Accuracy check: reject if the reported circle is larger than the arrival radius.
       if (pt.accuracy_m != null && pt.accuracy_m > arrivalRadius) {
         throw new Error(`arrival_weak_gps:${Math.round(pt.accuracy_m)}:${arrivalRadius}`);
       }
 
-      // 3. Resolve pickup target: prefer stored coords, fall back to geocoding from_location.
+      // 4. Resolve pickup target: prefer stored coords, fall back to geocoding from_location.
       let destLat: number | null = (job as any).pickup_lat ?? null;
       let destLng: number | null = (job as any).pickup_lng ?? null;
       if ((destLat == null || destLng == null) && job.from_location && apiKey) {
@@ -924,7 +932,7 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         } catch { /* fall through — skip distance check */ }
       }
 
-      // 4. Distance check (only when we have a valid pickup target).
+      // 5. Distance check (only when we have a valid pickup target).
       if (destLat != null && destLng != null) {
         const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
         if (distM > arrivalRadius) {
@@ -933,7 +941,7 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         patch.arrival_distance_m = Math.round(distM);
       }
 
-      // 5. Reverse-geocode the driver's actual position (best-effort — never blocks arrival).
+      // 6. Reverse-geocode the driver's actual position (best-effort — never blocks arrival).
       let streetAddress: string | null = null;
       if (apiKey) {
         try {
@@ -943,7 +951,7 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         } catch { /* best-effort */ }
       }
 
-      // 6. Persist verified telemetry alongside the status update.
+      // 7. Persist verified telemetry alongside the status update.
       patch.arrival_verified_at   = new Date().toISOString();
       patch.arrival_lat           = pt.latitude;
       patch.arrival_lng           = pt.longitude;
