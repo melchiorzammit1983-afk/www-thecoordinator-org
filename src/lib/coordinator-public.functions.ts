@@ -1974,7 +1974,7 @@ export const startWaitSession = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
-    const { job, link, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     if (!activeStatuses.includes(job.status as any)) throw new Error("trip_not_active");
 
     // Refuse if there's already an open session (partial unique index also guards).
