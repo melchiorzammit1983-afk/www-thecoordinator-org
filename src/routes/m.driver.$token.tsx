@@ -130,11 +130,15 @@ function formatDriverStatusError(error: Error): string {
     return "No recent GPS location found. Make sure location sharing is active and try again.";
   }
   if (msg.startsWith("arrival_weak_gps:")) {
-    const [, accuracyStr, radiusStr] = msg.split(":");
+    const parts = msg.split(":");
+    const accuracyStr = parts[1];
+    const radiusStr   = parts[2];
     return `GPS accuracy is too weak (±${accuracyStr}m, need ±${radiusStr}m). Wait for a better signal and try again.`;
   }
   if (msg.startsWith("arrival_outside_radius:")) {
-    const [, distStr, radiusStr] = msg.split(":");
+    const parts = msg.split(":");
+    const distStr   = parts[1];
+    const radiusStr = parts[2];
     return `You're ${distStr}m from the pickup (${radiusStr}m required). Move closer and try again.`;
   }
   return msg;
