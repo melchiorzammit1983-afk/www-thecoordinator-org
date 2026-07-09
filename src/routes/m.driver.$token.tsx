@@ -626,6 +626,7 @@ function DriverManifest() {
         title={chatJob ? `${displayLocation(chatJob.from_location, chatJob.pickup_display_name)} → ${displayLocation(chatJob.to_location, chatJob.dropoff_display_name)}` : ""}
         role="driver" token={token}
       />
+      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden />
       <BrandingBar branding={data.branding} />
     </div>
   );
