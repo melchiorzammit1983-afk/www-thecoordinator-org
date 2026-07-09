@@ -2584,7 +2584,7 @@ export const listOpenWaitSessions = createServerFn({ method: "GET" })
     if (jobIds.length === 0) return [] as any[];
 
     const { data: waits, error: werr } = await supabaseAdmin.from("job_wait_sessions" as any)
-      .select("id, job_id, driver_id, started_at, source")
+      .select("id, job_id, driver_id, started_at, source, free_ends_at")
       .in("job_id", jobIds)
       .is("ended_at", null)
       .order("started_at", { ascending: true });
@@ -2600,6 +2600,7 @@ export const listOpenWaitSessions = createServerFn({ method: "GET" })
         driver_id: w.driver_id,
         driver_name: j?.drivers?.name ?? "Driver",
         started_at: w.started_at,
+        free_ends_at: w.free_ends_at ?? null,
         elapsed_sec: Math.max(0, Math.round((now - new Date(w.started_at).getTime()) / 1000)),
         source: w.source,
         from_location: j?.from_location ?? null,
@@ -2620,10 +2621,94 @@ export const listJobAdjustments = createServerFn({ method: "GET" })
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const { data: waits } = await supabaseAdmin.from("job_wait_sessions" as any)
-      .select("id, started_at, ended_at, agreed_amount, source, driver_note")
+      .select("id, started_at, ended_at, calculated_amount, agreed_amount, source, driver_note, free_ends_at, auto_started")
       .eq("job_id", data.job_id)
       .order("started_at", { ascending: true });
     return { adjustments: (rows ?? []) as any[], wait_sessions: (waits ?? []) as any[] };
+  });
+
+// ---------- WAIT PROPOSALS (coordinator) ----------
+
+export const proposeWaitAdjustment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      session_id: z.string().uuid().optional(),
+      proposed_amount: z.number().min(0).max(100000),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { company } = await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+
+    // Only one pending proposal per session at a time (unique index also guards).
+    if (data.session_id) {
+      const { data: existing } = await supabaseAdmin
+        .from("job_wait_proposals")
+        .select("id")
+        .eq("session_id", data.session_id)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (existing) throw new Error("proposal_already_pending");
+    }
+
+    const { data: row, error } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .insert({
+        job_id: data.job_id,
+        session_id: data.session_id ?? null,
+        company_id: company.id,
+        proposed_by_user_id: context.userId,
+        proposed_amount: data.proposed_amount,
+        note: data.note ?? null,
+        status: "pending",
+      } as never)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return { ok: true, proposal_id: (row as any).id };
+  });
+
+export const listWaitProposals = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: rows, error } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .select("id, session_id, proposed_amount, note, status, driver_response_note, responded_at, created_at")
+      .eq("job_id", data.job_id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return (rows ?? []) as any[];
+  });
+
+export const cancelWaitProposal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), proposal_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+    const { data: proposal } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .select("id, status")
+      .eq("id", data.proposal_id)
+      .eq("job_id", data.job_id)
+      .maybeSingle();
+    if (!proposal) throw new Error("proposal_not_found");
+    if ((proposal as any).status !== "pending") throw new Error("proposal_already_resolved");
+    const { error } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .update({ status: "rejected", responded_at: new Date().toISOString() } as never)
+      .eq("id", data.proposal_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // ---------- DATA NORMALIZATION ----------

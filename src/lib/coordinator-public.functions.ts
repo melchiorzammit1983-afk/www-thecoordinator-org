@@ -859,6 +859,48 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
 
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const now = new Date().toISOString();
+
+    // Phase 2 — Waiting system hooks
+    if (data.status === "arrived") {
+      // Auto-start a wait session when driver marks arrived.
+      // The unique index prevents duplicates; ignore if one is already open.
+      const { data: existing } = await supabaseAdmin
+        .from("job_wait_sessions")
+        .select("id")
+        .eq("job_id", job.id)
+        .is("ended_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (!existing) {
+        const { freeWaitMinutes } = await loadWaitPolicy(supabaseAdmin, companyId);
+        const startedAt = now;
+        const freeEndsAt = freeWaitMinutes > 0
+          ? new Date(new Date(startedAt).getTime() + freeWaitMinutes * 60000).toISOString()
+          : null;
+        await supabaseAdmin.from("job_wait_sessions").insert({
+          job_id: job.id,
+          driver_id: (job as any).driver_id ?? null,
+          company_id: companyId,
+          source: "manual",
+          auto_started: true,
+          started_at: startedAt,
+          free_ends_at: freeEndsAt,
+        } as never);
+      }
+    }
+
+    if (data.status === "en_route") {
+      // Auto-close any open wait session when driver departs.
+      await closeOpenWaitSession(
+        supabaseAdmin,
+        job.id,
+        (job as any).driver_id ?? null,
+        companyId,
+        now,
+      );
+    }
 
     // Reversible-group auto-dissolve: if this trip belonged to a group and all
     // sibling trips are now completed/cancelled, clear group_id on all members.
@@ -1831,6 +1873,98 @@ export const getDriverSignBoard = createServerFn({ method: "GET" })
 
 const activeStatuses = ["arrived", "in_progress"] as const;
 
+/** Load the waiting policy (free window + rate) for the company that owns/executes a job. */
+async function loadWaitPolicy(supabaseAdmin: any, companyId: string) {
+  const { data: co } = await supabaseAdmin
+    .from("companies")
+    .select("free_wait_minutes, waiting_rate_per_minute")
+    .eq("id", companyId)
+    .maybeSingle();
+  return {
+    freeWaitMinutes: Number((co as any)?.free_wait_minutes ?? 5),
+    ratePerMinute: Number((co as any)?.waiting_rate_per_minute ?? 0),
+  };
+}
+
+/** Compute the system-calculated waiting charge for a session. */
+function computeCalculatedAmount(
+  startedAt: string,
+  endedAt: string,
+  freeWaitMinutes: number,
+  ratePerMinute: number,
+  freeEndsAt?: string | null,
+): { calculatedAmount: number; elapsedMinutes: number; chargeableMinutes: number } {
+  const startMs = new Date(startedAt).getTime();
+  const endMs = new Date(endedAt).getTime();
+  const elapsedMinutes = Math.max(0, (endMs - startMs) / 60000);
+
+  let chargeableMinutes: number;
+  if (freeEndsAt) {
+    const freeEndMs = new Date(freeEndsAt).getTime();
+    chargeableMinutes = Math.max(0, (endMs - freeEndMs) / 60000);
+  } else {
+    chargeableMinutes = Math.max(0, elapsedMinutes - freeWaitMinutes);
+  }
+
+  const calculatedAmount = Math.round(chargeableMinutes * ratePerMinute * 100) / 100;
+  return { calculatedAmount, elapsedMinutes: Math.round(elapsedMinutes), chargeableMinutes: Math.round(chargeableMinutes * 100) / 100 };
+}
+
+/**
+ * Close an open wait session and write the calculated amount.
+ * Also inserts a job_adjustments row. Returns null if no open session.
+ */
+async function closeOpenWaitSession(
+  supabaseAdmin: any,
+  jobId: string,
+  driverId: string | null,
+  companyId: string,
+  endedAt: string,
+  driverNote?: string | null,
+): Promise<{ sessionId: string; calculatedAmount: number; elapsedMinutes: number } | null> {
+  const { data: open } = await supabaseAdmin
+    .from("job_wait_sessions")
+    .select("id, started_at, free_ends_at, company_id")
+    .eq("job_id", jobId)
+    .is("ended_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (!open) return null;
+
+  const sessionCompanyId = (open as any).company_id ?? companyId;
+  const { freeWaitMinutes, ratePerMinute } = await loadWaitPolicy(supabaseAdmin, sessionCompanyId);
+  const { calculatedAmount, elapsedMinutes, chargeableMinutes } = computeCalculatedAmount(
+    (open as any).started_at,
+    endedAt,
+    freeWaitMinutes,
+    ratePerMinute,
+    (open as any).free_ends_at,
+  );
+
+  await supabaseAdmin
+    .from("job_wait_sessions")
+    .update({
+      ended_at: endedAt,
+      calculated_amount: calculatedAmount,
+      agreed_amount: calculatedAmount,
+      driver_note: driverNote ?? null,
+    } as never)
+    .eq("id", (open as any).id);
+
+  const label = `Waiting time (${elapsedMinutes} min${chargeableMinutes > 0 && ratePerMinute > 0 ? `, ${chargeableMinutes} chargeable` : ""})`;
+  await supabaseAdmin.from("job_adjustments").insert({
+    job_id: jobId,
+    driver_id: driverId,
+    company_id: companyId,
+    kind: "waiting",
+    label,
+    amount: calculatedAmount,
+    wait_session_id: (open as any).id,
+  } as never);
+
+  return { sessionId: (open as any).id, calculatedAmount, elapsedMinutes };
+}
+
 export const startWaitSession = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -1848,14 +1982,28 @@ export const startWaitSession = createServerFn({ method: "POST" })
       .select("id").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
     if (open) return { ok: true, session_id: (open as any).id, already_open: true };
 
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const { freeWaitMinutes } = await loadWaitPolicy(supabaseAdmin, companyId);
+    const startedAt = new Date().toISOString();
+    const freeEndsAt = freeWaitMinutes > 0
+      ? new Date(new Date(startedAt).getTime() + freeWaitMinutes * 60000).toISOString()
+      : null;
+
     const { data: row, error } = await supabaseAdmin.from("job_wait_sessions" as any).insert({
       job_id: job.id,
       driver_id: job.driver_id,
-      company_id: job.executor_company_id ?? job.company_id,
+      company_id: companyId,
       source: data.source,
-    } as never).select("id, started_at").maybeSingle();
+      started_at: startedAt,
+      free_ends_at: freeEndsAt,
+    } as never).select("id, started_at, free_ends_at").maybeSingle();
     if (error) throw new Error(error.message);
-    return { ok: true, session_id: (row as any).id, started_at: (row as any).started_at };
+    return {
+      ok: true,
+      session_id: (row as any).id,
+      started_at: (row as any).started_at,
+      free_ends_at: (row as any).free_ends_at ?? null,
+    };
   });
 
 export const stopWaitSession = createServerFn({ method: "POST" })
@@ -1863,6 +2011,7 @@ export const stopWaitSession = createServerFn({ method: "POST" })
     z.object({
       token: z.string().min(8).max(128),
       job_id: z.string().uuid(),
+      // agreed_amount is the driver's confirmed final charge (pre-filled with calculated, may be overridden).
       agreed_amount: z.number().min(0).max(100000),
       note: z.string().trim().max(500).optional(),
     }).parse(i),
@@ -1870,35 +2019,45 @@ export const stopWaitSession = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const { data: open } = await supabaseAdmin.from("job_wait_sessions" as any)
-      .select("id, started_at").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+      .select("id, started_at, free_ends_at, company_id").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
     if (!open) throw new Error("no_open_wait_session");
 
     const endedAt = new Date().toISOString();
+    const sessionCompanyId: string = (open as any).company_id ?? (job as any).executor_company_id ?? (job as any).company_id;
+    const { freeWaitMinutes, ratePerMinute } = await loadWaitPolicy(supabaseAdmin, sessionCompanyId);
+    const { calculatedAmount, elapsedMinutes, chargeableMinutes } = computeCalculatedAmount(
+      (open as any).started_at,
+      endedAt,
+      freeWaitMinutes,
+      ratePerMinute,
+      (open as any).free_ends_at,
+    );
+
     const { error: upErr } = await supabaseAdmin.from("job_wait_sessions" as any)
       .update({
         ended_at: endedAt,
+        calculated_amount: calculatedAmount,
         agreed_amount: data.agreed_amount,
         driver_note: data.note ?? null,
       } as never)
       .eq("id", (open as any).id);
     if (upErr) throw new Error(upErr.message);
 
-    // Log the waiting charge as an adjustment line item.
-    const startedMs = new Date((open as any).started_at).getTime();
-    const minutes = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+    // Log the waiting charge as an adjustment line item using agreed_amount (the confirmed final).
+    const label = `Waiting time (${elapsedMinutes} min${chargeableMinutes > 0 && ratePerMinute > 0 ? `, ${chargeableMinutes} chargeable` : ""})`;
     const { error: adjErr } = await supabaseAdmin.from("job_adjustments" as any).insert({
       job_id: job.id,
       driver_id: job.driver_id,
-      company_id: job.executor_company_id ?? job.company_id,
+      company_id: sessionCompanyId,
       kind: "waiting",
-      label: `Waiting time (${minutes} min)`,
+      label,
       amount: data.agreed_amount,
       wait_session_id: (open as any).id,
       driver_note: data.note ?? null,
     } as never);
     if (adjErr) throw new Error(adjErr.message);
 
-    return { ok: true, minutes, amount: data.agreed_amount };
+    return { ok: true, elapsed_minutes: elapsedMinutes, calculated_amount: calculatedAmount, agreed_amount: data.agreed_amount };
   });
 
 export const addTripAdjustment = createServerFn({ method: "POST" })
@@ -1963,7 +2122,25 @@ export const getDriverJobPricing = createServerFn({ method: "GET" })
       .select("id, kind, label, amount, driver_note, created_at, wait_session_id")
       .eq("job_id", job.id).order("created_at", { ascending: true });
     const { data: openWait } = await supabaseAdmin.from("job_wait_sessions" as any)
-      .select("id, started_at, source").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+      .select("id, started_at, source, free_ends_at").eq("job_id", job.id).is("ended_at", null).limit(1).maybeSingle();
+
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const { freeWaitMinutes, ratePerMinute } = await loadWaitPolicy(supabaseAdmin, companyId);
+
+    // Compute live charge for the open session (if any).
+    let liveCharge = 0;
+    if (openWait) {
+      const nowIso = new Date().toISOString();
+      const { calculatedAmount } = computeCalculatedAmount(
+        (openWait as any).started_at,
+        nowIso,
+        freeWaitMinutes,
+        ratePerMinute,
+        (openWait as any).free_ends_at,
+      );
+      liveCharge = calculatedAmount;
+    }
+
     const base = Number((job as any).price ?? (job as any).base_price ?? 0);
     const adjustments = (adj ?? []) as any[];
     const total = adjustments.reduce((s, a) => s + Number(a.amount ?? 0), base);
@@ -1971,7 +2148,91 @@ export const getDriverJobPricing = createServerFn({ method: "GET" })
       base_price: base,
       currency: (job as any).currency ?? "EUR",
       adjustments,
-      open_wait: openWait ?? null,
+      open_wait: openWait ? {
+        id: (openWait as any).id,
+        started_at: (openWait as any).started_at,
+        source: (openWait as any).source,
+        free_ends_at: (openWait as any).free_ends_at ?? null,
+      } : null,
+      free_wait_minutes: freeWaitMinutes,
+      waiting_rate_per_minute: ratePerMinute,
+      live_charge: liveCharge,
       total,
     };
   });
+
+// ============================================================
+// WAIT PROPOSALS — driver-facing (read + respond)
+// ============================================================
+
+export const getWaitProposalsForDriver = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: proposals } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .select("id, session_id, proposed_amount, note, status, driver_response_note, responded_at, created_at")
+      .eq("job_id", job.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    return (proposals ?? []) as any[];
+  });
+
+export const respondWaitProposal = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      proposal_id: z.string().uuid(),
+      accept: z.boolean(),
+      driver_note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const { data: proposal } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .select("id, session_id, proposed_amount, status")
+      .eq("id", data.proposal_id)
+      .eq("job_id", job.id)
+      .maybeSingle();
+    if (!proposal) throw new Error("proposal_not_found");
+    if ((proposal as any).status !== "pending") throw new Error("proposal_already_resolved");
+
+    const now = new Date().toISOString();
+    const newStatus = data.accept ? "accepted" : "rejected";
+    const { error: upErr } = await supabaseAdmin
+      .from("job_wait_proposals")
+      .update({
+        status: newStatus,
+        driver_response_note: data.driver_note ?? null,
+        responded_at: now,
+      } as never)
+      .eq("id", data.proposal_id);
+    if (upErr) throw new Error(upErr.message);
+
+    if (data.accept) {
+      const proposedAmount = Number((proposal as any).proposed_amount);
+      // Update agreed_amount on the session — NEVER touches calculated_amount.
+      if ((proposal as any).session_id) {
+        await supabaseAdmin
+          .from("job_wait_sessions")
+          .update({ agreed_amount: proposedAmount } as never)
+          .eq("id", (proposal as any).session_id);
+      }
+      // Update the linked adjustment row so the trip total reflects the accepted amount.
+      const sessionId = (proposal as any).session_id;
+      if (sessionId) {
+        await supabaseAdmin
+          .from("job_adjustments")
+          .update({ amount: proposedAmount } as never)
+          .eq("wait_session_id", sessionId)
+          .eq("job_id", job.id);
+      }
+    }
+
+    return { ok: true, status: newStatus };
+  });
+
