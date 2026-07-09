@@ -638,9 +638,39 @@ function CalendarPage() {
 
   const isPendingClient = (j: Job) => !j.external && !j.coord_approved_at && (j.source ?? "").startsWith("client");
   const afterAlerts = alertsOnly ? (jobs ?? []).filter((j) => hasAlert(j.id)) : (jobs ?? []);
-  const visibleAll = trafficFilter.size
-    ? afterAlerts.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+  const q = searchQuery.trim().toLowerCase();
+  const afterSearch = q
+    ? afterAlerts.filter((j) => {
+        const hay = [
+          j.from_location,
+          j.to_location,
+          j.from_flight,
+          j.to_flight,
+          j.contact_phone,
+          j.clientcompanyname,
+          j.drivers?.name,
+          ...(j.pax ?? []).map((p) => p.name),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      })
     : afterAlerts;
+  const afterStatus = statusFilter.size
+    ? afterSearch.filter((j) => statusFilter.has(String(j.status ?? "")))
+    : afterSearch;
+  const afterDriver =
+    driverFilter === "all"
+      ? afterStatus
+      : driverFilter === "unassigned"
+        ? afterStatus.filter((j) => !j.driver_id)
+        : afterStatus.filter((j) => j.driver_id === driverFilter);
+  const visibleAll = trafficFilter.size
+    ? afterDriver.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
+    : afterDriver;
+  const activeFilterCount =
+    (q ? 1 : 0) + statusFilter.size + (driverFilter !== "all" ? 1 : 0) + trafficFilter.size + (alertsOnly ? 1 : 0);
   const severityCounts: Record<string, number> = { light: 0, moderate: 0, heavy: 0, severe: 0 };
   for (const j of afterAlerts) {
     const s = String(j.traffic_severity ?? "");
@@ -763,6 +793,107 @@ function CalendarPage() {
               ›
             </Button>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search trips… (from, to, flight, driver, passenger)"
+              className="w-full h-8 pl-7 pr-7 text-xs rounded-md border bg-background"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                Status{statusFilter.size > 0 ? ` (${statusFilter.size})` : ""}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel>Filter by status</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {(
+                [
+                  { k: "pending", label: "Pending" },
+                  { k: "active", label: "Active" },
+                  { k: "en_route", label: "En route" },
+                  { k: "arrived", label: "Arrived" },
+                  { k: "in_progress", label: "In progress" },
+                  { k: "completed", label: "Completed" },
+                  { k: "cancelled", label: "Cancelled" },
+                ] as const
+              ).map((o) => (
+                <DropdownMenuCheckboxItem
+                  key={o.k}
+                  checked={statusFilter.has(o.k)}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={() => toggleStatusFilter(o.k)}
+                >
+                  {o.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              {statusFilter.size > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setStatusFilter(new Set())}>Clear status filter</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Users2 className="h-3.5 w-3.5 mr-1" />
+                {driverFilter === "all"
+                  ? "Driver"
+                  : driverFilter === "unassigned"
+                    ? "Unassigned"
+                    : ((drivers ?? []).find((d) => d.id === driverFilter)?.name ?? "Driver")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 max-h-72 overflow-y-auto">
+              <DropdownMenuLabel>Filter by driver</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setDriverFilter("all")}>All drivers</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDriverFilter("unassigned")}>— Unassigned —</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {(drivers ?? []).map((d) => (
+                <DropdownMenuItem key={d.id} onClick={() => setDriverFilter(d.id)}>
+                  {d.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter(new Set());
+                setDriverFilter("all");
+                setTrafficFilter(new Set());
+                setAlertsOnly(false);
+              }}
+              className="px-2 py-1 rounded-md border text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Clear all filters
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
           {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
