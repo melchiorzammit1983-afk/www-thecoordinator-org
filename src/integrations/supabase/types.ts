@@ -659,7 +659,6 @@ export type Database = {
           advert_enabled: boolean
           advert_link: string | null
           advert_url: string | null
-          arrival_radius_m: number | null
           coordinator_phone: string | null
           created_at: string
           custom_link: string
@@ -681,7 +680,6 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
-          arrival_radius_m?: number | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
@@ -703,7 +701,6 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
-          arrival_radius_m?: number | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string

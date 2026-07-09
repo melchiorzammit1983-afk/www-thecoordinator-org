@@ -34,6 +34,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
+import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
@@ -625,6 +626,7 @@ function DriverManifest() {
         title={chatJob ? `${displayLocation(chatJob.from_location, chatJob.pickup_display_name)} → ${displayLocation(chatJob.to_location, chatJob.dropoff_display_name)}` : ""}
         role="driver" token={token}
       />
+      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden />
       <BrandingBar branding={data.branding} />
     </div>
   );
