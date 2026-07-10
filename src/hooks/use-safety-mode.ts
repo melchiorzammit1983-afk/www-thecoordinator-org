@@ -7,6 +7,8 @@ export type SafetyModeResult = {
 };
 
 function normalizeSpeedMps(speedMps: number | null | undefined): number | null {
+  // Treat zero and negative values as "not moving / no usable speed data" so
+  // Safety Mode fails open when the vehicle is stopped or iOS reports `-1`.
   if (speedMps == null || !Number.isFinite(speedMps) || speedMps <= 0) return null;
   return speedMps;
 }

@@ -119,6 +119,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
   const wakeLockRef = useRef<any>(null);
   const queueRef = useRef<QueuedPoint[]>([]);
   const lastPosRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+  const lastSpeedRef = useRef<number | null>(null);
   const metaRef = useRef<LiveShareMeta | null>(liveMeta ?? null);
   const pushFn = useServerFn(pushDriverLocation);
 
@@ -167,6 +168,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
         })();
       }
       setStatus("idle"); setError(null);
+      lastSpeedRef.current = null;
       onSpeedChange?.(null);
       writePersistedFlag(false);
       return;
@@ -190,7 +192,11 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
         next_instruction: m.next_instruction,
         destination_label: m.destination_label,
       } : p;
-      onSpeedChange?.(p.speed_mps ?? null);
+      const nextSpeed = p.speed_mps ?? null;
+      if (lastSpeedRef.current !== nextSpeed) {
+        lastSpeedRef.current = nextSpeed;
+        onSpeedChange?.(nextSpeed);
+      }
       queueRef.current.push(enriched);
       writeQueue(queueRef.current);
     };
@@ -233,10 +239,12 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
                 if (err.code === "NOT_AUTHORIZED") {
                   setStatus("error");
                   setError("Location permission denied. Enable 'Always' in Settings.");
+                  lastSpeedRef.current = null;
                   onSpeedChange?.(null);
                 } else {
                   setStatus("error");
                   setError(err.message ?? "Location error");
+                  lastSpeedRef.current = null;
                   onSpeedChange?.(null);
                 }
                 return;
@@ -263,6 +271,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
         } catch (e: any) {
           setStatus("error");
           setError(e?.message ?? "Failed to start background tracking");
+          lastSpeedRef.current = null;
           onSpeedChange?.(null);
         }
       })();
@@ -326,6 +335,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpee
       (e) => {
         setStatus("error");
         setError(e.code === 1 ? "Permission denied" : e.message || "Location error");
+        lastSpeedRef.current = null;
         onSpeedChange?.(null);
       },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 },

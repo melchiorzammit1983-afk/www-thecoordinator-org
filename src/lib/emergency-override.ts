@@ -78,6 +78,8 @@ export function getEmergencyOverrideActionOptions(status: string | null | undefi
   const actions: EmergencyOverrideAction[] = [];
   if (status !== "arrived") actions.push("force_arrived");
   if (status !== "in_progress") actions.push("force_passenger_on_board");
+  // Intentionally allow a backward move to `en_route` so the driver can recover
+  // from an incorrect advance to `arrived`/`in_progress` without coordinator help.
   if (status !== "en_route") actions.push("force_en_route");
   if (status === "in_progress") actions.push("force_drop_off");
   if (status !== "completed") actions.push("force_complete");

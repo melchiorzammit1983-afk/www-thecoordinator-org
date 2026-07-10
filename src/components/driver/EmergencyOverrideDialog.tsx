@@ -61,7 +61,7 @@ export function EmergencyOverrideDialog({
       setStep(1);
       return;
     }
-    setAction((current) => current && actions.includes(current) ? current : actions[0] ?? null);
+    setAction((current) => current && actions.includes(current) ? current : null);
     setStep(1);
   }, [actions, open]);
 

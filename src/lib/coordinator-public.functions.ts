@@ -1129,13 +1129,16 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
     if (updateError) throw new Error(updateError.message);
 
     if (toStatus === "en_route" || toStatus === "completed") {
+      const closeReason = toStatus === "en_route"
+        ? `Closed by emergency override: ${EMERGENCY_OVERRIDE_ACTION_LABELS[data.action]} (driver en route)`
+        : `Closed by emergency override: ${EMERGENCY_OVERRIDE_ACTION_LABELS[data.action]} (trip completed)`;
       await closeOpenWaitSession(
         supabaseAdmin,
         job.id,
         driverId,
         companyId,
         now,
-        `Closed by emergency override: ${EMERGENCY_OVERRIDE_ACTION_LABELS[data.action]}`,
+        closeReason,
       );
     }
 
