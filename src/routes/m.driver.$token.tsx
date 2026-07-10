@@ -159,9 +159,9 @@ function getPaxSummary(pax: Array<{ status: string | null | undefined }> | undef
 
 function formatCountdown(totalSeconds: number): string {
   const seconds = Math.max(0, Math.ceil(totalSeconds));
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function getApprovalCountdown(approval: BoardingApproval | null, nowMs: number) {
@@ -228,6 +228,10 @@ function getInstructionText(instruction: string | null | undefined): string | nu
 
 function canReturnTripToWaiting(status: string | null | undefined): boolean {
   return RETURN_TO_WAITING_STATUSES.has(status ?? "");
+}
+
+function shouldHandleBoardingInDialog(status: string | null | undefined, nextStatus: string | null | undefined, pendingCount: number) {
+  return status === "arrived" && nextStatus === "in_progress" && pendingCount > 0;
 }
 
 function PassengerSummaryPanel({ pax }: { pax: Array<{ id: string; name: string; status: string }> | undefined }) {
@@ -413,6 +417,7 @@ function DriverBoardingApprovalPanel({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+  const approvalPollingEnabled = job.status === "arrived";
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -422,8 +427,8 @@ function DriverBoardingApprovalPanel({
   const summary = getPaxSummary(job.pax);
   const { data: approvals, refetch } = useQuery({
     queryKey: ["driver-boarding-approval", token, job.id],
-    enabled: job.status === "arrived",
-    refetchInterval: job.status === "arrived" ? 10_000 : false,
+    enabled: approvalPollingEnabled,
+    refetchInterval: approvalPollingEnabled ? 10_000 : false,
     queryFn: () => approvalFn({ data: { token, job_id: job.id } }) as Promise<BoardingApproval[]>,
   });
   const latestApproval = approvals?.[0] ?? null;
@@ -1386,7 +1391,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
               <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
                 onClick={() => {
                   if (nextStatus.value === "completed") setSummaryOpen(true);
-                  else if (nextStatus.value === "in_progress" && job.status === "arrived" && jobPaxSummary.pending > 0) onOpen();
+                  else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
                   else statusMut.mutate(nextStatus.value);
                 }}>
                 {nextStatus.label}
@@ -1920,7 +1925,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
             disabled={statusMut.isPending}
             onClick={() => {
               if (next.value === "completed") onOpenSummary();
-              else if (next.value === "in_progress" && job.status === "arrived" && jobPaxSummary.pending > 0) onOpenSummary();
+              else if (shouldHandleBoardingInDialog(job.status, next.value, jobPaxSummary.pending)) onOpenSummary();
               else statusMut.mutate(next.value);
             }}
           >
@@ -2415,6 +2420,7 @@ function TripExecutionDialog({
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const passengerListRef = useRef<HTMLDivElement | null>(null);
+  const approvalPollingEnabled = !!job && job.status === "arrived";
 
   useEffect(() => {
     if (!job) {
@@ -2438,8 +2444,8 @@ function TripExecutionDialog({
   const { data: approvals, refetch: refetchApprovals } = useQuery({
     queryKey: ["driver-boarding-approval-dialog", job?.id],
     queryFn: () => approvalFn({ data: { token, job_id: job!.id } }) as Promise<BoardingApproval[]>,
-    enabled: !!job && job.status === "arrived",
-    refetchInterval: job?.status === "arrived" ? 10_000 : false,
+    enabled: approvalPollingEnabled,
+    refetchInterval: approvalPollingEnabled ? 10_000 : false,
   });
 
   const latestApproval = approvals?.[0] ?? null;
@@ -2463,7 +2469,7 @@ function TripExecutionDialog({
     try {
       await Promise.all([refetch(), refetchApprovals(), invalidateManifest()]);
     } catch {
-      toast.error("Updated, but could not refresh the latest boarding state. Please reopen the trip if needed.");
+      toast.error("The passenger update was saved, but the latest boarding screen did not refresh. Please reopen the trip if needed.");
     }
   };
 
@@ -2615,7 +2621,12 @@ function TripExecutionDialog({
                     onOpenBoarding={() => {
                       setApprovalError(null);
                       setShowApprovalFlow(false);
-                      passengerListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      const prefersReducedMotion = typeof window !== "undefined"
+                        && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+                      passengerListRef.current?.scrollIntoView({
+                        behavior: prefersReducedMotion ? "auto" : "smooth",
+                        block: "start",
+                      });
                     }}
                     onChat={() => job && onChat(job)}
                     onStartTrip={handleStartTrip}
