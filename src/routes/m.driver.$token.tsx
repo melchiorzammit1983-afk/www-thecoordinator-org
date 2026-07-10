@@ -137,6 +137,7 @@ const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "in_progress", label: "Passengers on board — en route" },
   { value: "completed", label: "Trip finished" },
 ];
+const BOARDING_OVERRIDE_MINUTES = Math.floor(BOARDING_OVERRIDE_MS / 60000);
 const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
 
 function getPaxSummary(pax: Array<{ status: string | null | undefined }> | undefined | null) {
@@ -482,7 +483,7 @@ function DriverBoardingApprovalPanel({
           <DialogHeader>
             <DialogTitle>Override coordinator approval and start this trip?</DialogTitle>
             <DialogDescription>
-              Use this only when the coordinator has not responded within 5 minutes and you need to depart with pending passengers.
+              Use this only when the coordinator has not responded within {BOARDING_OVERRIDE_MINUTES} minutes and you need to depart with pending passengers.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1125,7 +1126,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
-  const paxSummary = getPaxSummary(pax);
+  const jobPaxSummary = getPaxSummary(pax);
 
   const borderClass = problem
     ? "border-destructive/60 ring-1 ring-destructive/40"
@@ -1236,7 +1237,11 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             <Badge variant="outline" className="text-[10px] italic max-w-full truncate">📝 {job.group_note}</Badge>
           )}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
-          <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
+          <Badge variant="outline" className="text-[10px] gap-1">
+            <Users className="h-3 w-3" />
+            {jobPaxSummary.total} pax
+            {accepted && jobPaxSummary.onboard > 0 ? ` · ${jobPaxSummary.onboard} onboard` : ""}
+          </Badge>
           
           {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
           {paid
@@ -1249,19 +1254,19 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
         </div>
 
         {/* Passengers preview (always visible) */}
-        {paxCount > 0 && (
+        {jobPaxSummary.total > 0 && (
           <div className="mt-3 rounded-lg bg-muted/40 border p-2.5">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center justify-between">
-              <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Passengers ({paxSummary.total})</span>
-              <span className={paxSummary.allResolved ? "text-emerald-600 font-semibold" : ""}>
-                {paxSummary.onboard} onboard
+              <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Passengers ({jobPaxSummary.total})</span>
+              <span className={jobPaxSummary.allResolved ? "text-emerald-600 font-semibold" : ""}>
+                {jobPaxSummary.onboard} onboard
               </span>
             </div>
             <div className="mb-2 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-4">
-              <div className="rounded-md bg-background px-2 py-1">Onboard <span className="font-semibold text-emerald-600">{paxSummary.onboard}</span></div>
-              <div className="rounded-md bg-background px-2 py-1">Pending <span className="font-semibold">{paxSummary.pending}</span></div>
-              <div className="rounded-md bg-background px-2 py-1">No-show <span className="font-semibold text-rose-600">{paxSummary.noshow}</span></div>
-              <div className="rounded-md bg-background px-2 py-1">Cancelled <span className="font-semibold">{paxSummary.cancelled}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">Onboard <span className="font-semibold text-emerald-600">{jobPaxSummary.onboard}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">Pending <span className="font-semibold">{jobPaxSummary.pending}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">No-show <span className="font-semibold text-rose-600">{jobPaxSummary.noshow}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">Cancelled <span className="font-semibold">{jobPaxSummary.cancelled}</span></div>
             </div>
             <ul className="space-y-0.5">
               {pax.map((p) => (
@@ -1285,7 +1290,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
                 </li>
               ))}
             </ul>
-            {paxSummary.total > 0 && paxSummary.allResolved && (
+            {jobPaxSummary.total > 0 && jobPaxSummary.allResolved && (
               <div className="mt-2 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-400 text-xs font-medium px-2.5 py-1.5 flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5" /> All passengers resolved — ready to depart
               </div>
@@ -1381,7 +1386,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
               <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
                 onClick={() => {
                   if (nextStatus.value === "completed") setSummaryOpen(true);
-                  else if (nextStatus.value === "in_progress" && job.status === "arrived" && paxSummary.pending > 0) onOpen();
+                  else if (nextStatus.value === "in_progress" && job.status === "arrived" && jobPaxSummary.pending > 0) onOpen();
                   else statusMut.mutate(nextStatus.value);
                 }}>
                 {nextStatus.label}
@@ -1792,7 +1797,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
 }) {
   const qc = useQueryClient();
   const statusFn = useServerFn(updateJobStatus);
-  const paxSummary = getPaxSummary(job.pax);
+  const jobPaxSummary = getPaxSummary(job.pax);
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
     onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
@@ -1915,7 +1920,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
             disabled={statusMut.isPending}
             onClick={() => {
               if (next.value === "completed") onOpenSummary();
-              else if (next.value === "in_progress" && job.status === "arrived" && paxSummary.pending > 0) onOpenSummary();
+              else if (next.value === "in_progress" && job.status === "arrived" && jobPaxSummary.pending > 0) onOpenSummary();
               else statusMut.mutate(next.value);
             }}
           >
@@ -2409,6 +2414,7 @@ function TripExecutionDialog({
   const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const passengerListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!job) {
@@ -2454,7 +2460,11 @@ function TripExecutionDialog({
 
   const invalidateManifest = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
   const refreshBoardingState = async () => {
-    await Promise.all([refetch(), refetchApprovals(), invalidateManifest()]);
+    try {
+      await Promise.all([refetch(), refetchApprovals(), invalidateManifest()]);
+    } catch {
+      toast.error("Updated, but could not refresh the latest boarding state. Please reopen the trip if needed.");
+    }
   };
 
   const markMut = useMutation({
@@ -2605,7 +2615,7 @@ function TripExecutionDialog({
                     onOpenBoarding={() => {
                       setApprovalError(null);
                       setShowApprovalFlow(false);
-                      document.getElementById("boarding-passenger-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      passengerListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
                     onChat={() => job && onChat(job)}
                     onStartTrip={handleStartTrip}
@@ -2615,7 +2625,7 @@ function TripExecutionDialog({
             </div>
           )}
 
-          <div id="boarding-passenger-list" className="space-y-2 max-h-72 overflow-auto pr-1">
+          <div ref={passengerListRef} className="space-y-2 max-h-72 overflow-auto pr-1">
             {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
             {(pax ?? []).map((p) => {
               const isOnboard = p.status === "onboard";
@@ -2701,7 +2711,7 @@ function TripExecutionDialog({
           <DialogHeader>
             <DialogTitle>Override coordinator approval and start this trip?</DialogTitle>
             <DialogDescription>
-              Use this only when the coordinator has not responded within 5 minutes and you need to depart with pending passengers.
+              Use this only when the coordinator has not responded within {BOARDING_OVERRIDE_MINUTES} minutes and you need to depart with pending passengers.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
