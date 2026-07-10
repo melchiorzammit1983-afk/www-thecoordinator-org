@@ -1287,6 +1287,27 @@ export const driverOverrideBoardingApproval = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getBoardingApprovalStatusDriver = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const { data: rows, error } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, status, requested_at, responded_at, override_at, coordinator_note, driver_note, pax_summary")
+      .eq("job_id", data.job_id)
+      .eq("company_id", companyId)
+      .order("requested_at", { ascending: false })
+      .limit(5);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
 export const driverReportLate = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -2525,4 +2546,3 @@ export const respondWaitProposal = createServerFn({ method: "POST" })
 
     return { ok: true, status: newStatus };
   });
-
