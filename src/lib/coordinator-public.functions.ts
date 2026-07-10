@@ -3,6 +3,14 @@ import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
 import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
 import { BOARDING_OVERRIDE_MS } from "./boarding.constants";
+import {
+  EMERGENCY_OVERRIDE_ACTION_LABELS,
+  EMERGENCY_OVERRIDE_ACTIONS,
+  EMERGENCY_OVERRIDE_REASON_LABELS,
+  EMERGENCY_OVERRIDE_REASONS,
+  EMERGENCY_OVERRIDE_TO_STATUS,
+  isBackwardStatusTransition,
+} from "./emergency-override";
 
 /**
  * Haversine great-circle distance in metres.
@@ -185,11 +193,24 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       }, {});
     }
     const jobsWithUnread = (jobs ?? []).map((j: { id: string }) => ({ ...j, unread_messages: unread[j.id] ?? 0 }));
-    const [branding, features] = await Promise.all([
+    const [branding, features, companySettings] = await Promise.all([
       loadCompanyBranding(link.company_id),
       loadCompanyFeatures(link.company_id),
+      supabaseAdmin.from("companies")
+        .select("safety_mode_threshold_kmh")
+        .eq("id", link.company_id)
+        .maybeSingle(),
     ]);
-    return { link, jobs: jobsWithUnread, driver, branding, features };
+    return {
+      link,
+      jobs: jobsWithUnread,
+      driver,
+      branding,
+      features,
+      companySettings: {
+        safety_mode_threshold_kmh: (companySettings.data as any)?.safety_mode_threshold_kmh ?? 10,
+      },
+    };
   });
 
 // ---------- Trip messages (driver side) ----------
@@ -863,6 +884,7 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
   });
 
 const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+const DRIVER_EMERGENCY_OVERRIDE_ALLOWED_STATUSES = new Set(["pending", "en_route", "arrived", "in_progress", "active"]);
 
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
@@ -1058,6 +1080,130 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       }
     }
     return { ok: true };
+  });
+
+export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      action: z.enum(EMERGENCY_OVERRIDE_ACTIONS),
+      reason: z.enum(EMERGENCY_OVERRIDE_REASONS),
+      reason_note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const fromStatus = String((job as any).status ?? "");
+    if (fromStatus === "completed" || fromStatus === "cancelled") {
+      throw new Error("trip_not_active");
+    }
+    if (!DRIVER_EMERGENCY_OVERRIDE_ALLOWED_STATUSES.has(fromStatus)) {
+      throw new Error("trip_not_overridable");
+    }
+
+    const toStatus = EMERGENCY_OVERRIDE_TO_STATUS[data.action];
+    const now = new Date().toISOString();
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const driverId: string | null = (job as any).driver_id ?? link.subject_id ?? null;
+    const patch: Record<string, unknown> = { status: toStatus };
+
+    if (toStatus === "en_route" && !(job as any).driver_started_at) {
+      patch.driver_started_at = now;
+    }
+    if (toStatus === "completed") {
+      patch.grouped_count = null;
+      patch.grouped_at = null;
+      if (!(job as any).driver_completed_at) {
+        patch.driver_completed_at = now;
+      }
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from("jobs")
+      .update(patch as never)
+      .eq("id", data.job_id);
+    if (updateError) throw new Error(updateError.message);
+
+    if (toStatus === "en_route" || toStatus === "completed") {
+      await closeOpenWaitSession(
+        supabaseAdmin,
+        job.id,
+        driverId,
+        companyId,
+        now,
+        `Closed by emergency override: ${EMERGENCY_OVERRIDE_ACTION_LABELS[data.action]}`,
+      );
+    }
+
+    if (toStatus === "in_progress") {
+      await supabaseAdmin
+        .from("job_boarding_approvals")
+        .update({ status: "overridden", override_at: now, responded_at: now } as never)
+        .eq("job_id", data.job_id)
+        .eq("status", "pending");
+    }
+
+    if (toStatus === "completed") {
+      const gid = (job as any).group_id as string | null | undefined;
+      if (gid) {
+        const { data: siblings } = await supabaseAdmin.from("jobs")
+          .select("id, status")
+          .eq("group_id" as any, gid);
+        const allDone = (siblings ?? []).every((s: any) => s.status === "completed" || s.status === "cancelled");
+        if (allDone) {
+          await supabaseAdmin.from("jobs")
+            .update({ group_id: null, grouped_count: null, grouped_at: null } as never)
+            .eq("group_id" as any, gid);
+        }
+      }
+    }
+
+    const { data: latestLocation } = driverId
+      ? await supabaseAdmin
+          .from("driver_locations")
+          .select("speed_mps")
+          .eq("driver_id", driverId)
+          .eq("job_id", data.job_id)
+          .order("captured_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
+
+    const { error: auditError } = await supabaseAdmin
+      .from("job_emergency_overrides" as any)
+      .insert({
+        job_id: data.job_id,
+        driver_id: driverId,
+        company_id: companyId,
+        from_status: fromStatus,
+        to_status: toStatus,
+        reason: data.reason,
+        reason_note: data.reason_note?.trim() || null,
+        speed_mps: (latestLocation as any)?.speed_mps ?? null,
+      } as never);
+    if (auditError) throw new Error(auditError.message);
+
+    const actionLabel = EMERGENCY_OVERRIDE_ACTION_LABELS[data.action];
+    const reasonLabel = EMERGENCY_OVERRIDE_REASON_LABELS[data.reason];
+    const backwardOverride = isBackwardStatusTransition(fromStatus, toStatus);
+    const details = data.reason_note?.trim() ? ` Note: ${data.reason_note.trim()}` : "";
+    const backward = backwardOverride ? " Backward override." : "";
+
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: companyId,
+      sender_kind: "system",
+      sender_label: "System",
+      body: `⚠️ Emergency override — ${link.subject_label ?? "Driver"} used ${actionLabel}. Reason: ${reasonLabel}.${backward}${details}`,
+      thread_kind: "driver_coord",
+      driver_id: driverId,
+    } as never);
+
+    return { ok: true, to_status: toStatus };
   });
 
 export const markPaxOnboard = createServerFn({ method: "POST" })

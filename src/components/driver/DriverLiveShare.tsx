@@ -102,11 +102,12 @@ async function writeQueue(q: QueuedPoint[]) {
   if (typeof localStorage !== "undefined") localStorage.setItem(QUEUE_KEY, s);
 }
 
-export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
+export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden, onSpeedChange }: {
   token: string;
   hasActiveTrip: boolean;
   liveMeta?: LiveShareMeta | null;
   hidden?: boolean;
+  onSpeedChange?: (speedMps: number | null) => void;
 }) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<"idle" | "live" | "paused" | "error">("idle");
@@ -166,6 +167,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
         })();
       }
       setStatus("idle"); setError(null);
+      onSpeedChange?.(null);
       writePersistedFlag(false);
       return;
     }
@@ -188,6 +190,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
         next_instruction: m.next_instruction,
         destination_label: m.destination_label,
       } : p;
+      onSpeedChange?.(p.speed_mps ?? null);
       queueRef.current.push(enriched);
       writeQueue(queueRef.current);
     };
@@ -230,9 +233,11 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
                 if (err.code === "NOT_AUTHORIZED") {
                   setStatus("error");
                   setError("Location permission denied. Enable 'Always' in Settings.");
+                  onSpeedChange?.(null);
                 } else {
                   setStatus("error");
                   setError(err.message ?? "Location error");
+                  onSpeedChange?.(null);
                 }
                 return;
               }
@@ -258,6 +263,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
         } catch (e: any) {
           setStatus("error");
           setError(e?.message ?? "Failed to start background tracking");
+          onSpeedChange?.(null);
         }
       })();
       return () => {
@@ -320,6 +326,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
       (e) => {
         setStatus("error");
         setError(e.code === 1 ? "Permission denied" : e.message || "Location error");
+        onSpeedChange?.(null);
       },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 },
     );
@@ -330,7 +337,7 @@ export function DriverLiveShare({ token, hasActiveTrip, liveMeta, hidden }: {
       watchIdRef.current = null;
       if (wakeLockRef.current) { try { wakeLockRef.current.release(); } catch { /* ignore */ } wakeLockRef.current = null; }
     };
-  }, [enabled, native]);
+  }, [enabled, native, onSpeedChange]);
 
   // Flush queue periodically.
   useEffect(() => {

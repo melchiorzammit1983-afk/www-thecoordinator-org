@@ -37,11 +37,14 @@ import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
+import { SafetyModeOverlay } from "@/components/driver/SafetyModeOverlay";
+import { EmergencyOverrideDialog } from "@/components/driver/EmergencyOverrideDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { type CarouselApi, Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSafetyMode } from "@/hooks/use-safety-mode";
 
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
@@ -130,6 +133,16 @@ type Driver = {
   car_make_model?: string | null;
   plate?: string | null;
 };
+
+type DriverManifestResponse = {
+  link: { subject_label: string | null };
+  jobs: Job[];
+  driver: Driver | null;
+  branding: BrandingInfo;
+  companySettings?: {
+    safety_mode_threshold_kmh?: number | null;
+  };
+} | null;
 
 const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "en_route", label: "On the way to pickup" },
@@ -508,7 +521,7 @@ function DriverManifest() {
   const fn = useServerFn(getDriverManifest);
   const { data, isLoading } = useQuery({
     queryKey: ["driver-manifest", token],
-    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; jobs: Job[]; driver: Driver | null; branding: BrandingInfo } | null>,
+    queryFn: () => fn({ data: { token } }) as Promise<DriverManifestResponse>,
     refetchInterval: 20_000,
   });
   const [openJob, setOpenJob] = useState<Job | null>(null);
@@ -560,6 +573,36 @@ function DriverManifest() {
 
   // Driver location — lifted so routing + map both use one source of truth.
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
+  const [lastSpeedAt, setLastSpeedAt] = useState<number | null>(null);
+  const safetyThresholdKmh = data?.companySettings?.safety_mode_threshold_kmh ?? 10;
+  const { isSafetyMode, speedKmh } = useSafetyMode({
+    speedMps: currentSpeedMps,
+    thresholdKmh: safetyThresholdKmh,
+  });
+
+  useEffect(() => {
+    if (!activeJob) {
+      setCurrentSpeedMps(null);
+      setLastSpeedAt(null);
+    }
+  }, [activeJob?.id]);
+
+  useEffect(() => {
+    if (!activeJob || lastSpeedAt == null) return;
+    const elapsedMs = Date.now() - lastSpeedAt;
+    if (elapsedMs >= 30_000) {
+      setCurrentSpeedMps(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setCurrentSpeedMps(null), 30_000 - elapsedMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeJob, lastSpeedAt]);
+
+  const handleSpeedChange = useCallback((speedMps: number | null) => {
+    setCurrentSpeedMps(speedMps);
+    setLastSpeedAt(Date.now());
+  }, []);
 
   // Where the driver is heading right now depends on the trip phase.
   const routeDestination =
@@ -702,7 +745,7 @@ function DriverManifest() {
           live={live}
           canEnterNavigate={inMotion}
           onEnterNavigate={() => setNavigateMode(true)}
-          canReturnToWaiting={canReturnTripToWaiting(activeJob.status)}
+          canReturnToWaiting={isSafetyMode ? false : canReturnTripToWaiting(activeJob.status)}
         />
       ),
     }] : []),
@@ -739,7 +782,8 @@ function DriverManifest() {
   if (!data) return <NotFound />;
 
   return (
-    <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
+    <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
+      {!navigateMode && isSafetyMode && <SafetyModeOverlay speedKmh={speedKmh} />}
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
       <DriverDashboardMap
         activeJob={mapJob}
@@ -760,15 +804,15 @@ function DriverManifest() {
                   {branding?.company_name ?? "Driver Manifest"}
                 </div>
                 <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
-                {driver && !inMotion && (
+                {driver && !isSafetyMode && (
                   <div className="text-[11px] text-muted-foreground truncate">
                     {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
                     {driver.availability_note ?? "No availability set"}
                   </div>
                 )}
-                {inMotion && (
+                {isSafetyMode && (
                   <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
-                    <span>In motion · menu locked for safety</span>
+                    <span>Safety Mode · distracting options hidden</span>
                     {wake.held && (
                       <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
                         ☀ Screen awake
@@ -791,8 +835,8 @@ function DriverManifest() {
                   {audio.isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
               )}
-              {inMotion ? (
-                <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+              {isSafetyMode ? (
+                <Button size="icon" variant="outline" aria-label="Menu locked while driving" disabled>
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               ) : (
@@ -935,7 +979,7 @@ function DriverManifest() {
             </div>
           )}
           {jobs.map((j) => (
-            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
 
 
@@ -951,7 +995,7 @@ function DriverManifest() {
               {showArchived && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
-                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
                   ))}
                 </div>
               )}
@@ -986,13 +1030,13 @@ function DriverManifest() {
         title={chatJob ? `${displayLocation(chatJob.from_location, chatJob.pickup_display_name)} → ${displayLocation(chatJob.to_location, chatJob.dropoff_display_name)}` : ""}
         role="driver" token={token}
       />
-      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden />
+      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden onSpeedChange={handleSpeedChange} />
       <BrandingBar branding={data.branding} />
     </div>
   );
 }
 
-function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; onOpen: () => void; onChat: () => void }) {
+function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
@@ -1008,6 +1052,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
@@ -1387,8 +1432,17 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             <Button className="h-11 sm:col-span-2" onClick={onOpen}>
               <QrCode className="h-4 w-4 mr-1.5" /> Open trip · Board passengers
             </Button>
+            {job.status !== "completed" && job.status !== "cancelled" && (
+              <Button
+                variant="destructive"
+                className={isSafetyMode ? "h-16 text-base font-bold sm:col-span-2" : "h-10 sm:col-span-2"}
+                onClick={() => setEmergencyOpen(true)}
+              >
+                <AlertTriangle className="h-4 w-4 mr-1.5" /> Emergency Override
+              </Button>
+            )}
             {nextStatus && (
-              <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
+              <Button variant="secondary" className={isSafetyMode ? "h-16 text-lg font-bold" : "h-10"} disabled={statusMut.isPending}
                 onClick={() => {
                   if (nextStatus.value === "completed") setSummaryOpen(true);
                   else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
@@ -1398,13 +1452,13 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
               </Button>
             )}
 
-            {job.status !== "completed" && (
+            {!isSafetyMode && job.status !== "completed" && (
               <Button variant="outline" className="h-10"
                 onClick={() => setLateOpen(true)}>
                 <Timer className="h-4 w-4 mr-1.5" /> Running late
               </Button>
             )}
-            {canReturnToWaiting && (
+            {!isSafetyMode && canReturnToWaiting && (
               <Button
                 variant="outline"
                 className="h-10 sm:col-span-2"
@@ -1414,7 +1468,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
                 <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to waiting
               </Button>
             )}
-            {job.status !== "in_progress" && job.status !== "completed" && (
+            {!isSafetyMode && job.status !== "in_progress" && job.status !== "completed" && (
               <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
                 onClick={() => setRejectOpen(true)}>
                 <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
@@ -1449,24 +1503,25 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           </Button>
         )}
 
-        <div className="flex items-center gap-2 pt-1 sm:col-span-2">
-          <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
-            onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
-            {paid ? "Mark pending" : "Mark paid"}
-          </Button>
-          {job.driver_hidden_at ? (
-            <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
-              onClick={() => unhideMut.mutate()}>
-              Restore
+        {!isSafetyMode && (
+          <div className="flex items-center gap-2 pt-1 sm:col-span-2">
+            <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
+              onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
+              {paid ? "Mark pending" : "Mark paid"}
             </Button>
-          ) : (
-            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-              onClick={() => setConfirmHideOpen(true)}>
-              <X className="h-4 w-4 mr-1" /> Hide
-            </Button>
-          )}
-
-        </div>
+            {job.driver_hidden_at ? (
+              <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
+                onClick={() => unhideMut.mutate()}>
+                Restore
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
+                onClick={() => setConfirmHideOpen(true)}>
+                <X className="h-4 w-4 mr-1" /> Hide
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) { setRejectReason(""); setRejectNote(""); } }}>
@@ -1595,6 +1650,13 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           date: job.date,
           time: job.time,
         } : null}
+      />
+
+      <EmergencyOverrideDialog
+        open={emergencyOpen}
+        onOpenChange={setEmergencyOpen}
+        token={token}
+        job={{ id: job.id, status: job.status }}
       />
 
       {previewOpen && (

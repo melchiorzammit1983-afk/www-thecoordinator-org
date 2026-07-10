@@ -671,6 +671,7 @@ export type Database = {
           points_balance: number
           referral_code: string
           require_client_company: boolean
+          safety_mode_threshold_kmh: number
           status: Database["public"]["Enums"]["company_status"]
           updated_at: string
         }
@@ -692,6 +693,7 @@ export type Database = {
           points_balance?: number
           referral_code?: string
           require_client_company?: boolean
+          safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
         }
@@ -713,10 +715,72 @@ export type Database = {
           points_balance?: number
           referral_code?: string
           require_client_company?: boolean
+          safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
         }
         Relationships: []
+      }
+      job_emergency_overrides: {
+        Row: {
+          company_id: string
+          created_at: string
+          driver_id: string | null
+          from_status: string
+          id: string
+          job_id: string
+          reason: string
+          reason_note: string | null
+          speed_mps: number | null
+          to_status: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          driver_id?: string | null
+          from_status: string
+          id?: string
+          job_id: string
+          reason: string
+          reason_note?: string | null
+          speed_mps?: number | null
+          to_status: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          driver_id?: string | null
+          from_status?: string
+          id?: string
+          job_id?: string
+          reason?: string
+          reason_note?: string | null
+          speed_mps?: number | null
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_emergency_overrides_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_emergency_overrides_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_emergency_overrides_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_ai_rules: {
         Row: {
