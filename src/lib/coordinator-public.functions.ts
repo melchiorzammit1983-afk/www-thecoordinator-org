@@ -862,6 +862,8 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
   });
 
 const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+/** Server-enforced minimum wait before driver may override a pending boarding approval. */
+const BOARDING_OVERRIDE_MS = 5 * 60 * 1000; // 5 minutes
 
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
@@ -1170,8 +1172,6 @@ export const markPaxCancelled = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-const BOARDING_OVERRIDE_MS = 5 * 60 * 1000; // 5 minutes
-
 export const requestBoardingApproval = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -1284,7 +1284,7 @@ export const driverOverrideBoardingApproval = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-
+export const driverReportLate = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       token: z.string().min(8).max(128),
