@@ -749,7 +749,7 @@ function DriverManifest() {
         />
       ),
     }] : []),
-    ...(activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
+    ...(!isSafetyMode && activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
       key: `waiting-${activeJob.id}`,
       label: "Waiting & charges",
       content: (
@@ -1359,10 +1359,10 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
       )}
 
       {/* Price proposal (optional pre-accept) */}
-      {!job.deletion_requested_at && (
+      {!isSafetyMode && !job.deletion_requested_at && (
         <DriverPricePanel token={token} jobId={job.id} accepted={accepted} />
       )}
-      {accepted && job.status === "completed" && (
+      {!isSafetyMode && accepted && job.status === "completed" && (
         <div className="px-3 pt-3">
           <DriverWaitingPanel
             token={token}
