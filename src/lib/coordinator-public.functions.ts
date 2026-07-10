@@ -1137,6 +1137,8 @@ export const markPaxPending = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const PAX_CANCELLATION_ALLOWED_STATUSES = new Set(["arrived", "in_progress"]);
+
 export const markPaxCancelled = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -1149,8 +1151,7 @@ export const markPaxCancelled = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    const allowedStatuses = ["arrived", "in_progress"];
-    if (!allowedStatuses.includes((job as any).status)) {
+    if (!PAX_CANCELLATION_ALLOWED_STATUSES.has((job as any).status)) {
       throw new Error("cancellation_not_allowed_in_current_status");
     }
     const { data: paxRow } = await supabaseAdmin.from("pax")
@@ -1184,6 +1185,8 @@ export const requestBoardingApproval = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    // Approval must be requested while the job is in 'arrived' status — i.e. before
+    // transitioning to in_progress. Once in_progress, all pax must already be resolved.
     if ((job as any).status !== "arrived") {
       throw new Error("boarding_approval_only_when_arrived");
     }
