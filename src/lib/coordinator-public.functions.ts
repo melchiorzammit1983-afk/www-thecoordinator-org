@@ -855,7 +855,7 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     const { data: pax, error } = await supabaseAdmin.from("pax")
-      .select("id, name, status, boarded_at, boarded_method")
+      .select("id, name, status, boarded_at, boarded_method, noshow_at, cancelled_at")
       .eq("job_id", data.job_id).order("name");
     if (error) throw new Error(error.message);
     return pax ?? [];
@@ -961,6 +961,30 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       patch.arrival_street_address = streetAddress;
     }
     // ── End arrival gate ─────────────────────────────────────────────────────
+
+    // ── Phase 3 — Boarding gate: only fires on the → in_progress transition ──
+    if (data.status === "in_progress") {
+      const { data: paxRows } = await supabaseAdmin
+        .from("pax")
+        .select("id, status")
+        .eq("job_id", data.job_id);
+      const hasPendingPax = (paxRows ?? []).some((p: any) => p.status === "pending");
+      if (hasPendingPax) {
+        // Allow if a boarding approval has been given (approved or overridden).
+        const { data: approval } = await supabaseAdmin
+          .from("job_boarding_approvals")
+          .select("id, status")
+          .eq("job_id", data.job_id)
+          .in("status", ["approved", "overridden"])
+          .limit(1)
+          .maybeSingle();
+        if (!approval) {
+          throw new Error("partial_boarding_needs_approval");
+        }
+      }
+    }
+    // ── End boarding gate ─────────────────────────────────────────────────────
+
     if (data.status === "completed") {
       // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
@@ -1076,7 +1100,7 @@ export const markPaxNoShow = createServerFn({ method: "POST" })
       .select("name, status").eq("id", data.pax_id).eq("job_id", data.job_id).maybeSingle();
     if (!paxRow) throw new Error("pax_not_found");
     const { error } = await supabaseAdmin.from("pax")
-      .update({ status: "noshow" as never })
+      .update({ status: "noshow" as never, noshow_at: new Date().toISOString() })
       .eq("id", data.pax_id).eq("job_id", data.job_id);
     if (error) throw new Error(error.message);
     await supabaseAdmin.from("trip_messages").insert({
@@ -1105,13 +1129,162 @@ export const markPaxPending = createServerFn({ method: "POST" })
     await loadDriverJob(data.token, data.job_id);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("pax")
-      .update({ status: "pending" as never, boarded_at: null, boarded_method: null })
+      .update({ status: "pending" as never, boarded_at: null, boarded_method: null, noshow_at: null, cancelled_at: null })
       .eq("id", data.pax_id).eq("job_id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
-export const driverReportLate = createServerFn({ method: "POST" })
+export const markPaxCancelled = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      pax_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const allowedStatuses = ["arrived", "in_progress"];
+    if (!allowedStatuses.includes((job as any).status)) {
+      throw new Error("cancellation_not_allowed_in_current_status");
+    }
+    const { data: paxRow } = await supabaseAdmin.from("pax")
+      .select("name, status").eq("id", data.pax_id).eq("job_id", data.job_id).maybeSingle();
+    if (!paxRow) throw new Error("pax_not_found");
+    const { error } = await supabaseAdmin.from("pax")
+      .update({ status: "cancelled" as never, cancelled_at: new Date().toISOString() })
+      .eq("id", data.pax_id).eq("job_id", data.job_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: (job as any).company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `❌ Cancelled: ${(paxRow as any).name}`,
+      thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
+    } as never);
+    return { ok: true };
+  });
+
+const BOARDING_OVERRIDE_MS = 5 * 60 * 1000; // 5 minutes
+
+export const requestBoardingApproval = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      driver_note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if ((job as any).status !== "arrived") {
+      throw new Error("boarding_approval_only_when_arrived");
+    }
+
+    // Check there is no existing open approval for this job.
+    const { data: existing } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, status")
+      .eq("job_id", data.job_id)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (existing) throw new Error("boarding_approval_already_pending");
+
+    // Build pax summary snapshot.
+    const { data: paxRows } = await supabaseAdmin
+      .from("pax")
+      .select("status")
+      .eq("job_id", data.job_id);
+    const paxSummary = (paxRows ?? []).reduce(
+      (acc: Record<string, number>, p: any) => {
+        const s: string = p.status ?? "pending";
+        acc[s] = (acc[s] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
+
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const now = new Date().toISOString();
+
+    const { data: approval, error } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .insert({
+        job_id: data.job_id,
+        driver_id: link.subject_id ?? null,
+        company_id: companyId,
+        requested_by_user_id: null,
+        status: "pending",
+        requested_at: now,
+        driver_note: data.driver_note ?? null,
+        pax_summary: paxSummary,
+      } as never)
+      .select("id, requested_at")
+      .single();
+    if (error) throw new Error(error.message);
+
+    // Notify coordinator via trip message.
+    const pendingCount = paxSummary["pending"] ?? 0;
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: companyId,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🚌 Boarding approval requested — ${pendingCount} passenger(s) still pending. Awaiting coordinator response.`,
+      thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
+    } as never);
+
+    return { ok: true, approval_id: (approval as any).id, requested_at: (approval as any).requested_at };
+  });
+
+export const driverOverrideBoardingApproval = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      approval_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_or_expired_link");
+    const { supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+
+    const { data: approval } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, status, requested_at, job_id")
+      .eq("id", data.approval_id)
+      .eq("job_id", data.job_id)
+      .maybeSingle();
+    if (!approval) throw new Error("boarding_approval_not_found");
+    if ((approval as any).status !== "pending") throw new Error("boarding_approval_already_resolved");
+
+    const requestedAt = new Date((approval as any).requested_at).getTime();
+    const elapsedMs = Date.now() - requestedAt;
+    if (elapsedMs < BOARDING_OVERRIDE_MS) {
+      const remainingSeconds = Math.ceil((BOARDING_OVERRIDE_MS - elapsedMs) / 1000);
+      throw new Error(`override_too_early:${remainingSeconds}`);
+    }
+
+    const now = new Date().toISOString();
+    const { error } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .update({ status: "overridden", override_at: now, responded_at: now } as never)
+      .eq("id", data.approval_id);
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+
   .inputValidator((i: unknown) =>
     z.object({
       token: z.string().min(8).max(128),
