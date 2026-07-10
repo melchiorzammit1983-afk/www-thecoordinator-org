@@ -62,6 +62,7 @@ export function EmergencyOverrideDialog({
       return;
     }
     setAction((current) => current && actions.includes(current) ? current : actions[0] ?? null);
+    setStep(1);
   }, [actions, open]);
 
   const mutation = useMutation({

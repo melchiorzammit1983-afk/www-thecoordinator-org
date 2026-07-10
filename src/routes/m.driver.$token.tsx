@@ -597,7 +597,7 @@ function DriverManifest() {
     }
     const timeoutId = window.setTimeout(() => setCurrentSpeedMps(null), 30_000 - elapsedMs);
     return () => window.clearTimeout(timeoutId);
-  }, [activeJob, lastSpeedAt]);
+  }, [activeJob?.id, lastSpeedAt]);
 
   const handleSpeedChange = useCallback((speedMps: number | null) => {
     setCurrentSpeedMps(speedMps);
