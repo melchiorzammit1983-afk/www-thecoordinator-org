@@ -24,6 +24,7 @@
 12. [Recommended Adjustments](#12-recommended-adjustments)
 13. [Required Changes Before Implementation](#13-required-changes-before-implementation)
 14. [Estimated Implementation Complexity](#14-estimated-implementation-complexity)
+15. [Batch B Implementation Plan (Post-Blocking Resolution)](#15-batch-b-implementation-plan-post-blocking-resolution)
 
 ---
 
@@ -420,6 +421,20 @@ The migration SQL must include `CREATE POLICY` statements and `GRANT` statements
 
 **Files affected:** New migration file `supabase/migrations/<ts>_batch_b_emergency_overrides.sql`
 
+**Proposed solution (R1):**
+
+1. Add explicit grants:
+   - `GRANT SELECT, INSERT, UPDATE, DELETE ON public.job_emergency_overrides TO authenticated;`
+   - `GRANT ALL ON public.job_emergency_overrides TO service_role;`
+2. Add a read policy for authenticated company users tied to job ownership scope (same `company_id` / `executor_company_id` model used by existing Batch A policies).
+3. Keep write-path controlled by server function via `service_role`; do not expose direct driver inserts via authenticated RLS.
+4. Add migration comments clarifying that writes are server-mediated and audit rows are append-only.
+5. Add migration verification checklist:
+   - Authenticated coordinator can read rows for own company jobs.
+   - Authenticated coordinator cannot read rows outside company scope.
+   - Driver-side direct table insert is denied.
+   - Server function insert succeeds.
+
 ---
 
 ### R2 — `closeOpenWaitSession` must be called, not bypassed (Section 8.1)
@@ -428,6 +443,17 @@ The `emergencyOverrideJobStatus` server function must use the existing `closeOpe
 
 **Files affected:** `src/lib/coordinator-public.functions.ts`
 
+**Proposed solution (R2):**
+
+1. In `emergencyOverrideJobStatus`, for override targets that terminate waiting (`to_status = 'en_route'` and `to_status = 'completed'`), call the existing `closeOpenWaitSession(...)` helper with the same arguments pattern used in `updateJobStatus`.
+2. Prohibit direct `job_wait_sessions` raw updates in emergency flow (design rule: all wait closure paths must pass through one helper).
+3. Ensure helper execution occurs in the same logical operation window as status override and audit insertion so closure and billing are not skipped.
+4. Add explicit acceptance criteria:
+   - Open session closes with `ended_at` set.
+   - `calculated_amount` is computed and persisted.
+   - Existing `agreed_amount` behavior remains unchanged.
+   - No duplicate open sessions are created as side effects.
+
 ---
 
 ### R3 — iOS speed `-1` handling in `use-safety-mode.ts` (Section 4.1)
@@ -435,6 +461,17 @@ The `emergencyOverrideJobStatus` server function must use the existing `closeOpe
 `useSafetyMode` must treat `speed <= 0` as no-data (same as `null`). Without this, a stopped iOS device reporting `speed = -1` would be filtered correctly by accident, but any explicit truthy check on the speed value would break. Making the guard explicit is required before shipping to iOS.
 
 **Files affected:** `src/hooks/use-safety-mode.ts`
+
+**Proposed solution (R3):**
+
+1. Normalize incoming speed before threshold evaluation:
+   - `null`, `undefined`, `NaN`, and `<= 0` values are treated as no-data.
+2. Run Safety Mode threshold logic only on normalized positive speed values.
+3. Keep default fail-open behavior: if speed is no-data, Safety Mode is off.
+4. Add cross-platform acceptance criteria:
+   - iOS invalid speed (`-1`) never activates Safety Mode.
+   - Valid positive speeds on iOS/Android activate/deactivate correctly at threshold.
+   - Browser `null` speed remains non-blocking.
 
 ---
 
@@ -471,5 +508,46 @@ The `emergencyOverrideJobStatus` server function must use the existing `closeOpe
 > Complexity ratings assume Batch A (Phase 2 + Phase 3) is fully implemented and all migrations are applied. If Batch A is still in progress, Phase 5 testing complexity increases by approximately 4–8 hours due to additional integration surface.
 
 ---
+
+## 15. Batch B Implementation Plan (Post-Blocking Resolution)
+
+This plan starts only after R1, R2, and R3 are design-locked as above.
+
+### 15.1 Phase Order
+
+1. **Phase 5 foundations first (blocking-safe core)**
+   - Implement migration for `job_emergency_overrides` with full RLS + GRANT model (R1).
+   - Implement server-side `emergencyOverrideJobStatus` skeleton with validation and audit insertion.
+2. **Waiting-safe emergency flow**
+   - Integrate `closeOpenWaitSession(...)` for emergency `en_route` / `completed` transitions (R2).
+   - Add boarding approval cleanup (`pending -> overridden`) on emergency `in_progress`.
+3. **Phase 4 Safety Mode**
+   - Implement speed propagation (`DriverLiveShare -> DriverManifest`).
+   - Implement `use-safety-mode` normalization guard for invalid/non-positive speed (R3).
+   - Implement Safety Mode UI restrictions and overlay.
+4. **Emergency driver UI**
+   - Implement `EmergencyOverrideDialog` with reason + forced-status flow and confirmation.
+   - Wire to mutation and manifest refresh.
+5. **Regression + readiness**
+   - Validate GPS gate, waiting auto-start/auto-close, boarding gate behavior in normal (non-emergency) flow.
+   - Validate emergency paths and audit visibility to coordinators.
+
+### 15.2 Delivery Batches
+
+| Batch | Scope | Exit Criteria |
+|---|---|---|
+| B1 | R1 migration + policy correctness | Coordinator scoped read works; unauthorized read blocked |
+| B2 | Emergency server function + R2 wait-safe closure | Force `en_route`/`completed` closes wait with `calculated_amount` |
+| B3 | Safety Mode + R3 speed normalization | Invalid speed never activates Safety Mode; critical actions remain available |
+| B4 | Emergency dialog + end-to-end driver/coordinator flow | Override updates status, creates audit row, posts system chat |
+| B5 | Full regression and rollout readiness | No regressions in Phase 1/2/3 behavior; manual checklist passes |
+
+### 15.3 Final Go/No-Go Checklist
+
+- R1 accepted: RLS + GRANT behavior verified in staging.
+- R2 accepted: all emergency wait closures use `closeOpenWaitSession`.
+- R3 accepted: iOS `-1` and null speed handling verified.
+- Emergency overrides visible to coordinators via chat + table.
+- Normal status gates (GPS / boarding / waiting) unchanged outside emergency path.
 
 *End of Batch B Architecture Review*
