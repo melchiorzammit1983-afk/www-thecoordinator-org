@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { formatMaltaDateTime, formatMaltaTime } from "@/lib/time";
 import { displayLocation } from "@/lib/trip-display";
+import { BOARDING_OVERRIDE_MS } from "@/lib/boarding.constants";
 import {
   getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
@@ -78,6 +79,11 @@ export const Route = createFileRoute("/m/driver/$token")({
 });
 
 type Pax = { id: string; name: string; status: string; boarded_at: string | null };
+type DriverPaxRow = Pax & {
+  boarded_method: string | null;
+  noshow_at: string | null;
+  cancelled_at: string | null;
+};
 type BoardingApproval = {
   id: string;
   status: string;
@@ -131,7 +137,6 @@ const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "in_progress", label: "Passengers on board — en route" },
   { value: "completed", label: "Trip finished" },
 ];
-const BOARDING_OVERRIDE_MS = 5 * 60 * 1000;
 const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
 
 function getPaxSummary(pax: Array<{ status: string | null | undefined }> | undefined | null) {
@@ -417,7 +422,7 @@ function DriverBoardingApprovalPanel({
   const { data: approvals, refetch } = useQuery({
     queryKey: ["driver-boarding-approval", token, job.id],
     enabled: job.status === "arrived",
-    refetchInterval: job.status === "arrived" ? 5_000 : false,
+    refetchInterval: job.status === "arrived" ? 10_000 : false,
     queryFn: () => approvalFn({ data: { token, job_id: job.id } }) as Promise<BoardingApproval[]>,
   });
   const latestApproval = approvals?.[0] ?? null;
@@ -2421,22 +2426,14 @@ function TripExecutionDialog({
     queryKey: ["driver-pax", job?.id],
     queryFn: () => listFn({
       data: { token, job_id: job!.id },
-    }) as Promise<Array<{
-      id: string;
-      name: string;
-      status: string;
-      boarded_at: string | null;
-      boarded_method: string | null;
-      noshow_at: string | null;
-      cancelled_at: string | null;
-    }>>,
+    }) as Promise<DriverPaxRow[]>,
     enabled: !!job,
   });
   const { data: approvals, refetch: refetchApprovals } = useQuery({
     queryKey: ["driver-boarding-approval-dialog", job?.id],
     queryFn: () => approvalFn({ data: { token, job_id: job!.id } }) as Promise<BoardingApproval[]>,
     enabled: !!job && job.status === "arrived",
-    refetchInterval: job?.status === "arrived" ? 5_000 : false,
+    refetchInterval: job?.status === "arrived" ? 10_000 : false,
   });
 
   const latestApproval = approvals?.[0] ?? null;
@@ -2608,9 +2605,7 @@ function TripExecutionDialog({
                     onOpenBoarding={() => {
                       setApprovalError(null);
                       setShowApprovalFlow(false);
-                      if (typeof document !== "undefined") {
-                        document.getElementById("boarding-passenger-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }
+                      document.getElementById("boarding-passenger-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
                     onChat={() => job && onChat(job)}
                     onStartTrip={handleStartTrip}

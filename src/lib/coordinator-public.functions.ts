@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
 import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
+import { BOARDING_OVERRIDE_MS } from "./boarding.constants";
 
 /**
  * Haversine great-circle distance in metres.
@@ -862,8 +863,6 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
   });
 
 const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
-/** Server-enforced minimum wait before driver may override a pending boarding approval. */
-const BOARDING_OVERRIDE_MS = 5 * 60 * 1000; // 5 minutes
 
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
