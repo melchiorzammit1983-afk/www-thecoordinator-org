@@ -1013,8 +1013,10 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       }
     }
 
-    if (data.status === "en_route") {
-      // Auto-close any open wait session when driver departs.
+    if (data.status === "en_route" || data.status === "in_progress" || data.status === "completed") {
+      // Auto-close any open wait session when the driver departs the pickup,
+      // starts the trip, or completes it. This also writes the job_adjustments
+      // "waiting" row so the auto-started session on arrival is reconciled.
       await closeOpenWaitSession(
         supabaseAdmin,
         job.id,
@@ -1023,6 +1025,7 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         now,
       );
     }
+
 
     // Reversible-group auto-dissolve: if this trip belonged to a group and all
     // sibling trips are now completed/cancelled, clear group_id on all members.
