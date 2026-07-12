@@ -287,7 +287,7 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
       {canManageAdjustments && (
         <div className="space-y-2">
           <div className="flex flex-col gap-2 sm:flex-row">
-            {active && (
+            {(active || (status === "completed" && openWait)) && (
               openWait ? (
                 <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={() => {
                   setAmount(liveCharge > 0 ? liveCharge.toFixed(2) : "");
@@ -301,6 +301,7 @@ export function DriverWaitingPanel({ token, jobId, status, fromLocation, toLocat
                 </Button>
               )
             )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className={active ? "" : "w-full"}>
