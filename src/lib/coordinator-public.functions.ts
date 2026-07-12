@@ -913,52 +913,60 @@ export const updateJobStatus = createServerFn({ method: "POST" })
             .limit(1)
         : { data: null };
       const pt = pts?.[0];
-      if (!pt) throw new Error("arrival_no_gps");
-
-      // 3. Accuracy check: reject if the reported circle is larger than the arrival radius.
-      if (pt.accuracy_m != null && pt.accuracy_m > arrivalRadius) {
-        throw new Error(`arrival_weak_gps:${Math.round(pt.accuracy_m)}:${arrivalRadius}`);
-      }
-
-      // 4. Resolve pickup target: prefer stored coords, fall back to geocoding from_location.
+      // GPS checks are best-effort: if any fail (no fresh point, weak accuracy,
+      // outside radius, or geocode failure) we still allow the driver to mark
+      // arrival — we just skip persisting verified telemetry. Drivers were
+      // getting stuck at "en_route" on short hops, weak-signal spots, and at
+      // venues where the geocoded pickup center is >150 m from the real lane.
+      let verified = false;
       let destLat: number | null = (job as any).pickup_lat ?? null;
       let destLng: number | null = (job as any).pickup_lng ?? null;
-      if ((destLat == null || destLng == null) && job.from_location && apiKey) {
-        try {
-          const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
-          const gj: any = await (await fetch(geoUrl)).json();
-          const loc = gj?.results?.[0]?.geometry?.location;
-          if (loc) { destLat = loc.lat; destLng = loc.lng; }
-        } catch { /* fall through — skip distance check */ }
-      }
 
-      // 5. Distance check (only when we have a valid pickup target).
-      if (destLat != null && destLng != null) {
-        const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
-        if (distM > arrivalRadius) {
-          throw new Error(`arrival_outside_radius:${Math.round(distM)}:${arrivalRadius}`);
+      if (pt) {
+        const accuracyOk = pt.accuracy_m == null || pt.accuracy_m <= arrivalRadius;
+
+        if ((destLat == null || destLng == null) && job.from_location && apiKey) {
+          try {
+            const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
+            const gj: any = await (await fetch(geoUrl)).json();
+            const loc = gj?.results?.[0]?.geometry?.location;
+            if (loc) { destLat = loc.lat; destLng = loc.lng; }
+          } catch { /* best-effort */ }
         }
-        patch.arrival_distance_m = Math.round(distM);
+
+        let distOk = true;
+        if (destLat != null && destLng != null) {
+          const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
+          patch.arrival_distance_m = Math.round(distM);
+          distOk = distM <= arrivalRadius;
+        }
+
+        verified = accuracyOk && distOk;
+
+        // Reverse-geocode the driver's actual position (best-effort).
+        let streetAddress: string | null = null;
+        if (apiKey) {
+          try {
+            const rgUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.latitude},${pt.longitude}&key=${apiKey}`;
+            const rj: any = await (await fetch(rgUrl)).json();
+            streetAddress = rj?.results?.[0]?.formatted_address ?? null;
+          } catch { /* best-effort */ }
+        }
+
+        // Persist telemetry regardless (useful for audit); only stamp verified
+        // when all checks passed.
+        patch.arrival_lat            = pt.latitude;
+        patch.arrival_lng            = pt.longitude;
+        patch.arrival_accuracy_m     = pt.accuracy_m ?? null;
+        patch.arrival_heading        = pt.heading ?? null;
+        patch.arrival_speed_mps      = pt.speed_mps ?? null;
+        patch.arrival_street_address = streetAddress;
       }
 
-      // 6. Reverse-geocode the driver's actual position (best-effort — never blocks arrival).
-      let streetAddress: string | null = null;
-      if (apiKey) {
-        try {
-          const rgUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.latitude},${pt.longitude}&key=${apiKey}`;
-          const rj: any = await (await fetch(rgUrl)).json();
-          streetAddress = rj?.results?.[0]?.formatted_address ?? null;
-        } catch { /* best-effort */ }
+      if (verified) {
+        patch.arrival_verified_at = new Date().toISOString();
       }
 
-      // 7. Persist verified telemetry alongside the status update.
-      patch.arrival_verified_at   = new Date().toISOString();
-      patch.arrival_lat           = pt.latitude;
-      patch.arrival_lng           = pt.longitude;
-      patch.arrival_accuracy_m    = pt.accuracy_m ?? null;
-      patch.arrival_heading       = pt.heading ?? null;
-      patch.arrival_speed_mps     = pt.speed_mps ?? null;
-      patch.arrival_street_address = streetAddress;
     }
     // ── End arrival gate ─────────────────────────────────────────────────────
     if (data.status === "completed") {
