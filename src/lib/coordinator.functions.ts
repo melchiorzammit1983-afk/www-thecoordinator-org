@@ -1100,7 +1100,7 @@ export const deleteJob = createServerFn({ method: "POST" })
       .update({ deletion_requested_at: new Date().toISOString(), deletion_requested_by: context.userId } as never)
       .eq("id", data.job_id)
       .eq("company_id", c.id);
-    return { deleted: false, pending: true, ...res };
+    return { deleted: false, ...res };
   });
 
 
