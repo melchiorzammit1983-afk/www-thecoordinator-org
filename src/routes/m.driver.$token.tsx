@@ -1055,6 +1055,11 @@ function DriverManifest() {
         role="driver" token={token}
       />
       <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden onSpeedChange={handleSpeedChange} />
+      <AutoNextJobSheet
+        job={autoNextJob}
+        onDismiss={dismissAutoNext}
+        onOpenTrip={() => { if (autoNextJob) { setOpenJob(autoNextJob as unknown as Job); dismissAutoNext(); } }}
+      />
       <BrandingBar branding={data.branding} />
     </div>
   );
