@@ -356,7 +356,7 @@ export async function sendPushToUserImpl(
           const res = await fetch(details.endpoint, {
             method: details.method,
             headers: details.headers as Record<string, string>,
-            body: details.body as ArrayBuffer | Uint8Array | string,
+            body: details.body as unknown as BodyInit,
           });
           status = res.status;
           ok = res.ok;
