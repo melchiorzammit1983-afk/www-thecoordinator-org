@@ -211,3 +211,267 @@ export const updateNotificationPreferences = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+// -----------------------------------------------------------------------------
+// sendPushToUser — fan-out a notification to every registered device for a user.
+//
+// Web Push (endpoint + p256dh + auth): encrypted via VAPID and delivered by
+// fetch to the subscription endpoint. FCM native tokens (Android/iOS): posted
+// to FCM HTTP v1 legacy endpoint when FCM_SERVER_KEY is configured.
+//
+// The result is a per-device delivery report and each attempt is written to
+// public.notification_log. Expired / gone subscriptions (404/410) are pruned.
+// -----------------------------------------------------------------------------
+
+const PushPayloadSchema = z.object({
+  title: z.string().min(1).max(120),
+  body: z.string().max(500).optional().default(""),
+  category: z
+    .enum([
+      "new_job",
+      "job_updated",
+      "boarding",
+      "safety",
+      "chat",
+      "route_optimization",
+      "waiting",
+      "driver_status",
+      "trip_lifecycle",
+      "security",
+      "generic",
+    ])
+    .default("generic"),
+  url: z.string().max(500).optional(),
+  data: z.record(z.string(), z.any()).optional(),
+  ttl: z.number().int().min(0).max(60 * 60 * 24 * 7).optional(),
+  urgency: z.enum(["very-low", "low", "normal", "high"]).optional(),
+});
+
+const SendInput = z.object({
+  user_id: z.string().uuid(),
+  payload: PushPayloadSchema,
+});
+
+export type SendPushResult = {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  pruned: number;
+  results: Array<{
+    device_id: string;
+    transport: "web" | "native";
+    ok: boolean;
+    status?: number;
+    error?: string;
+  }>;
+};
+
+/**
+ * Internal helper — safe to call from other server function handlers.
+ * Uses the service-role client so it can read all devices regardless of RLS.
+ */
+export async function sendPushToUserImpl(
+  userId: string,
+  payload: z.infer<typeof PushPayloadSchema>,
+): Promise<SendPushResult> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const webpush = (await import("web-push")).default;
+
+  const vapidPub = process.env.VAPID_PUBLIC_KEY;
+  const vapidPriv = process.env.VAPID_PRIVATE_KEY;
+  const vapidSubject = process.env.VAPID_SUBJECT || "mailto:admin@thecoordinator.org";
+  const fcmServerKey = process.env.FCM_SERVER_KEY;
+
+  if (vapidPub && vapidPriv) {
+    try {
+      webpush.setVapidDetails(vapidSubject, vapidPub, vapidPriv);
+    } catch {
+      /* invalid keys — web-push disabled below */
+    }
+  }
+
+  // Respect the user's per-category notification preference.
+  const { data: prefs } = await supabaseAdmin
+    .from("notification_preferences")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const category = payload.category;
+  const catKey = category as keyof typeof prefs;
+  if (prefs && category !== "generic" && category !== "security" && (prefs as any)[catKey] === false) {
+    return { attempted: 0, succeeded: 0, failed: 0, pruned: 0, results: [] };
+  }
+
+  const { data: devices, error } = await supabaseAdmin
+    .from("push_devices")
+    .select("id, company_id, platform, token, endpoint, p256dh, auth")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+
+  const list = devices ?? [];
+  const result: SendPushResult = {
+    attempted: list.length,
+    succeeded: 0,
+    failed: 0,
+    pruned: 0,
+    results: [],
+  };
+  if (list.length === 0) return result;
+
+  const bodyPayload = JSON.stringify({
+    title: payload.title,
+    body: payload.body ?? "",
+    category: payload.category,
+    url: payload.url ?? null,
+    data: payload.data ?? {},
+    ts: Date.now(),
+  });
+
+  type LogRow = {
+    user_id: string;
+    company_id: string | null;
+    device_id: string;
+    category: string;
+    title: string;
+    body: string;
+    data: Record<string, unknown>;
+    sent_at: string;
+    delivered_at: string | null;
+    error: string | null;
+  };
+  const logRows: LogRow[] = [];
+  const pruneIds: string[] = [];
+
+  await Promise.all(
+    list.map(async (d) => {
+      const isWeb = !!(d.endpoint && d.p256dh && d.auth);
+      const transport: "web" | "native" = isWeb ? "web" : "native";
+      let ok = false;
+      let status: number | undefined;
+      let errMsg: string | undefined;
+
+      try {
+        if (isWeb) {
+          if (!vapidPub || !vapidPriv) throw new Error("VAPID not configured");
+          const details = webpush.generateRequestDetails(
+            {
+              endpoint: d.endpoint!,
+              keys: { p256dh: d.p256dh!, auth: d.auth! },
+            },
+            bodyPayload,
+            {
+              TTL: payload.ttl ?? 60 * 60 * 12,
+              urgency: payload.urgency,
+              contentEncoding: "aes128gcm",
+            },
+          );
+          const res = await fetch(details.endpoint, {
+            method: details.method,
+            headers: details.headers as Record<string, string>,
+            body: details.body as unknown as BodyInit,
+          });
+          status = res.status;
+          ok = res.ok;
+          if (!ok) {
+            errMsg = `web-push ${res.status}`;
+            if (res.status === 404 || res.status === 410) pruneIds.push(d.id);
+          }
+        } else if (d.token) {
+          if (!fcmServerKey) throw new Error("FCM_SERVER_KEY not configured");
+          const res = await fetch("https://fcm.googleapis.com/fcm/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `key=${fcmServerKey}`,
+            },
+            body: JSON.stringify({
+              to: d.token,
+              priority: payload.urgency === "high" ? "high" : "normal",
+              time_to_live: payload.ttl ?? 60 * 60 * 12,
+              notification: { title: payload.title, body: payload.body ?? "" },
+              data: {
+                category: payload.category,
+                url: payload.url ?? "",
+                ...(payload.data ?? {}),
+              },
+            }),
+          });
+          status = res.status;
+          const json = (await res.json().catch(() => ({}))) as {
+            failure?: number;
+            results?: Array<{ error?: string }>;
+          };
+          ok = res.ok && (json.failure ?? 0) === 0;
+          if (!ok) {
+            const fcmErr = json.results?.[0]?.error;
+            errMsg = fcmErr ? `fcm ${fcmErr}` : `fcm ${res.status}`;
+            if (
+              fcmErr === "NotRegistered" ||
+              fcmErr === "InvalidRegistration" ||
+              fcmErr === "MismatchSenderId"
+            ) {
+              pruneIds.push(d.id);
+            }
+          }
+        } else {
+          throw new Error("Device has no delivery target");
+        }
+      } catch (e) {
+        errMsg = e instanceof Error ? e.message : String(e);
+        ok = false;
+      }
+
+      if (ok) result.succeeded += 1;
+      else result.failed += 1;
+
+      result.results.push({ device_id: d.id, transport, ok, status, error: errMsg });
+
+      logRows.push({
+        user_id: userId,
+        company_id: d.company_id ?? null,
+        device_id: d.id,
+        category: payload.category,
+        title: payload.title,
+        body: payload.body ?? "",
+        data: payload.data ?? {},
+        sent_at: new Date().toISOString(),
+        delivered_at: ok ? new Date().toISOString() : null,
+        error: ok ? null : errMsg ?? null,
+      });
+    }),
+  );
+
+  if (logRows.length > 0) {
+    await supabaseAdmin.from("notification_log").insert(logRows as never);
+  }
+  if (pruneIds.length > 0) {
+    await supabaseAdmin.from("push_devices").delete().in("id", pruneIds);
+    result.pruned = pruneIds.length;
+  }
+
+  return result;
+}
+
+/**
+ * Admin-only RPC wrapper around sendPushToUserImpl. App code should import
+ * sendPushToUserImpl directly from another server function's `.handler()`
+ * body — this exposed RPC exists for testing and admin tooling.
+ */
+export const sendPushToUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => SendInput.parse(data))
+  .handler(async ({ data, context }) => {
+    // Verify the caller is an admin before allowing arbitrary user targeting.
+    const { data: emailRow } = await context.supabase
+      .from("admin_emails")
+      .select("email")
+      .limit(1);
+    const isAdmin = Array.isArray(emailRow) && emailRow.length > 0
+      ? true
+      : false;
+    // admin_emails is readable to admins via RLS; a non-admin gets an empty set.
+    if (!isAdmin && data.user_id !== context.userId) {
+      throw new Error("Forbidden: only admins may push to other users");
+    }
+    return sendPushToUserImpl(data.user_id, data.payload);
+  });
