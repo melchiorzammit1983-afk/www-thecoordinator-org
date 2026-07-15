@@ -923,13 +923,32 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
-      .select("id, status")
+      .select("id, company_id, status, driver_id, driver_accepted_at")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (jErr) throw new Error(jErr.message);
     if (!job) return { ok: false, missing: true };
     if ((job as any).status === data.status) return { ok: true, changed: false };
+    const lockable: LockableJob = {
+      id: (job as any).id,
+      company_id: (job as any).company_id,
+      driver_id: (job as any).driver_id,
+      driver_accepted_at: (job as any).driver_accepted_at,
+      status: (job as any).status,
+    };
+    if (!c.isAdmin && data.status === "cancelled" && isJobLocked(lockable)) {
+      const res = await createChangeRequest({
+        jobId: data.job_id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "cancel",
+        requestedChanges: { status: "cancelled" },
+        driverId: lockable.driver_id,
+      });
+      return { ok: true, changed: false, ...res };
+    }
+
     const { error } = await supabaseAdmin
       .from("jobs")
       .update({ status: data.status } as never)
