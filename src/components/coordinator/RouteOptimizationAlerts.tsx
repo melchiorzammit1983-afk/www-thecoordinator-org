@@ -24,14 +24,13 @@ export function useRouteOptimizationAlerts() {
 
   // Realtime: any change to the table refreshes the list immediately.
   useEffect(() => {
-    const ch = supabase
-      .channel("route-opt-alerts")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "group_route_optimizations" },
-        () => qc.invalidateQueries({ queryKey: ["route-opt-pending"] }),
-      )
-      .subscribe();
+    const name = `route-opt-alerts-${Math.random().toString(36).slice(2, 10)}`;
+    const ch = supabase.channel(name);
+    ch.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_route_optimizations" },
+      () => qc.invalidateQueries({ queryKey: ["route-opt-pending"] }),
+    ).subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
