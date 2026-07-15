@@ -5926,3 +5926,34 @@ export const cancelJobChangeRequest = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- GPS ARRIVAL RADIUS ----------
+
+export const getMyGpsSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await getAdminClient();
+    const { data } = await sb
+      .from("companies")
+      .select("id, arrival_radius_m")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    return { arrival_radius_m: (data as any)?.arrival_radius_m ?? null };
+  });
+
+export const updateMyGpsSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ arrival_radius_m: z.number().int().min(25).max(2000) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await getAdminClient();
+    const { data: co } = await sb.from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    if (!co) throw new Error("No company assigned");
+    const { error } = await sb
+      .from("companies")
+      .update({ arrival_radius_m: data.arrival_radius_m } as never)
+      .eq("id", (co as any).id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
