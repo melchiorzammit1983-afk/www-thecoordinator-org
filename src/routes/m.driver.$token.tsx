@@ -1092,7 +1092,7 @@ function DriverManifest() {
   );
 }
 
-function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
+function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; arrivalRadiusM: number; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
