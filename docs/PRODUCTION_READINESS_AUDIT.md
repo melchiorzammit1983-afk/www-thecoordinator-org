@@ -26,7 +26,7 @@ Severity legend:
 | Permissions | 0 | 1 | 2 | 1 |
 | **Total** | **0** | **12** | **22** | **12** |
 
-**Go/No-go for production:** **Conditional GO.** No Critical blockers detected. The single **High** blocker that must be fixed before the next production push is finding **H-DB-1** (missing `job_wait_sessions.free_ends_at` column referenced by a stale DB object — actively erroring 30×/2 min in prod, breaks driver waiting timer). All other High-severity items are non-blocking but should be scheduled in the next hardening sprint.
+**Go/No-go for production:** **Conditional GO.** No Critical blockers detected. Prior blocker **H-DB-1** (`job_wait_sessions.free_ends_at`) is **resolved** — column now exists on the live table, no DB object still references it as missing. Remaining High-severity items are non-blocking but should be scheduled in the next hardening sprint.
 
 ---
 
@@ -99,11 +99,12 @@ Coverage looks complete (60 user-tables all have policies). Concerns:
 
 ## 4. Database & Indexes
 
-### H-DB-1 · `job_wait_sessions.free_ends_at` missing column (High — active production error)
+### ~~H-DB-1 · `job_wait_sessions.free_ends_at` missing column~~ ✅ RESOLVED (2026-07-15)
 - **Source:** Project Monitoring `error_log_finding_8d7db9d0311068895c397351677ff1e0`.
-- 30 errors in 2 minutes on 2026-07-12: `column job_wait_sessions.free_ends_at does not exist`. Wait timers and 15/60-min notification cron are failing.
-- **Root cause:** Stale DB trigger/function references a column never created in migrations.
-- **Fix direction:** `\df+` on functions touching `job_wait_sessions` or run `pg_get_triggerdef`; either add the column or drop the stale object.
+- **Original symptom:** 30 errors in 2 min on 2026-07-12 — `column job_wait_sessions.free_ends_at does not exist`, breaking wait timers and the 15/60-min notification cron.
+- **Root cause:** Transient schema drift — a trigger/function referenced the column before the `ADD COLUMN` was applied.
+- **Resolution:** Verified via `information_schema.columns` that `free_ends_at` (plus `auto_started`, `calculated_amount`) now exists on `public.job_wait_sessions`. `pg_proc.prosrc` search for `free_ends_at` returns no matches — no live object still fails. Finding marked `stale` in Project Monitoring; no code or SQL change required.
+- **Guard-rail:** Always ship `ADD COLUMN` in the same migration as the trigger/function that reads it; add a Postgres-log alert for `column .* does not exist`.
 
 ### H-DB-2 · Repeated per-row UPDATE storms on `jobs` for flight status (High)
 - Slow queries show 11k+ / 16k+ / 11k+ UPDATEs to `jobs` for `flight_*` columns totalling ~96 s of DB time. Each update triggers `audit_jobs_status_trg` even if `status` didn't change (guarded), but also fires `set_updated_at`, `log_activity`, `enforce_jobs_partner_update` — cumulative overhead.
@@ -261,7 +262,7 @@ Batch C is in place (`trip_audit_log` hash-chained, verify function, triggers on
 
 ## 12. Recommended Fix Order (next sprint)
 
-1. **H-DB-1** — restore/remove `free_ends_at` (production error, blocking).
+1. ~~**H-DB-1** — restore/remove `free_ends_at`~~ ✅ resolved 2026-07-15.
 2. **H-SEC-1 / H-SEC-2** — lock down public SECURITY DEFINER + cron webhook auth.
 3. **H-AUDIT-1** — add audit triggers on fare tables.
 4. **H-ERR-1 / H-LOG-1** — surface silent failures on cron routes.
@@ -276,7 +277,7 @@ Batch C is in place (`trip_audit_log` hash-chained, verify function, triggers on
 
 ## 13. Sign-off Checklist
 
-- [ ] H-DB-1 resolved and verified in production logs
+- [x] H-DB-1 resolved and verified in production logs (2026-07-15)
 - [ ] All `/api/public/*` cron routes authenticated
 - [ ] Public SECURITY DEFINER executes revoked from `anon`
 - [ ] Fare tables covered by audit triggers
