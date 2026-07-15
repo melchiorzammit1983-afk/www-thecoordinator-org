@@ -262,7 +262,7 @@ Batch C is in place (`trip_audit_log` hash-chained, verify function, triggers on
 
 ## 12. Recommended Fix Order (next sprint)
 
-1. **H-DB-1** — restore/remove `free_ends_at` (production error, blocking).
+1. ~~**H-DB-1** — restore/remove `free_ends_at`~~ ✅ resolved 2026-07-15.
 2. **H-SEC-1 / H-SEC-2** — lock down public SECURITY DEFINER + cron webhook auth.
 3. **H-AUDIT-1** — add audit triggers on fare tables.
 4. **H-ERR-1 / H-LOG-1** — surface silent failures on cron routes.
