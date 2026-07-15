@@ -67,6 +67,9 @@ export type DetailsJob = {
   driver_id: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
+  driver_cancel_requested_at?: string | null;
+  driver_cancel_reason?: string | null;
+  driver_cancel_note?: string | null;
   payment_status?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
