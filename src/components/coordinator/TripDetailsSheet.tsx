@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, decideDriverCancelRequest } from "@/lib/coordinator.functions";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -67,6 +67,9 @@ export type DetailsJob = {
   driver_id: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
+  driver_cancel_requested_at?: string | null;
+  driver_cancel_reason?: string | null;
+  driver_cancel_note?: string | null;
   payment_status?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
@@ -211,6 +214,20 @@ export function TripDetailsSheet({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const decideDriverCancelFn = useServerFn(decideDriverCancelRequest);
+  const decideDriverCancelMut = useMutation({
+    mutationFn: (action: "approve" | "reject") =>
+      decideDriverCancelFn({ data: { job_id: job.id, action } }) as Promise<{ ok: true }>,
+    onSuccess: (_r, action) => {
+      toast.success(action === "approve" ? "Trip cancelled" : "Driver kept on the trip");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["calendar-jobs"] });
+      qc.invalidateQueries({ queryKey: ["trip-details", job.id] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const { data: boardingApprovals } = useQuery({
     queryKey: ["coord-boarding-approvals", job.id],
     queryFn: () => boardingStatusFn({ data: { job_id: job.id } }) as Promise<BoardingApprovalRow[]>,
@@ -490,6 +507,34 @@ export function TripDetailsSheet({
               )}
             </div>
           )}
+
+          {job.driver_cancel_requested_at && (
+            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+              <div className="flex items-start gap-2">
+                <CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <div className="font-medium">Driver requested to cancel this trip</div>
+                  <div className="mt-0.5 opacity-90">
+                    Reason: {job.driver_cancel_reason || "—"}
+                    {job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive"
+                  disabled={decideDriverCancelMut.isPending}
+                  onClick={() => decideDriverCancelMut.mutate("approve")}>
+                  Approve cancel
+                </Button>
+                <Button size="sm" variant="outline"
+                  disabled={decideDriverCancelMut.isPending}
+                  onClick={() => decideDriverCancelMut.mutate("reject")}>
+                  Keep driver on trip
+                </Button>
+              </div>
+            </div>
+          )}
+
 
           {/* Early flight (green — good news, but coordinator should confirm) */}
           {flightEarly && (

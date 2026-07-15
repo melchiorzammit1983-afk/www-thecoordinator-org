@@ -2516,6 +2516,10 @@ export type Database = {
           dispatched_at: string | null
           driver_accepted_at: string | null
           driver_actual_minutes: number | null
+          driver_cancel_note: string | null
+          driver_cancel_reason: string | null
+          driver_cancel_requested_at: string | null
+          driver_cancel_requested_by: string | null
           driver_completed_at: string | null
           driver_external: boolean
           driver_hidden_at: string | null
@@ -2607,6 +2611,10 @@ export type Database = {
           dispatched_at?: string | null
           driver_accepted_at?: string | null
           driver_actual_minutes?: number | null
+          driver_cancel_note?: string | null
+          driver_cancel_reason?: string | null
+          driver_cancel_requested_at?: string | null
+          driver_cancel_requested_by?: string | null
           driver_completed_at?: string | null
           driver_external?: boolean
           driver_hidden_at?: string | null
@@ -2698,6 +2706,10 @@ export type Database = {
           dispatched_at?: string | null
           driver_accepted_at?: string | null
           driver_actual_minutes?: number | null
+          driver_cancel_note?: string | null
+          driver_cancel_reason?: string | null
+          driver_cancel_requested_at?: string | null
+          driver_cancel_requested_by?: string | null
           driver_completed_at?: string | null
           driver_external?: boolean
           driver_hidden_at?: string | null

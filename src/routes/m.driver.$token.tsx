@@ -15,6 +15,7 @@ import {
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
+  driverRequestCancel, driverWithdrawCancelRequest,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
@@ -72,6 +73,16 @@ const REJECT_REASONS = [
   "Other",
 ] as const;
 
+const CANCEL_REASONS = [
+  "No longer available",
+  "Vehicle issue / breakdown",
+  "Passenger issue",
+  "Safety concern",
+  "Traffic / unable to reach",
+  "Other",
+] as const;
+
+
 export const Route = createFileRoute("/m/driver/$token")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
@@ -114,6 +125,9 @@ type Job = {
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
+  driver_cancel_requested_at?: string | null;
+  driver_cancel_reason?: string | null;
+  driver_cancel_note?: string | null;
   status?: string;
   payment_status?: "pending" | "paid";
   drivers?: { name: string } | null;
@@ -1107,6 +1121,34 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // ----- Driver-initiated cancellation (requires coordinator approval) -----
+  const requestCancelFn = useServerFn(driverRequestCancel);
+  const withdrawCancelFn = useServerFn(driverWithdrawCancelRequest);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState<string>("");
+  const [cancelNote, setCancelNote] = useState("");
+  const requestCancelMut = useMutation({
+    mutationFn: () => requestCancelFn({ data: { token, job_id: job.id, reason: cancelReason, note: cancelNote || null } }),
+    onSuccess: () => {
+      toast.success("Cancellation request sent to coordinator");
+      setCancelOpen(false);
+      setCancelReason("");
+      setCancelNote("");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const withdrawCancelMut = useMutation({
+    mutationFn: () => withdrawCancelFn({ data: { token, job_id: job.id } }),
+    onSuccess: () => {
+      toast.success("Cancellation request withdrawn");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
+
   const activeForLive = !!job.driver_accepted_at && job.status !== "completed" && !job.deletion_requested_at;
   const { data: clientLive } = useQuery({
     queryKey: ["client-live", token, job.id],
@@ -1541,8 +1583,45 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
                 <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
               </Button>
             )}
+
+            {/* Post-acceptance: request coordinator-approved cancellation, any status. */}
+            {!!job.driver_accepted_at
+              && job.status !== "cancelled"
+              && job.status !== "completed" && (
+                job.driver_cancel_requested_at ? (
+                  <div className="sm:col-span-2 flex flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                    <div className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                      ⏳ Waiting for coordinator to approve your cancellation.
+                    </div>
+                    {job.driver_cancel_reason && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Reason: {job.driver_cancel_reason}{job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="self-start h-7 px-2 text-xs"
+                      disabled={withdrawCancelMut.isPending}
+                      onClick={() => withdrawCancelMut.mutate()}
+                    >
+                      Withdraw request
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <ThumbsDown className="h-4 w-4 mr-1.5" /> Cancel trip (needs coordinator approval)
+                  </Button>
+                )
+              )}
           </>
         )}
+
+
 
 
         <Button variant="outline" className="h-10" asChild>
@@ -1590,6 +1669,48 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
           </div>
         )}
       </div>
+
+      <Dialog open={cancelOpen} onOpenChange={(v) => { setCancelOpen(v); if (!v) { setCancelReason(""); setCancelNote(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request to cancel this trip?</DialogTitle>
+            <DialogDescription>
+              Cancellation isn't instant — the coordinator has to approve it. Please pick a reason so they can act quickly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Reason (required)</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {CANCEL_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setCancelReason(r)}
+                    className={`text-left text-sm rounded-md border px-3 py-2 transition ${cancelReason === r ? "border-destructive bg-destructive/10 font-medium" : "border-border hover:bg-muted"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Extra details (optional)</Label>
+              <Textarea rows={2} value={cancelNote} onChange={(e) => setCancelNote(e.target.value)}
+                placeholder="Anything the coordinator should know…" maxLength={300} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCancelOpen(false)}>Back</Button>
+            <Button variant="destructive" disabled={requestCancelMut.isPending || !cancelReason}
+              onClick={() => requestCancelMut.mutate()}>
+              {requestCancelMut.isPending ? "Sending…" : "Send cancellation request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
 
       <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) { setRejectReason(""); setRejectNote(""); } }}>
         <DialogContent>

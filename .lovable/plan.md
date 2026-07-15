@@ -1,96 +1,82 @@
+
 ## Goal
 
-Once the assigned driver has accepted a trip (`driver_accepted_at` set) OR the trip has progressed past `pending` (assigned / en_route / arrived / in_progress), the coordinator can no longer edit it directly. Any change becomes a **change request** that the driver must approve or reject from the driver manifest — mirroring the existing 2-hour client-booking pattern.
+Give the driver a **Cancel trip** button on their trip card that is available at **any status** (pending, en-route, arrived, in-progress). Tapping it does **not** cancel immediately — it sends a request to the coordinator, who must approve or reject. Mirrors the existing coordinator-side "request deletion → driver approves" flow, in reverse.
 
-## Locked actions
+## What's already there
 
-For a locked trip, these coordinator actions require driver approval:
+- Coordinator → Driver: `jobs.deletion_requested_at` + `driverApproveDeletion` (coord asks, driver approves).
+- Coordinator → Driver edits: `job_coord_change_requests` table + `CoordChangeRequestsPanel` on driver side.
+- Driver → Coordinator "Can't make it — Give back" already exists, but only **before** acceptance (`driverRejectJob`). Nothing exists for post-acceptance cancellation.
 
-- **Trip details** — from/to, pickup date/time, pax count, room number, vehicle, contact phone, flight numbers, `qr_strict_mode`, `tracking_enabled`.
-- **Driver reassignment** — swap to another driver, or unassign.
-- **Cancel / delete / hide** — soft `status="cancelled"`, `deleteJob` (already partially pending), hide.
-- **Fare / price** — new price proposals or edits to agreed fare.
+## Design
 
-Labels and internal-only notes stay editable (not driver-visible).
+### 1. Database (single migration)
 
-## Lock trigger
+Add to `public.jobs`:
+- `driver_cancel_requested_at timestamptz`
+- `driver_cancel_requested_by uuid` (driver.id)
+- `driver_cancel_reason text` (short enum-like string)
+- `driver_cancel_note text` (free text)
 
-A trip is **locked** when either is true:
-- `driver_accepted_at IS NOT NULL`, OR
-- `status <> 'pending'` (i.e. driver has already progressed it).
+Index: `create index on jobs (company_id) where driver_cancel_requested_at is not null;` so the coordinator inbox query is cheap.
 
-Admin accounts bypass the lock (existing `is_admin` check).
+No new table — this is a single pending flag on the job itself, same shape as `deletion_requested_at`.
 
-## Data model
+### 2. Server functions
 
-New table `public.job_coord_change_requests`:
+**Driver side** — new in `src/lib/coordinator-public.functions.ts`:
 
-```text
-id uuid pk
-job_id uuid → jobs (cascade)
-company_id uuid
-requested_by uuid (auth user)
-kind text  -- 'edit' | 'reassign' | 'cancel' | 'delete' | 'price'
-requested_changes jsonb -- {from_location, to_location, pickup_at, driver_id, ...}
-note text
-status text default 'pending' -- pending | approved | rejected | cancelled
-decided_at timestamptz
-decided_by_driver_id uuid → drivers
-decided_note text
-created_at / updated_at
-```
+- `driverRequestCancel({ token, job_id, reason, note })`
+  - Validates token → driver, verifies driver owns the job.
+  - Rejects if status is already `cancelled` or `completed`.
+  - Sets the four new fields.
+  - Inserts a `trip_messages` row (`sender_kind: system`) so both sides see it in chat.
+  - Records `trip_audit_log` event `driver_cancel_requested` (uses existing `record_trip_audit`).
+  - Returns `{ ok: true }`.
 
-RLS: coordinators of the job's company can `SELECT`/`INSERT`/`UPDATE own`; driver reads/updates via the driver token path (service role, scoped by `job_id + driver_id`); admin all. Standard GRANTs.
+- `driverWithdrawCancelRequest({ token, job_id })` — driver can retract before coord decides. Clears the fields, posts system message.
 
-Index: `(job_id, status)`.
+**Coordinator side** — new in `src/lib/coordinator.functions.ts`:
 
-## Server functions
+- `listPendingDriverCancels()` — returns jobs in the coordinator's company with `driver_cancel_requested_at is not null` (for a small inbox badge/panel).
+- `decideDriverCancelRequest({ job_id, decision: "approve" | "reject", note? })`
+  - `approve` → `status = 'cancelled'`, closes any open `job_wait_sessions`, clears `driver_cancel_requested_*`, posts system message, audit `driver_cancel_approved`.
+  - `reject` → clears the four fields, posts system message, audit `driver_cancel_rejected`. Trip continues.
 
-New in `src/lib/coordinator.functions.ts`:
+### 3. Driver UI (`src/routes/m.driver.$token.tsx`)
 
-- `requestJobChange({ job_id, kind, requested_changes, note })` — creates a pending change request, posts a system `trip_messages` row in `driver_coord` thread ("Coordinator requested a change — please review"), returns the request.
-- `listJobChangeRequests({ job_id })` — for the trip details sheet.
-- `cancelJobChangeRequest({ id })` — coordinator withdraws a pending request.
+- Add a **red outline "Cancel trip"** button in `JobCard`, always shown when `job.status !== 'cancelled' && job.status !== 'completed'` and `job.driver_accepted_at` is set (post-acceptance). The existing pre-acceptance "Can't make it — Give back" stays as-is.
+- When `job.driver_cancel_requested_at` is set: replace the button with a yellow "Waiting for coordinator approval to cancel…" pill + a "Withdraw request" link.
+- Reuses the existing reason/note dialog pattern from `rejectOpen` (reasons: *No longer available*, *Vehicle issue*, *Passenger issue*, *Safety concern*, *Other*).
+- Available even in Safety Mode (safety > convenience — but confirms via native dialog).
 
-Modify existing:
+### 4. Coordinator UI
 
-- `updateJob`, `assignDriver`, `updateJobStatus` (cancelled path), `deleteJob`, price-proposal write paths: **if locked**, do NOT mutate; instead delegate to `requestJobChange` under the appropriate `kind` and return `{ pending: true, request_id }`.
-- `deleteJob` already has a pending flow for `driver_accepted_at` — refactor to reuse the new table so all approval flows live in one place. Keep `deletion_requested_at` for backwards compat until UI is migrated in the same PR.
+- On each job row / trip card in the dispatch list (`DispatchTripList` or equivalent), when `driver_cancel_requested_at` is set, show an amber banner:
+  - "Driver requested cancellation — {reason}. {note}"
+  - **Approve cancel** (destructive) + **Reject** buttons wired to `decideDriverCancelRequest`.
+- Add the pending-cancel count to the existing `RouteOptimizationAlerts` / notification bell so coordinators see it in real time (piggybacks on the same realtime `jobs` channel — no new subscription).
 
-New in `src/lib/coordinator-public.functions.ts` (token-authenticated driver endpoints):
+### 5. Audit & chat coverage
 
-- `listPendingCoordChangesForDriver({ token })` — pending requests for jobs assigned to the driver.
-- `decideCoordChangeRequest({ token, request_id, approve, note })` — on approve, apply the `requested_changes` patch server-side using admin client, close the request, post system message; on reject, mark rejected with reason.
-
-## UI
-
-- **Trip details sheet** (`src/components/coordinator/TripDetailsSheet.tsx`): show a locked badge, list pending change requests with cancel button, disable direct-edit buttons in favor of "Request change".
-- **JobFormDialog**: when opened for a locked trip, header shows "Change request — needs driver approval"; Save submits `requestJobChange` instead of `updateJob`. Fare/price panel same treatment.
-- **Reassign driver menu**: same routing when locked.
-- **Cancel / Delete**: rename to "Request cancellation" / "Request deletion" on locked trips.
-- **Driver manifest** (`src/routes/m.driver.$token.tsx`): new "Coordinator requested a change" card per job showing the diff (before → after), Approve / Reject buttons + optional note. Toast + optimistic update.
-
-## Notifications
-
-- System `trip_messages` in `driver_coord` thread on request, approve, reject, cancel.
-- Reuse existing push infra (`driver_push_subs`) — send a push on request creation.
-
-## Copy / UX rules
-
-- Locked badge in coordinator UI: "Driver accepted — changes need driver approval".
-- Diff view lists only fields that changed vs current job.
-- Coordinator can have at most one pending request of each `kind` per job (unique partial index on `(job_id, kind) where status='pending'`).
-
-## Testing
-
-- Assign + driver accepts → edit from/to → verify no direct DB change, pending request row created, driver sees it and can approve → job updated; reject → job untouched.
-- Delete flow migrated: locked trip → deletion request → driver approves → job deleted.
-- Reassign locked trip → new driver only sees the job after old driver approves.
-- Admin edit on locked trip → still allowed (bypass).
-- Unlocked (pending, no `driver_accepted_at`) → coordinator edits directly, no request created (regression).
+Every state change (request / withdraw / approve / reject) posts a `trip_messages` system row AND calls `record_trip_audit` — so the immutable trip audit chain records the full lifecycle.
 
 ## Out of scope
 
-- Labels + internal notes remain directly editable.
-- Emergency-override paths (driver-initiated) unchanged.
-- No changes to client portal / 2-hour client rule.
+- No auto-reassignment on approval. The trip becomes `cancelled`; coordinator can duplicate / reassign manually if needed.
+- No payment/fare reversal logic — cancellation just changes status.
+- No client-portal notification of a *pending* driver cancel (client sees it only if coord approves and status flips to cancelled).
+
+## Files touched
+
+- `supabase/migrations/…driver_cancel_request.sql` (new)
+- `src/lib/coordinator-public.functions.ts` (add 2 fns)
+- `src/lib/coordinator.functions.ts` (add 2 fns)
+- `src/routes/m.driver.$token.tsx` (button + pending-state UI + dialog)
+- Coordinator dispatch component that renders each trip row (banner + Approve/Reject) — will identify exact file during implementation (likely `src/components/coordinator/DispatchTripList.tsx` and/or `TripDetailsSheet.tsx`).
+
+## Confirm before I build
+
+1. **Button placement**: single "Cancel trip" button post-acceptance (keeping today's pre-acceptance "Give back"), or one unified button at every status?
+2. **Coordinator can also force-cancel** without driver consent (today's behavior via status change), or should coordinator cancellations also become mutual after acceptance? I'll keep coordinator's existing power unchanged unless you say otherwise.
