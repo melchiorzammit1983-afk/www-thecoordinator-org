@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -13,6 +14,10 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
+import { registerServiceWorker } from "@/lib/pwa/register-sw";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
+
 
 function NotFoundComponent() {
   return (
@@ -131,6 +136,39 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Register the guarded service worker once on mount. The wrapper refuses
+  // to register in preview / dev / iframe / `?sw=off` contexts.
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
+  // Swap the manifest link per role so installed PWAs get the right name +
+  // icons + start_url. Runs on the client only.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const role: "driver" | "client" | "coordinator" =
+      pathname.startsWith("/m/driver") || pathname.startsWith("/coordinator/my-driving")
+        ? "driver"
+        : pathname.startsWith("/m/client") ||
+            pathname.startsWith("/c/") ||
+            pathname.startsWith("/t/") ||
+            pathname.startsWith("/track/") ||
+            pathname.startsWith("/portal/") ||
+            pathname.startsWith("/h/")
+          ? "client"
+          : "coordinator";
+    const href = `/manifest.${role}.webmanifest`;
+    let link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "manifest";
+      document.head.appendChild(link);
+    }
+    if (link.href.endsWith(href)) return;
+    link.href = href;
+  }, [pathname]);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -145,6 +183,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <Outlet />
       <Toaster />
+      <InstallPrompt />
+      <UpdatePrompt />
     </QueryClientProvider>
   );
 }
+

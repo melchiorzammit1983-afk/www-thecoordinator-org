@@ -1,0 +1,20 @@
+{
+  "driver": {
+    "version": "0.0.0",
+    "released_at": null,
+    "apk_url": null,
+    "notes": "Driver APK not published yet. Run scripts/build-driver-apk.sh on a developer machine and upload the resulting APK to public/downloads/driver-latest.apk, then update this file."
+  },
+  "client": {
+    "version": "1.0.0",
+    "released_at": "2026-07-15",
+    "url": "/m/client",
+    "notes": "Installable PWA. iOS 16.4+ required for push notifications."
+  },
+  "coordinator": {
+    "version": "1.0.0",
+    "released_at": "2026-07-15",
+    "url": "/coordinator",
+    "notes": "Installable PWA. Desktop + tablet + mobile."
+  }
+}

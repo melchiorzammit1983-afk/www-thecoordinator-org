@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RequestAccessRouteImport } from './routes/request-access'
+import { Route as InstallRouteImport } from './routes/install'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
@@ -74,6 +75,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const RequestAccessRoute = RequestAccessRouteImport.update({
   id: '/request-access',
   path: '/request-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstallRoute = InstallRouteImport.update({
+  id: '/install',
+  path: '/install',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -390,6 +396,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
@@ -447,6 +454,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/c/$token': typeof CTokenRoute
@@ -504,6 +512,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
@@ -563,6 +572,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/install'
     | '/request-access'
     | '/sitemap.xml'
     | '/admin'
@@ -620,6 +630,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/install'
     | '/request-access'
     | '/sitemap.xml'
     | '/c/$token'
@@ -676,6 +687,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/admin-auth'
     | '/auth'
+    | '/install'
     | '/request-access'
     | '/sitemap.xml'
     | '/_authenticated/admin'
@@ -735,6 +747,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminAuthRoute: typeof AdminAuthRoute
   AuthRoute: typeof AuthRoute
+  InstallRoute: typeof InstallRoute
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   CTokenRoute: typeof CTokenRoute
@@ -774,6 +787,13 @@ declare module '@tanstack/react-router' {
       path: '/request-access'
       fullPath: '/request-access'
       preLoaderRoute: typeof RequestAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/install': {
+      id: '/install'
+      path: '/install'
+      fullPath: '/install'
+      preLoaderRoute: typeof InstallRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1284,6 +1304,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminAuthRoute: AdminAuthRoute,
   AuthRoute: AuthRoute,
+  InstallRoute: InstallRoute,
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   CTokenRoute: CTokenRoute,

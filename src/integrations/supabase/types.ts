@@ -2875,6 +2875,117 @@ export type Database = {
           },
         ]
       }
+      notification_log: {
+        Row: {
+          body: string | null
+          category: string
+          clicked_at: string | null
+          company_id: string | null
+          created_at: string
+          data: Json
+          delivered_at: string | null
+          device_id: string | null
+          error: string | null
+          id: string
+          sent_at: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          category: string
+          clicked_at?: string | null
+          company_id?: string | null
+          created_at?: string
+          data?: Json
+          delivered_at?: string | null
+          device_id?: string | null
+          error?: string | null
+          id?: string
+          sent_at?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          category?: string
+          clicked_at?: string | null
+          company_id?: string | null
+          created_at?: string
+          data?: Json
+          delivered_at?: string | null
+          device_id?: string | null
+          error?: string | null
+          id?: string
+          sent_at?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_log_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "push_devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          boarding: boolean
+          chat: boolean
+          created_at: string
+          driver_status: boolean
+          job_updated: boolean
+          new_job: boolean
+          route_optimization: boolean
+          safety: boolean
+          security: boolean
+          trip_lifecycle: boolean
+          updated_at: string
+          user_id: string
+          waiting: boolean
+        }
+        Insert: {
+          boarding?: boolean
+          chat?: boolean
+          created_at?: string
+          driver_status?: boolean
+          job_updated?: boolean
+          new_job?: boolean
+          route_optimization?: boolean
+          safety?: boolean
+          security?: boolean
+          trip_lifecycle?: boolean
+          updated_at?: string
+          user_id: string
+          waiting?: boolean
+        }
+        Update: {
+          boarding?: boolean
+          chat?: boolean
+          created_at?: string
+          driver_status?: boolean
+          job_updated?: boolean
+          new_job?: boolean
+          route_optimization?: boolean
+          safety?: boolean
+          security?: boolean
+          trip_lifecycle?: boolean
+          updated_at?: string
+          user_id?: string
+          waiting?: boolean
+        }
+        Relationships: []
+      }
       password_reset_requests: {
         Row: {
           created_at: string
@@ -3585,6 +3696,62 @@ export type Database = {
           },
         ]
       }
+      push_devices: {
+        Row: {
+          auth: string | null
+          company_id: string | null
+          created_at: string
+          endpoint: string | null
+          id: string
+          last_seen_at: string
+          p256dh: string | null
+          platform: string
+          role: string
+          token: string | null
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth?: string | null
+          company_id?: string | null
+          created_at?: string
+          endpoint?: string | null
+          id?: string
+          last_seen_at?: string
+          p256dh?: string | null
+          platform: string
+          role: string
+          token?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string | null
+          company_id?: string | null
+          created_at?: string
+          endpoint?: string | null
+          id?: string
+          last_seen_at?: string
+          p256dh?: string | null
+          platform?: string
+          role?: string
+          token?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_devices_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -3872,6 +4039,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_security_settings: {
+        Row: {
+          auto_lock_seconds: number
+          biometric_enabled: boolean
+          created_at: string
+          require_biometric_on_open: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_lock_seconds?: number
+          biometric_enabled?: boolean
+          created_at?: string
+          require_biometric_on_open?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_lock_seconds?: number
+          biometric_enabled?: boolean
+          created_at?: string
+          require_biometric_on_open?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      webauthn_credentials: {
+        Row: {
+          created_at: string
+          credential_id: string
+          device_label: string | null
+          id: string
+          last_used_at: string | null
+          public_key: string
+          sign_count: number
+          transports: string[]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          credential_id: string
+          device_label?: string | null
+          id?: string
+          last_used_at?: string | null
+          public_key: string
+          sign_count?: number
+          transports?: string[]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          credential_id?: string
+          device_label?: string | null
+          id?: string
+          last_used_at?: string | null
+          public_key?: string
+          sign_count?: number
+          transports?: string[]
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
