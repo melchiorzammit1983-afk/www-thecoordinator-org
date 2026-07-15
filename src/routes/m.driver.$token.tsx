@@ -2106,9 +2106,9 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         </button>
       )}
 
-      {showLive && routeHint && (
+      {showLive && (
         <div className="px-5 pt-4">
-          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 min-h-[72px]">
             <div className="flex items-start gap-3">
               <div className="rounded-full bg-background/90 p-2 text-primary shadow-sm">
                 <ManeuverArrow maneuver={live.next_maneuver} className="h-5 w-5" />
@@ -2120,12 +2120,18 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
                 <div className="text-sm font-semibold text-foreground truncate">
                   To {destinationLabel}
                 </div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{routeHint}</div>
+                <div
+                  className="mt-1 text-xs leading-relaxed text-muted-foreground truncate transition-opacity duration-300"
+                  style={{ opacity: routeHint ? 1 : 0.6 }}
+                >
+                  {routeHint ?? "Calculating next turn…"}
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
 
       <div className="px-5 pt-4 pb-3">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
