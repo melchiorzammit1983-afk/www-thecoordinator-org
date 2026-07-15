@@ -1,0 +1,15 @@
+{
+  "id": "/m/client",
+  "name": "The Coordinator — Trip Portal",
+  "short_name": "Trip Portal",
+  "start_url": "/m/client",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f766e",
+  "theme_color": "#0f766e",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/client-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/client-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

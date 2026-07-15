@@ -1,82 +1,128 @@
+# Mobile Deployment Plan — Role-Targeted + Biometric Unlock
 
-## Goal
+Additive only. No changes to dispatch, safety, audit, or route-optimization workflows.
 
-Give the driver a **Cancel trip** button on their trip card that is available at **any status** (pending, en-route, arrived, in-progress). Tapping it does **not** cancel immediately — it sends a request to the coordinator, who must approve or reject. Mirrors the existing coordinator-side "request deletion → driver approves" flow, in reverse.
+## Role targeting
 
-## What's already there
+| Role | Delivery | Push | Offline | GPS | Biometric |
+|---|---|---|---|---|---|
+| **Driver** | Android APK (Capacitor) | FCM native | App-shell + last manifest cache | Background location | Native fingerprint / face unlock |
+| **Client** | Installable PWA | Web Push (VAPID) | App-shell + trip cache | Foreground only | WebAuthn (platform authenticator) |
+| **Coordinator** | Installable PWA now; APK scaffolded for later | Web Push (VAPID) | App-shell | n/a | WebAuthn (platform authenticator) |
 
-- Coordinator → Driver: `jobs.deletion_requested_at` + `driverApproveDeletion` (coord asks, driver approves).
-- Coordinator → Driver edits: `job_coord_change_requests` table + `CoordChangeRequestsPanel` on driver side.
-- Driver → Coordinator "Can't make it — Give back" already exists, but only **before** acceptance (`driverRejectJob`). Nothing exists for post-acceptance cancellation.
+## Phase 1 — PWA (Client + Coordinator)
 
-## Design
+- `vite-plugin-pwa` in `generateSW` mode, `filename: 'sw.js'`, `registerType: 'autoUpdate'`, `injectRegister: null`, `devOptions.enabled: false`.
+- Guarded `src/lib/pwa/register-sw.ts` — refuses on preview / iframe / dev / `?sw=off`; unregisters stale `/sw.js` in those contexts. Called from `src/start.ts`. Replaces existing `public/sw.js` at the same path so returning browsers auto-upgrade.
+- Workbox: `NetworkFirst` navigations, `CacheFirst` hashed assets, denylist `/~oauth`, `/_serverFn`, `/api`.
+- Manifests: `public/manifest.client.webmanifest` (`start_url: /m/client`), `public/manifest.coordinator.webmanifest` (`start_url: /coordinator`). Picked per pathname in `src/routes/__root.tsx` `head().links`.
+- Icons via `imagegen`: `public/icons/{client,coordinator}-{192,512,maskable-512}.png` + iOS apple-touch-icon.
+- `src/components/pwa/InstallPrompt.tsx` — role-aware banner using `beforeinstallprompt`; iOS Safari fallback instructions.
+- `src/components/pwa/UpdatePrompt.tsx` — toast on `onNeedRefresh` → `updateSW(true)`. Version = `import.meta.env.VITE_APP_VERSION`.
 
-### 1. Database (single migration)
+## Phase 2 — Driver Android APK (Capacitor)
 
-Add to `public.jobs`:
-- `driver_cancel_requested_at timestamptz`
-- `driver_cancel_requested_by uuid` (driver.id)
-- `driver_cancel_reason text` (short enum-like string)
-- `driver_cancel_note text` (free text)
+Configs in repo; build runs on developer machine (Lovable sandbox cannot build APKs).
 
-Index: `create index on jobs (company_id) where driver_cancel_requested_at is not null;` so the coordinator inbox query is cheap.
+- Update `capacitor.config.ts`: `appId: org.thecoordinator.driver`, `appName: "Coordinator Driver"`, `server.url` published domain.
+- Add `capacitor.coordinator.config.ts` scaffold for later.
+- Plugins: `@capacitor/push-notifications`, `@capacitor/geolocation`, `@capacitor/camera`, `@capacitor/splash-screen`, `@capacitor/app`, `@capacitor/status-bar`, `@capacitor-community/background-geolocation`, **`@capacitor-community/biometric-auth`** (or `capacitor-native-biometric`).
+- Permissions (documented one-time edits): FINE/COARSE/BACKGROUND_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION, CAMERA, READ_MEDIA_IMAGES, POST_NOTIFICATIONS, INTERNET, **USE_BIOMETRIC + USE_FINGERPRINT**.
+- Signing: upload keystore generated once; fingerprint recorded in plan doc.
+- `scripts/build-driver-apk.sh`: `bun run build && npx cap sync android && cd android && ./gradlew assembleRelease` → `dist-apk/driver-v{version}.apk`.
 
-No new table — this is a single pending flag on the job itself, same shape as `deletion_requested_at`.
+## Phase 3 — Push Notifications
 
-### 2. Server functions
+**Migration** (with GRANT + RLS):
+- `push_devices` (`user_id`, `company_id`, `role`, `platform`, `token`, `endpoint`, `p256dh`, `auth`, `last_seen_at`, unique `(user_id, token)`).
+- `notification_preferences` (per-category booleans).
+- `notification_log` (`user_id`, `company_id`, `category`, `title`, `body`, `data`, `sent_at`, `delivered_at`, `clicked_at`, `error`, `device_id`).
+- RLS: user owns own devices + prefs; log readable by owner and company admins via `has_role`; `service_role` writes. GRANTs to `authenticated` + `service_role`.
 
-**Driver side** — new in `src/lib/coordinator-public.functions.ts`:
+**Server**
+- `src/lib/push.functions.ts`: `registerPushDevice`, `unregisterPushDevice`, `updateNotificationPreferences`.
+- `src/lib/push.server.ts` (server-only, dynamic-imported): `sendPushToUser(userId, category, payload)` — resolves devices, checks prefs + company, fans out to FCM HTTP v1 + Web Push (VAPID), writes `notification_log`. Rate-limited.
+- Trigger points (additive, no workflow edits):
+  - Driver: assign, boarding decided, safety alert, coord chat, emergency-override message, coord change request decided.
+  - Coordinator: boarding request, waiting proposal, driver override, breakdown/safety event, route optimization pending, driver cancel request.
+  - Client: driver assigned, arrived, delayed threshold, trip started, trip completed.
 
-- `driverRequestCancel({ token, job_id, reason, note })`
-  - Validates token → driver, verifies driver owns the job.
-  - Rejects if status is already `cancelled` or `completed`.
-  - Sets the four new fields.
-  - Inserts a `trip_messages` row (`sender_kind: system`) so both sides see it in chat.
-  - Records `trip_audit_log` event `driver_cancel_requested` (uses existing `record_trip_audit`).
-  - Returns `{ ok: true }`.
+**Secrets requested via `add_secret`:** `FCM_SERVICE_ACCOUNT_JSON`, `VAPID_PUBLIC_KEY` (+ `VITE_VAPID_PUBLIC_KEY`), `VAPID_PRIVATE_KEY`.
 
-- `driverWithdrawCancelRequest({ token, job_id })` — driver can retract before coord decides. Clears the fields, posts system message.
+**Client wiring**
+- Web: `public/firebase-messaging-sw.js` kept separate from app-shell SW (per PWA skill). Registered after login.
+- Native (driver APK): `@capacitor/push-notifications` on launch; token upserted via `registerPushDevice`.
+- Settings UI: coordinator page, driver sheet, client toggle.
 
-**Coordinator side** — new in `src/lib/coordinator.functions.ts`:
+## Phase 4 — Biometric Unlock
 
-- `listPendingDriverCancels()` — returns jobs in the coordinator's company with `driver_cancel_requested_at is not null` (for a small inbox badge/panel).
-- `decideDriverCancelRequest({ job_id, decision: "approve" | "reject", note? })`
-  - `approve` → `status = 'cancelled'`, closes any open `job_wait_sessions`, clears `driver_cancel_requested_*`, posts system message, audit `driver_cancel_approved`.
-  - `reject` → clears the four fields, posts system message, audit `driver_cancel_rejected`. Trip continues.
+Goal: after first successful login the app can be re-opened / re-foregrounded by fingerprint (or Face ID / Face Unlock) instead of re-entering the password. Session stays a normal Supabase session; biometric only guards local access to it.
 
-### 3. Driver UI (`src/routes/m.driver.$token.tsx`)
+**Migration**
+- `user_security_settings` — `user_id` PK, `biometric_enabled bool`, `require_biometric_on_open bool`, `auto_lock_seconds int` (default 60), `updated_at`. GRANT + RLS: owner-only.
 
-- Add a **red outline "Cancel trip"** button in `JobCard`, always shown when `job.status !== 'cancelled' && job.status !== 'completed'` and `job.driver_accepted_at` is set (post-acceptance). The existing pre-acceptance "Can't make it — Give back" stays as-is.
-- When `job.driver_cancel_requested_at` is set: replace the button with a yellow "Waiting for coordinator approval to cancel…" pill + a "Withdraw request" link.
-- Reuses the existing reason/note dialog pattern from `rejectOpen` (reasons: *No longer available*, *Vehicle issue*, *Passenger issue*, *Safety concern*, *Other*).
-- Available even in Safety Mode (safety > convenience — but confirms via native dialog).
+**Native driver APK**
+- Plugin: `@capacitor-community/biometric-auth`.
+- `src/lib/biometric/native.ts` — `isAvailable()`, `enroll(userId)` (stores a random device-binding secret in Android Keystore behind biometric), `unlock()` (prompts fingerprint/face; on success returns the secret which is used to decrypt the cached Supabase refresh token in Capacitor Secure Storage).
+- App lifecycle: on `App.appStateChange` → background >`auto_lock_seconds`, clear in-memory session and show lock screen. Lock screen has fingerprint prompt + fallback "Sign in with password".
+- First-run flow: after successful password login → prompt "Enable fingerprint unlock?" → if yes, `enroll` + persist `user_security_settings.biometric_enabled = true`.
 
-### 4. Coordinator UI
+**PWA (Client + Coordinator)**
+- WebAuthn `PublicKeyCredential` with `authenticatorSelection.authenticatorAttachment: 'platform'` + `userVerification: 'required'` — uses OS fingerprint/Face ID/Windows Hello.
+- New tables `webauthn_credentials` (`user_id`, `credential_id`, `public_key`, `sign_count`, `transports`, `created_at`, `last_used_at`) — GRANT + RLS: owner reads; server writes via service role.
+- Server fns in `src/lib/biometric/webauthn.functions.ts`:
+  - `beginRegistration` → returns challenge; `finishRegistration` → verifies attestation, stores credential.
+  - `beginAssertion` → challenge; `finishAssertion` → verifies signature. On success, calls a `service_role` helper to mint a fresh Supabase session via `admin.generateLink` / `signInWithIdToken` pattern OR unlocks a locally-cached refresh token protected by a random device key held behind the WebAuthn credential (chosen approach: local unlock only — no server-issued session — so we never bypass Supabase auth for a new device).
+- Uses `@simplewebauthn/server` + `@simplewebauthn/browser`.
+- Lock UI: `src/components/biometric/LockScreen.tsx` — shown when `require_biometric_on_open` and app was backgrounded past `auto_lock_seconds`. Fallback: "Sign in with password".
+- Settings UI: toggle in coordinator profile and in client portal settings — "Unlock with fingerprint / Face ID" + auto-lock timer.
 
-- On each job row / trip card in the dispatch list (`DispatchTripList` or equivalent), when `driver_cancel_requested_at` is set, show an amber banner:
-  - "Driver requested cancellation — {reason}. {note}"
-  - **Approve cancel** (destructive) + **Reject** buttons wired to `decideDriverCancelRequest`.
-- Add the pending-cancel count to the existing `RouteOptimizationAlerts` / notification bell so coordinators see it in real time (piggybacks on the same realtime `jobs` channel — no new subscription).
+**Security rules**
+- Biometric is an **unlock**, not a login: no biometric flow creates a Supabase session on a fresh device — password (or existing OAuth) always required to enroll first.
+- Enrollment binds to a device-generated credential; loss of device just requires re-enrollment on new device.
+- Enrollment + unlock events written to `trip_audit_log`-adjacent `notification_log` (`category: 'security'`) so admins can see suspicious re-enrollments.
+- No secret material stored server-side; server keeps only the WebAuthn public key or (native) an opaque enrollment marker.
 
-### 5. Audit & chat coverage
+## Phase 5 — Download Portal
 
-Every state change (request / withdraw / approve / reject) posts a `trip_messages` system row AND calls `record_trip_audit` — so the immutable trip audit chain records the full lifecycle.
+- Public route `src/routes/install.tsx`:
+  - **Driver** → APK download + unknown-sources instructions + QR of APK URL.
+  - **Client** → "Install app" (`beforeinstallprompt`) + iOS Add-to-Home-Screen steps + QR of `/m/client`.
+  - **Coordinator** → "Install app" + QR of `/coordinator`.
+- Hosting: `public/downloads/driver-latest.apk` + versioned copies; `public/releases.json`.
+- `qrcode` npm dep.
+- Linked from auth footer and coordinator More menu.
 
-## Out of scope
+## Phase 6 — Mobile UX Review
 
-- No auto-reassignment on approval. The trip becomes `cancelled`; coordinator can duplicate / reassign manually if needed.
-- No payment/fare reversal logic — cancellation just changes status.
-- No client-portal notification of a *pending* driver cancel (client sees it only if coord approves and status flips to cancelled).
+`docs/MOBILE_UX_REVIEW.md`: driver, client, coordinator sweep. Touch ≥44px, font ≥14px, safe-area padding, permission-prompt copy, offline banner, notification opt-in placement, biometric prompt copy. Spacing/typography/copy only.
 
-## Files touched
+## Security
 
-- `supabase/migrations/…driver_cancel_request.sql` (new)
-- `src/lib/coordinator-public.functions.ts` (add 2 fns)
-- `src/lib/coordinator.functions.ts` (add 2 fns)
-- `src/routes/m.driver.$token.tsx` (button + pending-state UI + dialog)
-- Coordinator dispatch component that renders each trip row (banner + Approve/Reject) — will identify exact file during implementation (likely `src/components/coordinator/DispatchTripList.tsx` and/or `TripDetailsSheet.tsx`).
+- APK signed with upload keystore; fingerprint documented.
+- All calls go through existing `requireSupabaseAuth`; RLS unchanged.
+- Push server verifies device `user_id` + `company_id` before send.
+- Biometric unlock never bypasses Supabase auth for new devices; server never stores biometric templates.
+- Existing audit trail + anti-tampering untouched.
 
-## Confirm before I build
+## Risks & Rollback
 
-1. **Button placement**: single "Cancel trip" button post-acceptance (keeping today's pre-acceptance "Give back"), or one unified button at every status?
-2. **Coordinator can also force-cancel** without driver consent (today's behavior via status change), or should coordinator cancellations also become mutual after acceptance? I'll keep coordinator's existing power unchanged unless you say otherwise.
+- **SW breakage in preview** → guarded wrapper + `?sw=off`; kill-switch worker per PWA skill.
+- **iOS Web Push** → iOS 16.4+ Home-Screen install required; portal shows this.
+- **Sandbox cannot build APK** → docs + scripts; user runs locally.
+- **WebAuthn browser support** → falls back to password automatically; toggle hidden when `PublicKeyCredential` absent.
+- **Biometric lockout / no fingerprint** → password fallback always available; toggle can be disabled from settings.
+- **FCM cost / spam** → rate limit + prefs; `push_enabled` flag in `admin_portal_settings` for global kill.
+- **Rollback**: PWA — kill-switch SW, remove `VitePWA`. Push — flip `push_enabled=false`; tables retained. APK — publish previous version. Biometric — toggle off in `user_security_settings` (data retained).
+
+## Build order
+
+1. `docs/MOBILE_DEPLOYMENT_PLAN.md` (this plan, expanded).
+2. Phase 1 PWA (manifests, guarded SW, install/update prompts).
+3. Phase 3 DB migration + push server + web push registration on login.
+4. Phase 4 biometric: DB (`user_security_settings`, `webauthn_credentials`), WebAuthn server fns, LockScreen, settings toggle.
+5. Phase 5 download portal.
+6. Phase 2 Capacitor driver-APK config, splash/icons, biometric plugin wiring, build script + docs.
+7. Native push wiring inside driver APK.
+8. Phase 6 UX sweep.
+9. `docs/MOBILE_DEPLOYMENT_COMPLETED.md` + `docs/MOBILE_MANUAL_TESTING.md` (adds biometric enroll/unlock/fallback scenarios).
