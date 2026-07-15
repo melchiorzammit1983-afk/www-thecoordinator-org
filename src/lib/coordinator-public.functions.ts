@@ -147,7 +147,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     }
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });
@@ -197,7 +197,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       loadCompanyBranding(link.company_id),
       loadCompanyFeatures(link.company_id),
       supabaseAdmin.from("companies")
-        .select("safety_mode_threshold_kmh, safety_mode_enabled, safety_mode_allow_override, auto_next_job_enabled")
+        .select("safety_mode_threshold_kmh, safety_mode_enabled, safety_mode_allow_override, auto_next_job_enabled, arrival_radius_m")
         .eq("id", link.company_id)
         .maybeSingle(),
     ]);
@@ -212,6 +212,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
         safety_mode_enabled: (companySettings.data as any)?.safety_mode_enabled ?? true,
         safety_mode_allow_override: (companySettings.data as any)?.safety_mode_allow_override ?? true,
         auto_next_job_enabled: (companySettings.data as any)?.auto_next_job_enabled ?? true,
+        arrival_radius_m: (companySettings.data as any)?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M,
       },
     };
   });
