@@ -1580,8 +1580,45 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
                 <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
               </Button>
             )}
+
+            {/* Post-acceptance: request coordinator-approved cancellation, any status. */}
+            {!!job.driver_accepted_at
+              && job.status !== "cancelled"
+              && job.status !== "completed" && (
+                job.driver_cancel_requested_at ? (
+                  <div className="sm:col-span-2 flex flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                    <div className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                      ⏳ Waiting for coordinator to approve your cancellation.
+                    </div>
+                    {job.driver_cancel_reason && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Reason: {job.driver_cancel_reason}{job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="self-start h-7 px-2 text-xs"
+                      disabled={withdrawCancelMut.isPending}
+                      onClick={() => withdrawCancelMut.mutate()}
+                    >
+                      Withdraw request
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <ThumbsDown className="h-4 w-4 mr-1.5" /> Cancel trip (needs coordinator approval)
+                  </Button>
+                )
+              )}
           </>
         )}
+
+
 
 
         <Button variant="outline" className="h-10" asChild>
