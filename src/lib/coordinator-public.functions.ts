@@ -197,7 +197,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       loadCompanyBranding(link.company_id),
       loadCompanyFeatures(link.company_id),
       supabaseAdmin.from("companies")
-        .select("safety_mode_threshold_kmh, safety_mode_enabled, safety_mode_allow_override")
+        .select("safety_mode_threshold_kmh, safety_mode_enabled, safety_mode_allow_override, auto_next_job_enabled")
         .eq("id", link.company_id)
         .maybeSingle(),
     ]);
@@ -211,6 +211,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
         safety_mode_threshold_kmh: (companySettings.data as any)?.safety_mode_threshold_kmh ?? 10,
         safety_mode_enabled: (companySettings.data as any)?.safety_mode_enabled ?? true,
         safety_mode_allow_override: (companySettings.data as any)?.safety_mode_allow_override ?? true,
+        auto_next_job_enabled: (companySettings.data as any)?.auto_next_job_enabled ?? true,
       },
     };
   });
