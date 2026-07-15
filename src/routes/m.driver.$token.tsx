@@ -1354,7 +1354,15 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
           </div>
           <div className="flex-1 min-w-0 space-y-2">
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pickup</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pickup</div>
+                {driverPos && job.pickup_lat != null && job.pickup_lng != null && (
+                  <GpsRadiusChip
+                    distanceM={haversineMeters(driverPos.lat, driverPos.lng, job.pickup_lat, job.pickup_lng)}
+                    thresholdM={arrivalRadiusM}
+                  />
+                )}
+              </div>
               <div className="text-base font-bold leading-tight break-words">{displayLocation(job.from_location, job.pickup_display_name)}</div>
               {job.from_flight && (
                 <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
@@ -1368,7 +1376,15 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
               )}
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Drop-off</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Drop-off</div>
+                {driverPos && job.dropoff_lat != null && job.dropoff_lng != null && (
+                  <GpsRadiusChip
+                    distanceM={haversineMeters(driverPos.lat, driverPos.lng, job.dropoff_lat, job.dropoff_lng)}
+                    thresholdM={arrivalRadiusM}
+                  />
+                )}
+              </div>
               <div className="text-base font-bold leading-tight break-words">{displayLocation(job.to_location, job.dropoff_display_name)}</div>
               {job.to_flight && (
                 <div className="text-xs mt-0.5 inline-flex items-center gap-1 text-muted-foreground">
