@@ -1030,7 +1030,7 @@ function DriverManifest() {
             </div>
           )}
           {jobs.map((j) => (
-            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
 
 
@@ -1046,7 +1046,7 @@ function DriverManifest() {
               {showArchived && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
-                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
                   ))}
                 </div>
               )}
