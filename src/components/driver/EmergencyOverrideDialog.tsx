@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Camera, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,28 @@ type EmergencyOverrideDialogJob = {
   status: string | null | undefined;
 };
 
+const MAX_PHOTO_BYTES = 5_000_000;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("photo_read_failed"));
+    r.onload = () => resolve(String(r.result ?? ""));
+    r.readAsDataURL(file);
+  });
+}
+
+async function captureLivePosition(): Promise<{ lat: number; lng: number; accuracy_m: number } | null> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) return null;
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 4000, maximumAge: 15_000 },
+    );
+  });
+}
+
 export function EmergencyOverrideDialog({
   open,
   onOpenChange,
@@ -51,13 +73,16 @@ export function EmergencyOverrideDialog({
   const [action, setAction] = useState<EmergencyOverrideAction | null>(null);
   const [reason, setReason] = useState<EmergencyOverrideReason | null>(null);
   const [reasonNote, setReasonNote] = useState("");
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) {
       setAction(null);
       setReason(null);
       setReasonNote("");
+      setPhotoDataUrl(null);
       setStep(1);
       return;
     }
@@ -65,9 +90,24 @@ export function EmergencyOverrideDialog({
     setStep(1);
   }, [actions, open]);
 
+  const handlePhotoPick = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error("Photo is too large (max 5 MB)");
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setPhotoDataUrl(dataUrl);
+    } catch {
+      toast.error("Could not read the photo");
+    }
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (!job || !action || !reason) throw new Error("missing_override_selection");
+      const pos = await captureLivePosition();
       return emergencyFn({
         data: {
           token,
@@ -75,6 +115,10 @@ export function EmergencyOverrideDialog({
           action,
           reason,
           reason_note: reasonNote.trim() || undefined,
+          gps_lat: pos?.lat,
+          gps_lng: pos?.lng,
+          gps_accuracy_m: pos?.accuracy_m,
+          photo_data_url: photoDataUrl ?? undefined,
         },
       });
     },
@@ -151,6 +195,40 @@ export function EmergencyOverrideDialog({
                 placeholder="Add any details the coordinator should review later."
               />
             </div>
+
+            <div className="space-y-2">
+              <Label>Photo evidence (optional)</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhotoPick(e.target.files?.[0] ?? null)}
+              />
+              {photoDataUrl ? (
+                <div className="relative overflow-hidden rounded-xl border">
+                  <img src={photoDataUrl} alt="Override evidence" className="max-h-56 w-full object-cover" />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 rounded-full bg-black/70 p-1.5 text-white"
+                    onClick={() => setPhotoDataUrl(null)}
+                    aria-label="Remove photo"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Camera className="mr-2 h-4 w-4" /> Attach photo
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -166,6 +244,11 @@ export function EmergencyOverrideDialog({
               {reasonNote.trim() && (
                 <div className="mt-3 rounded-lg bg-background/80 p-3 text-xs text-muted-foreground">
                   {reasonNote.trim()}
+                </div>
+              )}
+              {photoDataUrl && (
+                <div className="mt-3 overflow-hidden rounded-lg border">
+                  <img src={photoDataUrl} alt="Override evidence" className="max-h-40 w-full object-cover" />
                 </div>
               )}
             </div>

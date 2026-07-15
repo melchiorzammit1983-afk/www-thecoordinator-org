@@ -141,6 +141,8 @@ type DriverManifestResponse = {
   branding: BrandingInfo;
   companySettings?: {
     safety_mode_threshold_kmh?: number | null;
+    safety_mode_enabled?: boolean | null;
+    safety_mode_allow_override?: boolean | null;
   };
 } | null;
 
@@ -576,9 +578,14 @@ function DriverManifest() {
   const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
   const [lastSpeedAt, setLastSpeedAt] = useState<number | null>(null);
   const safetyThresholdKmh = data?.companySettings?.safety_mode_threshold_kmh ?? 10;
+  const safetyEnabled = data?.companySettings?.safety_mode_enabled ?? true;
+  const safetyAllowOverride = data?.companySettings?.safety_mode_allow_override ?? true;
+  const [safetyUnlockedUntil, setSafetyUnlockedUntil] = useState(0);
   const { isSafetyMode, speedKmh } = useSafetyMode({
     speedMps: currentSpeedMps,
     thresholdKmh: safetyThresholdKmh,
+    enabled: safetyEnabled,
+    unlockedUntilMs: safetyUnlockedUntil,
   });
 
   useEffect(() => {
@@ -783,7 +790,13 @@ function DriverManifest() {
 
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
-      {!navigateMode && isSafetyMode && <SafetyModeOverlay speedKmh={speedKmh} />}
+      {!navigateMode && isSafetyMode && (
+        <SafetyModeOverlay
+          speedKmh={speedKmh}
+          allowOverride={safetyAllowOverride}
+          onUnlock={() => setSafetyUnlockedUntil(Date.now() + 30_000)}
+        />
+      )}
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
       <DriverDashboardMap
         activeJob={mapJob}

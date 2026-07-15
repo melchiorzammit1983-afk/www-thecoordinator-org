@@ -3154,7 +3154,7 @@ function BoardingApprovalAlertPanel({
                 {" "}Cancelled {Number(a.pax_summary?.cancelled ?? 0)} · Pending {Number(a.pax_summary?.pending ?? 0)}
               </div>
               <div className="text-[10px] text-muted-foreground">
-                Requested {formatMaltaDateTime(a.requested_at).time}
+                Requested {formatMaltaDateTime(a.requested_at)}
               </div>
               {a.driver_note && <div className="text-[10px] text-muted-foreground truncate">"{a.driver_note}"</div>}
             </button>

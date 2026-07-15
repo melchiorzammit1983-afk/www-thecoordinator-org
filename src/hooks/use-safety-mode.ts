@@ -16,9 +16,15 @@ function normalizeSpeedMps(speedMps: number | null | undefined): number | null {
 export function useSafetyMode({
   speedMps,
   thresholdKmh = 10,
+  enabled = true,
+  unlockedUntilMs = 0,
 }: {
   speedMps: number | null | undefined;
   thresholdKmh?: number;
+  /** Company-level Safety Mode master switch. */
+  enabled?: boolean;
+  /** Epoch ms until which the driver has temporarily unlocked the UI. */
+  unlockedUntilMs?: number;
 }): SafetyModeResult {
   return useMemo(() => {
     const normalizedSpeedMps = normalizeSpeedMps(speedMps);
@@ -26,11 +32,17 @@ export function useSafetyMode({
       ? null
       : Math.round(normalizedSpeedMps * 3.6);
     const thresholdMps = thresholdKmh / 3.6;
+    const nowMs = Date.now();
+    const unlocked = unlockedUntilMs > nowMs;
+    const shouldEngage = enabled
+      && !unlocked
+      && normalizedSpeedMps != null
+      && normalizedSpeedMps >= thresholdMps;
 
     return {
-      isSafetyMode: normalizedSpeedMps != null && normalizedSpeedMps >= thresholdMps,
+      isSafetyMode: shouldEngage,
       speedKmh,
       speedMps: normalizedSpeedMps,
     };
-  }, [speedMps, thresholdKmh]);
+  }, [speedMps, thresholdKmh, enabled, unlockedUntilMs]);
 }
