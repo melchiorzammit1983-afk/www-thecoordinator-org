@@ -9,7 +9,7 @@ const SNOOZE_KEY = "auto-next-job-snooze-until";
  * Client-side only. No new server contract; reads existing manifest data.
  */
 export function useAutoNextJob<
-  T extends { id: string; status: string; pickup_at?: string | null; date?: string | null },
+  T extends { id: string; status?: string | null; pickup_at?: string | null; date?: string | null },
 >(jobs: T[] | undefined, opts?: { enabled?: boolean }): {
   nextJob: T | null;
   dismiss: () => void;
@@ -34,7 +34,7 @@ export function useAutoNextJob<
 
     // Update mirror after check
     const nextMirror: Record<string, string> = {};
-    for (const j of jobs) nextMirror[j.id] = j.status;
+    for (const j of jobs) nextMirror[j.id] = j.status ?? "";
     prevStatuses.current = nextMirror;
 
     if (!triggered) return;
