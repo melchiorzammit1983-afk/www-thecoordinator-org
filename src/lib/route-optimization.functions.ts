@@ -110,13 +110,6 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
       _job_id: group.job_id,
       _note: `route optimization suggestion (${stops.length} stops)`,
     });
-    void 0;
-    const _spendErr2 = spendErr;
-    if (_spendErr2) { /* noop */ }
-    // (rewritten below)
-    ({});
-    // Note: _cost_override omitted (optional).
-    });
     if (spendErr) throw new Error(spendErr.message);
 
     // Original order + score
