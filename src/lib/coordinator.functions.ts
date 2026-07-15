@@ -835,12 +835,32 @@ export const assignDriver = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, group_id, driver_id" as any)
+      .select("id, company_id, group_id, driver_id, driver_accepted_at, status" as any)
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (!job) throw new Error("Job not found");
     const gid = (job as any).group_id as string | null;
+    // Reassigning a driver-accepted trip needs the current driver's approval.
+    const lockable: LockableJob = {
+      id: (job as any).id,
+      company_id: (job as any).company_id,
+      driver_id: (job as any).driver_id,
+      driver_accepted_at: (job as any).driver_accepted_at,
+      status: (job as any).status,
+    };
+    if (!c.isAdmin && isJobLocked(lockable) && lockable.driver_id !== data.driver_id) {
+      const res = await createChangeRequest({
+        jobId: data.job_id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "reassign",
+        requestedChanges: { driver_id: data.driver_id },
+        driverId: lockable.driver_id,
+      });
+      return { ok: true, group_id: gid, ...res };
+    }
+
     // Any driver change (assign, reassign, unassign) requires fresh consent from
     // the new driver, so we clear driver_accepted_at on every assignment write.
     const patch = { driver_id: data.driver_id, driver_accepted_at: null } as never;
