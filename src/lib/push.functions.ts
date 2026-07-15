@@ -327,7 +327,19 @@ export async function sendPushToUserImpl(
     ts: Date.now(),
   });
 
-  const logRows: Array<Record<string, unknown>> = [];
+  type LogRow = {
+    user_id: string;
+    company_id: string | null;
+    device_id: string;
+    category: string;
+    title: string;
+    body: string;
+    data: Record<string, unknown>;
+    sent_at: string;
+    delivered_at: string | null;
+    error: string | null;
+  };
+  const logRows: LogRow[] = [];
   const pruneIds: string[] = [];
 
   await Promise.all(
