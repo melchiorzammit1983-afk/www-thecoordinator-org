@@ -15,6 +15,7 @@ import {
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
+  driverSnapDropoffToHere,
   driverRequestCancel, driverWithdrawCancelRequest,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
@@ -1120,6 +1121,20 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const snapDropoffFn = useServerFn(driverSnapDropoffToHere);
+  const snapDropoff = useMutation({
+    mutationFn: () => {
+      if (!driverPos) throw new Error("No GPS position yet — wait a few seconds and try again.");
+      return snapDropoffFn({
+        data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Drop-off coordinates updated to your position");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // ----- Driver-initiated cancellation (requires coordinator approval) -----
   const requestCancelFn = useServerFn(driverRequestCancel);
@@ -1541,6 +1556,21 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
                   else statusMut.mutate(nextStatus.value);
                 }}>
                 {nextStatus.label}
+              </Button>
+            )}
+
+            {!isSafetyMode
+              && (job.status === "in_progress" || job.status === "arrived")
+              && !!driverPos && (
+              <Button
+                variant="outline"
+                className="h-10 sm:col-span-2"
+                disabled={snapDropoff.isPending}
+                onClick={() => snapDropoff.mutate()}
+                title="Move the drop-off pin on the map to your current GPS position"
+              >
+                <MapPin className="h-4 w-4 mr-1.5" />
+                {snapDropoff.isPending ? "Updating drop-off…" : "Drop-off is here — use my GPS"}
               </Button>
             )}
 
