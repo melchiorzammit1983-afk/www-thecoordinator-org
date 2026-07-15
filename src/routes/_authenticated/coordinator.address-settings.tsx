@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MapPin, RotateCcw } from "lucide-react";
+import { MapPin, RotateCcw, Radar } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,13 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useAddressSettings, DEFAULT_ADDRESS_SETTINGS } from "@/hooks/use-address-settings";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getMyGpsSettings, updateMyGpsSettings } from "@/lib/coordinator.functions";
+
+const DEFAULT_ARRIVAL_RADIUS_M = 150;
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/address-settings")({
   head: () => ({
