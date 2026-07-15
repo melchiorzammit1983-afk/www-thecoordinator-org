@@ -134,11 +134,6 @@ function CoordinatorLayout() {
   }, [features, pathname, navigate]);
 
   const anyAiEnabled = !features || AI_FEATURE_KEYS.some((k) => features[k] !== false);
-  const visibleNav = NAV.filter((item) => {
-    if (item.to === "/coordinator/ai-center") return anyAiEnabled;
-    if (!item.feature) return true;
-    return features?.[item.feature] !== false;
-  });
 
   if (isLoading || (!company && identityLoading)) {
     return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
