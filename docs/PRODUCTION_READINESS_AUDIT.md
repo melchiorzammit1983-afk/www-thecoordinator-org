@@ -277,7 +277,7 @@ Batch C is in place (`trip_audit_log` hash-chained, verify function, triggers on
 
 ## 13. Sign-off Checklist
 
-- [ ] H-DB-1 resolved and verified in production logs
+- [x] H-DB-1 resolved and verified in production logs (2026-07-15)
 - [ ] All `/api/public/*` cron routes authenticated
 - [ ] Public SECURITY DEFINER executes revoked from `anon`
 - [ ] Fare tables covered by audit triggers
