@@ -32,6 +32,29 @@ function AddressSettingsPage() {
   const [preview, setPreview] = useState("");
   const [previewPlaceId, setPreviewPlaceId] = useState<string | null>(null);
 
+  // Company-scoped GPS arrival radius (persisted to companies.arrival_radius_m).
+  const qc = useQueryClient();
+  const getGps = useServerFn(getMyGpsSettings);
+  const updateGps = useServerFn(updateMyGpsSettings);
+  const { data: gps } = useQuery({
+    queryKey: ["my-gps-settings"],
+    queryFn: () => getGps(),
+    staleTime: 30_000,
+  });
+  const [radius, setRadius] = useState<number>(DEFAULT_ARRIVAL_RADIUS_M);
+  useEffect(() => {
+    if (gps?.arrival_radius_m != null) setRadius(gps.arrival_radius_m);
+  }, [gps?.arrival_radius_m]);
+  const saveRadius = useMutation({
+    mutationFn: (m: number) => updateGps({ data: { arrival_radius_m: m } }),
+    onSuccess: () => {
+      toast.success("GPS arrival radius saved");
+      qc.invalidateQueries({ queryKey: ["my-gps-settings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:flex sm:flex-wrap sm:justify-between">
