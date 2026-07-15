@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval } from "@/lib/coordinator.functions";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -29,6 +29,31 @@ import {
 
 type Pax = { id: string; name: string; status?: string | null; boarded_at?: string | null };
 type DriverEmbed = { name: string; vehicle?: string | null; phone?: string | null; seats_available?: number | null; availability_note?: string | null };
+type BoardingApprovalRow = {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "overridden";
+  requested_at: string;
+  responded_at?: string | null;
+  override_at?: string | null;
+  coordinator_note?: string | null;
+  driver_note?: string | null;
+  pax_summary?: {
+    total?: number;
+    onboard?: number;
+    noshow?: number;
+    cancelled?: number;
+    pending?: number;
+  } | null;
+};
+type WaitProposalRow = {
+  id: string;
+  proposed_amount: number | string;
+  note?: string | null;
+  status: "pending" | "accepted" | "rejected";
+  driver_response_note?: string | null;
+  responded_at?: string | null;
+  created_at: string;
+};
 
 export type DetailsJob = {
   id: string;
@@ -121,6 +146,8 @@ export function TripDetailsSheet({
   const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
   const [driverChatOpen, setDriverChatOpen] = useState(false);
+  const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
+  const [boardingNote, setBoardingNote] = useState("");
 
   const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
 
@@ -141,6 +168,8 @@ export function TripDetailsSheet({
   const sosListFn = useServerFn(listSosForJob);
   const ackSosFn = useServerFn(acknowledgeSosCoord);
   const ackAllSosFn = useServerFn(acknowledgeAllSosForJob);
+  const boardingStatusFn = useServerFn(getBoardingApprovalStatus);
+  const respondBoardingFn = useServerFn(respondBoardingApproval);
   const { data: sosRows } = useQuery({
     queryKey: ["job-sos", job.id],
     queryFn: () => sosListFn({ data: { job_id: job.id, include_ack: false } }) as Promise<Array<{
@@ -177,6 +206,33 @@ export function TripDetailsSheet({
       qc.invalidateQueries({ queryKey: ["job-sos", job.id] });
       qc.invalidateQueries({ queryKey: ["active-sos-points"] });
       qc.invalidateQueries({ queryKey: ["card-signals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const { data: boardingApprovals } = useQuery({
+    queryKey: ["coord-boarding-approvals", job.id],
+    queryFn: () => boardingStatusFn({ data: { job_id: job.id } }) as Promise<BoardingApprovalRow[]>,
+    enabled: open && isRealJobId,
+    refetchInterval: open && isRealJobId && job.status === "arrived" ? 5_000 : false,
+  });
+  const pendingBoardingApproval = (boardingApprovals ?? []).find((a) => a.status === "pending") ?? null;
+  const latestBoardingApproval = boardingApprovals?.[0] ?? null;
+  const respondBoardingMut = useMutation({
+    mutationFn: (action: "approve" | "reject") =>
+      respondBoardingFn({
+        data: {
+          approval_id: pendingBoardingApproval!.id,
+          action,
+          coordinator_note: boardingNote.trim() || undefined,
+        },
+      }),
+    onSuccess: (_, action) => {
+      toast.success(action === "approve" ? "Boarding approved" : "Boarding rejected");
+      qc.invalidateQueries({ queryKey: ["coord-boarding-approvals", job.id] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["coord-card-signals"] });
+      setBoardingReviewOpen(false);
+      setBoardingNote("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -331,6 +387,57 @@ export function TripDetailsSheet({
 
           {/* Waiting + driver-added adjustments */}
           <TripWaitAdjustmentsPanel jobId={job.id} />
+
+          {/* Boarding approvals */}
+          {(pendingBoardingApproval || (boardingApprovals?.length ?? 0) > 0) && (
+            <section className={`rounded-md border p-3 space-y-2 ${
+              pendingBoardingApproval ? "border-rose-400 bg-rose-50/70 dark:bg-rose-950/20" : "bg-muted/40"
+            }`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] uppercase tracking-wide font-semibold text-rose-700 dark:text-rose-300">
+                  Boarding approval
+                </div>
+                <Badge variant={pendingBoardingApproval ? "destructive" : "outline"} className="text-[10px]">
+                  {pendingBoardingApproval ? "Driver waiting" : (latestBoardingApproval?.status ?? "history")}
+                </Badge>
+              </div>
+              {pendingBoardingApproval && (
+                <div className="text-xs text-rose-900 dark:text-rose-200 rounded-md border border-rose-300/60 bg-background/70 px-2.5 py-2">
+                  Driver is waiting for boarding approval — Onboard {Number(pendingBoardingApproval.pax_summary?.onboard ?? 0)},
+                  {" "}No-show {Number(pendingBoardingApproval.pax_summary?.noshow ?? 0)},
+                  {" "}Cancelled {Number(pendingBoardingApproval.pax_summary?.cancelled ?? 0)},
+                  {" "}Pending {Number(pendingBoardingApproval.pax_summary?.pending ?? 0)}.
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => setBoardingReviewOpen(true)}>
+                  Review request
+                </Button>
+                {pendingBoardingApproval && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                      disabled={respondBoardingMut.isPending}
+                      onClick={() => respondBoardingMut.mutate("approve")}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-rose-500 text-rose-700 hover:bg-rose-50"
+                      disabled={respondBoardingMut.isPending}
+                      onClick={() => respondBoardingMut.mutate("reject")}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Private per-hop price proposals */}
           <PriceProposalsPanel jobId={job.id} />
@@ -721,6 +828,88 @@ export function TripDetailsSheet({
         threadKind="driver"
         title="Private with driver"
       />
+      <Dialog open={boardingReviewOpen} onOpenChange={setBoardingReviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Boarding approval review</DialogTitle>
+            <DialogDescription>
+              Review passenger statuses and approve or reject the latest boarding request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {pendingBoardingApproval && (
+              <div className="rounded-md border border-rose-300 bg-rose-50/70 p-2.5 text-xs text-rose-900 dark:text-rose-200">
+                Requested {formatMaltaTime(pendingBoardingApproval.requested_at)}
+                {pendingBoardingApproval.driver_note ? ` — "${pendingBoardingApproval.driver_note}"` : ""}
+              </div>
+            )}
+            <div className="rounded-md border divide-y">
+              <div className="px-3 py-2 text-[11px] uppercase tracking-wide text-muted-foreground">Passenger statuses</div>
+              {(pax ?? []).length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">No passengers.</div>}
+              {(pax ?? []).map((p) => (
+                <div key={p.id} className="px-3 py-2 text-sm flex items-center justify-between gap-2">
+                  <span className="truncate">{p.name}</span>
+                  <Badge variant={p.status === "onboard" ? "default" : "outline"} className="text-[10px] capitalize">
+                    {p.status ?? "pending"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-md border divide-y">
+              <div className="px-3 py-2 text-[11px] uppercase tracking-wide text-muted-foreground">Approval history</div>
+              {(boardingApprovals ?? []).length === 0 && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">No approvals yet.</div>
+              )}
+              {(boardingApprovals ?? []).map((a) => (
+                <div key={a.id} className="px-3 py-2 text-xs space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={a.status === "approved" ? "default" : a.status === "rejected" ? "destructive" : "outline"} className="text-[10px] capitalize">
+                      {a.status}
+                    </Badge>
+                    <span className="text-muted-foreground">Requested {formatMaltaTime(a.requested_at)}</span>
+                  </div>
+                  {a.responded_at && <div className="text-muted-foreground">Responded {formatMaltaTime(a.responded_at)}</div>}
+                  {a.coordinator_note && <div>"{a.coordinator_note}"</div>}
+                </div>
+              ))}
+            </div>
+            {pendingBoardingApproval && (
+              <div className="space-y-1.5">
+                <Label htmlFor="boarding-coordinator-note">Coordinator note (optional)</Label>
+                <Textarea
+                  id="boarding-coordinator-note"
+                  value={boardingNote}
+                  onChange={(e) => setBoardingNote(e.target.value)}
+                  maxLength={500}
+                  placeholder="Add context for the driver"
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBoardingReviewOpen(false)}>Close</Button>
+            {pendingBoardingApproval && (
+              <>
+                <Button
+                  variant="outline"
+                  className="border-rose-500 text-rose-700 hover:bg-rose-50"
+                  disabled={respondBoardingMut.isPending}
+                  onClick={() => respondBoardingMut.mutate("reject")}
+                >
+                  Reject
+                </Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={respondBoardingMut.isPending}
+                  onClick={() => respondBoardingMut.mutate("approve")}
+                >
+                  Approve
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
@@ -941,7 +1130,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
   });
   const { data: proposals } = useQuery({
     queryKey: ["wait-proposals", jobId],
-    queryFn: () => proposalsFn({ data: { job_id: jobId } }) as Promise<any[]>,
+    queryFn: () => proposalsFn({ data: { job_id: jobId } }) as Promise<WaitProposalRow[]>,
     refetchInterval: 8_000,
   });
 
@@ -963,7 +1152,8 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
 
   const adjustments = data?.adjustments ?? [];
   const totalAdj = adjustments.reduce((s: number, a: any) => s + Number(a.amount ?? 0), 0);
-  const pendingProposals = ((proposals ?? []) as any[]).filter((p: any) => p.status === "pending");
+  const pendingProposals = (proposals ?? []).filter((p) => p.status === "pending");
+  const recentProposals = (proposals ?? []).slice(0, 8);
 
   // Propose-adjustment dialog
   const [proposeOpen, setProposeOpen] = useState(false);
@@ -995,7 +1185,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (!openHere && adjustments.length === 0 && pendingProposals.length === 0) return null;
+  if (!openHere && adjustments.length === 0 && recentProposals.length === 0) return null;
 
   return (
     <section className="rounded-md border p-3 space-y-2 bg-amber-50/60 dark:bg-amber-950/10 border-amber-500/40">
@@ -1039,32 +1229,39 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
         </div>
       )}
 
-      {/* Pending proposals */}
-      {pendingProposals.map((p: any) => (
-        <div key={p.id} className="rounded border border-blue-200 bg-blue-50/60 p-2 text-[11px] flex items-start justify-between gap-2">
-          <div>
-            <span className="font-semibold text-blue-900">Proposed EUR {Number(p.proposed_amount).toFixed(2)}</span>
-            {p.note && <span className="text-blue-700 ml-1">— {p.note}</span>}
-            <div className="text-muted-foreground">Waiting for driver response</div>
-          </div>
-          <button className="text-slate-400 hover:text-rose-600 shrink-0" onClick={() => cancelMut.mutate(p.id)} aria-label="Cancel proposal">
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {/* Proposal status tracking */}
+      {recentProposals.length > 0 && (
+        <div className="space-y-1.5">
+          {recentProposals.map((p) => {
+            const pending = p.status === "pending";
+            const accepted = p.status === "accepted";
+            return (
+              <div key={p.id} className="rounded border border-blue-200 bg-blue-50/60 p-2 text-[11px] flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-semibold text-blue-900 flex items-center gap-1.5 flex-wrap">
+                    <span>Proposal EUR {Number(p.proposed_amount).toFixed(2)}</span>
+                    <Badge variant={accepted ? "default" : pending ? "outline" : "destructive"} className={`text-[9px] capitalize ${accepted ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}>
+                      {accepted ? <Check className="h-2.5 w-2.5 mr-1" /> : pending ? <CircleAlert className="h-2.5 w-2.5 mr-1" /> : <X className="h-2.5 w-2.5 mr-1" />}
+                      {p.status}
+                    </Badge>
+                  </div>
+                  <div className="text-muted-foreground">
+                    Sent {formatMaltaTime(p.created_at)}
+                    {p.responded_at ? ` · replied ${formatMaltaTime(p.responded_at)}` : " · waiting for driver response"}
+                  </div>
+                  {p.note && <div className="text-blue-700 truncate">"{p.note}"</div>}
+                  {p.driver_response_note && <div className="text-muted-foreground truncate">Driver: "{p.driver_response_note}"</div>}
+                </div>
+                {pending && (
+                  <button className="text-slate-400 hover:text-rose-600 shrink-0" onClick={() => cancelMut.mutate(p.id)} aria-label="Cancel proposal">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
-      ))}
-
-      {/* Recent accepted/rejected proposals */}
-      {((proposals ?? []) as any[]).filter((p: any) => p.status !== "pending").slice(0, 3).map((p: any) => (
-        <div key={p.id} className="text-[11px] flex items-center justify-between gap-2 text-muted-foreground">
-          <span>
-            Proposal EUR {Number(p.proposed_amount).toFixed(2)}{" "}
-            <span className={p.status === "accepted" ? "text-emerald-700 font-medium" : "text-rose-600 font-medium"}>
-              {p.status}
-            </span>
-            {p.driver_response_note && <span> — "{p.driver_response_note}"</span>}
-          </span>
-        </div>
-      ))}
+      )}
 
       {adjustments.length === 0 && !openHere ? (
         <div className="text-xs text-muted-foreground">No charges yet.</div>

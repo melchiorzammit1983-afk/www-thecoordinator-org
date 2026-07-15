@@ -5551,3 +5551,125 @@ export const mergeTrips = createServerFn({ method: "POST" })
     }
     return { ok: true, merged_pax: toAdd.length, cancelled: data.drop_job_ids.length };
   });
+
+// ---------- Phase 3 — Boarding approval (coordinator side) ----------
+
+export const listPendingBoardingApprovals = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_ids: z.array(z.string().uuid()).max(800) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context as Ctx);
+    const supabaseAdmin = await getAdminClient();
+    const jobIds = Array.from(new Set(data.job_ids));
+    if (jobIds.length === 0) return [] as any[];
+
+    const { data: jobs, error: jobsError } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, status, pax(id,name,status,boarded_at)")
+      .in("id", jobIds);
+    if (jobsError) throw new Error(jobsError.message);
+
+    const allowedIds = new Set<string>(
+      (jobs ?? [])
+        .filter(
+          (j: any) =>
+            j.company_id === c.id
+            || j.executor_company_id === c.id
+            || j.origin_company_id === c.id
+            || (j.dispatch_chain_company_ids ?? []).includes(c.id),
+        )
+        .map((j: any) => j.id),
+    );
+    if (allowedIds.size === 0) return [] as any[];
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, job_id, status, requested_at, responded_at, override_at, coordinator_note, driver_note, pax_summary")
+      .in("job_id", Array.from(allowedIds))
+      .eq("status", "pending")
+      .order("requested_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+
+    const jobMap = new Map<string, any>();
+    for (const j of jobs ?? []) jobMap.set((j as any).id, j);
+    return ((rows ?? []) as any[])
+      .map((row: any) => ({ ...row, job: jobMap.get(row.job_id) ?? null }))
+      .filter((row: any) => !!row.job);
+  });
+
+export const respondBoardingApproval = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      approval_id: z.string().uuid(),
+      action: z.enum(["approve", "reject"]),
+      coordinator_note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context as Ctx);
+    const supabaseAdmin = await getAdminClient();
+
+    const { data: approval, error: readErr } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, job_id, status, company_id")
+      .eq("id", data.approval_id)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!approval) throw new Error("boarding_approval_not_found");
+    if ((approval as any).status !== "pending") throw new Error("boarding_approval_already_resolved");
+
+    // Scope check: coordinator must belong to the approval's company.
+    if ((approval as any).company_id !== (c as any).id) throw new Error("forbidden");
+
+    const now = new Date().toISOString();
+    const newStatus = data.action === "approve" ? "approved" : "rejected";
+
+    const { error: upErr } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .update({
+        status: newStatus,
+        coordinator_note: data.coordinator_note ?? null,
+        responded_at: now,
+      } as never)
+      .eq("id", data.approval_id);
+    if (upErr) throw new Error(upErr.message);
+
+    // Send a message back to the driver.
+    const messageBody = data.action === "approve"
+      ? `✅ Boarding approved by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""}`
+      : `⛔ Boarding rejected by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""} Please resolve pending passengers.`;
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: (approval as any).job_id,
+      company_id: (approval as any).company_id,
+      sender_kind: "coordinator",
+      sender_label: "Coordinator",
+      body: messageBody,
+      thread_kind: "driver_coord",
+    } as never);
+
+    return { ok: true, status: newStatus };
+  });
+
+export const getBoardingApprovalStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context as Ctx);
+    const supabaseAdmin = await getAdminClient();
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("job_boarding_approvals")
+      .select("id, status, requested_at, responded_at, override_at, coordinator_note, driver_note, pax_summary")
+      .eq("job_id", data.job_id)
+      .eq("company_id", (c as any).id)
+      .order("requested_at", { ascending: false })
+      .limit(5);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });

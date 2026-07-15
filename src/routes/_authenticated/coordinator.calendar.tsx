@@ -91,6 +91,7 @@ import {
   computeTripFlags,
   dismissTripFlag,
   refreshJobLiveStatus,
+  listPendingBoardingApprovals,
 } from "@/lib/coordinator.functions";
 import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
 
@@ -262,6 +263,27 @@ type LiveEtaPoint = {
   eta_sec?: number | null;
 };
 
+type PendingBoardingApproval = {
+  id: string;
+  job_id: string;
+  status: "pending";
+  requested_at: string;
+  driver_note?: string | null;
+  pax_summary?: {
+    onboard?: number;
+    noshow?: number;
+    cancelled?: number;
+    pending?: number;
+  } | null;
+  job?: {
+    id: string;
+    from_location: string | null;
+    to_location: string | null;
+    pickup_display_name?: string | null;
+    dropoff_display_name?: string | null;
+  } | null;
+};
+
 function CalendarPage() {
   const [view, setView] = useState<"day" | "week">("day");
   const [anchor, setAnchor] = useState<Date>(new Date());
@@ -362,6 +384,17 @@ function CalendarPage() {
   const { data: jobs, refetch } = useQuery({
     queryKey: ["jobs", range.from, range.to],
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
+  });
+  const pendingBoardingFn = useServerFn(listPendingBoardingApprovals);
+  const boardingScopeJobIds = useMemo(
+    () => (jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
+    [jobs],
+  );
+  const { data: pendingBoardingApprovals } = useQuery({
+    queryKey: ["coord-pending-boarding", boardingScopeJobIds.join(",")],
+    enabled: boardingScopeJobIds.length > 0,
+    queryFn: () => pendingBoardingFn({ data: { job_ids: boardingScopeJobIds } }) as Promise<PendingBoardingApproval[]>,
+    refetchInterval: 5_000,
   });
   const { data: drivers } = useQuery({
     queryKey: ["drivers"],
@@ -970,6 +1003,13 @@ function CalendarPage() {
       {/* Drivers currently on waiting time */}
       <WaitingNowStrip
         onJump={(jobId) => {
+          const j = (jobs ?? []).find((x: any) => x.id === jobId);
+          if (j) setDetailsJob(j as any);
+        }}
+      />
+      <BoardingApprovalAlertPanel
+        alerts={pendingBoardingApprovals ?? []}
+        onOpenJob={(jobId) => {
           const j = (jobs ?? []).find((x: any) => x.id === jobId);
           if (j) setDetailsJob(j as any);
         }}
@@ -3080,6 +3120,48 @@ function DetailsSheetHost({
       onCopyLink={() => job && copyMut.mutate(job.id)}
       driverName={driverName}
     />
+  );
+}
+
+function BoardingApprovalAlertPanel({
+  alerts,
+  onOpenJob,
+}: {
+  alerts: PendingBoardingApproval[];
+  onOpenJob: (jobId: string) => void;
+}) {
+  if (!alerts.length) return null;
+  return (
+    <section className="rounded-md border-2 border-rose-500 bg-rose-50/70 dark:bg-rose-950/20 p-2.5 space-y-1.5">
+      <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-rose-700 dark:text-rose-300">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        Boarding approval alerts ({alerts.length})
+      </div>
+      <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {alerts.map((a) => (
+          <li key={a.id}>
+            <button
+              type="button"
+              onClick={() => onOpenJob(a.job_id)}
+              className="w-full text-left rounded-md bg-white/70 dark:bg-background/70 border border-rose-300/70 px-2.5 py-2 hover:bg-rose-100/60 transition space-y-1"
+            >
+              <div className="text-xs font-semibold text-rose-900 dark:text-rose-200 truncate">
+                {displayLocation(a.job?.from_location ?? "", a.job?.pickup_display_name)} →{" "}
+                {displayLocation(a.job?.to_location ?? "", a.job?.dropoff_display_name)}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Onboard {Number(a.pax_summary?.onboard ?? 0)} · No-show {Number(a.pax_summary?.noshow ?? 0)} ·
+                {" "}Cancelled {Number(a.pax_summary?.cancelled ?? 0)} · Pending {Number(a.pax_summary?.pending ?? 0)}
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                Requested {formatMaltaDateTime(a.requested_at).time}
+              </div>
+              {a.driver_note && <div className="text-[10px] text-muted-foreground truncate">"{a.driver_note}"</div>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

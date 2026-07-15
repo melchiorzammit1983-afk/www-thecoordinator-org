@@ -5,10 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { formatMaltaDateTime, formatMaltaTime } from "@/lib/time";
 import { displayLocation } from "@/lib/trip-display";
+import { BOARDING_OVERRIDE_MS } from "@/lib/boarding.constants";
 import {
   getDriverManifest, driverAcceptJob, driverRejectJob, driverApproveDeletion,
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
-  driverReportLate,
+  driverReportLate, markPaxCancelled, requestBoardingApproval, driverOverrideBoardingApproval,
+  getBoardingApprovalStatusDriver,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
   getClientLiveLocationDriver,
 } from "@/lib/coordinator-public.functions";
@@ -35,11 +37,14 @@ import { ClientLiveMiniMap } from "@/components/trip/ClientLiveMiniMap";
 import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
+import { SafetyModeOverlay } from "@/components/driver/SafetyModeOverlay";
+import { EmergencyOverrideDialog } from "@/components/driver/EmergencyOverrideDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { type CarouselApi, Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSafetyMode } from "@/hooks/use-safety-mode";
 
 import {
   CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
@@ -77,6 +82,21 @@ export const Route = createFileRoute("/m/driver/$token")({
 });
 
 type Pax = { id: string; name: string; status: string; boarded_at: string | null };
+type DriverPaxRow = Pax & {
+  boarded_method: string | null;
+  noshow_at: string | null;
+  cancelled_at: string | null;
+};
+type BoardingApproval = {
+  id: string;
+  status: string;
+  requested_at: string;
+  responded_at: string | null;
+  override_at: string | null;
+  coordinator_note: string | null;
+  driver_note: string | null;
+  pax_summary: Record<string, number> | null;
+};
 type Job = {
   id: string; from_location: string; to_location: string;
   pickup_display_name?: string | null; dropoff_display_name?: string | null;
@@ -114,13 +134,54 @@ type Driver = {
   plate?: string | null;
 };
 
+type DriverManifestResponse = {
+  link: { subject_label: string | null };
+  jobs: Job[];
+  driver: Driver | null;
+  branding: BrandingInfo;
+  companySettings?: {
+    safety_mode_threshold_kmh?: number | null;
+  };
+} | null;
+
 const STATUS_FLOW: Array<{ value: string; label: string }> = [
   { value: "en_route", label: "On the way to pickup" },
   { value: "arrived", label: "Arrived at pickup" },
   { value: "in_progress", label: "Passengers on board — en route" },
   { value: "completed", label: "Trip finished" },
 ];
+const BOARDING_OVERRIDE_MINUTES = Math.floor(BOARDING_OVERRIDE_MS / 60000);
 const RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
+
+function getPaxSummary(pax: Array<{ status: string | null | undefined }> | undefined | null) {
+  const counts = { total: 0, pending: 0, onboard: 0, noshow: 0, cancelled: 0 };
+  for (const p of pax ?? []) {
+    counts.total += 1;
+    const status = p.status ?? "pending";
+    if (status === "onboard") counts.onboard += 1;
+    else if (status === "noshow") counts.noshow += 1;
+    else if (status === "cancelled") counts.cancelled += 1;
+    else counts.pending += 1;
+  }
+  return {
+    ...counts,
+    resolved: counts.onboard + counts.noshow + counts.cancelled,
+    allResolved: counts.pending === 0,
+  };
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function getApprovalCountdown(approval: BoardingApproval | null, nowMs: number) {
+  if (!approval?.requested_at) return 0;
+  const unlockAt = new Date(approval.requested_at).getTime() + BOARDING_OVERRIDE_MS;
+  return Math.max(0, Math.ceil((unlockAt - nowMs) / 1000));
+}
 
 function formatDriverStatusError(error: Error): string {
   const msg = error.message ?? "";
@@ -142,6 +203,31 @@ function formatDriverStatusError(error: Error): string {
     const radiusStr = parts[2];
     return `You're ${distStr}m from the pickup (${radiusStr}m required). Move closer and try again.`;
   }
+  if (msg === "partial_boarding_needs_approval") {
+    return "Some passengers are still pending. Request coordinator approval or finish boarding decisions first.";
+  }
+  if (msg === "boarding_approval_already_pending") {
+    return "Approval has already been requested. Wait for a coordinator response or use override when available.";
+  }
+  if (msg === "boarding_approval_only_when_arrived") {
+    return "Approval can only be requested while the trip is at pickup.";
+  }
+  if (msg.startsWith("override_too_early:")) {
+    const remaining = Number(msg.split(":")[1] ?? 0);
+    return `Override available in ${formatCountdown(remaining)}.`;
+  }
+  if (msg === "boarding_approval_not_found") {
+    return "Approval request not found. Refresh and try again.";
+  }
+  if (msg === "boarding_approval_already_resolved") {
+    return "This approval request has already been resolved.";
+  }
+  if (msg === "cancellation_not_allowed_in_current_status") {
+    return "Passenger cancellation is only allowed while Arrived or En Route with passengers onboard.";
+  }
+  if (msg === "pax_not_found") {
+    return "Passenger not found. Refresh the trip and try again.";
+  }
   return msg;
 }
 
@@ -157,12 +243,285 @@ function canReturnTripToWaiting(status: string | null | undefined): boolean {
   return RETURN_TO_WAITING_STATUSES.has(status ?? "");
 }
 
+function shouldHandleBoardingInDialog(status: string | null | undefined, nextStatus: string | null | undefined, pendingCount: number) {
+  return status === "arrived" && nextStatus === "in_progress" && pendingCount > 0;
+}
+
+function PassengerSummaryPanel({ pax }: { pax: Array<{ id: string; name: string; status: string }> | undefined }) {
+  const summary = getPaxSummary(pax);
+  return (
+    <div className="rounded-xl border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold flex items-center gap-1.5">
+          <Users className="h-4 w-4" /> Passenger summary
+        </div>
+        <Badge variant="outline">{summary.total} total</Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <div className="rounded-lg bg-background px-2.5 py-2"><div className="text-muted-foreground">Onboard</div><div className="font-semibold text-emerald-600">{summary.onboard}</div></div>
+        <div className="rounded-lg bg-background px-2.5 py-2"><div className="text-muted-foreground">Pending</div><div className="font-semibold">{summary.pending}</div></div>
+        <div className="rounded-lg bg-background px-2.5 py-2"><div className="text-muted-foreground">No-show</div><div className="font-semibold text-rose-600">{summary.noshow}</div></div>
+        <div className="rounded-lg bg-background px-2.5 py-2"><div className="text-muted-foreground">Cancelled</div><div className="font-semibold text-slate-700">{summary.cancelled}</div></div>
+      </div>
+      {summary.total > 0 && summary.allResolved && (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 font-medium">
+          All passengers resolved — ready to depart.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BoardingApprovalCard({
+  approval,
+  nowMs,
+  pendingCount,
+  resolvedCount,
+  requestNote,
+  requestBusy,
+  overrideBusy,
+  startBusy,
+  approvalError,
+  onRequest,
+  onOverride,
+  onOpenBoarding,
+  onChat,
+  onStartTrip,
+}: {
+  approval: BoardingApproval | null;
+  nowMs: number;
+  pendingCount: number;
+  resolvedCount: number;
+  requestNote?: string;
+  requestBusy?: boolean;
+  overrideBusy?: boolean;
+  startBusy?: boolean;
+  approvalError?: string | null;
+  onRequest?: () => void;
+  onOverride?: () => void;
+  onOpenBoarding?: () => void;
+  onChat?: () => void;
+  onStartTrip?: () => void;
+}) {
+  const status = approval?.status ?? "needs_request";
+  const countdown = getApprovalCountdown(approval, nowMs);
+  const canOverride = status === "pending" && countdown <= 0;
+  const summary = approval?.pax_summary ?? null;
+  const pendingFromApproval = Number(summary?.pending ?? pendingCount);
+  const onboardFromApproval = Number(summary?.onboard ?? 0);
+  const noshowFromApproval = Number(summary?.noshow ?? 0);
+  const cancelledFromApproval = Number(summary?.cancelled ?? 0);
+  const totalResolved = onboardFromApproval + noshowFromApproval + cancelledFromApproval || resolvedCount;
+
+  const tone =
+    status === "approved" || status === "overridden"
+      ? "border-emerald-300 bg-emerald-50"
+      : status === "rejected"
+        ? "border-rose-300 bg-rose-50"
+        : "border-amber-300 bg-amber-50";
+
+  return (
+    <div className={`rounded-xl border p-3 space-y-3 ${tone}`}>
+      <div className="space-y-1">
+        <div className="text-sm font-semibold">
+          {status === "approved"
+            ? "✅ Boarding approved by coordinator"
+            : status === "rejected"
+              ? "⛔ Boarding rejected by coordinator"
+              : status === "overridden"
+                ? "✅ Boarding override applied"
+                : status === "pending"
+                  ? "Approval requested"
+                  : "Partial boarding needs approval"}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {status === "needs_request"
+            ? `Resolved passengers: ${resolvedCount}. Pending passengers: ${pendingCount}.`
+            : `Resolved passengers: ${totalResolved}. Pending passengers: ${pendingFromApproval}.`}
+        </div>
+      </div>
+
+      {status === "needs_request" && (
+        <p className="text-sm text-slate-700">
+          Some passengers are still pending. Request coordinator approval or finish boarding decisions first.
+        </p>
+      )}
+
+      {approval?.driver_note && (
+        <div className="text-xs rounded-lg bg-background/70 px-3 py-2">
+          <span className="font-medium">Driver note:</span> {approval.driver_note}
+        </div>
+      )}
+      {!approval?.driver_note && requestNote && status === "needs_request" && (
+        <div className="text-xs rounded-lg bg-background/70 px-3 py-2">
+          <span className="font-medium">Driver note:</span> {requestNote}
+        </div>
+      )}
+
+      {approval?.coordinator_note && (
+        <div className="text-xs rounded-lg bg-background/70 px-3 py-2">
+          <span className="font-medium">Coordinator note:</span> {approval.coordinator_note}
+        </div>
+      )}
+
+      {status === "pending" && (
+        <div className="rounded-lg bg-background/70 px-3 py-2 text-sm">
+          Override {canOverride ? "is now available." : `available in ${formatCountdown(countdown)}.`}
+        </div>
+      )}
+
+      {approvalError && (
+        <div className="rounded-lg border border-amber-300 bg-background/80 px-3 py-2 text-sm text-amber-900">
+          {approvalError}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {status === "needs_request" && onRequest && (
+          <Button className="sm:flex-1" onClick={onRequest} disabled={requestBusy}>
+            {requestBusy ? "Requesting…" : "Request coordinator approval"}
+          </Button>
+        )}
+        {(status === "approved" || status === "overridden") && onStartTrip && (
+          <Button className="sm:flex-1" onClick={onStartTrip} disabled={startBusy}>
+            {startBusy ? "Starting…" : "Start trip"}
+          </Button>
+        )}
+        {status === "rejected" && onRequest && (
+          <Button className="sm:flex-1" onClick={onRequest} disabled={requestBusy}>
+            {requestBusy ? "Requesting…" : "Request approval again"}
+          </Button>
+        )}
+        {status === "pending" && onOverride && (
+          <Button variant="outline" className="sm:flex-1" onClick={onOverride} disabled={!canOverride || overrideBusy}>
+            {overrideBusy ? "Overriding…" : canOverride ? "Override now" : `Override in ${formatCountdown(countdown)}`}
+          </Button>
+        )}
+        {onOpenBoarding && (
+          <Button variant="outline" className="sm:flex-1" onClick={onOpenBoarding}>
+            Continue boarding
+          </Button>
+        )}
+        {onChat && (
+          <Button variant="outline" className="sm:flex-1" onClick={onChat}>
+            Chat coordinator
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DriverBoardingApprovalPanel({
+  token,
+  job,
+  onOpenBoarding,
+  onChat,
+}: {
+  token: string;
+  job: Job;
+  onOpenBoarding: () => void;
+  onChat: () => void;
+}) {
+  const qc = useQueryClient();
+  const approvalFn = useServerFn(getBoardingApprovalStatusDriver);
+  const overrideFn = useServerFn(driverOverrideBoardingApproval);
+  const statusFn = useServerFn(updateJobStatus);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+  const approvalPollingEnabled = job.status === "arrived";
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const summary = getPaxSummary(job.pax);
+  const { data: approvals, refetch } = useQuery({
+    queryKey: ["driver-boarding-approval", token, job.id],
+    enabled: approvalPollingEnabled,
+    refetchInterval: approvalPollingEnabled ? 10_000 : false,
+    queryFn: () => approvalFn({ data: { token, job_id: job.id } }) as Promise<BoardingApproval[]>,
+  });
+  const latestApproval = approvals?.[0] ?? null;
+  const shouldShowApproval = !!latestApproval && (
+    summary.pending > 0
+    || latestApproval.status === "pending"
+    || latestApproval.status === "approved"
+    || latestApproval.status === "overridden"
+  );
+
+  const startTripMut = useMutation({
+    mutationFn: () => statusFn({ data: { token, job_id: job.id, status: "in_progress" } }),
+    onSuccess: () => {
+      toast.success("Status updated");
+      setApprovalError(null);
+      qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
+    },
+    onError: (e: Error) => {
+      setApprovalError(formatDriverStatusError(e));
+      toast.error(formatDriverStatusError(e));
+    },
+  });
+  const overrideMut = useMutation({
+    mutationFn: () => overrideFn({ data: { token, job_id: job.id, approval_id: latestApproval!.id } }),
+    onSuccess: async () => {
+      toast.success("Boarding override applied");
+      setApprovalError(null);
+      setOverrideConfirmOpen(false);
+      await refetch();
+      startTripMut.mutate();
+    },
+    onError: (e: Error) => {
+      setApprovalError(formatDriverStatusError(e));
+      toast.error(formatDriverStatusError(e));
+    },
+  });
+
+  if (job.status !== "arrived" || !shouldShowApproval) return null;
+
+  return (
+    <>
+      <BoardingApprovalCard
+        approval={latestApproval}
+        nowMs={nowMs}
+        pendingCount={summary.pending}
+        resolvedCount={summary.resolved}
+        approvalError={approvalError}
+        overrideBusy={overrideMut.isPending}
+        startBusy={startTripMut.isPending}
+        onOverride={() => setOverrideConfirmOpen(true)}
+        onOpenBoarding={onOpenBoarding}
+        onChat={onChat}
+        onStartTrip={() => startTripMut.mutate()}
+      />
+      <Dialog open={overrideConfirmOpen} onOpenChange={setOverrideConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Override coordinator approval and start this trip?</DialogTitle>
+            <DialogDescription>
+              Use this only when the coordinator has not responded within {BOARDING_OVERRIDE_MINUTES} minutes and you need to depart with pending passengers.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOverrideConfirmOpen(false)}>Cancel</Button>
+            <Button onClick={() => overrideMut.mutate()} disabled={overrideMut.isPending}>
+              {overrideMut.isPending ? "Overriding…" : "Override now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function DriverManifest() {
   const { token } = Route.useParams();
   const fn = useServerFn(getDriverManifest);
   const { data, isLoading } = useQuery({
     queryKey: ["driver-manifest", token],
-    queryFn: () => fn({ data: { token } }) as Promise<{ link: { subject_label: string | null }; jobs: Job[]; driver: Driver | null; branding: BrandingInfo } | null>,
+    queryFn: () => fn({ data: { token } }) as Promise<DriverManifestResponse>,
     refetchInterval: 20_000,
   });
   const [openJob, setOpenJob] = useState<Job | null>(null);
@@ -214,6 +573,36 @@ function DriverManifest() {
 
   // Driver location — lifted so routing + map both use one source of truth.
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
+  const [lastSpeedAt, setLastSpeedAt] = useState<number | null>(null);
+  const safetyThresholdKmh = data?.companySettings?.safety_mode_threshold_kmh ?? 10;
+  const { isSafetyMode, speedKmh } = useSafetyMode({
+    speedMps: currentSpeedMps,
+    thresholdKmh: safetyThresholdKmh,
+  });
+
+  useEffect(() => {
+    if (!activeJob) {
+      setCurrentSpeedMps(null);
+      setLastSpeedAt(null);
+    }
+  }, [activeJob?.id]);
+
+  useEffect(() => {
+    if (!activeJob || lastSpeedAt == null) return;
+    const elapsedMs = Date.now() - lastSpeedAt;
+    if (elapsedMs >= 30_000) {
+      setCurrentSpeedMps(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setCurrentSpeedMps(null), 30_000 - elapsedMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeJob?.id, lastSpeedAt]);
+
+  const handleSpeedChange = useCallback((speedMps: number | null) => {
+    setCurrentSpeedMps(speedMps);
+    setLastSpeedAt(Date.now());
+  }, []);
 
   // Where the driver is heading right now depends on the trip phase.
   const routeDestination =
@@ -356,11 +745,11 @@ function DriverManifest() {
           live={live}
           canEnterNavigate={inMotion}
           onEnterNavigate={() => setNavigateMode(true)}
-          canReturnToWaiting={canReturnTripToWaiting(activeJob.status)}
+          canReturnToWaiting={isSafetyMode ? false : canReturnTripToWaiting(activeJob.status)}
         />
       ),
     }] : []),
-    ...(activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
+    ...(!isSafetyMode && activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
       key: `waiting-${activeJob.id}`,
       label: "Waiting & charges",
       content: (
@@ -393,7 +782,8 @@ function DriverManifest() {
   if (!data) return <NotFound />;
 
   return (
-    <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"}`}>
+    <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
+      {!navigateMode && isSafetyMode && <SafetyModeOverlay speedKmh={speedKmh} />}
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
       <DriverDashboardMap
         activeJob={mapJob}
@@ -414,15 +804,15 @@ function DriverManifest() {
                   {branding?.company_name ?? "Driver Manifest"}
                 </div>
                 <h1 className="text-lg font-bold truncate">{driver?.name ?? data.link.subject_label ?? "Driver"}</h1>
-                {driver && !inMotion && (
+                {driver && !isSafetyMode && (
                   <div className="text-[11px] text-muted-foreground truncate">
                     {driver.seats_available != null ? `${driver.seats_available} seats · ` : ""}
                     {driver.availability_note ?? "No availability set"}
                   </div>
                 )}
-                {inMotion && (
+                {isSafetyMode && (
                   <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate flex items-center gap-1.5">
-                    <span>In motion · menu locked for safety</span>
+                    <span>Safety Mode · distracting options hidden</span>
                     {wake.held && (
                       <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
                         ☀ Screen awake
@@ -445,8 +835,8 @@ function DriverManifest() {
                   {audio.isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
               )}
-              {inMotion ? (
-                <Button size="icon" variant="outline" aria-label="Menu locked while in motion" disabled>
+              {isSafetyMode ? (
+                <Button size="icon" variant="outline" aria-label="Menu locked while driving" disabled>
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               ) : (
@@ -539,7 +929,16 @@ function DriverManifest() {
           ))
         )}
 
+        {activeJob?.status === "arrived" && (
+          <DriverBoardingApprovalPanel
+            token={token}
+            job={activeJob}
+            onOpenBoarding={() => setOpenJob(activeJob)}
+            onChat={() => setChatJob(activeJob)}
+          />
+        )}
 
+ 
           {pendingJobs.length > 0 && (
             <button
               type="button"
@@ -580,7 +979,7 @@ function DriverManifest() {
             </div>
           )}
           {jobs.map((j) => (
-            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
 
 
@@ -596,7 +995,7 @@ function DriverManifest() {
               {showArchived && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
-                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+                    <JobCard key={j.id} job={j} token={token} driverPos={driverPos} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
                   ))}
                 </div>
               )}
@@ -617,7 +1016,12 @@ function DriverManifest() {
 
 
 
-      <TripExecutionDialog job={openJob} token={token} onOpenChange={(v) => !v && setOpenJob(null)} />
+      <TripExecutionDialog
+        job={openJob}
+        token={token}
+        onOpenChange={(v) => !v && setOpenJob(null)}
+        onChat={(job) => { setOpenJob(null); setChatJob(job); }}
+      />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} token={token} driver={driver} />
       <StatementDialog open={statementOpen} onOpenChange={setStatementOpen} token={token} driverName={driver?.name ?? "driver"} />
       <TripChatDialog
@@ -626,13 +1030,13 @@ function DriverManifest() {
         title={chatJob ? `${displayLocation(chatJob.from_location, chatJob.pickup_display_name)} → ${displayLocation(chatJob.to_location, chatJob.dropoff_display_name)}` : ""}
         role="driver" token={token}
       />
-      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden />
+      <DriverLiveShare token={token} hasActiveTrip={!!activeJob} hidden onSpeedChange={handleSpeedChange} />
       <BrandingBar branding={data.branding} />
     </div>
   );
 }
 
-function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; onOpen: () => void; onChat: () => void }) {
+function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
@@ -648,6 +1052,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
@@ -771,8 +1176,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
   const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
-  const paxCount = pax.length;
-  const onboardCount = pax.filter((p) => p.status === "onboard").length;
+  const jobPaxSummary = getPaxSummary(pax);
 
   const borderClass = problem
     ? "border-destructive/60 ring-1 ring-destructive/40"
@@ -883,7 +1287,11 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             <Badge variant="outline" className="text-[10px] italic max-w-full truncate">📝 {job.group_note}</Badge>
           )}
           {job.vehicle && <Badge variant="outline" className="text-[10px] gap-1"><Car className="h-3 w-3" />{job.vehicle}</Badge>}
-          <Badge variant="outline" className="text-[10px] gap-1"><Users className="h-3 w-3" />{paxCount} pax{accepted && onboardCount > 0 ? ` · ${onboardCount} onboard` : ""}</Badge>
+          <Badge variant="outline" className="text-[10px] gap-1">
+            <Users className="h-3 w-3" />
+            {jobPaxSummary.total} pax
+            {accepted && jobPaxSummary.onboard > 0 ? ` · ${jobPaxSummary.onboard} onboard` : ""}
+          </Badge>
           
           {job.tracking_enabled && <Badge variant="outline" className="text-[10px]">Tracking</Badge>}
           {paid
@@ -896,13 +1304,19 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
         </div>
 
         {/* Passengers preview (always visible) */}
-        {paxCount > 0 && (
+        {jobPaxSummary.total > 0 && (
           <div className="mt-3 rounded-lg bg-muted/40 border p-2.5">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center justify-between">
-              <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Passengers ({paxCount})</span>
-              <span className={onboardCount === paxCount ? "text-emerald-600 font-semibold" : ""}>
-                {onboardCount}/{paxCount} onboard
+              <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Passengers ({jobPaxSummary.total})</span>
+              <span className={jobPaxSummary.allResolved ? "text-emerald-600 font-semibold" : ""}>
+                {jobPaxSummary.onboard} onboard
               </span>
+            </div>
+            <div className="mb-2 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-4">
+              <div className="rounded-md bg-background px-2 py-1">Onboard <span className="font-semibold text-emerald-600">{jobPaxSummary.onboard}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">Pending <span className="font-semibold">{jobPaxSummary.pending}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">No-show <span className="font-semibold text-rose-600">{jobPaxSummary.noshow}</span></div>
+              <div className="rounded-md bg-background px-2 py-1">Cancelled <span className="font-semibold">{jobPaxSummary.cancelled}</span></div>
             </div>
             <ul className="space-y-0.5">
               {pax.map((p) => (
@@ -913,12 +1327,22 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
                       <CheckCircle2 className="h-3 w-3" /> Onboard
                     </span>
                   )}
+                  {p.status === "noshow" && (
+                    <span className="text-[10px] text-rose-600 font-medium inline-flex items-center gap-1">
+                      <UserX className="h-3 w-3" /> No-show
+                    </span>
+                  )}
+                  {p.status === "cancelled" && (
+                    <span className="text-[10px] text-slate-700 font-medium inline-flex items-center gap-1">
+                      <X className="h-3 w-3" /> Cancelled
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-            {onboardCount === paxCount && paxCount > 0 && (
+            {jobPaxSummary.total > 0 && jobPaxSummary.allResolved && (
               <div className="mt-2 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-400 text-xs font-medium px-2.5 py-1.5 flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5" /> All passengers found — ready to go
+                <CheckCircle2 className="h-3.5 w-3.5" /> All passengers resolved — ready to depart
               </div>
             )}
           </div>
@@ -935,10 +1359,10 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
       )}
 
       {/* Price proposal (optional pre-accept) */}
-      {!job.deletion_requested_at && (
+      {!isSafetyMode && !job.deletion_requested_at && (
         <DriverPricePanel token={token} jobId={job.id} accepted={accepted} />
       )}
-      {accepted && job.status === "completed" && (
+      {!isSafetyMode && accepted && job.status === "completed" && (
         <div className="px-3 pt-3">
           <DriverWaitingPanel
             token={token}
@@ -1008,23 +1432,33 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
             <Button className="h-11 sm:col-span-2" onClick={onOpen}>
               <QrCode className="h-4 w-4 mr-1.5" /> Open trip · Board passengers
             </Button>
+            {job.status !== "completed" && job.status !== "cancelled" && (
+              <Button
+                variant="destructive"
+                className={isSafetyMode ? "h-16 text-base font-bold sm:col-span-2" : "h-10 sm:col-span-2"}
+                onClick={() => setEmergencyOpen(true)}
+              >
+                <AlertTriangle className="h-4 w-4 mr-1.5" /> Emergency Override
+              </Button>
+            )}
             {nextStatus && (
-              <Button variant="secondary" className="h-10" disabled={statusMut.isPending}
+              <Button variant="secondary" className={isSafetyMode ? "h-16 text-lg font-bold" : "h-10"} disabled={statusMut.isPending}
                 onClick={() => {
                   if (nextStatus.value === "completed") setSummaryOpen(true);
+                  else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
                   else statusMut.mutate(nextStatus.value);
                 }}>
                 {nextStatus.label}
               </Button>
             )}
 
-            {job.status !== "completed" && (
+            {!isSafetyMode && job.status !== "completed" && (
               <Button variant="outline" className="h-10"
                 onClick={() => setLateOpen(true)}>
                 <Timer className="h-4 w-4 mr-1.5" /> Running late
               </Button>
             )}
-            {canReturnToWaiting && (
+            {!isSafetyMode && canReturnToWaiting && (
               <Button
                 variant="outline"
                 className="h-10 sm:col-span-2"
@@ -1034,7 +1468,7 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
                 <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to waiting
               </Button>
             )}
-            {job.status !== "in_progress" && job.status !== "completed" && (
+            {!isSafetyMode && job.status !== "in_progress" && job.status !== "completed" && (
               <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
                 onClick={() => setRejectOpen(true)}>
                 <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
@@ -1069,24 +1503,25 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           </Button>
         )}
 
-        <div className="flex items-center gap-2 pt-1 sm:col-span-2">
-          <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
-            onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
-            {paid ? "Mark pending" : "Mark paid"}
-          </Button>
-          {job.driver_hidden_at ? (
-            <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
-              onClick={() => unhideMut.mutate()}>
-              Restore
+        {!isSafetyMode && (
+          <div className="flex items-center gap-2 pt-1 sm:col-span-2">
+            <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
+              onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
+              {paid ? "Mark pending" : "Mark paid"}
             </Button>
-          ) : (
-            <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-              onClick={() => setConfirmHideOpen(true)}>
-              <X className="h-4 w-4 mr-1" /> Hide
-            </Button>
-          )}
-
-        </div>
+            {job.driver_hidden_at ? (
+              <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
+                onClick={() => unhideMut.mutate()}>
+                Restore
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
+                onClick={() => setConfirmHideOpen(true)}>
+                <X className="h-4 w-4 mr-1" /> Hide
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <Dialog open={rejectOpen} onOpenChange={(v) => { setRejectOpen(v); if (!v) { setRejectReason(""); setRejectNote(""); } }}>
@@ -1215,6 +1650,13 @@ function JobCard({ job, token, driverPos, onOpen, onChat }: { job: Job; token: s
           date: job.date,
           time: job.time,
         } : null}
+      />
+
+      <EmergencyOverrideDialog
+        open={emergencyOpen}
+        onOpenChange={setEmergencyOpen}
+        token={token}
+        job={{ id: job.id, status: job.status }}
       />
 
       {previewOpen && (
@@ -1422,6 +1864,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
 }) {
   const qc = useQueryClient();
   const statusFn = useServerFn(updateJobStatus);
+  const jobPaxSummary = getPaxSummary(job.pax);
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
     onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
@@ -1535,12 +1978,16 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         )}
       </div>
       <div className="px-4 pb-4 grid gap-2">
+        {job.status === "arrived" && (
+          <PassengerSummaryPanel pax={job.pax} />
+        )}
         {next && (
           <Button
             className="w-full min-h-16 text-lg font-bold rounded-2xl shadow-md"
             disabled={statusMut.isPending}
             onClick={() => {
               if (next.value === "completed") onOpenSummary();
+              else if (shouldHandleBoardingInDialog(job.status, next.value, jobPaxSummary.pending)) onOpenSummary();
               else statusMut.mutate(next.value);
             }}
           >
@@ -2008,91 +2455,347 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function TripExecutionDialog({ job, token, onOpenChange }: { job: Job | null; token: string; onOpenChange: (v: boolean) => void }) {
-  // (QR scanning removed — manual confirm / no-show is used everywhere now.)
+function TripExecutionDialog({
+  job,
+  token,
+  onOpenChange,
+  onChat,
+}: {
+  job: Job | null;
+  token: string;
+  onOpenChange: (v: boolean) => void;
+  onChat: (job: Job) => void;
+}) {
   const qc = useQueryClient();
   const listFn = useServerFn(listJobPaxDriver);
   const markFn = useServerFn(markPaxOnboard);
   const noShowFn = useServerFn(markPaxNoShow);
   const undoFn = useServerFn(markPaxPending);
+  const cancelFn = useServerFn(markPaxCancelled);
+  const statusFn = useServerFn(updateJobStatus);
+  const requestApprovalFn = useServerFn(requestBoardingApproval);
+  const overrideApprovalFn = useServerFn(driverOverrideBoardingApproval);
+  const approvalFn = useServerFn(getBoardingApprovalStatusDriver);
+  const [approvalNote, setApprovalNote] = useState("");
+  const [showApprovalFlow, setShowApprovalFlow] = useState(false);
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const passengerListRef = useRef<HTMLDivElement | null>(null);
+  const approvalPollingEnabled = !!job && job.status === "arrived";
+
+  useEffect(() => {
+    if (!job) {
+      setApprovalNote("");
+      setShowApprovalFlow(false);
+      setOverrideConfirmOpen(false);
+      setApprovalError(null);
+      return;
+    }
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [job]);
 
   const { data: pax, refetch } = useQuery({
     queryKey: ["driver-pax", job?.id],
-    queryFn: () => listFn({ data: { token, job_id: job!.id } }) as Promise<Array<{ id: string; name: string; status: string }>>,
+    queryFn: () => listFn({
+      data: { token, job_id: job!.id },
+    }) as Promise<DriverPaxRow[]>,
     enabled: !!job,
   });
+  const { data: approvals, refetch: refetchApprovals } = useQuery({
+    queryKey: ["driver-boarding-approval-dialog", job?.id],
+    queryFn: () => approvalFn({ data: { token, job_id: job!.id } }) as Promise<BoardingApproval[]>,
+    enabled: approvalPollingEnabled,
+    refetchInterval: approvalPollingEnabled ? 10_000 : false,
+  });
+
+  const latestApproval = approvals?.[0] ?? null;
+  const summary = getPaxSummary(pax);
+  const canStartWithApproval = latestApproval?.status === "approved" || latestApproval?.status === "overridden";
+  const approvalVisible = !!job && job.status === "arrived" && (
+    (showApprovalFlow && summary.pending > 0)
+    || (
+      !!latestApproval
+      && (
+        summary.pending > 0
+        || latestApproval.status === "pending"
+        || latestApproval.status === "approved"
+        || latestApproval.status === "overridden"
+      )
+    )
+  );
 
   const invalidateManifest = () => qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
+  const refreshBoardingState = async () => {
+    try {
+      await Promise.all([refetch(), refetchApprovals(), invalidateManifest()]);
+    } catch {
+      toast.error("The passenger update was saved, but the latest boarding screen did not refresh. Please reopen the trip if needed.");
+    }
+  };
+
   const markMut = useMutation({
     mutationFn: (v: { pax_id: string; method: "qr" | "manual" }) =>
       markFn({ data: { token, job_id: job!.id, pax_id: v.pax_id, method: v.method } }),
-    onSuccess: () => { toast.success("Passenger onboard"); refetch(); invalidateManifest(); },
+    onSuccess: async () => {
+      setApprovalError(null);
+      toast.success("Passenger onboard");
+      await refreshBoardingState();
+    },
     onError: (e: Error) => toast.error(e.message === "qr_required" ? "QR scan required for this trip" : e.message),
   });
   const noShowMut = useMutation({
     mutationFn: (pax_id: string) => noShowFn({ data: { token, job_id: job!.id, pax_id } }),
-    onSuccess: () => { toast.success("Marked as no-show"); refetch(); invalidateManifest(); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: async () => {
+      setApprovalError(null);
+      toast.success("Marked as no-show");
+      await refreshBoardingState();
+    },
+    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
+  });
+  const cancelMut = useMutation({
+    mutationFn: (pax_id: string) => cancelFn({ data: { token, job_id: job!.id, pax_id } }),
+    onSuccess: async () => {
+      setApprovalError(null);
+      toast.success("Marked as cancelled");
+      await refreshBoardingState();
+    },
+    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
   });
   const undoMut = useMutation({
     mutationFn: (pax_id: string) => undoFn({ data: { token, job_id: job!.id, pax_id } }),
-    onSuccess: () => { toast.success("Reset to pending"); refetch(); invalidateManifest(); },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: async () => {
+      setApprovalError(null);
+      toast.success("Reset to pending");
+      await refreshBoardingState();
+    },
+    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
+  });
+  const startTripMut = useMutation({
+    mutationFn: () => statusFn({ data: { token, job_id: job!.id, status: "in_progress" } }),
+    onSuccess: async () => {
+      toast.success("Status updated");
+      setApprovalError(null);
+      onOpenChange(false);
+      await invalidateManifest();
+    },
+    onError: (e: Error) => {
+      const formatted = formatDriverStatusError(e);
+      setApprovalError(formatted);
+      if (e.message === "partial_boarding_needs_approval") {
+        setShowApprovalFlow(true);
+      }
+      toast.error(formatted);
+    },
+  });
+  const requestApprovalMut = useMutation({
+    mutationFn: () => requestApprovalFn({
+      data: {
+        token,
+        job_id: job!.id,
+        driver_note: approvalNote.trim() || undefined,
+      },
+    }),
+    onSuccess: async () => {
+      toast.success("Boarding approval requested. Waiting for coordinator response.");
+      setShowApprovalFlow(true);
+      setApprovalError(null);
+      await refreshBoardingState();
+    },
+    onError: (e: Error) => {
+      const formatted = formatDriverStatusError(e);
+      setShowApprovalFlow(true);
+      setApprovalError(formatted);
+      toast.error(formatted);
+    },
+  });
+  const overrideApprovalMut = useMutation({
+    mutationFn: () => overrideApprovalFn({ data: { token, job_id: job!.id, approval_id: latestApproval!.id } }),
+    onSuccess: async () => {
+      toast.success("Boarding override applied");
+      setApprovalError(null);
+      setOverrideConfirmOpen(false);
+      await refreshBoardingState();
+      startTripMut.mutate();
+    },
+    onError: (e: Error) => {
+      const formatted = formatDriverStatusError(e);
+      setApprovalError(formatted);
+      toast.error(formatted);
+    },
   });
 
-  // handleScan retained for future re-enable; currently unused.
-
+  function handleStartTrip() {
+    if (!job) return;
+    if (job.status !== "arrived") {
+      startTripMut.mutate();
+      return;
+    }
+    if (summary.pending > 0 && !canStartWithApproval) {
+      setShowApprovalFlow(true);
+      setApprovalError("Some passengers are still pending. Request coordinator approval or finish boarding decisions first.");
+      return;
+    }
+    startTripMut.mutate();
+  }
 
   return (
-    <Dialog open={!!job} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{job ? `${displayLocation(job.from_location, job.pickup_display_name)} → ${displayLocation(job.to_location, job.dropoff_display_name)}` : ""}</DialogTitle>
-          <DialogDescription>
-            Tap "Confirm" for boarding passengers, or "No-show" if someone doesn't turn up.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 max-h-72 overflow-auto">
-          {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
-          {(pax ?? []).map((p) => {
-            const isOnboard = p.status === "onboard";
-            const isNoShow = p.status === "noshow";
-            return (
-              <div key={p.id} className={`flex items-center justify-between border rounded-md p-2.5 gap-2 ${isNoShow ? "border-destructive/50 bg-destructive/5" : ""}`}>
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{p.name}</div>
-                  <div className={`text-xs capitalize ${isNoShow ? "text-destructive font-medium" : "text-muted-foreground"}`}>{isNoShow ? "No-show" : p.status}</div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {isOnboard && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
-                  {isNoShow && <Badge variant="destructive" className="gap-1"><UserX className="h-3 w-3" /> No-show</Badge>}
-                  {!isOnboard && !isNoShow && (
-                    <>
-                      <Button size="sm" variant="secondary" disabled={markMut.isPending}
-                        onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}>
-                        Confirm
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                        disabled={noShowMut.isPending}
-                        onClick={() => noShowMut.mutate(p.id)}>
-                        <UserX className="h-4 w-4 mr-1" /> No-show
-                      </Button>
-                    </>
+    <>
+      <Dialog open={!!job} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{job ? `${displayLocation(job.from_location, job.pickup_display_name)} → ${displayLocation(job.to_location, job.dropoff_display_name)}` : ""}</DialogTitle>
+            <DialogDescription>
+              Confirm, mark no-show, or cancel passengers before starting the trip.
+            </DialogDescription>
+          </DialogHeader>
+
+          {job?.status === "arrived" && (
+            <div className="space-y-3">
+              <PassengerSummaryPanel pax={pax} />
+              {approvalVisible && (
+                <div className="space-y-2">
+                  {!latestApproval && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="boarding-note">Driver note for coordinator (optional)</Label>
+                      <Textarea
+                        id="boarding-note"
+                        value={approvalNote}
+                        onChange={(e) => setApprovalNote(e.target.value)}
+                        maxLength={500}
+                        placeholder="Explain why some passengers are still pending…"
+                      />
+                    </div>
                   )}
-                  {(isOnboard || isNoShow) && (
-                    <Button size="sm" variant="ghost" className="text-muted-foreground"
-                      disabled={undoMut.isPending}
-                      onClick={() => undoMut.mutate(p.id)}>
-                      Undo
-                    </Button>
-                  )}
+                  <BoardingApprovalCard
+                    approval={latestApproval}
+                    nowMs={nowMs}
+                    pendingCount={summary.pending}
+                    resolvedCount={summary.resolved}
+                    requestNote={approvalNote.trim()}
+                    requestBusy={requestApprovalMut.isPending}
+                    overrideBusy={overrideApprovalMut.isPending}
+                    startBusy={startTripMut.isPending}
+                    approvalError={approvalError}
+                    onRequest={() => requestApprovalMut.mutate()}
+                    onOverride={() => setOverrideConfirmOpen(true)}
+                    onOpenBoarding={() => {
+                      setApprovalError(null);
+                      setShowApprovalFlow(false);
+                      const prefersReducedMotion = typeof window !== "undefined"
+                        && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+                      passengerListRef.current?.scrollIntoView({
+                        behavior: prefersReducedMotion ? "auto" : "smooth",
+                        block: "start",
+                      });
+                    }}
+                    onChat={() => job && onChat(job)}
+                    onStartTrip={handleStartTrip}
+                  />
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </DialogContent>
-    </Dialog>
+              )}
+            </div>
+          )}
+
+          <div ref={passengerListRef} className="space-y-2 max-h-72 overflow-auto pr-1">
+            {(pax ?? []).length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No passengers on this trip.</p>}
+            {(pax ?? []).map((p) => {
+              const isOnboard = p.status === "onboard";
+              const isNoShow = p.status === "noshow";
+              const isCancelled = p.status === "cancelled";
+              const isPending = !isOnboard && !isNoShow && !isCancelled;
+              return (
+                <div
+                  key={p.id}
+                  className={`flex flex-col gap-2 border rounded-md p-2.5 sm:flex-row sm:items-center sm:justify-between ${
+                    isNoShow ? "border-destructive/50 bg-destructive/5" : isCancelled ? "border-slate-300 bg-slate-50" : ""
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {isPending && <Badge variant="outline">Pending</Badge>}
+                      {isOnboard && <Badge className="bg-emerald-600 hover:bg-emerald-600">Onboard</Badge>}
+                      {isNoShow && <Badge variant="destructive" className="gap-1"><UserX className="h-3 w-3" /> No-show</Badge>}
+                      {isCancelled && <Badge variant="secondary" className="gap-1"><X className="h-3 w-3" /> Cancelled</Badge>}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    {isPending && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={markMut.isPending}
+                          onClick={() => markMut.mutate({ pax_id: p.id, method: "manual" })}
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                          disabled={noShowMut.isPending}
+                          onClick={() => noShowMut.mutate(p.id)}
+                        >
+                          <UserX className="h-4 w-4 mr-1" /> No-show
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={cancelMut.isPending}
+                          onClick={() => cancelMut.mutate(p.id)}
+                        >
+                          <X className="h-4 w-4 mr-1" /> Cancelled
+                        </Button>
+                      </>
+                    )}
+                    {!isPending && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground"
+                        disabled={undoMut.isPending}
+                        onClick={() => undoMut.mutate(p.id)}
+                      >
+                        Undo
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {job?.status === "arrived" && (
+            <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button onClick={handleStartTrip} disabled={startTripMut.isPending}>
+                {startTripMut.isPending ? "Starting…" : "Passengers on board — en route"}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={overrideConfirmOpen} onOpenChange={setOverrideConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Override coordinator approval and start this trip?</DialogTitle>
+            <DialogDescription>
+              Use this only when the coordinator has not responded within {BOARDING_OVERRIDE_MINUTES} minutes and you need to depart with pending passengers.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOverrideConfirmOpen(false)}>Cancel</Button>
+            <Button onClick={() => overrideApprovalMut.mutate()} disabled={overrideApprovalMut.isPending}>
+              {overrideApprovalMut.isPending ? "Overriding…" : "Override now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
