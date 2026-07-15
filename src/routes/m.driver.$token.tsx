@@ -1092,6 +1092,35 @@ function DriverManifest() {
   );
 }
 
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function GpsRadiusChip({ distanceM, thresholdM }: { distanceM: number; thresholdM: number }) {
+  const within = distanceM <= thresholdM;
+  const label = distanceM < 1000
+    ? `${Math.round(distanceM)} m`
+    : `${(distanceM / 1000).toFixed(distanceM < 10_000 ? 1 : 0)} km`;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+        within
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+          : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+      }`}
+      title={`Your GPS is ${label} from this point. Allowed radius: ${thresholdM} m.`}
+    >
+      <MapPin className="h-3 w-3" />
+      {label} / {thresholdM}m {within ? "✓" : ""}
+    </span>
+  );
+}
+
 function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; arrivalRadiusM: number; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
