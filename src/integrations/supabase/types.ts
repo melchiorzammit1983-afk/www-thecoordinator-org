@@ -2784,13 +2784,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "jobs_driver_cancel_requested_by_fkey"
-            columns: ["driver_cancel_requested_by"]
-            isOneToOne: false
-            referencedRelation: "drivers"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "jobs_driver_id_fkey"
             columns: ["driver_id"]
             isOneToOne: false
