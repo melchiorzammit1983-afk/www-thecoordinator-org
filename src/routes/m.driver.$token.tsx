@@ -815,6 +815,10 @@ function DriverManifest() {
         onDriverPosition={setDriverPos}
       />
 
+      {!navigateMode && <CoordChangeRequestsPanel token={token} />}
+
+
+
       {!navigateMode && (
         <header
           className="sticky top-0 z-20 px-4 py-3 border-b border-white/40 dark:border-white/10 shadow-sm"
