@@ -1016,7 +1016,15 @@ function CalendarPage() {
       />
 
       {/* Trip list with concise ETA */}
-      <DispatchTripList jobs={visibleJobs} />
+      <RouteOptimizationAlertBanner />
+
+      {/* Trip list with concise ETA */}
+      <DispatchTripList
+        jobs={visibleJobs}
+        onOpenDetails={(j) => setDetailsJob(j)}
+        onOpenChat={(j) => setChatJob(j)}
+        pendingApprovalCount={pendingRouteOptCount}
+      />
 
       {/* Inbound (pending my decision) */}
       <InboundBoard ctx={cardCtx} onAccepted={handleAccepted} />
