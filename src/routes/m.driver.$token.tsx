@@ -1092,6 +1092,20 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
   const clientLiveFn = useServerFn(getClientLiveLocationDriver);
+  const snapPickupFn = useServerFn(driverSnapPickupToHere);
+  const snapPickup = useMutation({
+    mutationFn: () => {
+      if (!driverPos) throw new Error("No GPS position yet — wait a few seconds and try again.");
+      return snapPickupFn({
+        data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Pickup coordinates updated to your position");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const activeForLive = !!job.driver_accepted_at && job.status !== "completed" && !job.deletion_requested_at;
   const { data: clientLive } = useQuery({
