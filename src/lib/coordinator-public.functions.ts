@@ -3072,3 +3072,89 @@ export const driverSnapPickupToHere = createServerFn({ method: "POST" })
     } as never);
     return { ok: true };
   });
+
+// ==================== Driver: request cancellation (needs coord approval) ====================
+
+export const driverRequestCancel = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      reason: z.string().trim().min(1).max(80),
+      note: z.string().trim().max(500).optional().nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (job.status === "cancelled" || job.status === "completed") {
+      throw new Error("Trip already " + job.status);
+    }
+    if (job.driver_cancel_requested_at) {
+      throw new Error("A cancellation request is already pending");
+    }
+    const note = (data.note ?? "").trim() || null;
+    const { error } = await supabaseAdmin.from("jobs").update({
+      driver_cancel_requested_at: new Date().toISOString(),
+      driver_cancel_requested_by: link.subject_id ?? null,
+      driver_cancel_reason: data.reason,
+      driver_cancel_note: note,
+    } as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `🛑 Driver requested to CANCEL this trip. Reason: ${data.reason}${note ? ` — ${note}` : ""}. Waiting for coordinator approval.`,
+      thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
+    } as never);
+    await supabaseAdmin.rpc("record_trip_audit" as never, {
+      _job_id: data.job_id,
+      _event_type: "driver_cancel_requested",
+      _previous: null,
+      _new: { reason: data.reason, note },
+      _notes: note,
+      _approval_status: "pending",
+      _driver_id: link.subject_id ?? null,
+      _actor_label: "driver",
+    } as never);
+    return { ok: true };
+  });
+
+export const driverWithdrawCancelRequest = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const { link, job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    if (!job.driver_cancel_requested_at) throw new Error("No pending cancellation request");
+    const { error } = await supabaseAdmin.from("jobs").update({
+      driver_cancel_requested_at: null,
+      driver_cancel_requested_by: null,
+      driver_cancel_reason: null,
+      driver_cancel_note: null,
+    } as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: job.company_id,
+      sender_kind: "driver",
+      sender_label: link.subject_label ?? "Driver",
+      body: `↩️ Driver withdrew the cancellation request. Trip continues.`,
+      thread_kind: "driver_coord",
+      driver_id: link.subject_id ?? null,
+    } as never);
+    await supabaseAdmin.rpc("record_trip_audit" as never, {
+      _job_id: data.job_id,
+      _event_type: "driver_cancel_withdrawn",
+      _new: null,
+      _approval_status: "not_required",
+      _driver_id: link.subject_id ?? null,
+      _actor_label: "driver",
+    } as never);
+    return { ok: true };
+  });
