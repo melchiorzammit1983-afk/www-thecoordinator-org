@@ -187,21 +187,36 @@ function CoordinatorLayout() {
           </div>
           <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
         </div>
-        <nav className="flex flex-col p-3">
-          {visibleNav.map((item) => {
-            const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
+        <nav className="flex flex-col p-3 overflow-y-auto">
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter((item) => {
+              if (item.to === "/coordinator/ai-center") return anyAiEnabled;
+              if (!item.feature) return true;
+              return features?.[item.feature] !== false;
+            });
+            if (items.length === 0) return null;
             return (
-              <Link
-                key={item.to} to={item.to}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2 my-0.5 text-sm rounded-md whitespace-nowrap transition-colors",
-                  active ? "bg-primary/10 text-primary font-medium"
-                         : "text-foreground/70 hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
+              <div key={group.label} className="mb-3">
+                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.label}
+                </div>
+                {items.map((item) => {
+                  const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
+                  return (
+                    <Link
+                      key={item.to} to={item.to}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 my-0.5 text-sm rounded-md whitespace-nowrap transition-colors",
+                        active ? "bg-primary/10 text-primary font-medium"
+                               : "text-foreground/70 hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
