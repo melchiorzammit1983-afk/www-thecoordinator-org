@@ -26,7 +26,7 @@ Severity legend:
 | Permissions | 0 | 1 | 2 | 1 |
 | **Total** | **0** | **12** | **22** | **12** |
 
-**Go/No-go for production:** **Conditional GO.** No Critical blockers detected. The single **High** blocker that must be fixed before the next production push is finding **H-DB-1** (missing `job_wait_sessions.free_ends_at` column referenced by a stale DB object — actively erroring 30×/2 min in prod, breaks driver waiting timer). All other High-severity items are non-blocking but should be scheduled in the next hardening sprint.
+**Go/No-go for production:** **Conditional GO.** No Critical blockers detected. Prior blocker **H-DB-1** (`job_wait_sessions.free_ends_at`) is **resolved** — column now exists on the live table, no DB object still references it as missing. Remaining High-severity items are non-blocking but should be scheduled in the next hardening sprint.
 
 ---
 
