@@ -141,6 +141,8 @@ type DriverManifestResponse = {
   branding: BrandingInfo;
   companySettings?: {
     safety_mode_threshold_kmh?: number | null;
+    safety_mode_enabled?: boolean | null;
+    safety_mode_allow_override?: boolean | null;
   };
 } | null;
 
