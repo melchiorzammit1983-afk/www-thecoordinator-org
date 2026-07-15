@@ -144,6 +144,7 @@ type DriverManifestResponse = {
     safety_mode_threshold_kmh?: number | null;
     safety_mode_enabled?: boolean | null;
     safety_mode_allow_override?: boolean | null;
+    auto_next_job_enabled?: boolean | null;
   };
 } | null;
 
