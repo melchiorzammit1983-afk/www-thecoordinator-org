@@ -1,216 +1,96 @@
-# Batch C — Implementation Plan (revised)
+## Goal
 
-Audit Trail + Anti-Tampering + Grouped Trip improvements. Phase 1 / Batch A / Batch B workflows are only *observed* by the new audit layer — never modified.
+Once the assigned driver has accepted a trip (`driver_accepted_at` set) OR the trip has progressed past `pending` (assigned / en_route / arrived / in_progress), the coordinator can no longer edit it directly. Any change becomes a **change request** that the driver must approve or reject from the driver manifest — mirroring the existing 2-hour client-booking pattern.
 
-The plan doc `docs/BATCH_C_IMPLEMENTATION_PLAN.md` is written during build mode; full content lives here.
+## Locked actions
 
----
+For a locked trip, these coordinator actions require driver approval:
 
-## 1. Architecture Review
+- **Trip details** — from/to, pickup date/time, pax count, room number, vehicle, contact phone, flight numbers, `qr_strict_mode`, `tracking_enabled`.
+- **Driver reassignment** — swap to another driver, or unassign.
+- **Cancel / delete / hide** — soft `status="cancelled"`, `deleteJob` (already partially pending), hide.
+- **Fare / price** — new price proposals or edits to agreed fare.
 
-`admin_activity_log` + `log_activity()` trigger stay untouched (Batch A/B rely on them). Batch C adds a **purpose-built operational log**, `trip_audit_log`:
+Labels and internal-only notes stay editable (not driver-visible).
 
-- append-only (RLS blocks direct INSERT; UPDATE/DELETE revoked from `authenticated`),
-- hash-chained per trip,
-- written exclusively via `record_trip_audit` (`SECURITY DEFINER`) so clients cannot forge hashes or backdate `server_time`,
-- coordinator-readable scoped to their company (via `company_id` column — no join needed).
+## Lock trigger
 
-Grouped trips today: `groups` = label + driver link on one job. Batch C adds a **stops** concept — an ordered list of destinations under a group — without breaking legacy single-job grouping used by driver links or pax assignment.
+A trip is **locked** when either is true:
+- `driver_accepted_at IS NOT NULL`, OR
+- `status <> 'pending'` (i.e. driver has already progressed it).
 
----
+Admin accounts bypass the lock (existing `is_admin` check).
 
-## 2. Files Affected
+## Data model
 
-**New**
-- `src/lib/audit.functions.ts` — `listTripAudit`, `listSuspiciousActivity`, `requestStopReorder`, `approveStopReorder`.
-- `src/lib/groups.functions.ts` — `listGroupStops`, `reorderStops`, `splitGroup`, `mergeGroups`.
-- `src/components/coordinator/TripAuditTimeline.tsx` — renders audit rows with hash-verified badge and approval-status chip.
-- `src/components/coordinator/SuspiciousActivityCard.tsx` — dashboard warning tile.
-- `src/components/coordinator/GroupStopsPanel.tsx` — expand/reorder/split/merge UI.
-- `docs/BATCH_C_IMPLEMENTATION_PLAN.md`, `docs/BATCH_C_COMPLETED.md`, `docs/BATCH_C_MANUAL_TESTING.md`.
-
-**Modified (write-through only — call the new RPC, no workflow change)**
-- `src/lib/coordinator-public.functions.ts` — after every existing status/waiting/boarding/override write, call `record_trip_audit` with the appropriate `approval_status`.
-- `src/lib/coordinator.functions.ts` — same for coordinator-side waiting adjustments and safety-flag clears.
-- `src/routes/_authenticated/coordinator.index.tsx` — mount `SuspiciousActivityCard`.
-- `src/components/coordinator/TripDetailsSheet.tsx` — add "Audit" tab; render `GroupStopsPanel` when `group_id IS NOT NULL`.
-- `src/routes/m.driver.$token.tsx` — "Request stop reorder" button inside grouped-run view.
-
-**Untouched (explicit)**
-- Every file implementing GPS validation, waiting timers, boarding, safety mode, or emergency override logic. We only *read* their outcomes and log them.
-
----
-
-## 3. Database Changes (single migration)
+New table `public.job_coord_change_requests`:
 
 ```text
-trip_audit_log
-  id uuid pk
-  company_id uuid not null          -- ★ new: scopes reporting without joining jobs
-  job_id uuid                       -- fk jobs, indexed
-  group_id uuid null                -- fk groups
-  stop_id uuid null                 -- fk group_stops
-  driver_id uuid null
-  actor_user_id uuid null
-  actor_label text                  -- 'driver' | 'coordinator' | 'system' | 'passenger'
-  event_type text                   -- enum below
-  approval_status text not null default 'not_required'
-                                    -- ★ new: 'approved'|'rejected'|'pending'|'overridden'|'not_required'
-  previous_state jsonb
-  new_state jsonb
-  notes text
-  gps_lat numeric, gps_lng numeric, gps_accuracy_m numeric
-  street_address text
-  speed_kmh numeric
-  device_time timestamptz null
-  server_time timestamptz not null default now()   -- authoritative
-  prev_hash text null
-  row_hash  text not null            -- sha256(prev_hash || canonical(payload including company_id + approval_status))
-  created_at timestamptz not null default now()
-
-  CHECK (approval_status IN ('approved','rejected','pending','overridden','not_required'))
-
-  INDEX (company_id, created_at DESC)
-  INDEX (job_id, created_at)
-  INDEX (driver_id, created_at DESC)
-  INDEX (event_type, created_at DESC)
-  INDEX (approval_status) WHERE approval_status IN ('pending','rejected')
-
-group_stops
-  id uuid pk
-  group_id uuid fk groups on delete cascade
-  stop_index int not null                           -- 0-based, unique (group_id, stop_index)
-  address text, display_name text, place_id text
-  lat numeric, lng numeric
-  pax_count int default 0
-  arrived_at, boarded_at, no_show_at, completed_at timestamptz null
-  wait_started_at, wait_ended_at timestamptz null
-  charges_cents int default 0
-  created_at, updated_at timestamptz
-
-group_stop_reorder_requests
-  id, group_id, requested_by (driver_id), proposed_order uuid[],
-  status text ('pending'|'approved'|'rejected'), decided_by uuid null,
-  created_at, decided_at
+id uuid pk
+job_id uuid → jobs (cascade)
+company_id uuid
+requested_by uuid (auth user)
+kind text  -- 'edit' | 'reassign' | 'cancel' | 'delete' | 'price'
+requested_changes jsonb -- {from_location, to_location, pickup_at, driver_id, ...}
+note text
+status text default 'pending' -- pending | approved | rejected | cancelled
+decided_at timestamptz
+decided_by_driver_id uuid → drivers
+decided_note text
+created_at / updated_at
 ```
 
-Event-type set: `arrival_verified`, `arrival_manual`, `wait_started`, `wait_ended`, `wait_charge_changed`, `boarding_started`, `boarding_completed`, `boarding_approved`, `pax_no_show`, `pax_cancelled`, `override_arrived`, `override_on_board`, `override_en_route`, `override_drop_off`, `override_complete`, `safety_concern`, `breakdown`, `status_change`, `stop_reordered`, `stop_split`, `stop_merged`, `stop_reorder_requested`, `stop_reorder_decided`.
+RLS: coordinators of the job's company can `SELECT`/`INSERT`/`UPDATE own`; driver reads/updates via the driver token path (service role, scoped by `job_id + driver_id`); admin all. Standard GRANTs.
 
-**Approval-status semantics per event class** (defaults inside the RPC when caller omits it):
-- Emergency overrides → `overridden`.
-- Boarding approvals → `approved` / `rejected` from the workflow decision.
-- Stop-reorder requests → `pending` on create; the decision row writes `approved` / `rejected`.
-- Waiting-charge changes → `approved` (coordinator) or `overridden` (driver-initiated).
-- Everything else (arrivals, status changes, GPS pings) → `not_required`.
+Index: `(job_id, status)`.
 
-**RPC — the only write path**
-```sql
-create function public.record_trip_audit(
-  _job_id uuid, _event_type text, _previous jsonb, _new jsonb,
-  _notes text, _lat numeric, _lng numeric, _accuracy numeric,
-  _address text, _speed numeric, _device_time timestamptz,
-  _group_id uuid, _stop_id uuid,
-  _approval_status text default null   -- ★ null → RPC defaults per event_type
-) returns uuid
-security definer set search_path = public
-```
-- Resolves `actor_user_id` from `auth.uid()`, `driver_id` + `company_id` from the job row.
-- Locks the last row for `job_id` (`SELECT ... FOR UPDATE`) to serialize the chain.
-- Canonicalizes the payload (incl. `company_id`, `approval_status`) and computes `row_hash = sha256(prev_hash || canonical)` via `pgcrypto`.
-- Inserts. `server_time = now()`; client timestamps live only in `device_time`.
+## Server functions
 
-**Grants / RLS**
-```text
-GRANT SELECT, INSERT ON trip_audit_log TO authenticated;  -- direct INSERT blocked by RLS; writes go through the definer RPC
-GRANT ALL             ON trip_audit_log TO service_role;
-REVOKE UPDATE, DELETE ON trip_audit_log FROM authenticated, anon;
-ALTER TABLE trip_audit_log ENABLE ROW LEVEL SECURITY;
--- SELECT: coordinator reads rows WHERE company_id = company_of(auth.uid()); admins read all
--- INSERT: WITH CHECK (false)
-```
-Same GRANT/RLS shape for `group_stops` (company-scoped via parent group's job) and `group_stop_reorder_requests` (driver INSERT own group; coordinator UPDATE own; SELECT both).
+New in `src/lib/coordinator.functions.ts`:
 
-Suspicious activity: `SECURITY DEFINER` view `v_suspicious_activity` scans `trip_audit_log` directly by `company_id` (no jobs join) over 24h / 7d windows:
-- overrides ≥ 3 in 24h,
-- no-shows ≥ 5 in 7d,
-- waiting-charge edits ≥ 3 in 24h,
-- GPS validation failures ≥ 2 in 24h,
-- same override reason ≥ 4 in 7d,
-- `approval_status = 'rejected'` ≥ 2 in 24h.
+- `requestJobChange({ job_id, kind, requested_changes, note })` — creates a pending change request, posts a system `trip_messages` row in `driver_coord` thread ("Coordinator requested a change — please review"), returns the request.
+- `listJobChangeRequests({ job_id })` — for the trip details sheet.
+- `cancelJobChangeRequest({ id })` — coordinator withdraws a pending request.
 
-**Triggers (write-through, not workflow changes)**: `AFTER UPDATE ON jobs` (status), `job_wait_sessions`, `job_boarding_approvals`, `job_emergency_overrides`, `pax` — each calls `record_trip_audit`. Audit failures are logged (`RAISE WARNING`) and never roll back the source write.
+Modify existing:
 
-Chain verification helper: `verify_trip_audit_chain(_job_id uuid) returns table(row_id uuid, ok boolean)` — recomputes hashes; UI shows shield ✅/⚠️.
+- `updateJob`, `assignDriver`, `updateJobStatus` (cancelled path), `deleteJob`, price-proposal write paths: **if locked**, do NOT mutate; instead delegate to `requestJobChange` under the appropriate `kind` and return `{ pending: true, request_id }`.
+- `deleteJob` already has a pending flow for `driver_accepted_at` — refactor to reuse the new table so all approval flows live in one place. Keep `deletion_requested_at` for backwards compat until UI is migrated in the same PR.
 
----
+New in `src/lib/coordinator-public.functions.ts` (token-authenticated driver endpoints):
 
-## 4. API / Server-Function Changes
+- `listPendingCoordChangesForDriver({ token })` — pending requests for jobs assigned to the driver.
+- `decideCoordChangeRequest({ token, request_id, approve, note })` — on approve, apply the `requested_changes` patch server-side using admin client, close the request, post system message; on reject, mark rejected with reason.
 
-- `listTripAudit({ job_id })` → rows + `chain_ok`; each row includes `approval_status`.
-- `listSuspiciousActivity({ company_id? })` → view rows for dashboard (defaults to caller's company via `company_id` index).
-- `listGroupStops({ group_id })`, `reorderStops({ group_id, ordered_stop_ids })`, `splitGroup({ group_id, stop_ids })`, `mergeGroups({ target_group_id, source_group_ids })` — all `requireSupabaseAuth`, company-scoped.
-- `requestStopReorder({ group_id, proposed_order })` — driver token endpoint; audit row is `approval_status = 'pending'`.
-- `approveStopReorder({ request_id, approve })` — coordinator; audit row `approved`/`rejected`.
+## UI
 
-Existing status/override/waiting server functions gain one line: `await recordTripAudit(..., approval_status)`. Signatures unchanged.
+- **Trip details sheet** (`src/components/coordinator/TripDetailsSheet.tsx`): show a locked badge, list pending change requests with cancel button, disable direct-edit buttons in favor of "Request change".
+- **JobFormDialog**: when opened for a locked trip, header shows "Change request — needs driver approval"; Save submits `requestJobChange` instead of `updateJob`. Fare/price panel same treatment.
+- **Reassign driver menu**: same routing when locked.
+- **Cancel / Delete**: rename to "Request cancellation" / "Request deletion" on locked trips.
+- **Driver manifest** (`src/routes/m.driver.$token.tsx`): new "Coordinator requested a change" card per job showing the diff (before → after), Approve / Reject buttons + optional note. Toast + optimistic update.
 
----
+## Notifications
 
-## 5. Driver App Changes
+- System `trip_messages` in `driver_coord` thread on request, approve, reject, cancel.
+- Reuse existing push infra (`driver_push_subs`) — send a push on request creation.
 
-- Grouped-run view (`m.driver.$token.tsx` when `group_id` present) gets an expandable stop list — current stop highlighted, others collapsible. Existing per-trip status buttons unchanged; they operate on the current stop.
-- **"Request reorder"** button opens a drag list, submits `requestStopReorder`. Driver sees "Waiting for coordinator" until decided.
-- No changes to Safety Mode, arrival, waiting, boarding, or override buttons.
+## Copy / UX rules
 
----
+- Locked badge in coordinator UI: "Driver accepted — changes need driver approval".
+- Diff view lists only fields that changed vs current job.
+- Coordinator can have at most one pending request of each `kind` per job (unique partial index on `(job_id, kind) where status='pending'`).
 
-## 6. Coordinator App Changes
+## Testing
 
-- **Trip details sheet** gains an *Audit* tab: chronological timeline, event icons, previous→new diff, GPS pin (opens map), device-vs-server time delta chip, chain-integrity badge, and an **approval-status pill** (green/red/amber/grey/blue).
-- Grouped trips render as **"Airport Run · 5 Stops"** with expand chevron → `GroupStopsPanel`: per-stop arrival/wait/boarding/charges plus reorder / split / merge / approve-driver-reorder actions.
-- **Dashboard tile** `SuspiciousActivityCard` — top 5 warnings; each links to the trip.
-- Trip cards get a ⚠️ badge when the driver has a live suspicious signal.
-- Dashboard exposes a "Pending approvals" filter using the `approval_status` partial index.
+- Assign + driver accepts → edit from/to → verify no direct DB change, pending request row created, driver sees it and can approve → job updated; reject → job untouched.
+- Delete flow migrated: locked trip → deletion request → driver approves → job deleted.
+- Reassign locked trip → new driver only sees the job after old driver approves.
+- Admin edit on locked trip → still allowed (bypass).
+- Unlocked (pending, no `driver_accepted_at`) → coordinator edits directly, no request created (regression).
 
----
+## Out of scope
 
-## 7. Risks
-
-- **Trigger recursion / write-amplification.** Triggers on `jobs`, `pax`, wait/boarding/override tables all write to `trip_audit_log`. Audit table itself has no triggers.
-- **Chain contention.** `FOR UPDATE` on the last row per `job_id` serializes inserts for the same trip. Acceptable — one driver per trip.
-- **Hash sensitivity to jsonb ordering.** `canonical_jsonb(jsonb)` helper (sorted keys, null-stripped) used by both `record_trip_audit` and `verify_trip_audit_chain`. `company_id` and `approval_status` are part of the canonical payload from day one.
-- **Legacy grouped jobs (no `group_stops` rows)** must keep working. `listGroupStops` synthesizes a single-stop row when empty; UI falls back to classic card.
-- **Points cost.** Audit writes are pure Postgres — no AI / points burn. Reverse geocoding reuses the address already captured by the source workflow.
-
----
-
-## 8. Rollback
-
-Independent pieces:
-
-1. **UI only** — revert component/route edits; `record_trip_audit` calls become dead code, don't error.
-2. **Full rollback migration**:
-   ```sql
-   DROP VIEW     IF EXISTS public.v_suspicious_activity;
-   DROP FUNCTION IF EXISTS public.verify_trip_audit_chain(uuid);
-   DROP FUNCTION IF EXISTS public.record_trip_audit(...);
-   DROP TRIGGER  IF EXISTS trg_audit_jobs_status ON public.jobs;
-   -- ...pax / wait / boarding / override triggers
-   DROP TABLE IF EXISTS public.group_stop_reorder_requests;
-   DROP TABLE IF EXISTS public.group_stops;
-   DROP TABLE IF EXISTS public.trip_audit_log;
-   ```
-3. `admin_activity_log` untouched → Batch A/B forensics intact through rollback.
-
-Zero rollback impact on GPS, waiting, boarding, safety, or override workflows.
-
----
-
-## Deliverables
-
-- `docs/BATCH_C_IMPLEMENTATION_PLAN.md` (this content)
-- Migration from §3
-- Server functions & components from §2
-- `docs/BATCH_C_COMPLETED.md` and `docs/BATCH_C_MANUAL_TESTING.md` after implementation
-
-Ready to implement on approval.
+- Labels + internal notes remain directly editable.
+- Emergency-override paths (driver-initiated) unchanged.
+- No changes to client portal / 2-hour client rule.
