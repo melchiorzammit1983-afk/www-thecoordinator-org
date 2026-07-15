@@ -5886,3 +5886,43 @@ export const clearJobSafetyFlags = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- DRIVER-APPROVAL CHANGE REQUESTS ----------
+
+export const listJobChangeRequests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: rows, error } = await sb
+      .from("job_coord_change_requests")
+      .select("id, kind, requested_changes, note, status, created_at, decided_at, decided_note, drivers:decided_by_driver_id(name)")
+      .eq("job_id", data.job_id)
+      .eq("company_id", c.id)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { requests: rows ?? [] };
+  });
+
+export const cancelJobChangeRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: row } = await sb
+      .from("job_coord_change_requests")
+      .select("id, job_id, company_id, status")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!row) throw new Error("Request not found");
+    if ((row as any).company_id !== c.id && !c.isAdmin) throw new Error("Not allowed");
+    if ((row as any).status !== "pending") throw new Error("Only pending requests can be cancelled");
+    const { error } = await sb
+      .from("job_coord_change_requests")
+      .update({ status: "cancelled", decided_at: new Date().toISOString(), decided_note: "cancelled by coordinator" } as never)
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
