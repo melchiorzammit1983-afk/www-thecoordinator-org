@@ -1502,6 +1502,23 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
               </Button>
             )}
 
+            {!isSafetyMode
+              && (job.status === "en_route" || job.status === "arrived")
+              && !!driverPos && (
+              <Button
+                variant="outline"
+                className="h-10 sm:col-span-2"
+                disabled={snapPickup.isPending}
+                onClick={() => snapPickup.mutate()}
+                title="Move the pickup pin on the map to your current GPS position"
+              >
+                <MapPin className="h-4 w-4 mr-1.5" />
+                {snapPickup.isPending ? "Updating pickup…" : "Pickup is here — use my GPS"}
+              </Button>
+            )}
+
+
+
             {!isSafetyMode && job.status !== "completed" && (
               <Button variant="outline" className="h-10"
                 onClick={() => setLateOpen(true)}>
