@@ -15,6 +15,8 @@ import {
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
 } from "@/lib/coordinator-public.functions";
+import { useAutoNextJob } from "@/hooks/use-auto-next-job";
+import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 
 
 import { Badge } from "@/components/ui/badge";
@@ -558,6 +560,13 @@ function DriverManifest() {
   useEffect(() => {
     if (jobs.length === 0 && archivedJobs.length > 0) setShowArchived(true);
   }, [jobs.length, archivedJobs.length]);
+
+  // Batch D — Auto Next Job: watch for completion transitions and surface next assigned trip.
+  const autoNextEnabled = data?.companySettings?.auto_next_job_enabled ?? true;
+  const { nextJob: autoNextJob, dismiss: dismissAutoNext } = useAutoNextJob(
+    jobs,
+    { enabled: autoNextEnabled },
+  );
 
 
   const branding = data?.branding;
