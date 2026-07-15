@@ -315,3 +315,22 @@ export const rejectRouteOptimization = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+/**
+ * Company-scoped listing of pending optimizations. Powers the coordinator
+ * calendar alerts (red-dot badge, banner, toast, sound).
+ */
+export const listPendingRouteOptimizations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const { data, error } = await supabase
+      .from("group_route_optimizations")
+      .select("id, group_id, job_id, created_at, reasoning, duration_seconds_original, duration_seconds_suggested")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
