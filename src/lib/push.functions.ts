@@ -2,6 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+export const getVapidPublicKey = createServerFn({ method: "GET" }).handler(
+  async () => {
+    return { publicKey: process.env.VAPID_PUBLIC_KEY ?? null };
+  },
+);
+
+
 const PlatformEnum = z.enum(["web", "android", "ios"]);
 const RoleEnum = z.enum(["driver", "client", "coordinator", "admin"]);
 
