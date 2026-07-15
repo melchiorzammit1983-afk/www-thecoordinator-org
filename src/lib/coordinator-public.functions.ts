@@ -1103,6 +1103,12 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
       action: z.enum(EMERGENCY_OVERRIDE_ACTIONS),
       reason: z.enum(EMERGENCY_OVERRIDE_REASONS),
       reason_note: z.string().trim().max(500).optional(),
+      // Optional live telemetry from the driver's device at the moment of override.
+      gps_lat: z.number().gte(-90).lte(90).optional(),
+      gps_lng: z.number().gte(-180).lte(180).optional(),
+      gps_accuracy_m: z.number().nonnegative().max(100000).optional(),
+      // Optional photo, sent as data URL (image/jpeg or image/png), max ~5 MB.
+      photo_data_url: z.string().max(7_500_000).optional(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
@@ -1133,6 +1139,12 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
       if (!(job as any).driver_completed_at) {
         patch.driver_completed_at = now;
       }
+    }
+    if (data.reason === "safety_concern") {
+      patch.safety_flag_at = now;
+    }
+    if (data.reason === "breakdown") {
+      patch.breakdown_flag_at = now;
     }
 
     const { error: updateError } = await supabaseAdmin
@@ -1178,16 +1190,86 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: latestLocation } = driverId
-      ? await supabaseAdmin
-          .from("driver_locations")
-          .select("speed_mps")
-          .eq("driver_id", driverId)
-          .eq("job_id", data.job_id)
-          .order("captured_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : { data: null };
+    // Prefer the fresh telemetry the driver sent with the override; fall back
+    // to the latest driver_locations ping.
+    let gpsLat = data.gps_lat ?? null;
+    let gpsLng = data.gps_lng ?? null;
+    let gpsAccuracy = data.gps_accuracy_m ?? null;
+    let speedMps: number | null = null;
+
+    if (driverId) {
+      const { data: latestLocation } = await supabaseAdmin
+        .from("driver_locations")
+        .select("lat, lng, accuracy_m, speed_mps")
+        .eq("driver_id", driverId)
+        .eq("job_id", data.job_id)
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const loc: any = latestLocation ?? null;
+      if (loc) {
+        if (gpsLat == null) gpsLat = loc.lat ?? null;
+        if (gpsLng == null) gpsLng = loc.lng ?? null;
+        if (gpsAccuracy == null) gpsAccuracy = loc.accuracy_m ?? null;
+        speedMps = loc.speed_mps ?? null;
+      }
+    }
+
+    // Reverse-geocode (best-effort).
+    let streetAddress: string | null = null;
+    if (gpsLat != null && gpsLng != null) {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (apiKey) {
+        try {
+          const rj: any = await (
+            await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${gpsLat},${gpsLng}&key=${apiKey}`)
+          ).json();
+          streetAddress = rj?.results?.[0]?.formatted_address ?? null;
+        } catch { /* best-effort */ }
+      }
+    }
+
+    // Snapshot vehicle label + passenger count.
+    let vehicleLabel: string | null = null;
+    if (driverId) {
+      const { data: drv } = await supabaseAdmin
+        .from("drivers")
+        .select("car_make_model, plate, name")
+        .eq("id", driverId)
+        .maybeSingle();
+      const d: any = drv ?? {};
+      const parts = [d?.car_make_model, d?.plate].filter(Boolean);
+      vehicleLabel = parts.length ? parts.join(" · ") : (d?.name ?? null);
+    }
+    const { count: paxCount } = await supabaseAdmin
+      .from("pax")
+      .select("id", { count: "exact", head: true })
+      .eq("job_id", data.job_id);
+
+    // Upload photo (best-effort). Path scheme keeps audit under the company folder.
+    let photoPath: string | null = null;
+    let photoUrl: string | null = null;
+    if (data.photo_data_url) {
+      try {
+        const match = /^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/i.exec(data.photo_data_url);
+        if (match) {
+          const contentType = match[1].toLowerCase().replace("image/jpg", "image/jpeg");
+          const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+          const bytes = Buffer.from(match[2], "base64");
+          const key = `${companyId}/${data.job_id}/${crypto.randomUUID()}.${ext}`;
+          const up = await supabaseAdmin.storage
+            .from("override-photos")
+            .upload(key, bytes, { contentType, upsert: false });
+          if (!up.error) {
+            photoPath = key;
+            const signed = await supabaseAdmin.storage
+              .from("override-photos")
+              .createSignedUrl(key, 60 * 60 * 24 * 365);
+            photoUrl = signed.data?.signedUrl ?? null;
+          }
+        }
+      } catch { /* best-effort */ }
+    }
 
     const { error: auditError } = await supabaseAdmin
       .from("job_emergency_overrides" as any)
@@ -1199,7 +1281,15 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
         to_status: toStatus,
         reason: data.reason,
         reason_note: data.reason_note?.trim() || null,
-        speed_mps: (latestLocation as any)?.speed_mps ?? null,
+        speed_mps: speedMps,
+        gps_lat: gpsLat,
+        gps_lng: gpsLng,
+        gps_accuracy_m: gpsAccuracy,
+        street_address: streetAddress,
+        vehicle_label: vehicleLabel,
+        pax_count: paxCount ?? null,
+        photo_path: photoPath,
+        photo_url: photoUrl,
       } as never);
     if (auditError) throw new Error(auditError.message);
 
@@ -1208,18 +1298,20 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
     const backwardOverride = isBackwardStatusTransition(fromStatus, toStatus);
     const details = data.reason_note?.trim() ? ` Note: ${data.reason_note.trim()}` : "";
     const backward = backwardOverride ? " Backward override." : "";
+    const location = streetAddress ? ` Near ${streetAddress}.` : "";
+    const photo = photoUrl ? " Photo attached." : "";
 
     await supabaseAdmin.from("trip_messages").insert({
       job_id: data.job_id,
       company_id: companyId,
       sender_kind: "system",
       sender_label: "System",
-      body: `⚠️ Emergency override — ${link.subject_label ?? "Driver"} used ${actionLabel}. Reason: ${reasonLabel}.${backward}${details}`,
+      body: `⚠️ Emergency override — ${link.subject_label ?? "Driver"} used ${actionLabel}. Reason: ${reasonLabel}.${backward}${location}${photo}${details}`,
       thread_kind: "driver_coord",
       driver_id: driverId,
     } as never);
 
-    return { ok: true, to_status: toStatus };
+    return { ok: true, to_status: toStatus, photo_url: photoUrl };
   });
 
 export const markPaxOnboard = createServerFn({ method: "POST" })
