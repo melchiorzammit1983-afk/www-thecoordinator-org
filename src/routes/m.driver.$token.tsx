@@ -125,6 +125,9 @@ type Job = {
   clientcompanyname: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
+  driver_cancel_requested_at?: string | null;
+  driver_cancel_reason?: string | null;
+  driver_cancel_note?: string | null;
   status?: string;
   payment_status?: "pending" | "paid";
   drivers?: { name: string } | null;
