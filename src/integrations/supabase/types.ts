@@ -659,10 +659,12 @@ export type Database = {
           advert_enabled: boolean
           advert_link: string | null
           advert_url: string | null
+          arrival_radius_m: number | null
           coordinator_phone: string | null
           created_at: string
           custom_link: string
           email: string
+          free_wait_minutes: number
           id: string
           logo_url: string | null
           name: string
@@ -676,6 +678,7 @@ export type Database = {
           safety_mode_threshold_kmh: number
           status: Database["public"]["Enums"]["company_status"]
           updated_at: string
+          waiting_rate_per_minute: number
         }
         Insert: {
           access_end?: string | null
@@ -683,10 +686,12 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
+          arrival_radius_m?: number | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email: string
+          free_wait_minutes?: number
           id?: string
           logo_url?: string | null
           name: string
@@ -700,6 +705,7 @@ export type Database = {
           safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
+          waiting_rate_per_minute?: number
         }
         Update: {
           access_end?: string | null
@@ -707,10 +713,12 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
+          arrival_radius_m?: number | null
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
           email?: string
+          free_wait_minutes?: number
           id?: string
           logo_url?: string | null
           name?: string
@@ -724,6 +732,7 @@ export type Database = {
           safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
+          waiting_rate_per_minute?: number
         }
         Relationships: []
       }
@@ -1668,6 +1677,72 @@ export type Database = {
           },
         ]
       }
+      job_boarding_approvals: {
+        Row: {
+          company_id: string | null
+          coordinator_note: string | null
+          created_at: string
+          driver_id: string | null
+          driver_note: string | null
+          id: string
+          job_id: string
+          override_at: string | null
+          pax_summary: Json | null
+          requested_at: string
+          requested_by_user_id: string | null
+          responded_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          coordinator_note?: string | null
+          created_at?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          id?: string
+          job_id: string
+          override_at?: string | null
+          pax_summary?: Json | null
+          requested_at?: string
+          requested_by_user_id?: string | null
+          responded_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          coordinator_note?: string | null
+          created_at?: string
+          driver_id?: string | null
+          driver_note?: string | null
+          id?: string
+          job_id?: string
+          override_at?: string | null
+          pax_summary?: Json | null
+          requested_at?: string
+          requested_by_user_id?: string | null
+          responded_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_boarding_approvals_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_boarding_approvals_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_dispatch_hops: {
         Row: {
           created_at: string
@@ -2016,15 +2091,71 @@ export type Database = {
           },
         ]
       }
+      job_wait_proposals: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          driver_response_note: string | null
+          id: string
+          job_id: string
+          note: string | null
+          proposed_amount: number
+          proposed_by_user_id: string | null
+          responded_at: string | null
+          session_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          driver_response_note?: string | null
+          id?: string
+          job_id: string
+          note?: string | null
+          proposed_amount: number
+          proposed_by_user_id?: string | null
+          responded_at?: string | null
+          session_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          driver_response_note?: string | null
+          id?: string
+          job_id?: string
+          note?: string | null
+          proposed_amount?: number
+          proposed_by_user_id?: string | null
+          responded_at?: string | null
+          session_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_wait_proposals_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_wait_sessions: {
         Row: {
           agreed_amount: number | null
+          auto_started: boolean
+          calculated_amount: number | null
           company_id: string | null
           created_at: string
           currency: string
           driver_id: string | null
           driver_note: string | null
           ended_at: string | null
+          free_ends_at: string | null
           id: string
           job_id: string
           notified_thresholds: number[]
@@ -2034,12 +2165,15 @@ export type Database = {
         }
         Insert: {
           agreed_amount?: number | null
+          auto_started?: boolean
+          calculated_amount?: number | null
           company_id?: string | null
           created_at?: string
           currency?: string
           driver_id?: string | null
           driver_note?: string | null
           ended_at?: string | null
+          free_ends_at?: string | null
           id?: string
           job_id: string
           notified_thresholds?: number[]
@@ -2049,12 +2183,15 @@ export type Database = {
         }
         Update: {
           agreed_amount?: number | null
+          auto_started?: boolean
+          calculated_amount?: number | null
           company_id?: string | null
           created_at?: string
           currency?: string
           driver_id?: string | null
           driver_note?: string | null
           ended_at?: string | null
+          free_ends_at?: string | null
           id?: string
           job_id?: string
           notified_thresholds?: number[]
@@ -2467,33 +2604,39 @@ export type Database = {
         Row: {
           boarded_at: string | null
           boarded_method: string | null
+          cancelled_at: string | null
           created_at: string
           group_id: string | null
           id: string
           job_id: string
           name: string
+          noshow_at: string | null
           status: Database["public"]["Enums"]["pax_status"]
           updated_at: string
         }
         Insert: {
           boarded_at?: string | null
           boarded_method?: string | null
+          cancelled_at?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
           job_id: string
           name: string
+          noshow_at?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
         Update: {
           boarded_at?: string | null
           boarded_method?: string | null
+          cancelled_at?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
           job_id?: string
           name?: string
+          noshow_at?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
@@ -3446,6 +3589,7 @@ export type Database = {
         | "delayed"
         | "noshow"
         | "completed"
+        | "cancelled"
       payment_status: "pending" | "paid"
       topup_request_status: "pending" | "fulfilled" | "rejected"
     }
@@ -3618,6 +3762,7 @@ export const Constants = {
         "delayed",
         "noshow",
         "completed",
+        "cancelled",
       ],
       payment_status: ["pending", "paid"],
       topup_request_status: ["pending", "fulfilled", "rejected"],
