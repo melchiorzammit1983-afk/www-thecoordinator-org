@@ -379,8 +379,18 @@ export const generatePortalStatement = createServerFn({ method: "POST" })
 export const getPortalSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    // Admins see the full config (RLS allows). Everyone else only needs the
+    // urgency thresholds used by the coordinator calendar — fetch just those
+    // via the admin client and never leak the rest of the internal config.
     const { data } = await context.supabase.from("admin_portal_settings" as any).select("*").eq("id", 1).maybeSingle();
-    return data;
+    if (data) return data;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: safe } = await supabaseAdmin
+      .from("admin_portal_settings" as any)
+      .select("urgency_green_min, urgency_orange_min, urgency_red_min")
+      .eq("id", 1)
+      .maybeSingle();
+    return safe;
   });
 
 export const updatePortalSettings = createServerFn({ method: "POST" })
