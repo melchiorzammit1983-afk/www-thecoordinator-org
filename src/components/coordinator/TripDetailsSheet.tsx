@@ -813,6 +813,9 @@ export function TripDetailsSheet({
               </>
             )}
           </div>
+          <div className="mt-4 border-t pt-3">
+            <TripAuditTimeline jobId={job.id} />
+          </div>
         </div>
       </SheetContent>
       <TripChatDialog
