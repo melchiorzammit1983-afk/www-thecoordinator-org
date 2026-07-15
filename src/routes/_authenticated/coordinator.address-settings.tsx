@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MapPin, RotateCcw } from "lucide-react";
+import { MapPin, RotateCcw, Radar } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,13 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useAddressSettings, DEFAULT_ADDRESS_SETTINGS } from "@/hooks/use-address-settings";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getMyGpsSettings, updateMyGpsSettings } from "@/lib/coordinator.functions";
+
+const DEFAULT_ARRIVAL_RADIUS_M = 150;
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/address-settings")({
   head: () => ({
@@ -25,6 +31,29 @@ function AddressSettingsPage() {
   const { settings, save, reset } = useAddressSettings();
   const [preview, setPreview] = useState("");
   const [previewPlaceId, setPreviewPlaceId] = useState<string | null>(null);
+
+  // Company-scoped GPS arrival radius (persisted to companies.arrival_radius_m).
+  const qc = useQueryClient();
+  const getGps = useServerFn(getMyGpsSettings);
+  const updateGps = useServerFn(updateMyGpsSettings);
+  const { data: gps } = useQuery({
+    queryKey: ["my-gps-settings"],
+    queryFn: () => getGps(),
+    staleTime: 30_000,
+  });
+  const [radius, setRadius] = useState<number>(DEFAULT_ARRIVAL_RADIUS_M);
+  useEffect(() => {
+    if (gps?.arrival_radius_m != null) setRadius(gps.arrival_radius_m);
+  }, [gps?.arrival_radius_m]);
+  const saveRadius = useMutation({
+    mutationFn: (m: number) => updateGps({ data: { arrival_radius_m: m } }),
+    onSuccess: () => {
+      toast.success("GPS arrival radius saved");
+      qc.invalidateQueries({ queryKey: ["my-gps-settings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
@@ -110,6 +139,60 @@ function AddressSettingsPage() {
           />
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Radar className="h-4 w-4" /> Driver arrival radius
+          </CardTitle>
+          <CardDescription>
+            How close a driver must be to the pickup point (in metres) before "Arrived at Pickup"
+            is stamped as GPS-verified. Bigger radius = more forgiving for hotels, malls, or venues
+            where the geocoded point is off. Drivers can still tap arrived if GPS fails — this only
+            controls the verified stamp.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Radius</Label>
+            <span className="text-sm font-medium">{radius} m</span>
+          </div>
+          <Slider
+            min={25}
+            max={1000}
+            step={25}
+            value={[radius]}
+            onValueChange={(v) => setRadius(v[0] ?? DEFAULT_ARRIVAL_RADIUS_M)}
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => saveRadius.mutate(radius)}
+              disabled={saveRadius.isPending || radius === (gps?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M)}
+            >
+              {saveRadius.isPending ? "Saving…" : "Save radius"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setRadius(DEFAULT_ARRIVAL_RADIUS_M);
+                saveRadius.mutate(DEFAULT_ARRIVAL_RADIUS_M);
+              }}
+              disabled={saveRadius.isPending}
+            >
+              Reset to {DEFAULT_ARRIVAL_RADIUS_M} m
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Tip: if drivers keep getting "outside radius" at a big hotel or airport, raise this to
+            300–500 m. If the pickup is at the wrong spot on the map, the driver can also tap
+            "Pickup is here — use my GPS" on the trip card to snap the coordinates.
+          </p>
+        </CardContent>
+      </Card>
+
+
 
       <Card>
         <CardHeader>

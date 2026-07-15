@@ -14,6 +14,7 @@ import {
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
+  driverSnapPickupToHere,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
@@ -1091,6 +1092,20 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
   const [lateNote, setLateNote] = useState("");
   const lateFn = useServerFn(driverReportLate);
   const clientLiveFn = useServerFn(getClientLiveLocationDriver);
+  const snapPickupFn = useServerFn(driverSnapPickupToHere);
+  const snapPickup = useMutation({
+    mutationFn: () => {
+      if (!driverPos) throw new Error("No GPS position yet — wait a few seconds and try again.");
+      return snapPickupFn({
+        data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Pickup coordinates updated to your position");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const activeForLive = !!job.driver_accepted_at && job.status !== "completed" && !job.deletion_requested_at;
   const { data: clientLive } = useQuery({
@@ -1486,6 +1501,23 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
                 {nextStatus.label}
               </Button>
             )}
+
+            {!isSafetyMode
+              && (job.status === "en_route" || job.status === "arrived")
+              && !!driverPos && (
+              <Button
+                variant="outline"
+                className="h-10 sm:col-span-2"
+                disabled={snapPickup.isPending}
+                onClick={() => snapPickup.mutate()}
+                title="Move the pickup pin on the map to your current GPS position"
+              >
+                <MapPin className="h-4 w-4 mr-1.5" />
+                {snapPickup.isPending ? "Updating pickup…" : "Pickup is here — use my GPS"}
+              </Button>
+            )}
+
+
 
             {!isSafetyMode && job.status !== "completed" && (
               <Button variant="outline" className="h-10"

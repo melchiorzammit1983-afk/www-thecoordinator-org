@@ -3022,3 +3022,53 @@ export const decideCoordChangeRequest = createServerFn({ method: "POST" })
 
     return { ok: true, approved: true };
   });
+
+// ==================== Driver: snap pickup coordinates ====================
+
+export const driverSnapPickupToHere = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      lat: z.number().gte(-90).lte(90),
+      lng: z.number().gte(-180).lte(180),
+      accuracy_m: z.number().nonnegative().max(10000).nullable().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("Invalid token");
+    const sb = await getAdminClient();
+    const { data: job } = await sb
+      .from("jobs")
+      .select("id, company_id, driver_id, status")
+      .eq("id", data.job_id)
+      .eq("company_id", link.company_id)
+      .maybeSingle();
+    if (!job) throw new Error("Job not found");
+    if (link.subject_id && (job as any).driver_id !== link.subject_id) {
+      throw new Error("Only the assigned driver can adjust pickup");
+    }
+    const { error } = await sb
+      .from("jobs")
+      .update({
+        pickup_lat: data.lat,
+        pickup_lng: data.lng,
+        // Invalidate cached route so next ETA fetch recomputes.
+        route_duration_sec: null,
+        route_distance_m: null,
+        route_computed_at: null,
+      } as never)
+      .eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    await sb.from("trip_messages").insert({
+      job_id: data.job_id,
+      company_id: link.company_id,
+      sender_kind: "system",
+      sender_label: "System",
+      body: `📍 Driver adjusted pickup coordinates to their current GPS position${data.accuracy_m ? ` (±${Math.round(data.accuracy_m)}m)` : ""}.`,
+      thread_kind: "driver_coord",
+      driver_id: (job as any).driver_id ?? null,
+    } as never);
+    return { ok: true };
+  });
