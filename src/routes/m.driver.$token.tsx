@@ -141,6 +141,10 @@ type Job = {
   group_id?: string | null;
   group_name?: string | null;
   group_note?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
 };
 
 type Driver = {
