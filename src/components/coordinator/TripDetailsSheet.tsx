@@ -45,6 +45,15 @@ type BoardingApprovalRow = {
     pending?: number;
   } | null;
 };
+type WaitProposalRow = {
+  id: string;
+  proposed_amount: number | string;
+  note?: string | null;
+  status: "pending" | "accepted" | "rejected";
+  driver_response_note?: string | null;
+  responded_at?: string | null;
+  created_at: string;
+};
 
 export type DetailsJob = {
   id: string;
@@ -1121,7 +1130,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
   });
   const { data: proposals } = useQuery({
     queryKey: ["wait-proposals", jobId],
-    queryFn: () => proposalsFn({ data: { job_id: jobId } }) as Promise<any[]>,
+    queryFn: () => proposalsFn({ data: { job_id: jobId } }) as Promise<WaitProposalRow[]>,
     refetchInterval: 8_000,
   });
 
@@ -1143,8 +1152,8 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
 
   const adjustments = data?.adjustments ?? [];
   const totalAdj = adjustments.reduce((s: number, a: any) => s + Number(a.amount ?? 0), 0);
-  const pendingProposals = ((proposals ?? []) as any[]).filter((p: any) => p.status === "pending");
-  const recentProposals = ((proposals ?? []) as any[]).slice(0, 8);
+  const pendingProposals = (proposals ?? []).filter((p) => p.status === "pending");
+  const recentProposals = (proposals ?? []).slice(0, 8);
 
   // Propose-adjustment dialog
   const [proposeOpen, setProposeOpen] = useState(false);
@@ -1223,7 +1232,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
       {/* Proposal status tracking */}
       {recentProposals.length > 0 && (
         <div className="space-y-1.5">
-          {recentProposals.map((p: any) => {
+          {recentProposals.map((p) => {
             const pending = p.status === "pending";
             const accepted = p.status === "accepted";
             return (
