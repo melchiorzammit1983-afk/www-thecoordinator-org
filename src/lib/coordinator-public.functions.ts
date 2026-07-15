@@ -2875,3 +2875,150 @@ export const requestStopReorderByDriver = createServerFn({ method: "POST" })
 
     return { ok: true, request_id: inserted.id };
   });
+
+// ==================== Coordinator change-request approval (driver token) ====================
+
+export const listPendingCoordChangesForDriver = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) => z.object({ token: z.string().min(8).max(128) }).parse(i))
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) return { requests: [] };
+    const sb = await getAdminClient();
+    // Get jobs assigned to this driver (or, for company-wide driver tokens, all company jobs).
+    let jobQ = sb.from("jobs").select("id, from_location, to_location, date, time, pickup_display_name, dropoff_display_name, driver_id")
+      .eq("company_id", link.company_id);
+    if (link.subject_id) jobQ = jobQ.eq("driver_id", link.subject_id);
+    const { data: jobs } = await jobQ;
+    const jobIds = (jobs ?? []).map((j: any) => j.id);
+    if (jobIds.length === 0) return { requests: [] };
+    const { data: rows, error } = await sb
+      .from("job_coord_change_requests")
+      .select("id, job_id, kind, requested_changes, note, status, created_at")
+      .in("job_id", jobIds)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    const byId = new Map<string, any>((jobs ?? []).map((j: any) => [j.id, j]));
+    return {
+      requests: (rows ?? []).map((r: any) => ({
+        ...r,
+        job: byId.get(r.job_id) ?? null,
+      })),
+    };
+  });
+
+export const decideCoordChangeRequest = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      request_id: z.string().uuid(),
+      approve: z.boolean(),
+      note: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("Invalid token");
+    const sb = await getAdminClient();
+    const { data: req } = await sb
+      .from("job_coord_change_requests")
+      .select("id, job_id, company_id, kind, requested_changes, status")
+      .eq("id", data.request_id)
+      .maybeSingle();
+    if (!req) throw new Error("Request not found");
+    if ((req as any).company_id !== link.company_id) throw new Error("Not allowed");
+    if ((req as any).status !== "pending") throw new Error("Request already decided");
+
+    // Verify driver actually owns the job.
+    const { data: job } = await sb
+      .from("jobs")
+      .select("id, company_id, driver_id, group_id")
+      .eq("id", (req as any).job_id)
+      .eq("company_id", link.company_id)
+      .maybeSingle();
+    if (!job) throw new Error("Job not found");
+    if (link.subject_id && (job as any).driver_id !== link.subject_id) {
+      throw new Error("Only the assigned driver can decide this request");
+    }
+    const driverId = link.subject_id ?? (job as any).driver_id ?? null;
+
+    if (!data.approve) {
+      await sb.from("job_coord_change_requests").update({
+        status: "rejected",
+        decided_at: new Date().toISOString(),
+        decided_by_driver_id: driverId,
+        decided_note: data.note ?? null,
+      } as never).eq("id", data.request_id);
+      // If this was a delete request, clear the legacy deletion flag on the job.
+      if ((req as any).kind === "delete") {
+        await sb.from("jobs").update({ deletion_requested_at: null, deletion_requested_by: null } as never)
+          .eq("id", (req as any).job_id);
+      }
+      await sb.from("trip_messages").insert({
+        job_id: (req as any).job_id,
+        company_id: link.company_id,
+        sender_kind: "system",
+        sender_label: "System",
+        body: `❌ Driver rejected coordinator's ${(req as any).kind} request${data.note ? ` — ${data.note}` : ""}.`,
+        thread_kind: "driver_coord",
+        driver_id: driverId,
+      } as never);
+      return { ok: true, approved: false };
+    }
+
+    // Apply the change.
+    const changes = ((req as any).requested_changes ?? {}) as Record<string, unknown>;
+    const kind = (req as any).kind as "edit" | "reassign" | "cancel" | "delete";
+
+    if (kind === "delete") {
+      await sb.from("jobs").delete().eq("id", (req as any).job_id).eq("company_id", link.company_id);
+    } else if (kind === "cancel") {
+      await sb.from("jobs").update({ status: "cancelled" } as never)
+        .eq("id", (req as any).job_id).eq("company_id", link.company_id);
+    } else if (kind === "reassign") {
+      const newDriverId = (changes.driver_id as string | null | undefined) ?? null;
+      const gid = (job as any).group_id as string | null;
+      let q = sb.from("jobs").update({ driver_id: newDriverId, driver_accepted_at: null } as never)
+        .eq("company_id", link.company_id);
+      q = gid ? q.eq("group_id" as any, gid) : q.eq("id", (req as any).job_id);
+      await q;
+    } else {
+      // edit — apply staged fields; recompute pickup_at if date/time changed
+      const patch: Record<string, unknown> = { ...changes };
+      if ("date" in changes || "time" in changes) {
+        try {
+          const { data: cur } = await sb.from("jobs").select("date, time").eq("id", (req as any).job_id).maybeSingle();
+          const d = (changes.date as string) ?? (cur as any)?.date;
+          const t = (changes.time as string) ?? (cur as any)?.time;
+          if (d && t) patch.pickup_at = maltaWallTimeToUtcIso(d, t);
+        } catch { /* ignore */ }
+      }
+      // Invalidate cached ETA when addresses changed
+      if ("from_location" in changes || "to_location" in changes) {
+        patch.route_duration_sec = null;
+        patch.route_distance_m = null;
+        patch.route_computed_at = null;
+      }
+      await sb.from("jobs").update(patch as never)
+        .eq("id", (req as any).job_id).eq("company_id", link.company_id);
+    }
+
+    await sb.from("job_coord_change_requests").update({
+      status: "approved",
+      decided_at: new Date().toISOString(),
+      decided_by_driver_id: driverId,
+      decided_note: data.note ?? null,
+    } as never).eq("id", data.request_id);
+
+    await sb.from("trip_messages").insert({
+      job_id: (req as any).job_id,
+      company_id: link.company_id,
+      sender_kind: "system",
+      sender_label: "System",
+      body: `✅ Driver approved coordinator's ${kind} request${data.note ? ` — ${data.note}` : ""}.`,
+      thread_kind: "driver_coord",
+      driver_id: driverId,
+    } as never);
+
+    return { ok: true, approved: true };
+  });

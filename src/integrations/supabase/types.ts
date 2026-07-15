@@ -1939,6 +1939,76 @@ export type Database = {
           },
         ]
       }
+      job_coord_change_requests: {
+        Row: {
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by_driver_id: string | null
+          decided_note: string | null
+          id: string
+          job_id: string
+          kind: string
+          note: string | null
+          requested_by: string | null
+          requested_changes: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_driver_id?: string | null
+          decided_note?: string | null
+          id?: string
+          job_id: string
+          kind: string
+          note?: string | null
+          requested_by?: string | null
+          requested_changes?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_driver_id?: string | null
+          decided_note?: string | null
+          id?: string
+          job_id?: string
+          kind?: string
+          note?: string | null
+          requested_by?: string | null
+          requested_changes?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_coord_change_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_coord_change_requests_decided_by_driver_id_fkey"
+            columns: ["decided_by_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_coord_change_requests_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_dispatch_hops: {
         Row: {
           created_at: string

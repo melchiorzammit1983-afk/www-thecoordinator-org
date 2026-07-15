@@ -41,6 +41,7 @@ import { DriverPricePanel } from "@/components/driver/DriverPricePanel";
 import { DriverWaitingPanel } from "@/components/driver/DriverWaitingPanel";
 import { DriverLiveShare } from "@/components/driver/DriverLiveShare";
 import { SafetyModeOverlay } from "@/components/driver/SafetyModeOverlay";
+import { CoordChangeRequestsPanel } from "@/components/driver/CoordChangeRequestsPanel";
 import { EmergencyOverrideDialog } from "@/components/driver/EmergencyOverrideDialog";
 import { BrandingBar, type BrandingInfo } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
@@ -814,6 +815,10 @@ function DriverManifest() {
         routeEncodedPolyline={live.polyline}
         onDriverPosition={setDriverPos}
       />
+
+      {!navigateMode && <CoordChangeRequestsPanel token={token} />}
+
+
 
       {!navigateMode && (
         <header

@@ -112,6 +112,93 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
   return { ...data, isAdmin };
 }
 
+// ---------- DRIVER-ACCEPTED LOCK HELPERS ----------
+
+/**
+ * A trip is "locked" once the driver has accepted it OR the driver has already
+ * progressed it past pending. Coordinator changes on locked trips must be
+ * routed through job_coord_change_requests for driver approval.
+ * Admins always bypass the lock.
+ */
+type LockableJob = {
+  id: string;
+  company_id: string;
+  driver_id: string | null;
+  driver_accepted_at: string | null;
+  status: string | null;
+};
+
+async function loadLockableJob(jobId: string, companyId: string): Promise<LockableJob | null> {
+  const sb = await getAdminClient();
+  const { data } = await sb
+    .from("jobs")
+    .select("id, company_id, driver_id, driver_accepted_at, status")
+    .eq("id", jobId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  return (data ?? null) as LockableJob | null;
+}
+
+function isJobLocked(job: LockableJob | null): boolean {
+  if (!job) return false;
+  if (job.driver_accepted_at) return true;
+  const s = (job.status ?? "").toLowerCase();
+  return s !== "" && s !== "pending";
+}
+
+async function createChangeRequest(params: {
+  jobId: string;
+  companyId: string;
+  requestedBy: string;
+  kind: "edit" | "reassign" | "cancel" | "delete";
+  requestedChanges: Record<string, unknown>;
+  note?: string | null;
+  driverId?: string | null;
+}): Promise<{ pending: true; request_id: string; message: string }> {
+  const sb = await getAdminClient();
+  // Cancel any existing pending request of the same kind (last-write-wins).
+  await sb
+    .from("job_coord_change_requests")
+    .update({ status: "cancelled", decided_at: new Date().toISOString(), decided_note: "superseded" } as never)
+    .eq("job_id", params.jobId)
+    .eq("kind", params.kind)
+    .eq("status", "pending");
+  const { data, error } = await sb
+    .from("job_coord_change_requests")
+    .insert({
+      job_id: params.jobId,
+      company_id: params.companyId,
+      requested_by: params.requestedBy,
+      kind: params.kind,
+      requested_changes: params.requestedChanges as never,
+      note: params.note ?? null,
+    } as never)
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  const label: Record<string, string> = {
+    edit: "trip changes",
+    reassign: "driver reassignment",
+    cancel: "trip cancellation",
+    delete: "trip deletion",
+  };
+  const body = `📝 Coordinator requested ${label[params.kind]} — please review and approve or reject.`;
+  await sb.from("trip_messages").insert({
+    job_id: params.jobId,
+    company_id: params.companyId,
+    sender_kind: "system",
+    sender_label: "System",
+    body,
+    thread_kind: "driver_coord",
+    driver_id: params.driverId ?? null,
+  } as never);
+  return {
+    pending: true,
+    request_id: (data as { id: string }).id,
+    message: `Change request sent to driver for approval.`,
+  };
+}
+
 // ---------- BASICS ----------
 
 export const getMyCompany = createServerFn({ method: "GET" })
@@ -478,11 +565,60 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, from_location, to_location")
+      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
+    // Driver-accepted lock: coordinator changes must be approved by driver.
+    const lockable: LockableJob = {
+      id: (existing as any).id,
+      company_id: (existing as any).company_id,
+      driver_id: (existing as any).driver_id,
+      driver_accepted_at: (existing as any).driver_accepted_at,
+      status: (existing as any).status,
+    };
+    if (!c.isAdmin && isJobLocked(lockable)) {
+      // Compare and stage only actually changed fields.
+      const proposed: Record<string, unknown> = {
+        from_location: data.from_location,
+        to_location: data.to_location,
+        date: data.date,
+        time: data.time,
+        vehicle: data.vehicle || null,
+        contact_phone: data.contact_phone || null,
+        from_flight: (data.from_flight || "").toUpperCase() || null,
+        to_flight: (data.to_flight || "").toUpperCase() || null,
+        clientcompanyname: data.clientcompanyname || null,
+        qr_strict_mode: !!data.qr_strict_mode,
+        tracking_enabled: !!data.tracking_enabled,
+        pickup_display_name: data.pickup_display_name ?? null,
+        dropoff_display_name: data.dropoff_display_name ?? null,
+        pickup_place_id: data.pickup_place_id ?? null,
+        dropoff_place_id: data.dropoff_place_id ?? null,
+      };
+      const diff: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(proposed)) {
+        if ((existing as any)[k] !== v) diff[k] = v;
+      }
+      // Labels-only edits fall through to syncJobLabels below (allowed).
+      if (Object.keys(diff).length === 0) {
+        await syncJobLabels(context, c.id, data.id, data.label_ids);
+        return { ok: true };
+      }
+      const res = await createChangeRequest({
+        jobId: data.id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "edit",
+        requestedChanges: diff,
+        driverId: lockable.driver_id,
+      });
+      // Labels can still be updated immediately (coordinator-only metadata).
+      await syncJobLabels(context, c.id, data.id, data.label_ids);
+      return { ok: true, ...res };
+    }
+
     const pickup_at = makePickupIso(data.date, data.time);
     // If the address changed, invalidate cached name + ETA so we recompute.
     const fromChanged = (existing as any).from_location !== data.from_location;
@@ -699,12 +835,32 @@ export const assignDriver = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, group_id, driver_id" as any)
+      .select("id, company_id, group_id, driver_id, driver_accepted_at, status" as any)
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (!job) throw new Error("Job not found");
     const gid = (job as any).group_id as string | null;
+    // Reassigning a driver-accepted trip needs the current driver's approval.
+    const lockable: LockableJob = {
+      id: (job as any).id,
+      company_id: (job as any).company_id,
+      driver_id: (job as any).driver_id,
+      driver_accepted_at: (job as any).driver_accepted_at,
+      status: (job as any).status,
+    };
+    if (!c.isAdmin && isJobLocked(lockable) && lockable.driver_id !== data.driver_id) {
+      const res = await createChangeRequest({
+        jobId: data.job_id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "reassign",
+        requestedChanges: { driver_id: data.driver_id },
+        driverId: lockable.driver_id,
+      });
+      return { ok: true, group_id: gid, ...res };
+    }
+
     // Any driver change (assign, reassign, unassign) requires fresh consent from
     // the new driver, so we clear driver_accepted_at on every assignment write.
     const patch = { driver_id: data.driver_id, driver_accepted_at: null } as never;
@@ -767,13 +923,32 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
-      .select("id, status")
+      .select("id, company_id, status, driver_id, driver_accepted_at")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (jErr) throw new Error(jErr.message);
     if (!job) return { ok: false, missing: true };
     if ((job as any).status === data.status) return { ok: true, changed: false };
+    const lockable: LockableJob = {
+      id: (job as any).id,
+      company_id: (job as any).company_id,
+      driver_id: (job as any).driver_id,
+      driver_accepted_at: (job as any).driver_accepted_at,
+      status: (job as any).status,
+    };
+    if (!c.isAdmin && data.status === "cancelled" && isJobLocked(lockable)) {
+      const res = await createChangeRequest({
+        jobId: data.job_id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "cancel",
+        requestedChanges: { status: "cancelled" },
+        driverId: lockable.driver_id,
+      });
+      return { ok: true, changed: false, ...res };
+    }
+
     const { error } = await supabaseAdmin
       .from("jobs")
       .update({ status: data.status } as never)
@@ -892,28 +1067,42 @@ export const deleteJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, driver_id, driver_accepted_at, deletion_requested_at")
+      .select("id, company_id, driver_id, driver_accepted_at, status, deletion_requested_at")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) return { deleted: false, pending: false, missing: true };
-    if (!job.driver_id || !job.driver_accepted_at) {
+    const lockable: LockableJob = {
+      id: (job as any).id,
+      company_id: (job as any).company_id,
+      driver_id: (job as any).driver_id,
+      driver_accepted_at: (job as any).driver_accepted_at,
+      status: (job as any).status,
+    };
+    if (c.isAdmin || !isJobLocked(lockable)) {
       const { error: dErr } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id).eq("company_id", c.id);
       if (dErr) throw new Error(dErr.message);
       return { deleted: true, pending: false };
     }
-    const { error: uErr } = await supabaseAdmin
+    // Locked: route through change-request approval flow.
+    const res = await createChangeRequest({
+      jobId: data.job_id,
+      companyId: c.id,
+      requestedBy: context.userId,
+      kind: "delete",
+      requestedChanges: { delete: true },
+      driverId: lockable.driver_id,
+    });
+    // Keep legacy flag in sync so existing UI badges keep showing "deletion pending".
+    await supabaseAdmin
       .from("jobs")
-      .update({
-        deletion_requested_at: new Date().toISOString(),
-        deletion_requested_by: context.userId,
-      })
+      .update({ deletion_requested_at: new Date().toISOString(), deletion_requested_by: context.userId } as never)
       .eq("id", data.job_id)
       .eq("company_id", c.id);
-    if (uErr) throw new Error(uErr.message);
-    return { deleted: false, pending: true };
+    return { deleted: false, ...res };
   });
+
 
 export const cancelDeletionRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -5694,6 +5883,46 @@ export const clearJobSafetyFlags = createServerFn({ method: "POST" })
       .update(patch as never)
       .eq("id", data.job_id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- DRIVER-APPROVAL CHANGE REQUESTS ----------
+
+export const listJobChangeRequests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: rows, error } = await sb
+      .from("job_coord_change_requests")
+      .select("id, kind, requested_changes, note, status, created_at, decided_at, decided_note, drivers:decided_by_driver_id(name)")
+      .eq("job_id", data.job_id)
+      .eq("company_id", c.id)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { requests: rows ?? [] };
+  });
+
+export const cancelJobChangeRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: row } = await sb
+      .from("job_coord_change_requests")
+      .select("id, job_id, company_id, status")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!row) throw new Error("Request not found");
+    if ((row as any).company_id !== c.id && !c.isAdmin) throw new Error("Not allowed");
+    if ((row as any).status !== "pending") throw new Error("Only pending requests can be cancelled");
+    const { error } = await sb
+      .from("job_coord_change_requests")
+      .update({ status: "cancelled", decided_at: new Date().toISOString(), decided_note: "cancelled by coordinator" } as never)
+      .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
