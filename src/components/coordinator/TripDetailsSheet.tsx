@@ -1367,3 +1367,43 @@ function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
     </Button>
   );
 }
+
+function SafetyFlagBadges({ job }: { job: any }) {
+  const qc = useQueryClient();
+  const clearFn = useServerFn(clearJobSafetyFlags);
+  const clear = useMutation({
+    mutationFn: (kind: "safety" | "breakdown") =>
+      clearFn({ data: { job_id: job.id, clear: [kind] } }),
+    onSuccess: () => {
+      toast.success("Flag cleared");
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const flags: Array<{ kind: "safety" | "breakdown"; label: string; at: string | null | undefined }> = [
+    { kind: "safety", label: "🛑 Safety concern", at: job?.safety_flag_at },
+    { kind: "breakdown", label: "🔧 Vehicle breakdown", at: job?.breakdown_flag_at },
+  ].filter((f) => !!f.at) as any;
+  if (!flags.length) return null;
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {flags.map((f) => (
+        <div
+          key={f.kind}
+          className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive"
+        >
+          <span>{f.label} — flagged by driver</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[11px]"
+            disabled={clear.isPending}
+            onClick={() => clear.mutate(f.kind)}
+          >
+            Clear
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
