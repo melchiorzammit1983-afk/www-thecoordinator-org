@@ -660,6 +660,7 @@ export type Database = {
           advert_link: string | null
           advert_url: string | null
           arrival_radius_m: number | null
+          auto_next_job_enabled: boolean
           coordinator_phone: string | null
           created_at: string
           custom_link: string
@@ -687,6 +688,7 @@ export type Database = {
           advert_link?: string | null
           advert_url?: string | null
           arrival_radius_m?: number | null
+          auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
@@ -714,6 +716,7 @@ export type Database = {
           advert_link?: string | null
           advert_url?: string | null
           arrival_radius_m?: number | null
+          auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
           created_at?: string
           custom_link?: string
@@ -1494,6 +1497,80 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_route_optimizations: {
+        Row: {
+          approved_order: string[] | null
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by_user_id: string | null
+          distance_meters_original: number | null
+          distance_meters_suggested: number | null
+          duration_seconds_original: number | null
+          duration_seconds_suggested: number | null
+          group_id: string
+          id: string
+          job_id: string
+          model: string | null
+          original_order: string[]
+          reasoning: string | null
+          requested_by_user_id: string | null
+          status: string
+          suggested_order: string[]
+          updated_at: string
+        }
+        Insert: {
+          approved_order?: string[] | null
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          distance_meters_original?: number | null
+          distance_meters_suggested?: number | null
+          duration_seconds_original?: number | null
+          duration_seconds_suggested?: number | null
+          group_id: string
+          id?: string
+          job_id: string
+          model?: string | null
+          original_order: string[]
+          reasoning?: string | null
+          requested_by_user_id?: string | null
+          status?: string
+          suggested_order: string[]
+          updated_at?: string
+        }
+        Update: {
+          approved_order?: string[] | null
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          distance_meters_original?: number | null
+          distance_meters_suggested?: number | null
+          duration_seconds_original?: number | null
+          duration_seconds_suggested?: number | null
+          group_id?: string
+          id?: string
+          job_id?: string
+          model?: string | null
+          original_order?: string[]
+          reasoning?: string | null
+          requested_by_user_id?: string | null
+          status?: string
+          suggested_order?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_route_optimizations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
             referencedColumns: ["id"]
           },
         ]
