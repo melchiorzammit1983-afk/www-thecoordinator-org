@@ -90,7 +90,7 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
     // Load stops
     const { data: stops, error: sErr } = await supabase
       .from("group_stops")
-      .select("id, stop_index, address, display_name, lat, lng, pax_count, pickup_window_start, pickup_window_end")
+      .select("id, stop_index, address, display_name, lat, lng, pax_count")
       .eq("group_id", data.group_id)
       .order("stop_index", { ascending: true });
     if (sErr) throw new Error(sErr.message);
@@ -119,10 +119,8 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
     // Ask the AI for a suggested order
     const prompt = [
       "You are a routing optimizer for a Malta ground-transport dispatcher.",
-      "Given the list of stops below, produce the best pickup order to minimise total driving time,",
-      "while respecting each stop's pickup_window when set (do not pick up before window_start,",
-      "and prefer arriving before window_end). Return ONLY a JSON object of shape",
-      '{ "order": ["<stop-id>", ...], "reasoning": "<short human explanation>" }.',
+      "Given the list of stops below, produce the best pickup order to minimise total driving time.",
+      'Return ONLY a JSON object of shape { "order": ["<stop-id>", ...], "reasoning": "<short human explanation>" }.',
       "The order MUST include every stop id exactly once.",
       "",
       "Stops:",
@@ -133,8 +131,6 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
           lat: s.lat,
           lng: s.lng,
           pax_count: s.pax_count,
-          pickup_window_start: s.pickup_window_start,
-          pickup_window_end: s.pickup_window_end,
         })),
         null,
         2,
