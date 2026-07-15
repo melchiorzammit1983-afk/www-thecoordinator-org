@@ -565,11 +565,60 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, from_location, to_location")
+      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
+    // Driver-accepted lock: coordinator changes must be approved by driver.
+    const lockable: LockableJob = {
+      id: (existing as any).id,
+      company_id: (existing as any).company_id,
+      driver_id: (existing as any).driver_id,
+      driver_accepted_at: (existing as any).driver_accepted_at,
+      status: (existing as any).status,
+    };
+    if (!c.isAdmin && isJobLocked(lockable)) {
+      // Compare and stage only actually changed fields.
+      const proposed: Record<string, unknown> = {
+        from_location: data.from_location,
+        to_location: data.to_location,
+        date: data.date,
+        time: data.time,
+        vehicle: data.vehicle || null,
+        contact_phone: data.contact_phone || null,
+        from_flight: (data.from_flight || "").toUpperCase() || null,
+        to_flight: (data.to_flight || "").toUpperCase() || null,
+        clientcompanyname: data.clientcompanyname || null,
+        qr_strict_mode: !!data.qr_strict_mode,
+        tracking_enabled: !!data.tracking_enabled,
+        pickup_display_name: data.pickup_display_name ?? null,
+        dropoff_display_name: data.dropoff_display_name ?? null,
+        pickup_place_id: data.pickup_place_id ?? null,
+        dropoff_place_id: data.dropoff_place_id ?? null,
+      };
+      const diff: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(proposed)) {
+        if ((existing as any)[k] !== v) diff[k] = v;
+      }
+      // Labels-only edits fall through to syncJobLabels below (allowed).
+      if (Object.keys(diff).length === 0) {
+        await syncJobLabels(context, c.id, data.id, data.label_ids);
+        return { ok: true };
+      }
+      const res = await createChangeRequest({
+        jobId: data.id,
+        companyId: c.id,
+        requestedBy: context.userId,
+        kind: "edit",
+        requestedChanges: diff,
+        driverId: lockable.driver_id,
+      });
+      // Labels can still be updated immediately (coordinator-only metadata).
+      await syncJobLabels(context, c.id, data.id, data.label_ids);
+      return { ok: true, ...res };
+    }
+
     const pickup_at = makePickupIso(data.date, data.time);
     // If the address changed, invalidate cached name + ETA so we recompute.
     const fromChanged = (existing as any).from_location !== data.from_location;
