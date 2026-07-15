@@ -1297,6 +1297,7 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
               ⛬ {job.group_name || "Grouped"}{job.grouped_count ? ` · ${job.grouped_count}` : ""}
             </Badge>
           )}
+          {job.group_id && <DriverStopReorderButton token={token} groupId={job.group_id} />}
           {job.group_note && (
             <Badge variant="outline" className="text-[10px] italic max-w-full truncate">📝 {job.group_note}</Badge>
           )}
