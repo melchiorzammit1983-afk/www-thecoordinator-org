@@ -296,6 +296,7 @@ function CalendarPage() {
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
+  const { count: pendingRouteOptCount } = useRouteOptimizationAlerts();
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
