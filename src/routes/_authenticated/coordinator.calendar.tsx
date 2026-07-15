@@ -3167,36 +3167,150 @@ function BoardingApprovalAlertPanel({
 
 /* ------------------------------ Dispatch trip list ------------------------------ */
 
-function toSimpleStatus(job: Job): "Pending" | "Assigned" | "In progress" | "Done" | "Cancelled" {
-  if (job.status === "cancelled") return "Cancelled";
-  if (job.status === "completed") return "Done";
-  if (job.status === "en_route" || job.status === "arrived" || job.status === "in_progress") return "In progress";
-  if (job.driver_id) return "Assigned";
-  return "Pending";
+function toSimpleStatus(job: Job): {
+  label: string;
+  tone: "live" | "assigned" | "pending" | "done" | "cancelled";
+} {
+  if (job.status === "cancelled") return { label: "Cancelled", tone: "cancelled" };
+  if (job.status === "completed") return { label: "Done", tone: "done" };
+  if (job.status === "in_progress") return { label: "On board", tone: "live" };
+  if (job.status === "arrived") return { label: "Arrived", tone: "live" };
+  if (job.status === "en_route") return { label: "En route", tone: "live" };
+  if (job.driver_id) return { label: "Assigned", tone: "assigned" };
+  return { label: "Pending", tone: "pending" };
 }
 
-function DispatchTripList({ jobs }: { jobs: Job[] }) {
+const TONE_CLASS: Record<string, string> = {
+  live: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40",
+  assigned: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30",
+  pending: "bg-muted text-muted-foreground border-border",
+  done: "bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30",
+  cancelled: "bg-destructive/10 text-destructive border-destructive/30",
+};
+
+function urgencyRank(job: Job): number {
+  const s = toSimpleStatus(job).tone;
+  if (s === "live") return 0;
+  const t = job.pickup_at ? new Date(job.pickup_at).getTime() - Date.now() : Number.POSITIVE_INFINITY;
+  if (t < 30 * 60_000) return 1; // arriving soon
+  return 2 + t / 60_000; // later
+}
+
+function DispatchTripList({
+  jobs,
+  onOpenDetails,
+  onOpenChat,
+  pendingApprovalCount = 0,
+}: {
+  jobs: Job[];
+  onOpenDetails?: (j: Job) => void;
+  onOpenChat?: (j: Job) => void;
+  pendingApprovalCount?: number;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   if (jobs.length === 0) return null;
-  const list = [...jobs].sort((a, b) =>
-    ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")),
-  );
+  const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
   return (
     <section className="rounded-lg border bg-card p-3 space-y-2">
-      <div className="text-sm font-medium">Trips ({list.length})</div>
+      <div className="flex items-center gap-2">
+        <div className="text-sm font-medium">Trips ({list.length})</div>
+        {pendingApprovalCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 animate-pulse"
+            title={`${pendingApprovalCount} pending approval${pendingApprovalCount > 1 ? "s" : ""}`}
+          >
+            {pendingApprovalCount} to review
+          </span>
+        )}
+      </div>
       <ul className="space-y-1.5">
         {list.map((job) => {
           const from = displayLocation(job.from_location, job.pickup_display_name);
           const to = displayLocation(job.to_location, job.dropoff_display_name);
           const eta = formatEtaMinutes(job.route_duration_sec);
+          const status = toSimpleStatus(job);
+          const pickup =
+            job.pickup_at
+              ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : job.time?.slice(0, 5) ?? null;
+          const paxCount = job.pax?.length ?? 0;
+          const flight = job.from_flight || job.to_flight;
+          const driverName = job.drivers?.name ?? job.external_driver_name ?? null;
+          const isOpen = expandedId === job.id;
+          const embedSrc = `https://maps.google.com/maps?q=${encodeURIComponent(
+            job.from_location,
+          )}+to:${encodeURIComponent(job.to_location)}&output=embed`;
+
           return (
-            <li key={job.id} className="rounded-md border bg-background px-2.5 py-2 text-sm flex items-center gap-2">
-              <span className="truncate min-w-0 flex-1">
-                {from} to {to}
-                {eta ? ` · ${eta}` : ""}
-              </span>
-              <Badge variant="outline" className="shrink-0 text-[10px]">
-                {toSimpleStatus(job)}
-              </Badge>
+            <li
+              key={job.id}
+              className={`rounded-md border bg-background text-sm transition ${
+                isOpen ? "ring-1 ring-primary/40" : "hover:bg-muted/40"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setExpandedId(isOpen ? null : job.id)}
+                className="w-full text-left px-2.5 py-2 flex items-start gap-2"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate font-medium">{from}</span>
+                    <span className="text-muted-foreground shrink-0">→</span>
+                    <span className="truncate">{to}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                    {driverName && (
+                      <span className="truncate max-w-[10rem]">👤 {driverName}</span>
+                    )}
+                    {pickup && <span>🕒 {pickup}</span>}
+                    {eta && <span>≈ {eta}</span>}
+                    {paxCount > 0 && <span>👥 {paxCount}</span>}
+                    {flight && <span className="text-blue-600 dark:text-blue-400">✈ {flight}</span>}
+                  </div>
+                </div>
+                <span
+                  className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${TONE_CLASS[status.tone]}`}
+                >
+                  {status.tone === "live" && (
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600" />
+                    </span>
+                  )}
+                  {status.label}
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="border-t px-2.5 py-2 space-y-2">
+                  <iframe
+                    key={job.id}
+                    title={`Route ${from} → ${to}`}
+                    src={embedSrc}
+                    className="w-full h-40 rounded border-0"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {onOpenChat && (
+                      <Button size="sm" variant="outline" onClick={() => onOpenChat(job)}>
+                        💬 Chat
+                      </Button>
+                    )}
+                    {job.drivers?.phone && (
+                      <Button size="sm" variant="outline" asChild>
+                        <a href={`tel:${job.drivers.phone}`}>📞 Call driver</a>
+                      </Button>
+                    )}
+                    {onOpenDetails && (
+                      <Button size="sm" onClick={() => onOpenDetails(job)}>
+                        Open full details →
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
             </li>
           );
         })}
@@ -3204,6 +3318,7 @@ function DispatchTripList({ jobs }: { jobs: Job[] }) {
     </section>
   );
 }
+
 
 /* ------------------------------ Waiting-now strip ------------------------------ */
 function WaitingNowStrip({ onJump }: { onJump: (jobId: string) => void }) {
