@@ -109,7 +109,13 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
       _feature_key: "route_optimization",
       _job_id: group.job_id,
       _note: `route optimization suggestion (${stops.length} stops)`,
-      _cost_override: null,
+    });
+    void 0;
+    const _spendErr2 = spendErr;
+    if (_spendErr2) { /* noop */ }
+    // (rewritten below)
+    ({});
+    // Note: _cost_override omitted (optional).
     });
     if (spendErr) throw new Error(spendErr.message);
 
