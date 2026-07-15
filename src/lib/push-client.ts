@@ -77,11 +77,12 @@ export async function enableWebPush(opts: {
   companyId?: string | null;
 }): Promise<{ id: string; created: boolean } | null> {
   if (!isPushSupported()) return null;
-  const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+  const { publicKey: vapid } = await getVapidPublicKey();
   if (!vapid) {
-    console.warn("[push] VITE_VAPID_PUBLIC_KEY not configured");
+    console.warn("[push] VAPID_PUBLIC_KEY not configured on server");
     return null;
   }
+
 
   const permission = await requestNotificationPermission();
   if (permission !== "granted") return null;
