@@ -352,6 +352,7 @@ export function TripDetailsSheet({
                 <span>{job.promo_note}</span>
               </div>
             )}
+            <SafetyFlagBadges job={job} />
           </SheetHeader>
 
           <div className="space-y-2">
