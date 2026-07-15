@@ -585,6 +585,7 @@ function DriverManifest() {
 
   // Batch D — Auto Next Job: watch for completion transitions and surface next assigned trip.
   const autoNextEnabled = data?.companySettings?.auto_next_job_enabled ?? true;
+  const arrivalRadiusM = data?.companySettings?.arrival_radius_m ?? 150;
   const { nextJob: autoNextJob, dismiss: dismissAutoNext } = useAutoNextJob(
     jobs,
     { enabled: autoNextEnabled },
