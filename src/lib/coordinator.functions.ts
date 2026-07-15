@@ -5673,3 +5673,27 @@ export const getBoardingApprovalStatus = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
+
+// ---------- Batch B: Safety / Breakdown flag management ----------
+export const clearJobSafetyFlags = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      clear: z.array(z.enum(["safety", "breakdown"])).min(1),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const patch: Record<string, unknown> = {};
+    if (data.clear.includes("safety")) patch.safety_flag_at = null;
+    if (data.clear.includes("breakdown")) patch.breakdown_flag_at = null;
+    const { error } = await supabaseAdmin
+      .from("jobs")
+      .update(patch as never)
+      .eq("id", data.job_id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
