@@ -671,6 +671,9 @@ export type Database = {
           points_balance: number
           referral_code: string
           require_client_company: boolean
+          safety_mode_allow_override: boolean
+          safety_mode_enabled: boolean
+          safety_mode_threshold_kmh: number
           status: Database["public"]["Enums"]["company_status"]
           updated_at: string
         }
@@ -692,6 +695,9 @@ export type Database = {
           points_balance?: number
           referral_code?: string
           require_client_company?: boolean
+          safety_mode_allow_override?: boolean
+          safety_mode_enabled?: boolean
+          safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
         }
@@ -713,6 +719,9 @@ export type Database = {
           points_balance?: number
           referral_code?: string
           require_client_company?: boolean
+          safety_mode_allow_override?: boolean
+          safety_mode_enabled?: boolean
+          safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
           updated_at?: string
         }
@@ -1723,6 +1732,85 @@ export type Database = {
           },
         ]
       }
+      job_emergency_overrides: {
+        Row: {
+          approval_status: string
+          company_id: string
+          created_at: string
+          driver_id: string | null
+          from_status: string
+          gps_accuracy_m: number | null
+          id: string
+          job_id: string
+          pax_count: number | null
+          photo_url: string | null
+          reason: string
+          reason_note: string | null
+          speed_mps: number | null
+          street_address: string | null
+          to_status: string
+          vehicle_label: string | null
+        }
+        Insert: {
+          approval_status?: string
+          company_id: string
+          created_at?: string
+          driver_id?: string | null
+          from_status: string
+          gps_accuracy_m?: number | null
+          id?: string
+          job_id: string
+          pax_count?: number | null
+          photo_url?: string | null
+          reason: string
+          reason_note?: string | null
+          speed_mps?: number | null
+          street_address?: string | null
+          to_status: string
+          vehicle_label?: string | null
+        }
+        Update: {
+          approval_status?: string
+          company_id?: string
+          created_at?: string
+          driver_id?: string | null
+          from_status?: string
+          gps_accuracy_m?: number | null
+          id?: string
+          job_id?: string
+          pax_count?: number | null
+          photo_url?: string | null
+          reason?: string
+          reason_note?: string | null
+          speed_mps?: number | null
+          street_address?: string | null
+          to_status?: string
+          vehicle_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_emergency_overrides_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_emergency_overrides_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_emergency_overrides_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_labels: {
         Row: {
           created_at: string
@@ -1994,6 +2082,9 @@ export type Database = {
       jobs: {
         Row: {
           board_config: Json | null
+          breakdown_flag_at: string | null
+          breakdown_flag_note: string | null
+          breakdown_pax_count: number | null
           client_confirmed_at: string | null
           client_link_token: string | null
           clientcompanyname: string | null
@@ -2063,6 +2154,8 @@ export type Database = {
           route_computed_at: string | null
           route_distance_m: number | null
           route_duration_sec: number | null
+          safety_flag_at: string | null
+          safety_flag_note: string | null
           self_assigned_user_id: string | null
           source: string
           status: Database["public"]["Enums"]["job_status"]
@@ -2078,6 +2171,9 @@ export type Database = {
         }
         Insert: {
           board_config?: Json | null
+          breakdown_flag_at?: string | null
+          breakdown_flag_note?: string | null
+          breakdown_pax_count?: number | null
           client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
@@ -2149,6 +2245,8 @@ export type Database = {
           route_computed_at?: string | null
           route_distance_m?: number | null
           route_duration_sec?: number | null
+          safety_flag_at?: string | null
+          safety_flag_note?: string | null
           self_assigned_user_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
@@ -2164,6 +2262,9 @@ export type Database = {
         }
         Update: {
           board_config?: Json | null
+          breakdown_flag_at?: string | null
+          breakdown_flag_note?: string | null
+          breakdown_pax_count?: number | null
           client_confirmed_at?: string | null
           client_link_token?: string | null
           clientcompanyname?: string | null
@@ -2235,6 +2336,8 @@ export type Database = {
           route_computed_at?: string | null
           route_distance_m?: number | null
           route_duration_sec?: number | null
+          safety_flag_at?: string | null
+          safety_flag_note?: string | null
           self_assigned_user_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
