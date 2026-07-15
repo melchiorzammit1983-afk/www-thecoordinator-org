@@ -142,6 +142,60 @@ function AddressSettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Radar className="h-4 w-4" /> Driver arrival radius
+          </CardTitle>
+          <CardDescription>
+            How close a driver must be to the pickup point (in metres) before "Arrived at Pickup"
+            is stamped as GPS-verified. Bigger radius = more forgiving for hotels, malls, or venues
+            where the geocoded point is off. Drivers can still tap arrived if GPS fails — this only
+            controls the verified stamp.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Radius</Label>
+            <span className="text-sm font-medium">{radius} m</span>
+          </div>
+          <Slider
+            min={25}
+            max={1000}
+            step={25}
+            value={[radius]}
+            onValueChange={(v) => setRadius(v[0] ?? DEFAULT_ARRIVAL_RADIUS_M)}
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => saveRadius.mutate(radius)}
+              disabled={saveRadius.isPending || radius === (gps?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M)}
+            >
+              {saveRadius.isPending ? "Saving…" : "Save radius"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setRadius(DEFAULT_ARRIVAL_RADIUS_M);
+                saveRadius.mutate(DEFAULT_ARRIVAL_RADIUS_M);
+              }}
+              disabled={saveRadius.isPending}
+            >
+              Reset to {DEFAULT_ARRIVAL_RADIUS_M} m
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Tip: if drivers keep getting "outside radius" at a big hotel or airport, raise this to
+            300–500 m. If the pickup is at the wrong spot on the map, the driver can also tap
+            "Pickup is here — use my GPS" on the trip card to snap the coordinates.
+          </p>
+        </CardContent>
+      </Card>
+
+
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Try it</CardTitle>
           <CardDescription>Type a hotel or landmark and watch suggestions apply your bias.</CardDescription>
         </CardHeader>
