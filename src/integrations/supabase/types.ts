@@ -1498,6 +1498,125 @@ export type Database = {
           },
         ]
       }
+      group_stop_reorder_requests: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by_user_id: string | null
+          group_id: string
+          id: string
+          proposed_order: string[]
+          requested_by_driver_id: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          group_id: string
+          id?: string
+          proposed_order: string[]
+          requested_by_driver_id?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          group_id?: string
+          id?: string
+          proposed_order?: string[]
+          requested_by_driver_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_stop_reorder_requests_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_stop_reorder_requests_requested_by_driver_id_fkey"
+            columns: ["requested_by_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_stops: {
+        Row: {
+          address: string | null
+          arrived_at: string | null
+          boarded_at: string | null
+          charges_cents: number
+          completed_at: string | null
+          created_at: string
+          display_name: string | null
+          group_id: string
+          id: string
+          lat: number | null
+          lng: number | null
+          no_show_at: string | null
+          pax_count: number
+          place_id: string | null
+          stop_index: number
+          updated_at: string
+          wait_ended_at: string | null
+          wait_started_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          arrived_at?: string | null
+          boarded_at?: string | null
+          charges_cents?: number
+          completed_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          group_id: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          no_show_at?: string | null
+          pax_count?: number
+          place_id?: string | null
+          stop_index: number
+          updated_at?: string
+          wait_ended_at?: string | null
+          wait_started_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          arrived_at?: string | null
+          boarded_at?: string | null
+          charges_cents?: number
+          completed_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          group_id?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          no_show_at?: string | null
+          pax_count?: number
+          place_id?: string | null
+          stop_index?: number
+          updated_at?: string
+          wait_ended_at?: string | null
+          wait_started_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_stops_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       groups: {
         Row: {
           coordinator_note: string | null
@@ -3373,6 +3492,92 @@ export type Database = {
           },
         ]
       }
+      trip_audit_log: {
+        Row: {
+          actor_label: string | null
+          actor_user_id: string | null
+          approval_status: string
+          company_id: string
+          created_at: string
+          device_time: string | null
+          driver_id: string | null
+          event_type: string
+          gps_accuracy_m: number | null
+          gps_lat: number | null
+          gps_lng: number | null
+          group_id: string | null
+          id: string
+          job_id: string | null
+          new_state: Json | null
+          notes: string | null
+          prev_hash: string | null
+          previous_state: Json | null
+          row_hash: string
+          server_time: string
+          speed_kmh: number | null
+          stop_id: string | null
+          street_address: string | null
+        }
+        Insert: {
+          actor_label?: string | null
+          actor_user_id?: string | null
+          approval_status?: string
+          company_id: string
+          created_at?: string
+          device_time?: string | null
+          driver_id?: string | null
+          event_type: string
+          gps_accuracy_m?: number | null
+          gps_lat?: number | null
+          gps_lng?: number | null
+          group_id?: string | null
+          id?: string
+          job_id?: string | null
+          new_state?: Json | null
+          notes?: string | null
+          prev_hash?: string | null
+          previous_state?: Json | null
+          row_hash: string
+          server_time?: string
+          speed_kmh?: number | null
+          stop_id?: string | null
+          street_address?: string | null
+        }
+        Update: {
+          actor_label?: string | null
+          actor_user_id?: string | null
+          approval_status?: string
+          company_id?: string
+          created_at?: string
+          device_time?: string | null
+          driver_id?: string | null
+          event_type?: string
+          gps_accuracy_m?: number | null
+          gps_lat?: number | null
+          gps_lng?: number | null
+          group_id?: string | null
+          id?: string
+          job_id?: string | null
+          new_state?: Json | null
+          notes?: string | null
+          prev_hash?: string | null
+          previous_state?: Json | null
+          row_hash?: string
+          server_time?: string
+          speed_kmh?: number | null
+          stop_id?: string | null
+          street_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_audit_log_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_labels: {
         Row: {
           color: string
@@ -3499,7 +3704,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_suspicious_activity: {
+        Row: {
+          company_id: string | null
+          count: number | null
+          driver_id: string | null
+          signal: string | null
+          window: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       admin_grant_points: {
@@ -3514,6 +3728,7 @@ export type Database = {
           score: number
         }[]
       }
+      canonical_jsonb: { Args: { _j: Json }; Returns: string }
       charge_extra_logos_weekly: { Args: never; Returns: number }
       delete_email: {
         Args: { message_id: number; queue_name: string }
@@ -3541,6 +3756,27 @@ export type Database = {
           read_ct: number
         }[]
       }
+      record_trip_audit: {
+        Args: {
+          _accuracy?: number
+          _actor_label?: string
+          _address?: string
+          _approval_status?: string
+          _device_time?: string
+          _driver_id?: string
+          _event_type: string
+          _group_id?: string
+          _job_id: string
+          _lat?: number
+          _lng?: number
+          _new?: Json
+          _notes?: string
+          _previous?: Json
+          _speed?: number
+          _stop_id?: string
+        }
+        Returns: string
+      }
       rollover_subscriptions: { Args: never; Returns: number }
       set_company_plan: {
         Args: { _company_id: string; _plan_id: string }
@@ -3555,6 +3791,15 @@ export type Database = {
           _note?: string
         }
         Returns: number
+      }
+      verify_trip_audit_chain: {
+        Args: { _job_id: string }
+        Returns: {
+          created_at: string
+          event_type: string
+          ok: boolean
+          row_id: string
+        }[]
       }
     }
     Enums: {
