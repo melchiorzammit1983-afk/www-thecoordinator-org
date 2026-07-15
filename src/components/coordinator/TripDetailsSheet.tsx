@@ -1241,6 +1241,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
                   <div className="font-semibold text-blue-900 flex items-center gap-1.5 flex-wrap">
                     <span>Proposal EUR {Number(p.proposed_amount).toFixed(2)}</span>
                     <Badge variant={accepted ? "default" : pending ? "outline" : "destructive"} className={`text-[9px] capitalize ${accepted ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}>
+                      {accepted ? <Check className="h-2.5 w-2.5 mr-1" /> : pending ? <CircleAlert className="h-2.5 w-2.5 mr-1" /> : <X className="h-2.5 w-2.5 mr-1" />}
                       {p.status}
                     </Badge>
                   </div>
