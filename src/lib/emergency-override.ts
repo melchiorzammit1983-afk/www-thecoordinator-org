@@ -3,7 +3,9 @@ export const EMERGENCY_OVERRIDE_REASONS = [
   "wrong_pickup_pin",
   "passenger_different_pickup",
   "auto_status_failed",
+  "road_closure",
   "breakdown",
+  "passenger_already_on_board",
   "safety_concern",
   "other",
 ] as const;
@@ -14,8 +16,10 @@ export const EMERGENCY_OVERRIDE_REASON_LABELS: Record<EmergencyOverrideReason, s
   gps_issue: "GPS Issue",
   wrong_pickup_pin: "Wrong Pickup Pin",
   passenger_different_pickup: "Passenger Requested Different Pickup",
-  auto_status_failed: "Auto Status Failed",
-  breakdown: "Breakdown",
+  auto_status_failed: "Auto Status Failure",
+  road_closure: "Road Closure",
+  breakdown: "Vehicle Breakdown",
+  passenger_already_on_board: "Passenger Already On Board",
   safety_concern: "Safety Concern",
   other: "Other",
 };
@@ -78,8 +82,6 @@ export function getEmergencyOverrideActionOptions(status: string | null | undefi
   const actions: EmergencyOverrideAction[] = [];
   if (status !== "arrived") actions.push("force_arrived");
   if (status !== "in_progress") actions.push("force_passenger_on_board");
-  // Intentionally allow a backward move to `en_route` so the driver can recover
-  // from an incorrect advance to `arrived`/`in_progress` without coordinator help.
   if (status !== "en_route") actions.push("force_en_route");
   if (status === "in_progress") actions.push("force_drop_off");
   if (status !== "completed") actions.push("force_complete");
