@@ -1815,9 +1815,12 @@ export type Database = {
           driver_id: string | null
           from_status: string
           gps_accuracy_m: number | null
+          gps_lat: number | null
+          gps_lng: number | null
           id: string
           job_id: string
           pax_count: number | null
+          photo_path: string | null
           photo_url: string | null
           reason: string
           reason_note: string | null
@@ -1833,9 +1836,12 @@ export type Database = {
           driver_id?: string | null
           from_status: string
           gps_accuracy_m?: number | null
+          gps_lat?: number | null
+          gps_lng?: number | null
           id?: string
           job_id: string
           pax_count?: number | null
+          photo_path?: string | null
           photo_url?: string | null
           reason: string
           reason_note?: string | null
@@ -1851,9 +1857,12 @@ export type Database = {
           driver_id?: string | null
           from_status?: string
           gps_accuracy_m?: number | null
+          gps_lat?: number | null
+          gps_lng?: number | null
           id?: string
           job_id?: string
           pax_count?: number | null
+          photo_path?: string | null
           photo_url?: string | null
           reason?: string
           reason_note?: string | null
