@@ -321,6 +321,37 @@ export const getDashboardSummary = createServerFn({ method: "GET" })
     };
   });
 
+/**
+ * Returns light activity lists for the dashboard: recent pending client bookings
+ * and the next few unassigned jobs. Kept intentionally small (5 rows each) so
+ * the dashboard stays snappy on mobile.
+ */
+export const getDashboardActivity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const [pendingRes, unassignedRes] = await Promise.all([
+      sb.from("client_bookings")
+        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pax_count, status, created_at")
+        .eq("company_id", c.id)
+        .in("status", ["pending", "modification_pending"])
+        .order("created_at", { ascending: false })
+        .limit(5),
+      sb.from("jobs")
+        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status")
+        .eq("company_id", c.id)
+        .is("driver_id", null)
+        .gte("date", new Date().toISOString().slice(0, 10))
+        .order("pickup_at", { ascending: true })
+        .limit(5),
+    ]);
+    return {
+      pending: pendingRes.data ?? [],
+      unassigned: unassignedRes.data ?? [],
+    };
+  });
+
 // ---------- JOBS ----------
 
 export const listJobs = createServerFn({ method: "GET" })
