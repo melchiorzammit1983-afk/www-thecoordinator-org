@@ -2528,6 +2528,8 @@ export type Database = {
           driver_reported_km: number | null
           driver_started_at: string | null
           dropoff_display_name: string | null
+          dropoff_lat: number | null
+          dropoff_lng: number | null
           dropoff_place_id: string | null
           executor_company_id: string | null
           flight_baggage_belt: string | null
@@ -2558,6 +2560,8 @@ export type Database = {
           payment_status: Database["public"]["Enums"]["payment_status"]
           pickup_at: string | null
           pickup_display_name: string | null
+          pickup_lat: number | null
+          pickup_lng: number | null
           pickup_place_id: string | null
           pickup_shift_reason: string | null
           points_charged: Json
@@ -2623,6 +2627,8 @@ export type Database = {
           driver_reported_km?: number | null
           driver_started_at?: string | null
           dropoff_display_name?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_place_id?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
@@ -2653,6 +2659,8 @@ export type Database = {
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           pickup_display_name?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_place_id?: string | null
           pickup_shift_reason?: string | null
           points_charged?: Json
@@ -2718,6 +2726,8 @@ export type Database = {
           driver_reported_km?: number | null
           driver_started_at?: string | null
           dropoff_display_name?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_place_id?: string | null
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
@@ -2748,6 +2758,8 @@ export type Database = {
           payment_status?: Database["public"]["Enums"]["payment_status"]
           pickup_at?: string | null
           pickup_display_name?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_place_id?: string | null
           pickup_shift_reason?: string | null
           points_charged?: Json
