@@ -7,7 +7,7 @@ import { listGroupStops, reorderStops } from "@/lib/groups.functions";
 import { approveStopReorder } from "@/lib/audit.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { displayLocation, formatMaltaTime as _t } from "@/lib/trip-display";
+import { displayLocation } from "@/lib/trip-display";
 import { formatMaltaTime } from "@/lib/time";
 
 export function GroupStopsPanel({ groupId, groupName }: { groupId: string; groupName?: string | null }) {

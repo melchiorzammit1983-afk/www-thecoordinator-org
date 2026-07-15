@@ -219,7 +219,7 @@ export const requestStopReorder = createServerFn({ method: "POST" })
         _group_id: data.group_id,
         _approval_status: "pending",
         _actor_label: "driver",
-        _driver_id: driver?.id ?? null,
+        _driver_id: driver?.id ?? undefined,
       });
     }
     return { ok: true, request_id: req.id };
