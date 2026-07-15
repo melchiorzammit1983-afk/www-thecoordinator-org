@@ -1121,6 +1121,20 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const snapDropoffFn = useServerFn(driverSnapDropoffToHere);
+  const snapDropoff = useMutation({
+    mutationFn: () => {
+      if (!driverPos) throw new Error("No GPS position yet — wait a few seconds and try again.");
+      return snapDropoffFn({
+        data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Drop-off coordinates updated to your position");
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // ----- Driver-initiated cancellation (requires coordinator approval) -----
   const requestCancelFn = useServerFn(driverRequestCancel);
