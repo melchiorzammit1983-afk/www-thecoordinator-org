@@ -2799,3 +2799,78 @@ export const respondWaitProposal = createServerFn({ method: "POST" })
 
     return { ok: true, status: newStatus };
   });
+
+// ==================== Batch C — driver-token stop reorder ====================
+
+export const listGroupStopsForDriver = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) =>
+    z.object({ token: z.string().min(8).max(128), group_id: z.string().uuid() }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) return null;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: stops } = await supabaseAdmin
+      .from("group_stops")
+      .select("id, stop_index, address, display_name, pax_count")
+      .eq("group_id", data.group_id)
+      .order("stop_index", { ascending: true });
+    const { data: pending } = await supabaseAdmin
+      .from("group_stop_reorder_requests")
+      .select("id, status, proposed_order, created_at")
+      .eq("group_id", data.group_id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    return { stops: stops ?? [], pending: pending?.[0] ?? null };
+  });
+
+export const requestStopReorderByDriver = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        token: z.string().min(8).max(128),
+        group_id: z.string().uuid(),
+        proposed_order: z.array(z.string().uuid()).min(1),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link) throw new Error("invalid_token");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Validate group belongs to the token's company and driver's job.
+    const { data: group } = await supabaseAdmin
+      .from("groups")
+      .select("id, job_id, jobs:job_id(company_id, driver_id)")
+      .eq("id", data.group_id)
+      .maybeSingle();
+    if (!group) throw new Error("group_not_found");
+    const job = (group as any).jobs;
+    if (!job || job.company_id !== link.company_id) throw new Error("forbidden");
+
+    const { data: inserted, error } = await supabaseAdmin
+      .from("group_stop_reorder_requests")
+      .insert({
+        group_id: data.group_id,
+        requested_by_driver_id: job.driver_id ?? null,
+        proposed_order: data.proposed_order,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+
+    await supabaseAdmin.rpc("record_trip_audit", {
+      _job_id: group.job_id,
+      _event_type: "stop_reorder_requested",
+      _new: { request_id: inserted.id, proposed_order: data.proposed_order } as any,
+      _group_id: data.group_id,
+      _approval_status: "pending",
+      _actor_label: "driver",
+      _driver_id: job.driver_id ?? undefined,
+    });
+
+    return { ok: true, request_id: inserted.id };
+  });

@@ -21,6 +21,8 @@ import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
+import { TripAuditTimeline } from "./TripAuditTimeline";
+import { GroupStopsPanel } from "./GroupStopsPanel";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
@@ -353,6 +355,9 @@ export function TripDetailsSheet({
               </div>
             )}
             <SafetyFlagBadges job={job} />
+            {(job as any).group_id && (
+              <GroupStopsPanel groupId={(job as any).group_id} groupName={(job as any).group_name} />
+            )}
           </SheetHeader>
 
           <div className="space-y-2">
@@ -807,6 +812,9 @@ export function TripDetailsSheet({
                 </Button>
               </>
             )}
+          </div>
+          <div className="mt-4 border-t pt-3">
+            <TripAuditTimeline jobId={job.id} />
           </div>
         </div>
       </SheetContent>

@@ -1,97 +1,216 @@
+# Batch C — Implementation Plan (revised)
 
-# Batch B — Delta Plan (Safety Mode + Emergency Override)
+Audit Trail + Anti-Tampering + Grouped Trip improvements. Phase 1 / Batch A / Batch B workflows are only *observed* by the new audit layer — never modified.
 
-## Context: what already ships
+The plan doc `docs/BATCH_C_IMPLEMENTATION_PLAN.md` is written during build mode; full content lives here.
 
-Batch B was largely delivered in Phases 4 & 5 (see `docs/PHASE_4_COMPLETED.md`, `docs/PHASE_5_COMPLETED.md`):
+---
 
-- `companies.safety_mode_threshold_kmh` (default 10, configurable)
-- `useSafetyMode` hook (10 km/h derivation, 30 s stale reset, normalizes iOS `-1`)
-- `SafetyModeOverlay` banner
-- `DriverLiveShare` pushes `speed_mps`; manifest hides distracting actions in Safety Mode
-- `job_emergency_overrides` table (job_id, driver_id, company_id, action, reason, reason_note, from_status, to_status, speed_mps, created_at) + RLS
-- `EmergencyOverrideDialog` with 5 actions (force_arrived / force_pob / force_en_route / force_drop_off / force_complete) and 7 reasons
-- Server fn `emergencyOverrideJobStatus` — closes wait sessions, overrides boarding approvals, posts coordinator system chat, writes audit row
+## 1. Architecture Review
 
-This plan will NOT touch the accepted → arrived → waiting → boarding → en_route → completed workflow. Existing Safety Mode threshold, hook, overlay, and override server fn remain the source of truth.
+`admin_activity_log` + `log_activity()` trigger stay untouched (Batch A/B rely on them). Batch C adds a **purpose-built operational log**, `trip_audit_log`:
 
-## Gaps vs the new Batch B spec
+- append-only (RLS blocks direct INSERT; UPDATE/DELETE revoked from `authenticated`),
+- hash-chained per trip,
+- written exclusively via `record_trip_audit` (`SECURITY DEFINER`) so clients cannot forge hashes or backdate `server_time`,
+- coordinator-readable scoped to their company (via `company_id` column — no join needed).
 
-| Spec item | Status | Action |
-|---|---|---|
-| Safety Mode `enabled` toggle | ❌ | add column + gate hook |
-| Safety Mode `allow_override` | ❌ | add column + driver "temporarily unlock" button |
-| Reason: **Road Closure** | ❌ | add to enum + labels |
-| Reason: **Passenger Already On Board** | ❌ | add to enum + labels |
-| Notes on override | ✅ | already `reason_note` |
-| Photo attachment | ❌ | new `override-photos` bucket + upload + `photo_url` column |
-| Audit: `gps_accuracy` | ❌ | add column, capture from last `driver_locations` |
-| Audit: `street_address` | ❌ | add column, reverse-geocode server-side |
-| Audit: `vehicle_id` | ⚠️ | column not needed — drivers table has vehicle; store snapshot as `vehicle_label` |
-| Audit: `approval_status` | ❌ | add column default `auto_approved` |
-| Safety Concern workflow (pause trip, highlight, notify) | ⚠️ partial (system chat only) | flag `jobs.safety_flag_at`, coordinator badge |
-| Breakdown workflow (save pax count, allow reassignment) | ⚠️ partial | flag `jobs.breakdown_flag_at`, unassign driver optionally, coordinator badge |
-| Coordinator highlight of overridden trips | ❌ | render badge on TripDetailsSheet / calendar card |
-| `docs/BATCH_B_IMPLEMENTATION.md` | ❌ | create alongside existing COMPLETED docs |
+Grouped trips today: `groups` = label + driver link on one job. Batch C adds a **stops** concept — an ordered list of destinations under a group — without breaking legacy single-job grouping used by driver links or pax assignment.
 
-## Affected files
+---
 
-**Database (new migration `supabase/migrations/<ts>_batch_b_delta.sql`)**
-- `ALTER companies` — add `safety_mode_enabled bool default true`, `safety_mode_allow_override bool default true`
-- `ALTER job_emergency_overrides` — add `photo_url text`, `gps_accuracy_m numeric`, `street_address text`, `vehicle_label text`, `approval_status text default 'auto_approved' check in (auto_approved, pending_review, reviewed)`, `pax_count int`
-- Update `job_emergency_overrides_reason_check` to include `road_closure`, `passenger_already_on_board`
-- `ALTER jobs` — add `safety_flag_at timestamptz`, `safety_flag_note text`, `breakdown_flag_at timestamptz`, `breakdown_flag_note text`
-- New storage bucket `override-photos` (private) via `supabase--storage_create_bucket` + `storage.objects` policies scoped by `company_id/{job_id}/*`
+## 2. Files Affected
 
-**Backend**
-- `src/lib/emergency-override.ts` — add two reasons + labels; export ordered list matching spec
-- `src/lib/coordinator-public.functions.ts` — `emergencyOverrideJobStatus`:
-  - accept `photo_url`, `gps_accuracy_m`, `pax_count`
-  - read latest `driver_locations` row for accuracy + reverse-geocode street address (via existing places server helper — reuse `reverseGeocode` pattern from `places.functions`)
-  - snapshot `drivers.vehicle_make || plate` into `vehicle_label`
-  - on `safety_concern` reason → set `jobs.safety_flag_at`, `safety_flag_note`
-  - on `breakdown` reason → set `jobs.breakdown_flag_at`, `breakdown_flag_note`, save `pax_count`
-  - honour `companies.safety_mode_enabled` when returning manifest settings
+**New**
+- `src/lib/audit.functions.ts` — `listTripAudit`, `listSuspiciousActivity`, `requestStopReorder`, `approveStopReorder`.
+- `src/lib/groups.functions.ts` — `listGroupStops`, `reorderStops`, `splitGroup`, `mergeGroups`.
+- `src/components/coordinator/TripAuditTimeline.tsx` — renders audit rows with hash-verified badge and approval-status chip.
+- `src/components/coordinator/SuspiciousActivityCard.tsx` — dashboard warning tile.
+- `src/components/coordinator/GroupStopsPanel.tsx` — expand/reorder/split/merge UI.
+- `docs/BATCH_C_IMPLEMENTATION_PLAN.md`, `docs/BATCH_C_COMPLETED.md`, `docs/BATCH_C_MANUAL_TESTING.md`.
 
-**Driver UI (`src/routes/m.driver.$token.tsx`, `EmergencyOverrideDialog.tsx`)**
-- Add optional photo picker (single image, ≤ 5 MB, uploaded to `override-photos/{company}/{job}/{uuid}.jpg` before submit)
-- Add "Unlock 30 s" button on `SafetyModeOverlay` when `safety_mode_allow_override` is true (temporary bypass by disabling `isSafetyMode` locally with a 30 s timer)
-- Gate Safety Mode activation on `safety_mode_enabled`
-- Extend reason list to 9 items in the shown order
+**Modified (write-through only — call the new RPC, no workflow change)**
+- `src/lib/coordinator-public.functions.ts` — after every existing status/waiting/boarding/override write, call `record_trip_audit` with the appropriate `approval_status`.
+- `src/lib/coordinator.functions.ts` — same for coordinator-side waiting adjustments and safety-flag clears.
+- `src/routes/_authenticated/coordinator.index.tsx` — mount `SuspiciousActivityCard`.
+- `src/components/coordinator/TripDetailsSheet.tsx` — add "Audit" tab; render `GroupStopsPanel` when `group_id IS NOT NULL`.
+- `src/routes/m.driver.$token.tsx` — "Request stop reorder" button inside grouped-run view.
 
-**Coordinator UI**
-- `TripDetailsSheet.tsx` — badge "Safety concern" / "Breakdown" when the corresponding flag column is set, with reason note; button "Clear flag" (server fn `clearJobFlag`) and "Reassign driver" (existing driver reassignment path) for breakdowns
-- Calendar `JobCard` — subtle red left-border when either flag is set (reuse urgency-glow slot)
+**Untouched (explicit)**
+- Every file implementing GPS validation, waiting timers, boarding, safety mode, or emergency override logic. We only *read* their outcomes and log them.
 
-**Points billing**
-- No new billable feature (overrides are safety/compliance — not points-metered)
+---
 
-## Docs deliverables
+## 3. Database Changes (single migration)
 
-- `docs/BATCH_B_IMPLEMENTATION.md` — the pre-code plan (this file, expanded)
-- `docs/BATCH_B_COMPLETED.md` — post-code summary with modified files, DB diff, API diff, driver + coordinator UI notes, testing checklist, risks, rollback SQL
+```text
+trip_audit_log
+  id uuid pk
+  company_id uuid not null          -- ★ new: scopes reporting without joining jobs
+  job_id uuid                       -- fk jobs, indexed
+  group_id uuid null                -- fk groups
+  stop_id uuid null                 -- fk group_stops
+  driver_id uuid null
+  actor_user_id uuid null
+  actor_label text                  -- 'driver' | 'coordinator' | 'system' | 'passenger'
+  event_type text                   -- enum below
+  approval_status text not null default 'not_required'
+                                    -- ★ new: 'approved'|'rejected'|'pending'|'overridden'|'not_required'
+  previous_state jsonb
+  new_state jsonb
+  notes text
+  gps_lat numeric, gps_lng numeric, gps_accuracy_m numeric
+  street_address text
+  speed_kmh numeric
+  device_time timestamptz null
+  server_time timestamptz not null default now()   -- authoritative
+  prev_hash text null
+  row_hash  text not null            -- sha256(prev_hash || canonical(payload including company_id + approval_status))
+  created_at timestamptz not null default now()
 
-## Testing checklist (manual)
+  CHECK (approval_status IN ('approved','rejected','pending','overridden','not_required'))
 
-1. Admin toggles `safety_mode_enabled = false` on a company → banner never appears even above 10 km/h
-2. `allow_override = true` → "Unlock 30 s" button restores hidden buttons for 30 s, then re-locks
-3. Trigger override with Road Closure & Passenger Already On Board — both saved
-4. Upload photo → visible in `override-photos` bucket, `photo_url` persisted
-5. Safety Concern reason → `jobs.safety_flag_at` set, coordinator sees red badge; "Clear flag" removes it
-6. Breakdown reason → `jobs.breakdown_flag_at` set, `pax_count` saved; coordinator can reassign driver
-7. Audit row includes `gps_accuracy_m`, `street_address`, `vehicle_label`, `approval_status='auto_approved'`
-8. Existing Phase 4/5 behaviour (30 s stale reset, backward-transition chat, wait-session close) still passes
+  INDEX (company_id, created_at DESC)
+  INDEX (job_id, created_at)
+  INDEX (driver_id, created_at DESC)
+  INDEX (event_type, created_at DESC)
+  INDEX (approval_status) WHERE approval_status IN ('pending','rejected')
 
-## Risks
+group_stops
+  id uuid pk
+  group_id uuid fk groups on delete cascade
+  stop_index int not null                           -- 0-based, unique (group_id, stop_index)
+  address text, display_name text, place_id text
+  lat numeric, lng numeric
+  pax_count int default 0
+  arrived_at, boarded_at, no_show_at, completed_at timestamptz null
+  wait_started_at, wait_ended_at timestamptz null
+  charges_cents int default 0
+  created_at, updated_at timestamptz
 
-- Reverse geocode call inside the override handler adds latency; mitigate by fire-and-forget update after insert
-- Storage bucket policy must scope to `company_id` prefix — regression risk if driver token lacks company scope; reuse existing `company_of(auth.uid())` helper pattern (drivers hit endpoint via token, so store via server fn using service role)
-- Enum widening on `reason_check` requires drop+recreate constraint
+group_stop_reorder_requests
+  id, group_id, requested_by (driver_id), proposed_order uuid[],
+  status text ('pending'|'approved'|'rejected'), decided_by uuid null,
+  created_at, decided_at
+```
 
-## Rollback
+Event-type set: `arrival_verified`, `arrival_manual`, `wait_started`, `wait_ended`, `wait_charge_changed`, `boarding_started`, `boarding_completed`, `boarding_approved`, `pax_no_show`, `pax_cancelled`, `override_arrived`, `override_on_board`, `override_en_route`, `override_drop_off`, `override_complete`, `safety_concern`, `breakdown`, `status_change`, `stop_reordered`, `stop_split`, `stop_merged`, `stop_reorder_requested`, `stop_reorder_decided`.
 
-- Drop added columns on `jobs`, `job_emergency_overrides`, `companies`
-- Restore original `reason_check`
-- Delete `override-photos` bucket
-- Revert `emergency-override.ts` and `EmergencyOverrideDialog.tsx`
+**Approval-status semantics per event class** (defaults inside the RPC when caller omits it):
+- Emergency overrides → `overridden`.
+- Boarding approvals → `approved` / `rejected` from the workflow decision.
+- Stop-reorder requests → `pending` on create; the decision row writes `approved` / `rejected`.
+- Waiting-charge changes → `approved` (coordinator) or `overridden` (driver-initiated).
+- Everything else (arrivals, status changes, GPS pings) → `not_required`.
 
+**RPC — the only write path**
+```sql
+create function public.record_trip_audit(
+  _job_id uuid, _event_type text, _previous jsonb, _new jsonb,
+  _notes text, _lat numeric, _lng numeric, _accuracy numeric,
+  _address text, _speed numeric, _device_time timestamptz,
+  _group_id uuid, _stop_id uuid,
+  _approval_status text default null   -- ★ null → RPC defaults per event_type
+) returns uuid
+security definer set search_path = public
+```
+- Resolves `actor_user_id` from `auth.uid()`, `driver_id` + `company_id` from the job row.
+- Locks the last row for `job_id` (`SELECT ... FOR UPDATE`) to serialize the chain.
+- Canonicalizes the payload (incl. `company_id`, `approval_status`) and computes `row_hash = sha256(prev_hash || canonical)` via `pgcrypto`.
+- Inserts. `server_time = now()`; client timestamps live only in `device_time`.
+
+**Grants / RLS**
+```text
+GRANT SELECT, INSERT ON trip_audit_log TO authenticated;  -- direct INSERT blocked by RLS; writes go through the definer RPC
+GRANT ALL             ON trip_audit_log TO service_role;
+REVOKE UPDATE, DELETE ON trip_audit_log FROM authenticated, anon;
+ALTER TABLE trip_audit_log ENABLE ROW LEVEL SECURITY;
+-- SELECT: coordinator reads rows WHERE company_id = company_of(auth.uid()); admins read all
+-- INSERT: WITH CHECK (false)
+```
+Same GRANT/RLS shape for `group_stops` (company-scoped via parent group's job) and `group_stop_reorder_requests` (driver INSERT own group; coordinator UPDATE own; SELECT both).
+
+Suspicious activity: `SECURITY DEFINER` view `v_suspicious_activity` scans `trip_audit_log` directly by `company_id` (no jobs join) over 24h / 7d windows:
+- overrides ≥ 3 in 24h,
+- no-shows ≥ 5 in 7d,
+- waiting-charge edits ≥ 3 in 24h,
+- GPS validation failures ≥ 2 in 24h,
+- same override reason ≥ 4 in 7d,
+- `approval_status = 'rejected'` ≥ 2 in 24h.
+
+**Triggers (write-through, not workflow changes)**: `AFTER UPDATE ON jobs` (status), `job_wait_sessions`, `job_boarding_approvals`, `job_emergency_overrides`, `pax` — each calls `record_trip_audit`. Audit failures are logged (`RAISE WARNING`) and never roll back the source write.
+
+Chain verification helper: `verify_trip_audit_chain(_job_id uuid) returns table(row_id uuid, ok boolean)` — recomputes hashes; UI shows shield ✅/⚠️.
+
+---
+
+## 4. API / Server-Function Changes
+
+- `listTripAudit({ job_id })` → rows + `chain_ok`; each row includes `approval_status`.
+- `listSuspiciousActivity({ company_id? })` → view rows for dashboard (defaults to caller's company via `company_id` index).
+- `listGroupStops({ group_id })`, `reorderStops({ group_id, ordered_stop_ids })`, `splitGroup({ group_id, stop_ids })`, `mergeGroups({ target_group_id, source_group_ids })` — all `requireSupabaseAuth`, company-scoped.
+- `requestStopReorder({ group_id, proposed_order })` — driver token endpoint; audit row is `approval_status = 'pending'`.
+- `approveStopReorder({ request_id, approve })` — coordinator; audit row `approved`/`rejected`.
+
+Existing status/override/waiting server functions gain one line: `await recordTripAudit(..., approval_status)`. Signatures unchanged.
+
+---
+
+## 5. Driver App Changes
+
+- Grouped-run view (`m.driver.$token.tsx` when `group_id` present) gets an expandable stop list — current stop highlighted, others collapsible. Existing per-trip status buttons unchanged; they operate on the current stop.
+- **"Request reorder"** button opens a drag list, submits `requestStopReorder`. Driver sees "Waiting for coordinator" until decided.
+- No changes to Safety Mode, arrival, waiting, boarding, or override buttons.
+
+---
+
+## 6. Coordinator App Changes
+
+- **Trip details sheet** gains an *Audit* tab: chronological timeline, event icons, previous→new diff, GPS pin (opens map), device-vs-server time delta chip, chain-integrity badge, and an **approval-status pill** (green/red/amber/grey/blue).
+- Grouped trips render as **"Airport Run · 5 Stops"** with expand chevron → `GroupStopsPanel`: per-stop arrival/wait/boarding/charges plus reorder / split / merge / approve-driver-reorder actions.
+- **Dashboard tile** `SuspiciousActivityCard` — top 5 warnings; each links to the trip.
+- Trip cards get a ⚠️ badge when the driver has a live suspicious signal.
+- Dashboard exposes a "Pending approvals" filter using the `approval_status` partial index.
+
+---
+
+## 7. Risks
+
+- **Trigger recursion / write-amplification.** Triggers on `jobs`, `pax`, wait/boarding/override tables all write to `trip_audit_log`. Audit table itself has no triggers.
+- **Chain contention.** `FOR UPDATE` on the last row per `job_id` serializes inserts for the same trip. Acceptable — one driver per trip.
+- **Hash sensitivity to jsonb ordering.** `canonical_jsonb(jsonb)` helper (sorted keys, null-stripped) used by both `record_trip_audit` and `verify_trip_audit_chain`. `company_id` and `approval_status` are part of the canonical payload from day one.
+- **Legacy grouped jobs (no `group_stops` rows)** must keep working. `listGroupStops` synthesizes a single-stop row when empty; UI falls back to classic card.
+- **Points cost.** Audit writes are pure Postgres — no AI / points burn. Reverse geocoding reuses the address already captured by the source workflow.
+
+---
+
+## 8. Rollback
+
+Independent pieces:
+
+1. **UI only** — revert component/route edits; `record_trip_audit` calls become dead code, don't error.
+2. **Full rollback migration**:
+   ```sql
+   DROP VIEW     IF EXISTS public.v_suspicious_activity;
+   DROP FUNCTION IF EXISTS public.verify_trip_audit_chain(uuid);
+   DROP FUNCTION IF EXISTS public.record_trip_audit(...);
+   DROP TRIGGER  IF EXISTS trg_audit_jobs_status ON public.jobs;
+   -- ...pax / wait / boarding / override triggers
+   DROP TABLE IF EXISTS public.group_stop_reorder_requests;
+   DROP TABLE IF EXISTS public.group_stops;
+   DROP TABLE IF EXISTS public.trip_audit_log;
+   ```
+3. `admin_activity_log` untouched → Batch A/B forensics intact through rollback.
+
+Zero rollback impact on GPS, waiting, boarding, safety, or override workflows.
+
+---
+
+## Deliverables
+
+- `docs/BATCH_C_IMPLEMENTATION_PLAN.md` (this content)
+- Migration from §3
+- Server functions & components from §2
+- `docs/BATCH_C_COMPLETED.md` and `docs/BATCH_C_MANUAL_TESTING.md` after implementation
+
+Ready to implement on approval.

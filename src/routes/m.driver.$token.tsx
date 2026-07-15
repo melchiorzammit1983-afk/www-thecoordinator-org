@@ -13,6 +13,7 @@ import {
   getBoardingApprovalStatusDriver,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
   getClientLiveLocationDriver,
+  listGroupStopsForDriver, requestStopReorderByDriver,
 } from "@/lib/coordinator-public.functions";
 
 
@@ -1296,6 +1297,7 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
               ⛬ {job.group_name || "Grouped"}{job.grouped_count ? ` · ${job.grouped_count}` : ""}
             </Badge>
           )}
+          {job.group_id && <DriverStopReorderButton token={token} groupId={job.group_id} />}
           {job.group_note && (
             <Badge variant="outline" className="text-[10px] italic max-w-full truncate">📝 {job.group_note}</Badge>
           )}
@@ -2821,5 +2823,98 @@ function NotFound() {
         <p className="text-sm text-muted-foreground mt-2">Ask your coordinator for a new link.</p>
       </div>
     </div>
+  );
+}
+
+function DriverStopReorderButton({ token, groupId }: { token: string; groupId: string }) {
+  const [open, setOpen] = useState(false);
+  const [order, setOrder] = useState<string[] | null>(null);
+  const qc = useQueryClient();
+  const listFn = useServerFn(listGroupStopsForDriver);
+  const submitFn = useServerFn(requestStopReorderByDriver);
+
+  const { data } = useQuery({
+    queryKey: ["driver-stops", groupId],
+    queryFn: () => listFn({ data: { token, group_id: groupId } }),
+    enabled: open,
+  });
+
+  const stops = data?.stops ?? [];
+  const pending = data?.pending;
+  const current = order ?? stops.map((s: any) => s.id);
+
+  const move = (i: number, dir: -1 | 1) => {
+    const next = i + dir;
+    if (next < 0 || next >= current.length) return;
+    const copy = [...current];
+    [copy[i], copy[next]] = [copy[next], copy[i]];
+    setOrder(copy);
+  };
+
+  const submit = useMutation({
+    mutationFn: () => submitFn({ data: { token, group_id: groupId, proposed_order: current } }),
+    onSuccess: () => {
+      toast.success("Reorder request sent to coordinator");
+      qc.invalidateQueries({ queryKey: ["driver-stops", groupId] });
+      setOpen(false);
+      setOrder(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <>
+      <Badge
+        onClick={() => setOpen(true)}
+        className="text-[10px] cursor-pointer bg-secondary text-secondary-foreground hover:bg-secondary/80"
+      >
+        🔀 Reorder stops
+      </Badge>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Request stop reorder</DialogTitle>
+            <DialogDescription>
+              Coordinator approval required before the change takes effect.
+            </DialogDescription>
+          </DialogHeader>
+          {pending ? (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700">
+              Waiting for coordinator to review your previous request.
+            </div>
+          ) : stops.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No stops recorded for this group.</div>
+          ) : (
+            <ol className="space-y-1.5">
+              {current.map((id, i) => {
+                const stop = stops.find((s: any) => s.id === id);
+                if (!stop) return null;
+                return (
+                  <li key={id} className="flex items-center gap-2 border rounded px-2 py-1.5 text-xs">
+                    <span className="w-5 text-center font-mono">{i + 1}</span>
+                    <span className="flex-1 truncate">
+                      {displayLocation(stop.address, stop.display_name)}
+                    </span>
+                    <button className="p-1" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
+                    <button className="p-1" onClick={() => move(i, 1)} disabled={i === current.length - 1}>↓</button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setOrder(null); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => submit.mutate()}
+              disabled={!!pending || stops.length === 0 || submit.isPending}
+            >
+              {submit.isPending ? "Sending…" : "Send request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
