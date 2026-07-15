@@ -112,6 +112,93 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
   return { ...data, isAdmin };
 }
 
+// ---------- DRIVER-ACCEPTED LOCK HELPERS ----------
+
+/**
+ * A trip is "locked" once the driver has accepted it OR the driver has already
+ * progressed it past pending. Coordinator changes on locked trips must be
+ * routed through job_coord_change_requests for driver approval.
+ * Admins always bypass the lock.
+ */
+type LockableJob = {
+  id: string;
+  company_id: string;
+  driver_id: string | null;
+  driver_accepted_at: string | null;
+  status: string | null;
+};
+
+async function loadLockableJob(jobId: string, companyId: string): Promise<LockableJob | null> {
+  const sb = await getAdminClient();
+  const { data } = await sb
+    .from("jobs")
+    .select("id, company_id, driver_id, driver_accepted_at, status")
+    .eq("id", jobId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  return (data ?? null) as LockableJob | null;
+}
+
+function isJobLocked(job: LockableJob | null): boolean {
+  if (!job) return false;
+  if (job.driver_accepted_at) return true;
+  const s = (job.status ?? "").toLowerCase();
+  return s !== "" && s !== "pending";
+}
+
+async function createChangeRequest(params: {
+  jobId: string;
+  companyId: string;
+  requestedBy: string;
+  kind: "edit" | "reassign" | "cancel" | "delete";
+  requestedChanges: Record<string, unknown>;
+  note?: string | null;
+  driverId?: string | null;
+}): Promise<{ pending: true; request_id: string; message: string }> {
+  const sb = await getAdminClient();
+  // Cancel any existing pending request of the same kind (last-write-wins).
+  await sb
+    .from("job_coord_change_requests")
+    .update({ status: "cancelled", decided_at: new Date().toISOString(), decided_note: "superseded" } as never)
+    .eq("job_id", params.jobId)
+    .eq("kind", params.kind)
+    .eq("status", "pending");
+  const { data, error } = await sb
+    .from("job_coord_change_requests")
+    .insert({
+      job_id: params.jobId,
+      company_id: params.companyId,
+      requested_by: params.requestedBy,
+      kind: params.kind,
+      requested_changes: params.requestedChanges as never,
+      note: params.note ?? null,
+    } as never)
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  const label: Record<string, string> = {
+    edit: "trip changes",
+    reassign: "driver reassignment",
+    cancel: "trip cancellation",
+    delete: "trip deletion",
+  };
+  const body = `📝 Coordinator requested ${label[params.kind]} — please review and approve or reject.`;
+  await sb.from("trip_messages").insert({
+    job_id: params.jobId,
+    company_id: params.companyId,
+    sender_kind: "system",
+    sender_label: "System",
+    body,
+    thread_kind: "driver_coord",
+    driver_id: params.driverId ?? null,
+  } as never);
+  return {
+    pending: true,
+    request_id: (data as { id: string }).id,
+    message: `Change request sent to driver for approval.`,
+  };
+}
+
 // ---------- BASICS ----------
 
 export const getMyCompany = createServerFn({ method: "GET" })
