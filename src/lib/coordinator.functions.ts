@@ -5957,3 +5957,106 @@ export const updateMyGpsSettings = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ==================== Coordinator: driver cancel-request inbox ====================
+
+export const listPendingDriverCancels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data, error } = await sb
+      .from("jobs")
+      .select("id, date, time, pickup_at, from_location, to_location, pickup_display_name, dropoff_display_name, status, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, driver_cancel_requested_by, drivers(name)")
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
+      .not("driver_cancel_requested_at", "is", null)
+      .order("driver_cancel_requested_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { requests: data ?? [] };
+  });
+
+export const decideDriverCancelRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      decision: z.enum(["approve", "reject"]),
+      note: z.string().trim().max(500).optional().nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: job, error: jerr } = await sb
+      .from("jobs")
+      .select("id, company_id, executor_company_id, driver_id, status, driver_cancel_requested_at, driver_cancel_reason")
+      .eq("id", data.job_id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
+      .maybeSingle();
+    if (jerr) throw new Error(jerr.message);
+    if (!job) throw new Error("Trip not found");
+    if (!(job as any).driver_cancel_requested_at) throw new Error("No pending cancellation request");
+
+    const noteText = (data.note ?? "").trim();
+    const clearPatch = {
+      driver_cancel_requested_at: null,
+      driver_cancel_requested_by: null,
+      driver_cancel_reason: null,
+      driver_cancel_note: null,
+    };
+
+    if (data.decision === "approve") {
+      // Close any open wait session server-side (best effort — matches other status transitions).
+      try {
+        await sb.rpc("close_open_wait_session" as never, { _job_id: data.job_id } as never);
+      } catch { /* ignore if no such RPC in this env */ }
+      const { error } = await sb
+        .from("jobs")
+        .update({ ...clearPatch, status: "cancelled" } as never)
+        .eq("id", data.job_id);
+      if (error) throw new Error(error.message);
+      await sb.from("trip_messages").insert({
+        job_id: data.job_id,
+        company_id: (job as any).company_id,
+        sender_kind: "coordinator",
+        sender_label: "Coordinator",
+        body: `✅ Coordinator APPROVED the driver's cancellation. Trip is now cancelled.${noteText ? ` Note: ${noteText}` : ""}`,
+        thread_kind: "driver_coord",
+        driver_id: (job as any).driver_id ?? null,
+      } as never);
+      await sb.rpc("record_trip_audit" as never, {
+        _job_id: data.job_id,
+        _event_type: "driver_cancel_approved",
+        _new: { reason: (job as any).driver_cancel_reason },
+        _notes: noteText || null,
+        _approval_status: "approved",
+        _driver_id: (job as any).driver_id ?? null,
+        _actor_label: "coordinator",
+      } as never);
+    } else {
+      const { error } = await sb
+        .from("jobs")
+        .update(clearPatch as never)
+        .eq("id", data.job_id);
+      if (error) throw new Error(error.message);
+      await sb.from("trip_messages").insert({
+        job_id: data.job_id,
+        company_id: (job as any).company_id,
+        sender_kind: "coordinator",
+        sender_label: "Coordinator",
+        body: `❌ Coordinator REJECTED the cancellation request. Trip continues.${noteText ? ` Note: ${noteText}` : ""}`,
+        thread_kind: "driver_coord",
+        driver_id: (job as any).driver_id ?? null,
+      } as never);
+      await sb.rpc("record_trip_audit" as never, {
+        _job_id: data.job_id,
+        _event_type: "driver_cancel_rejected",
+        _new: { reason: (job as any).driver_cancel_reason },
+        _notes: noteText || null,
+        _approval_status: "rejected",
+        _driver_id: (job as any).driver_id ?? null,
+        _actor_label: "coordinator",
+      } as never);
+    }
+    return { ok: true };
+  });
