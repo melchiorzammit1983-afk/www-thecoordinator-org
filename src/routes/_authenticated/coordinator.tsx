@@ -32,22 +32,46 @@ type NavItem = {
   feature: FeatureKey | null;
 };
 
-const NAV: NavItem[] = [
-  { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true, feature: null },
-  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" },
-  { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" },
-  { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
-  { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
-  { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
-  { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
-  { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
-  { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
-  { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: "branding_advert" },
-  { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
-  { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
-  { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
-  { to: "/coordinator/address-settings", label: "Address & Map", icon: MapPin, exact: false, feature: null },
+type NavGroup = { label: string; items: NavItem[] };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { to: "/coordinator", label: "Dashboard", icon: LayoutDashboard, exact: true, feature: null },
+      { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" },
+      { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
+      { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
+      { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
+      { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
+    ],
+  },
+  {
+    label: "Clients & Partners",
+    items: [
+      { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
+      { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
+      { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
+      { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
+      { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
+      { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: "branding_advert" },
+      { to: "/coordinator/address-settings", label: "Address & Map", icon: MapPin, exact: false, feature: null },
+    ],
+  },
 ];
+
+const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 
 
