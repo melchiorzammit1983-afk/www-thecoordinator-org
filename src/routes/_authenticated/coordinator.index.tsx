@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardSummary } from "@/lib/coordinator.functions";
 import { CalendarDays, Inbox, Users, Truck, Euro } from "lucide-react";
+import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
   head: () => ({ meta: [{ title: "Dashboard — Coordinator" }] }),
@@ -36,6 +37,7 @@ function DashboardPage() {
           </Link>
         ))}
       </div>
+      <SuspiciousActivityCard />
     </div>
   );
 }
