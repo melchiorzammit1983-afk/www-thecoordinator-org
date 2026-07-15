@@ -1560,6 +1560,21 @@ function JobCard({ job, token, driverPos, isSafetyMode, onOpen, onChat }: { job:
             )}
 
             {!isSafetyMode
+              && (job.status === "in_progress" || job.status === "arrived")
+              && !!driverPos && (
+              <Button
+                variant="outline"
+                className="h-10 sm:col-span-2"
+                disabled={snapDropoff.isPending}
+                onClick={() => snapDropoff.mutate()}
+                title="Move the drop-off pin on the map to your current GPS position"
+              >
+                <MapPin className="h-4 w-4 mr-1.5" />
+                {snapDropoff.isPending ? "Updating drop-off…" : "Drop-off is here — use my GPS"}
+              </Button>
+            )}
+
+            {!isSafetyMode
               && (job.status === "en_route" || job.status === "arrived")
               && !!driverPos && (
               <Button
