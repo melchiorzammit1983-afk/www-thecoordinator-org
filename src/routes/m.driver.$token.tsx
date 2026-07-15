@@ -790,7 +790,13 @@ function DriverManifest() {
 
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
-      {!navigateMode && isSafetyMode && <SafetyModeOverlay speedKmh={speedKmh} />}
+      {!navigateMode && isSafetyMode && (
+        <SafetyModeOverlay
+          speedKmh={speedKmh}
+          allowOverride={safetyAllowOverride}
+          onUnlock={() => setSafetyUnlockedUntil(Date.now() + 30_000)}
+        />
+      )}
       {/* Always-on map canvas — never unmounts while the dashboard is open. */}
       <DriverDashboardMap
         activeJob={mapJob}
