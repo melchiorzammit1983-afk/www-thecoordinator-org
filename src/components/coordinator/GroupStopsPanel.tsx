@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { displayLocation } from "@/lib/trip-display";
 import { formatMaltaTime } from "@/lib/time";
+import { RouteOptimizationPanel } from "@/components/coordinator/RouteOptimizationPanel";
 
 export function GroupStopsPanel({ groupId, groupName }: { groupId: string; groupName?: string | null }) {
   const [open, setOpen] = useState(false);
@@ -73,6 +74,7 @@ export function GroupStopsPanel({ groupId, groupName }: { groupId: string; group
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2">
+          <RouteOptimizationPanel groupId={groupId} stopCount={stops.length} />
           {pending.length > 0 && (
             <div className="space-y-1">
               {pending.map((p: any) => (
