@@ -442,7 +442,7 @@ export async function sendPushToUserImpl(
   );
 
   if (logRows.length > 0) {
-    await supabaseAdmin.from("notification_log").insert(logRows);
+    await supabaseAdmin.from("notification_log").insert(logRows as never);
   }
   if (pruneIds.length > 0) {
     await supabaseAdmin.from("push_devices").delete().in("id", pruneIds);
