@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripAuditTimeline } from "./TripAuditTimeline";
 import { GroupStopsPanel } from "./GroupStopsPanel";
+import { TripEventsMap } from "./TripEventsMap";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
