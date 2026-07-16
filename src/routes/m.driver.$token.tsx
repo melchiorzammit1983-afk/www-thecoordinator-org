@@ -1429,8 +1429,8 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
   const nextStatus = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
   const paid = job.payment_status === "paid";
-  const accepted = !!job.driver_accepted_at;
   const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
+
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
   const jobPaxSummary = getPaxSummary(pax);
