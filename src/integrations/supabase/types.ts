@@ -2551,6 +2551,10 @@ export type Database = {
           grouped_count: number | null
           id: string
           leave_by_at: string | null
+          live_eta_from_lat: number | null
+          live_eta_from_lng: number | null
+          live_eta_sec: number | null
+          live_eta_updated_at: string | null
           origin_company_id: string | null
           parent_job_id: string | null
           partner_accepted_at: string | null
@@ -2650,6 +2654,10 @@ export type Database = {
           grouped_count?: number | null
           id?: string
           leave_by_at?: string | null
+          live_eta_from_lat?: number | null
+          live_eta_from_lng?: number | null
+          live_eta_sec?: number | null
+          live_eta_updated_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
           partner_accepted_at?: string | null
@@ -2749,6 +2757,10 @@ export type Database = {
           grouped_count?: number | null
           id?: string
           leave_by_at?: string | null
+          live_eta_from_lat?: number | null
+          live_eta_from_lng?: number | null
+          live_eta_sec?: number | null
+          live_eta_updated_at?: string | null
           origin_company_id?: string | null
           parent_job_id?: string | null
           partner_accepted_at?: string | null
@@ -3950,6 +3962,59 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trip_map_events: {
+        Row: {
+          accuracy_m: number | null
+          company_id: string
+          created_at: string
+          driver_id: string | null
+          event_type: string
+          id: string
+          job_id: string
+          lat: number | null
+          lng: number | null
+          meta: Json
+          notes: string | null
+          occurred_at: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          company_id: string
+          created_at?: string
+          driver_id?: string | null
+          event_type: string
+          id?: string
+          job_id: string
+          lat?: number | null
+          lng?: number | null
+          meta?: Json
+          notes?: string | null
+          occurred_at?: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          company_id?: string
+          created_at?: string
+          driver_id?: string | null
+          event_type?: string
+          id?: string
+          job_id?: string
+          lat?: number | null
+          lng?: number | null
+          meta?: Json
+          notes?: string | null
+          occurred_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_map_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]

@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripAuditTimeline } from "./TripAuditTimeline";
 import { GroupStopsPanel } from "./GroupStopsPanel";
+import { TripEventsMap } from "./TripEventsMap";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
@@ -824,6 +825,14 @@ export function TripDetailsSheet({
               {paid ? "Paid" : "Payment pending"}
             </Badge>
             {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
+          </section>
+
+          {/* Live map + event pins + breadcrumb */}
+          <section className="space-y-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+              Trip map {job.status === "completed" ? "· replay" : "· live"}
+            </div>
+            <TripEventsMap jobId={job.id} isLive={job.status !== "completed" && job.status !== "cancelled"} />
           </section>
 
           {/* Chain */}

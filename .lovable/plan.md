@@ -1,47 +1,71 @@
-# Prefer resolved names everywhere on driver + client surfaces
 
-`displayLocation(raw, display_name)` already handles per-side fallbacks, so partial enrichment (one side named, the other not) works — but several surfaces still print `from_location` / `to_location` directly, so the pin, header, or notification shows a plus-code / raw address when the display name is available.
+## What we're building
 
-## What changes
+1. **Trip card shows planned ETA and live ETA side by side.** Planned = the cached hotel→airport route duration. Live = driver's current GPS → next stop, refreshed only on meaningful movement.
+2. **Every driver event drops a pin on the trip map.** Arrived at pickup, in-progress, actual drop-off, pickup/drop-off GPS snaps, emergency overrides, plus a thin breadcrumb polyline of the actual path.
+3. **After the trip is done, coordinator can replay it** on the same trip sheet, or open a "Trip report" for an exportable PDF (planned vs actual, deltas, all pins, audit timeline).
 
-### 1. Driver map pin (destination marker)
-`src/components/driver/NavigateFullscreen.tsx`
-- Add optional `destinationLabel?: string | null` prop.
-- Use it as the pin `title` at line ~290: `title: destinationLabel ?? destination ?? "Destination"`.
-- The preview title chip (`To {title}`) already uses the passed `title`; leave as-is.
+## Data layer
 
-`src/routes/m.driver.$token.tsx` (2 call sites at ~1935 and the active-trip navigate mode)
-- Pass `destinationLabel={displayLocation(destination, matching display_name)}` based on trip phase (pickup → `pickup_display_name`, in_progress → `dropoff_display_name`).
+- New table `public.trip_map_events` (job_id, event_type, lat, lng, occurred_at, notes, meta jsonb) — the single source for pins. Written by a trigger on `jobs` status changes and by existing driver actions (arrive/snap/override) so we don't duplicate call sites.
+- Reuse existing `driver_locations` for the breadcrumb — add an index on `(job_id, recorded_at)` and only draw points where `job_id` matches the trip.
+- Reuse `jobs.route_duration_sec` / `route_computed_at` for planned ETA (already there).
+- Add `jobs.live_eta_sec` and `jobs.live_eta_updated_at`, refreshed by the driver client when GPS moves >500m or every 2 min, whichever first.
 
-### 2. Driver active-trip header + audio
-`src/routes/m.driver.$token.tsx`
-- `speakLatest` (line ~765): speak the display name, not the raw `dest`.
-- `routeDestination` stays raw (routing needs the address string), but any user-visible echo of it uses `displayLocation`.
+## Card UI (calendar + dashboard + trip sheet)
 
-### 3. Driver push/toast notifications
-`src/routes/m.driver.$token.tsx` lines ~729-747
-- Assignment and reassignment toasts, and "new message on trip to X" toast, use `displayLocation(j.from_location, j.pickup_display_name)` / dropoff equivalent instead of the raw column.
+Two small chips next to the arrow:
 
-### 4. Public client tracking page
-`src/routes/t.$token.tsx` lines 204/206, 309/310, 332, 352
-- Route through `displayLocation` for the header and the "recent trips" list rows (`s.from_location` / `s.to_location`) — if the row has display names, prefer them; otherwise fall back to raw / "Location pin".
-- `RebookPanel` initial values keep the raw address (needed for re-geocoding).
+```text
+Hotel Juliani → MLA    Plan 32m · Live 28m ▲4
+```
 
-### 5. Client live mini map pin
-`src/components/trip/ClientLiveMiniMap.tsx`
-- Currently uses only lat/lng in the Google embed — no change needed for the pin itself (Google renders its own label). Accept an optional `label` prop and show it in the header line (`Live · {label ?? paxName ?? "Passenger"}`) so the client sees the hotel/business context even before enrichment finishes.
+- Live chip is green when ahead of plan, red when behind, grey pre-dispatch.
+- Falls back to "—" placeholder so the chip never collapses (same fix pattern as the driver panel).
 
-### 6. Guard: partial enrichment
-`src/lib/trip-display.ts`
-- `displayLocation` already returns `name` when present regardless of the other side. No logic change; just make sure every caller passes both `raw` and `displayName` (audit above covers the misses).
+## Trip map (coordinator sheet)
 
-## Files touched
-- `src/components/driver/NavigateFullscreen.tsx` — new `destinationLabel` prop, use for pin title.
-- `src/routes/m.driver.$token.tsx` — pass label to nav map; use `displayLocation` in push/toast messages and voice.
-- `src/routes/t.$token.tsx` — route header + recent-trips rows through `displayLocation`.
-- `src/components/trip/ClientLiveMiniMap.tsx` — optional `label` prop in header line.
+- Existing map gains: A pin (planned pickup), B pin (planned drop-off), driver marker (live), breadcrumb polyline, plus event pins:
+  - 🟢 Arrived at pickup
+  - 🔵 On the way / in-progress
+  - 🔴 Actual drop-off — outlined orange when >150 m from planned
+  - 📍 Driver GPS snap (pickup or drop-off)
+  - ⚠️ Emergency override
+- Hover / tap a pin → popover with event type, timestamp, driver note, distance from planned.
 
-## Not changed
-- Routing / navigation URLs and Google Directions calls keep the raw address (required for geocoding).
-- No DB or server-fn changes; existing `backfillJobEnrichment` continues to populate `pickup_display_name` / `dropoff_display_name` asynchronously, and these UI edits just make sure every surface reads them the moment they land.
-- No new points spend or feature-flag paths.
+## After-trip record
+
+- Same map+timeline stays available on completed trips (read-only).
+- New button **"Trip report"** on completed trips → server function renders a PDF with:
+  - Header (client, driver, pickup/dropoff names, times)
+  - Planned vs actual ETA + delta
+  - Static map snapshot with all pins + breadcrumb
+  - Chronological event list from `trip_audit_log` + `trip_map_events`
+- Saved to `/mnt/documents`-equivalent storage bucket `trip-reports` (private), signed URL on download.
+
+## Server functions / routes
+
+- `recordTripMapEvent` (driver, authenticated) — inserts a row; called from existing "Arrived", status change, snap, and override handlers.
+- `refreshLiveEta` (driver, throttled) — computes and writes `live_eta_sec`, gated by >500m movement or 2 min elapsed. Uses existing `computeDriverRoute`.
+- `getTripMap` (coordinator, authenticated) — returns pins + breadcrumb + latest live ETA for a job.
+- `generateTripReport` (coordinator) — builds PDF, stores in storage, returns signed URL.
+
+## Feature/cost controls
+
+- Live ETA and report generation both go through `spend_points` with new feature keys `live_eta_refresh` and `trip_report_pdf`, admin-togglable in Portal Settings (same pattern as `route_eta` / `address_name_resolve`).
+
+## Rollout order
+
+1. Migration: `trip_map_events`, new `jobs` columns, feature-cost rows, index on `driver_locations`.
+2. Server functions + trigger wiring.
+3. Card chips (planned + live).
+4. Trip map pins + breadcrumb + hover popovers.
+5. Live ETA refresh on driver client (movement-based).
+6. Trip report PDF + download button.
+7. Admin toggles + docs.
+
+## Open follow-ups you may want later
+
+- Push notification to coordinator when live ETA slips >5 min behind plan.
+- "Compare to previous run" on the report for recurring trips.
+- Email the PDF straight to the client after completion.

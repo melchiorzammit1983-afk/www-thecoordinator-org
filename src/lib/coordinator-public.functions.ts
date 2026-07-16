@@ -3071,6 +3071,17 @@ export const driverSnapPickupToHere = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
       driver_id: (job as any).driver_id ?? null,
     } as never);
+    // Drop a pin on the trip map so coordinators can see the snap in replay.
+    await sb.from("trip_map_events").insert({
+      job_id: data.job_id,
+      company_id: link.company_id,
+      driver_id: (job as any).driver_id ?? null,
+      event_type: "pickup_snap",
+      lat: data.lat,
+      lng: data.lng,
+      accuracy_m: data.accuracy_m ?? null,
+      notes: "Driver snapped pickup to current GPS",
+    } as never);
     return { ok: true };
   });
 
@@ -3118,6 +3129,16 @@ export const driverSnapDropoffToHere = createServerFn({ method: "POST" })
       body: `🎯 Driver adjusted drop-off coordinates to their current GPS position${data.accuracy_m ? ` (±${Math.round(data.accuracy_m)}m)` : ""}.`,
       thread_kind: "driver_coord",
       driver_id: (job as any).driver_id ?? null,
+    } as never);
+    await sb.from("trip_map_events").insert({
+      job_id: data.job_id,
+      company_id: link.company_id,
+      driver_id: (job as any).driver_id ?? null,
+      event_type: "dropoff_snap",
+      lat: data.lat,
+      lng: data.lng,
+      accuracy_m: data.accuracy_m ?? null,
+      notes: "Driver snapped drop-off to current GPS",
     } as never);
     return { ok: true };
   });
