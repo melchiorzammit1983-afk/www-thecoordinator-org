@@ -857,6 +857,67 @@ async function loadDriverJob(token: string, job_id: string) {
   return { link, job, supabaseAdmin };
 }
 
+/**
+ * Record a driver-initiated action on the trip map so the coordinator can see
+ * exactly what happened and where — no server-side automation, purely a
+ * "carbon copy" of what the driver just did in the app. Falls back to the
+ * driver's most recent `driver_locations` fix when the client can't provide
+ * fresh coordinates. Never throws to the caller — logging must not block the
+ * primary action.
+ */
+export const logDriverAction = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      action: z.enum([
+        "en_route", "arrived_pickup", "in_progress", "completed", "back_to_waiting",
+        "wait_started", "wait_ended",
+        "boarding_requested", "boarding_approved",
+        "pax_no_show", "pax_cancelled",
+        "navigate_opened", "passenger_called",
+      ]),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+      accuracy_m: z.number().nonnegative().optional(),
+      notes: z.string().max(400).optional(),
+      meta: z.record(z.any()).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    try {
+      const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+      let lat = data.lat ?? null;
+      let lng = data.lng ?? null;
+      let acc = data.accuracy_m ?? null;
+      if ((lat == null || lng == null) && (job as any).driver_id) {
+        const { data: last } = await supabaseAdmin
+          .from("driver_locations")
+          .select("latitude, longitude, accuracy_m")
+          .eq("driver_id", (job as any).driver_id)
+          .eq("job_id", data.job_id)
+          .order("captured_at", { ascending: false })
+          .limit(1);
+        const p = last?.[0];
+        if (p) { lat = p.latitude as number; lng = p.longitude as number; acc = (p.accuracy_m as number) ?? acc; }
+      }
+      await supabaseAdmin.from("trip_map_events").insert({
+        job_id: data.job_id,
+        company_id: (job as any).executor_company_id ?? (job as any).company_id,
+        driver_id: (job as any).driver_id,
+        event_type: data.action,
+        lat, lng, accuracy_m: acc,
+        notes: data.notes ?? null,
+        meta: (data.meta ?? {}) as any,
+      } as any);
+      return { ok: true };
+    } catch (e: any) {
+      // Never block the primary action if logging fails.
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  });
+
+
 export const listJobPaxDriver = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
