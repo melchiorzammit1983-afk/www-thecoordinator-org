@@ -746,7 +746,7 @@ function DriverManifest() {
     }
     if (bumpedJob) {
       audio.playChime("message");
-      const text = `New message on trip to ${bumpedJob.to_location}`;
+      const text = `New message on trip to ${displayLocation(bumpedJob.to_location, bumpedJob.dropoff_display_name)}`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
