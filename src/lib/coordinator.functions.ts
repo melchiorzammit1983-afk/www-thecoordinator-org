@@ -3743,22 +3743,40 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     });
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
-            maxOutputTokens,
-          },
-        }),
-      });
-    } catch (e: any) {
+    const requestBody = JSON.stringify({
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents,
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.1,
+        maxOutputTokens,
+      },
+    });
+
+    let res: Response | null = null;
+    let transportError = false;
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: requestBody,
+        });
+      } catch {
+        transportError = true;
+        break;
+      }
+      if (res.ok) break;
+      if ((res.status === 503 || res.status === 429) && attempt < maxAttempts - 1) {
+        const delay = 500 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      break;
+    }
+
+    if (transportError || !res) {
       if (co)
         await refundPoints(
           co.id,
@@ -3775,9 +3793,11 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
           willUseMedia ? "ai_extraction_media" : "ai_extraction",
           `AI extraction ${res.status}`,
         );
-      if (res.status === 429) throw new Error("AI is rate limited — try again in a moment");
+      if (res.status === 429) throw new Error("AI is rate limited — please try again in a moment");
+      if (res.status === 503) throw new Error("AI is temporarily overloaded — please try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
     }
+
     const json = (await res.json()) as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
     if (!text) {
