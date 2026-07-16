@@ -1608,14 +1608,13 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         </div>
       )}
 
-      {/* Actions */}
-      <div className="grid grid-cols-1 gap-2 p-3 pt-3 sm:grid-cols-2">
-
+      {/* Actions — one dominant primary CTA + icon row + "More" dropdown */}
+      <div className="p-3 pt-3 space-y-3">
+        {/* PENDING: Accept / Reject pair. Accept is the single primary CTA. */}
         {!accepted && !job.deletion_requested_at && (
           <>
-            {/* Route preview strip */}
             {previewEnabled && (
-              <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3 sm:col-span-2">
+              <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center gap-3">
                 <div className="h-10 w-10 grid place-items-center rounded-full bg-primary/15 text-primary shrink-0">
                   <Navigation className="h-5 w-5" />
                 </div>
@@ -1641,189 +1640,217 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                     <div className="text-sm text-muted-foreground">Calculating route…</div>
                   )}
                 </div>
-                <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setPreviewOpen(true)}>
+                <Button size="sm" variant="secondary" className="shrink-0 min-h-11" onClick={() => setPreviewOpen(true)}>
                   Preview route
                 </Button>
               </div>
             )}
             {!previewEnabled && isPending && !driverPos && (
-              <div className="rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center sm:col-span-2">
+              <div className="rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
                 Enable location to preview the route to pickup
               </div>
             )}
-            <Button className="h-12 text-base sm:col-span-2" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
-              {acceptMut.isPending ? "Accepting…" : "Accept trip"}
-            </Button>
-            <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
-              onClick={() => setRejectOpen(true)}>
-              <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Reject
-            </Button>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <Button className="h-14 text-base font-semibold" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
+                {acceptMut.isPending ? "Accepting…" : "Accept trip"}
+              </Button>
+              <Button
+                variant="outline"
+                className="h-14 min-w-14 px-4 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => setRejectOpen(true)}
+                aria-label="Reject trip"
+                title="Can't make it — Reject"
+              >
+                <ThumbsDown className="h-5 w-5" />
+              </Button>
+            </div>
           </>
         )}
 
+        {/* ACCEPTED: single dominant primary CTA + icon row + More dropdown. */}
         {accepted && !job.deletion_requested_at && (
           <>
-            <Button className="h-11 sm:col-span-2" onClick={onOpen}>
-              <QrCode className="h-4 w-4 mr-1.5" /> Open trip · Board passengers
-            </Button>
-            {job.status !== "completed" && job.status !== "cancelled" && (
+            {/* Primary CTA — the next status step. Full-width, h-14. */}
+            {nextStatus ? (
               <Button
-                variant="destructive"
-                className={isSafetyMode ? "h-16 text-base font-bold sm:col-span-2" : "h-10 sm:col-span-2"}
-                onClick={() => setEmergencyOpen(true)}
-              >
-                <AlertTriangle className="h-4 w-4 mr-1.5" /> Emergency Override
-              </Button>
-            )}
-            {nextStatus && (
-              <Button variant="secondary" className={isSafetyMode ? "h-16 text-lg font-bold" : "h-10"} disabled={statusMut.isPending}
+                className="w-full h-14 text-base font-semibold"
+                disabled={statusMut.isPending}
                 onClick={() => {
                   if (nextStatus.value === "completed") setSummaryOpen(true);
                   else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
                   else statusMut.mutate(nextStatus.value);
-                }}>
+                }}
+              >
                 {nextStatus.label}
               </Button>
-            )}
-
-            {!isSafetyMode
-              && (job.status === "in_progress" || job.status === "arrived")
-              && !!driverPos && (
-              <Button
-                variant="outline"
-                className="h-10 sm:col-span-2"
-                disabled={snapDropoff.isPending}
-                onClick={() => snapDropoff.mutate()}
-                title="Move the drop-off pin on the map to your current GPS position"
-              >
-                <MapPin className="h-4 w-4 mr-1.5" />
-                {snapDropoff.isPending ? "Updating drop-off…" : "Drop-off is here — use my GPS"}
+            ) : (
+              <Button className="w-full h-14 text-base font-semibold" variant="secondary" onClick={onOpen}>
+                <QrCode className="h-5 w-5 mr-2" /> Open trip · Board passengers
               </Button>
             )}
 
-            {!isSafetyMode
-              && (job.status === "en_route" || job.status === "arrived")
-              && !!driverPos && (
-              <Button
-                variant="outline"
-                className="h-10 sm:col-span-2"
-                disabled={snapPickup.isPending}
-                onClick={() => snapPickup.mutate()}
-                title="Move the pickup pin on the map to your current GPS position"
-              >
-                <MapPin className="h-4 w-4 mr-1.5" />
-                {snapPickup.isPending ? "Updating pickup…" : "Pickup is here — use my GPS"}
+            {/* Quick access to the boarding sheet even when there IS a next-status CTA. */}
+            {nextStatus && jobPaxSummary.total > 0 && (
+              <Button variant="ghost" className="w-full min-h-11 text-sm" onClick={onOpen}>
+                <QrCode className="h-4 w-4 mr-1.5" /> Board passengers
               </Button>
             )}
 
-
-
-            {!isSafetyMode && job.status !== "completed" && (
-              <Button variant="outline" className="h-10"
-                onClick={() => setLateOpen(true)}>
-                <Timer className="h-4 w-4 mr-1.5" /> Running late
+            {/* Icon action row: Navigate · Chat · More */}
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="outline" className="h-12 min-w-12" asChild>
+                <a href={mapsUrl} target="_blank" rel="noreferrer" aria-label="Navigate">
+                  <Navigation className="h-5 w-5 mr-1.5" /> Navigate
+                </a>
               </Button>
-            )}
-            {!isSafetyMode && canReturnToWaiting && (
-              <Button
-                variant="outline"
-                className="h-10 sm:col-span-2"
-                disabled={statusMut.isPending}
-                onClick={() => statusMut.mutate("pending")}
-              >
-                <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to waiting
+              <Button variant="outline" className="h-12 min-w-12 relative" onClick={onChat} aria-label="Chat coordinator">
+                <MessageCircle className="h-5 w-5 mr-1.5" /> Chat
+                {(job.unread_messages ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground text-[10px] h-5 min-w-5 px-1 grid place-items-center font-semibold">
+                    {job.unread_messages}
+                  </span>
+                )}
               </Button>
-            )}
-            {!isSafetyMode && job.status !== "in_progress" && job.status !== "completed" && (
-              <Button variant="outline" className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
-                onClick={() => setRejectOpen(true)}>
-                <ThumbsDown className="h-4 w-4 mr-1.5" /> Can't make it — Give back
-              </Button>
-            )}
-
-            {/* Post-acceptance: request coordinator-approved cancellation, any status. */}
-            {!!job.driver_accepted_at
-              && job.status !== "cancelled"
-              && job.status !== "completed" && (
-                job.driver_cancel_requested_at ? (
-                  <div className="sm:col-span-2 flex flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                    <div className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                      ⏳ Waiting for coordinator to approve your cancellation.
-                    </div>
-                    {job.driver_cancel_reason && (
-                      <div className="text-[11px] text-muted-foreground">
-                        Reason: {job.driver_cancel_reason}{job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
-                      </div>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="self-start h-7 px-2 text-xs"
-                      disabled={withdrawCancelMut.isPending}
-                      onClick={() => withdrawCancelMut.mutate()}
-                    >
-                      Withdraw request
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="h-10 text-destructive border-destructive/40 hover:bg-destructive/10 sm:col-span-2"
-                    onClick={() => setCancelOpen(true)}
-                  >
-                    <ThumbsDown className="h-4 w-4 mr-1.5" /> Cancel trip (needs coordinator approval)
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-12 min-w-12" aria-label="More actions">
+                    <MoreVertical className="h-5 w-5 mr-1.5" /> More
                   </Button>
-                )
-              )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem asChild className="min-h-11">
+                    <Link to="/m/driver/$token/sign/$jobId" params={{ token, jobId: job.id }}>
+                      <Megaphone className="h-4 w-4 mr-2" /> Open sign board
+                    </Link>
+                  </DropdownMenuItem>
+                  {!isSafetyMode && (job.status === "in_progress" || job.status === "arrived") && !!driverPos && (
+                    <DropdownMenuItem
+                      className="min-h-11"
+                      disabled={snapDropoff.isPending}
+                      onSelect={(e) => { e.preventDefault(); snapDropoff.mutate(); }}
+                    >
+                      <MapPin className="h-4 w-4 mr-2" /> Drop-off is here (use my GPS)
+                    </DropdownMenuItem>
+                  )}
+                  {!isSafetyMode && (job.status === "en_route" || job.status === "arrived") && !!driverPos && (
+                    <DropdownMenuItem
+                      className="min-h-11"
+                      disabled={snapPickup.isPending}
+                      onSelect={(e) => { e.preventDefault(); snapPickup.mutate(); }}
+                    >
+                      <MapPin className="h-4 w-4 mr-2" /> Pickup is here (use my GPS)
+                    </DropdownMenuItem>
+                  )}
+                  {!isSafetyMode && job.status !== "completed" && (
+                    <DropdownMenuItem className="min-h-11" onSelect={(e) => { e.preventDefault(); setLateOpen(true); }}>
+                      <Timer className="h-4 w-4 mr-2" /> Running late
+                    </DropdownMenuItem>
+                  )}
+                  {!isSafetyMode && canReturnToWaiting && (
+                    <DropdownMenuItem
+                      className="min-h-11"
+                      disabled={statusMut.isPending}
+                      onSelect={(e) => { e.preventDefault(); statusMut.mutate("pending"); }}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" /> Back to waiting
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  {!isSafetyMode && (
+                    <DropdownMenuItem
+                      className="min-h-11"
+                      disabled={payMut.isPending}
+                      onSelect={(e) => { e.preventDefault(); payMut.mutate(paid ? "pending" : "paid"); }}
+                    >
+                      {paid ? "Mark payment pending" : "Mark paid"}
+                    </DropdownMenuItem>
+                  )}
+                  {!isSafetyMode && (
+                    job.driver_hidden_at ? (
+                      <DropdownMenuItem
+                        className="min-h-11"
+                        disabled={unhideMut.isPending}
+                        onSelect={(e) => { e.preventDefault(); unhideMut.mutate(); }}
+                      >
+                        Restore to list
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        className="min-h-11 text-muted-foreground"
+                        disabled={hideMut.isPending}
+                        onSelect={(e) => { e.preventDefault(); setConfirmHideOpen(true); }}
+                      >
+                        <X className="h-4 w-4 mr-2" /> Hide from my list
+                      </DropdownMenuItem>
+                    )
+                  )}
+                  <DropdownMenuSeparator />
+                  {!isSafetyMode && job.status !== "in_progress" && job.status !== "completed" && (
+                    <DropdownMenuItem
+                      className="min-h-11 text-destructive focus:text-destructive"
+                      onSelect={(e) => { e.preventDefault(); setRejectOpen(true); }}
+                    >
+                      <ThumbsDown className="h-4 w-4 mr-2" /> Can't make it — give back
+                    </DropdownMenuItem>
+                  )}
+                  {!!job.driver_accepted_at && job.status !== "cancelled" && job.status !== "completed" && !job.driver_cancel_requested_at && (
+                    <DropdownMenuItem
+                      className="min-h-11 text-destructive focus:text-destructive"
+                      onSelect={(e) => { e.preventDefault(); setCancelOpen(true); }}
+                    >
+                      <ThumbsDown className="h-4 w-4 mr-2" /> Request cancellation
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Emergency Override — always visible; enlarged in safety mode. */}
+            {job.status !== "completed" && job.status !== "cancelled" && (
+              <Button
+                variant="destructive"
+                className={isSafetyMode ? "w-full h-16 text-base font-bold" : "w-full h-12 font-semibold"}
+                onClick={() => setEmergencyOpen(true)}
+              >
+                <AlertTriangle className="h-5 w-5 mr-2" /> Emergency Override
+              </Button>
+            )}
+
+            {/* Pending cancellation banner stays inline so the driver never loses sight of it. */}
+            {!!job.driver_accepted_at && job.status !== "cancelled" && job.status !== "completed" && job.driver_cancel_requested_at && (
+              <div className="flex flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                <div className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                  ⏳ Waiting for coordinator to approve your cancellation.
+                </div>
+                {job.driver_cancel_reason && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Reason: {job.driver_cancel_reason}{job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="self-start min-h-9 px-2 text-xs"
+                  disabled={withdrawCancelMut.isPending}
+                  onClick={() => withdrawCancelMut.mutate()}
+                >
+                  Withdraw request
+                </Button>
+              </div>
+            )}
           </>
         )}
 
-
-
-
-        <Button variant="outline" className="h-10" asChild>
-          <a href={mapsUrl} target="_blank" rel="noreferrer">
-            <Navigation className="h-4 w-4 mr-1.5" /> Navigate
-          </a>
-        </Button>
-        <Button variant="outline" className="h-10 relative" onClick={onChat}>
-          <MessageCircle className="h-4 w-4 mr-1.5" /> Chat coordinator
-          {(job.unread_messages ?? 0) > 0 && (
-            <span className="absolute -top-1 -right-1 rounded-full bg-destructive text-destructive-foreground text-[10px] h-5 min-w-5 px-1 grid place-items-center font-semibold">
-              {job.unread_messages}
-            </span>
-          )}
-        </Button>
-        <Button variant="outline" className="h-10 sm:col-span-2" asChild>
-          <Link to="/m/driver/$token/sign/$jobId" params={{ token, jobId: job.id }}>
-            <Megaphone className="h-4 w-4 mr-1.5" /> Open Sign Board
-          </Link>
-        </Button>
+        {/* Coordinator-initiated deletion approval, any state. */}
         {job.deletion_requested_at && (
-          <Button variant="destructive" className="h-10 sm:col-span-2" disabled={approveDelMut.isPending}
-            onClick={() => setConfirmDelOpen(true)}>
+          <Button
+            variant="destructive"
+            className="w-full h-14 text-base font-semibold"
+            disabled={approveDelMut.isPending}
+            onClick={() => setConfirmDelOpen(true)}
+          >
             {approveDelMut.isPending ? "Approving…" : "Approve deletion"}
           </Button>
-        )}
-
-        {!isSafetyMode && (
-          <div className="flex items-center gap-2 pt-1 sm:col-span-2">
-            <Button variant={paid ? "outline" : "secondary"} size="sm" className="flex-1" disabled={payMut.isPending}
-              onClick={() => payMut.mutate(paid ? "pending" : "paid")}>
-              {paid ? "Mark pending" : "Mark paid"}
-            </Button>
-            {job.driver_hidden_at ? (
-              <Button variant="ghost" size="sm" disabled={unhideMut.isPending}
-                onClick={() => unhideMut.mutate()}>
-                Restore
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={hideMut.isPending}
-                onClick={() => setConfirmHideOpen(true)}>
-                <X className="h-4 w-4 mr-1" /> Hide
-              </Button>
-            )}
-          </div>
         )}
       </div>
 
