@@ -11,7 +11,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { MapPin, Loader2, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { placesAutocomplete, placesDetails } from "@/lib/places.functions";
+import { placesAutocomplete, placesDetails, resolveAddresses } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 
 export type AddressPick = {
