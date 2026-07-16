@@ -69,16 +69,16 @@ export const getTripMap = createServerFn({ method: "GET" })
         live_eta_from_lng: job.live_eta_from_lng ?? null,
         status: job.status,
       },
-      events: (eventsRes.data ?? []) as Array<{
-        id: string;
-        event_type: string;
-        lat: number | null;
-        lng: number | null;
-        accuracy_m: number | null;
-        notes: string | null;
-        meta: unknown;
-        occurred_at: string;
-      }>,
+      events: (eventsRes.data ?? []).map((r: any) => ({
+        id: r.id as string,
+        event_type: r.event_type as string,
+        lat: r.lat as number | null,
+        lng: r.lng as number | null,
+        accuracy_m: r.accuracy_m as number | null,
+        notes: r.notes as string | null,
+        meta: (r.meta ?? null) as string | null,
+        occurred_at: r.occurred_at as string,
+      })),
       breadcrumb: (crumbsRes.data ?? []).map((p: any) => ({
         lat: p.latitude,
         lng: p.longitude,
