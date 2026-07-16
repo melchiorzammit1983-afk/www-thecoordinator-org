@@ -73,6 +73,7 @@ import {
   type UrgencyThresholds,
 } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
+import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
 
 import {
   listJobs,
