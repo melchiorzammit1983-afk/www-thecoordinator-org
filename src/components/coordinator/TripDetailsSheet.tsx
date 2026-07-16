@@ -218,7 +218,7 @@ export function TripDetailsSheet({
   const decideDriverCancelFn = useServerFn(decideDriverCancelRequest);
   const decideDriverCancelMut = useMutation({
     mutationFn: (action: "approve" | "reject") =>
-      decideDriverCancelFn({ data: { job_id: job.id, action } }) as Promise<{ ok: true }>,
+      decideDriverCancelFn({ data: { job_id: job.id, decision: action } }) as Promise<{ ok: true }>,
     onSuccess: (_r, action) => {
       toast.success(action === "approve" ? "Trip cancelled" : "Driver kept on the trip");
       qc.invalidateQueries({ queryKey: ["jobs"] });
