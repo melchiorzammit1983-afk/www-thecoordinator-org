@@ -3452,6 +3452,7 @@ function DispatchTripList({
               )}
             </li>
           );
+          })();
         })}
       </ul>
     </section>
