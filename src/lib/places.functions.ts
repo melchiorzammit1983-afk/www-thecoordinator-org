@@ -461,3 +461,157 @@ export const resolveJobPlaceNames = createServerFn({ method: "POST" })
     }
     return { ok: true, patch };
   });
+
+// ---------- Batch enrichment for visible trip cards ----------
+//
+// Called by the coordinator calendar / dashboard once per screen load with
+// the ids currently on-screen. Fills missing pickup_display_name /
+// dropoff_display_name AND route_duration_sec in one round-trip, deduped by
+// (from_location, to_location) inside the batch so cards sharing the same
+// hotel don't double-charge. Silently no-ops per side when a feature is
+// disabled or points are out — callers just render the raw fallback.
+export const backfillJobEnrichment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      job_ids: z.array(z.string().uuid()).min(1).max(50),
+      names: z.boolean().default(true),
+      etas: z.boolean().default(true),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
+    const companyId = await _companyIdForUser(context.userId);
+    if (!companyId) return { ok: false as const, reason: "no_company" };
+    const sb = await _admin();
+
+    const { data: rows } = await sb
+      .from("jobs")
+      .select("id, company_id, from_location, to_location, pickup_place_id, dropoff_place_id, pickup_display_name, dropoff_display_name, route_duration_sec, route_computed_at")
+      .in("id", data.job_ids)
+      .eq("company_id", companyId);
+    const jobs = (rows ?? []) as any[];
+    if (!jobs.length) return { ok: true as const, updated: 0 };
+
+    const nameCache = new Map<string, { display_name: string | null; place_id: string | null } | null>();
+    async function resolveName(text: string, placeId: string | null) {
+      const cacheKey = (placeId ?? text).toLowerCase();
+      if (nameCache.has(cacheKey)) return nameCache.get(cacheKey)!;
+      try {
+        let pid = placeId;
+        if (!pid) {
+          const r = await fetch(`${GATEWAY}/places/v1/places:autocomplete`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ input: text, ...biasBody(undefined) }),
+          });
+          if (!r.ok) { nameCache.set(cacheKey, null); return null; }
+          const j: any = await r.json();
+          pid = j?.suggestions?.[0]?.placePrediction?.placeId ?? null;
+          if (!pid) { nameCache.set(cacheKey, null); return null; }
+        }
+        const det = await fetch(`${GATEWAY}/places/v1/places/${encodeURIComponent(pid)}`, {
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+            "X-Goog-FieldMask": "id,displayName",
+          },
+        });
+        if (!det.ok) { nameCache.set(cacheKey, null); return null; }
+        const d: any = await det.json();
+        const result = { display_name: d.displayName?.text ?? null, place_id: pid };
+        nameCache.set(cacheKey, result);
+        return result;
+      } catch { nameCache.set(cacheKey, null); return null; }
+    }
+
+    const etaCache = new Map<string, { duration_sec: number; distance_m: number } | null>();
+    async function resolveEta(from: string, to: string) {
+      const key = `${from}||${to}`.toLowerCase();
+      if (etaCache.has(key)) return etaCache.get(key)!;
+      try {
+        const url =
+          `${GATEWAY}/maps/api/distancematrix/json` +
+          `?origins=${encodeURIComponent(from)}` +
+          `&destinations=${encodeURIComponent(to)}` +
+          `&departure_time=now&traffic_model=best_guess`;
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+          },
+        });
+        if (!res.ok) { etaCache.set(key, null); return null; }
+        const dm: any = await res.json();
+        const el = dm?.rows?.[0]?.elements?.[0];
+        if (!el || el.status !== "OK") { etaCache.set(key, null); return null; }
+        const value = {
+          duration_sec: el.duration_in_traffic?.value ?? el.duration?.value ?? 0,
+          distance_m: el.distance?.value ?? 0,
+        };
+        etaCache.set(key, value);
+        return value;
+      } catch { etaCache.set(key, null); return null; }
+    }
+
+    let updated = 0;
+    const STALE_MS = 30 * 60_000;
+    const queue = [...jobs];
+    async function worker() {
+      while (queue.length) {
+        const j = queue.shift()!;
+        const patch: Record<string, any> = {};
+
+        if (data.names) {
+          if (!j.pickup_display_name && j.from_location) {
+            const gate = await _tryCharge(companyId!, "address_name_resolve", "Backfill pickup name", j.id);
+            if (gate.charged) {
+              const r = await resolveName(j.from_location, j.pickup_place_id);
+              if (r?.display_name) {
+                patch.pickup_display_name = r.display_name;
+                if (r.place_id && !j.pickup_place_id) patch.pickup_place_id = r.place_id;
+              }
+            }
+          }
+          if (!j.dropoff_display_name && j.to_location) {
+            const gate = await _tryCharge(companyId!, "address_name_resolve", "Backfill dropoff name", j.id);
+            if (gate.charged) {
+              const r = await resolveName(j.to_location, j.dropoff_place_id);
+              if (r?.display_name) {
+                patch.dropoff_display_name = r.display_name;
+                if (r.place_id && !j.dropoff_place_id) patch.dropoff_place_id = r.place_id;
+              }
+            }
+          }
+        }
+
+        if (data.etas && j.from_location && j.to_location) {
+          const stale = !j.route_computed_at
+            || (Date.now() - new Date(j.route_computed_at).getTime()) > STALE_MS;
+          const missing = !j.route_duration_sec || j.route_duration_sec <= 0;
+          if (stale || missing) {
+            const gate = await _tryCharge(companyId!, "route_eta", "Backfill ETA", j.id);
+            if (gate.charged) {
+              const e = await resolveEta(j.from_location, j.to_location);
+              if (e) {
+                patch.route_duration_sec = e.duration_sec;
+                patch.route_distance_m = e.distance_m;
+                patch.route_computed_at = new Date().toISOString();
+              }
+            }
+          }
+        }
+
+        if (Object.keys(patch).length) {
+          await sb.from("jobs").update(patch as any).eq("id", j.id);
+          updated++;
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: 4 }, worker));
+    return { ok: true as const, updated };
+  });
