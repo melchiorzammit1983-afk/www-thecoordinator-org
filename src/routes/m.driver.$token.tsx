@@ -1302,6 +1302,9 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     onAcceptReroute: () => { /* no-op in preview */ },
     isLoading: false,
     steps: previewPrimary?.steps ?? [],
+    off_route_m: 0,
+    rerouting: false,
+    last_recalc_at: null,
   };
   const [previewOpen, setPreviewOpen] = useState(false);
 
