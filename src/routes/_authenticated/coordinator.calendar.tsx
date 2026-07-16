@@ -75,6 +75,7 @@ import {
 } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
+import { listGroupStops } from "@/lib/groups.functions";
 
 import {
   listJobs,
@@ -3489,9 +3490,11 @@ function DispatchTripList({
 
 /* ---------- Grouped run row (merged card for multi-stop trips) ---------- */
 
-/** Build a de-duped ordered stop chain from an ordered list of legs. */
-function buildStopChain(jobs: Job[]): Array<{ label: string; time?: string | null }> {
-  const chain: Array<{ label: string; time?: string | null }> = [];
+type ChainStop = { label: string; time?: string | null };
+
+/** Build a de-duped ordered stop chain from an ordered list of legs (fallback). */
+function buildStopChain(jobs: Job[]): ChainStop[] {
+  const chain: ChainStop[] = [];
   const push = (label: string, time?: string | null) => {
     const last = chain[chain.length - 1];
     if (last && last.label.toLowerCase() === label.toLowerCase()) return;
@@ -3504,6 +3507,60 @@ function buildStopChain(jobs: Job[]): Array<{ label: string; time?: string | nul
     push(to, null);
   });
   return chain;
+}
+
+/** Build a chain from persisted group_stops (merged route order). */
+function buildStopChainFromStops(stops: Array<{ address: string | null; display_name: string | null }>): ChainStop[] {
+  const chain: ChainStop[] = [];
+  for (const s of stops) {
+    const label = displayLocation(s.address, s.display_name);
+    if (!label) continue;
+    const last = chain[chain.length - 1];
+    if (last && last.label.toLowerCase() === label.toLowerCase()) continue;
+    chain.push({ label, time: null });
+  }
+  return chain;
+}
+
+/** Order jobs so their (from → to) sequence follows the chain order.
+ *  For each consecutive pair in `chain`, pick the best matching job (case-insensitive from/to match),
+ *  falling back to a partial (from OR to) match, then to remaining jobs in date/time order.
+ */
+function orderJobsByChain(jobs: Job[], chain: ChainStop[]): Job[] {
+  if (chain.length < 2) return jobs;
+  const remaining = new Set(jobs.map((j) => j.id));
+  const byId = new Map(jobs.map((j) => [j.id, j] as const));
+  const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().trim();
+  const ordered: Job[] = [];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const from = norm(chain[i].label);
+    const to = norm(chain[i + 1].label);
+    let bestId: string | null = null;
+    let bestScore = -1;
+    for (const id of remaining) {
+      const j = byId.get(id)!;
+      const jf = norm(displayLocation(j.from_location, j.pickup_display_name));
+      const jt = norm(displayLocation(j.to_location, j.dropoff_display_name));
+      let score = 0;
+      if (jf === from) score += 2;
+      else if (jf.includes(from) || from.includes(jf)) score += 1;
+      if (jt === to) score += 2;
+      else if (jt.includes(to) || to.includes(jt)) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = id;
+      }
+    }
+    if (bestId && bestScore > 0) {
+      ordered.push(byId.get(bestId)!);
+      remaining.delete(bestId);
+    }
+  }
+  // Append any leftovers in date/time order so nothing is lost.
+  const leftovers = [...remaining]
+    .map((id) => byId.get(id)!)
+    .sort((a, b) => ((a.date ?? "") + (a.time ?? "")).localeCompare((b.date ?? "") + (b.time ?? "")));
+  return [...ordered, ...leftovers];
 }
 
 function GroupedRunRow({
@@ -3521,27 +3578,42 @@ function GroupedRunRow({
   onOpenDetails?: (j: Job) => void;
   onOpenChat?: (j: Job) => void;
 }) {
-  const chain = buildStopChain(jobs);
-  const groupName = jobs.find((j) => j.group_name)?.group_name ?? null;
-  const totalPax = jobs.reduce((s, j) => s + (j.pax?.length ?? 0), 0);
-  const totalEtaSec = jobs.reduce((s, j) => s + (j.route_duration_sec ?? 0), 0);
+  const listStopsFn = useServerFn(listGroupStops);
+  const { data: stopsData } = useQuery({
+    queryKey: ["group-stops", groupId],
+    queryFn: () => listStopsFn({ data: { group_id: groupId } }),
+    staleTime: 30_000,
+  });
+  const stops = (stopsData?.stops ?? []) as Array<{
+    address: string | null;
+    display_name: string | null;
+  }>;
+
+  // Prefer persisted group_stops (the coordinator's merged route order); fall back to job legs.
+  const stopChain = stops.length >= 2 ? buildStopChainFromStops(stops) : [];
+  const orderedJobs = stopChain.length >= 2 ? orderJobsByChain(jobs, stopChain) : jobs;
+  const chain = stopChain.length >= 2 ? stopChain : buildStopChain(orderedJobs);
+
+  const groupName = orderedJobs.find((j) => j.group_name)?.group_name ?? null;
+  const totalPax = orderedJobs.reduce((s, j) => s + (j.pax?.length ?? 0), 0);
+  const totalEtaSec = orderedJobs.reduce((s, j) => s + (j.route_duration_sec ?? 0), 0);
   const eta = formatEtaMinutes(totalEtaSec);
-  const earliest = jobs
+  const earliest = orderedJobs
     .map((j) => j.pickup_at ?? (j.date && j.time ? `${j.date}T${j.time}` : null))
     .filter(Boolean)
     .sort()[0] as string | null;
   const pickup = earliest
     ? new Date(earliest).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : jobs[0]?.time?.slice(0, 5) ?? null;
+    : orderedJobs[0]?.time?.slice(0, 5) ?? null;
   const driverName =
-    jobs.find((j) => j.drivers?.name)?.drivers?.name ??
-    jobs.find((j) => j.external_driver_name)?.external_driver_name ??
+    orderedJobs.find((j) => j.drivers?.name)?.drivers?.name ??
+    orderedJobs.find((j) => j.external_driver_name)?.external_driver_name ??
     null;
-  const anyLive = jobs.some((j) => {
+  const anyLive = orderedJobs.some((j) => {
     const t = toSimpleStatus(j).tone;
     return t === "live";
   });
-  const allAssigned = jobs.every((j) => j.driver_id);
+  const allAssigned = orderedJobs.every((j) => j.driver_id);
   const tone: "live" | "assigned" | "queued" = anyLive
     ? "live"
     : allAssigned
@@ -3568,7 +3640,7 @@ function GroupedRunRow({
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5">
               <Link2 className="h-2.5 w-2.5" />
-              {groupName ?? "Grouped run"} · {jobs.length} legs
+              {groupName ?? "Grouped run"} · {orderedJobs.length} legs
             </span>
             {eta && (
               <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 tabular-nums">
@@ -3577,7 +3649,7 @@ function GroupedRunRow({
               </span>
             )}
           </div>
-          {/* Numbered stop chips */}
+          {/* Numbered stop chips (from merged route order) */}
           <div className="flex items-center gap-1 flex-wrap">
             {chain.map((c, i) => (
               <span key={i} className="inline-flex items-center gap-1">
@@ -3632,13 +3704,13 @@ function GroupedRunRow({
           {/* Reorder + auto-suggest via existing group stops panel */}
           <GroupStopsPanel groupId={groupId} groupName={groupName} />
 
-          {/* Chain-reflowed legs */}
+          {/* Chain-reflowed legs — from/to reflect the merged route order */}
           <div className="rounded-lg border bg-background">
             <div className="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               Legs (chain reflowed)
             </div>
             <ul className="divide-y">
-              {jobs.map((j, i) => {
+              {orderedJobs.map((j, i) => {
                 const from = chain[i]?.label ?? displayLocation(j.from_location, j.pickup_display_name);
                 const to = chain[i + 1]?.label ?? displayLocation(j.to_location, j.dropoff_display_name);
                 const legEta = formatEtaMinutes(j.route_duration_sec);
@@ -3691,6 +3763,7 @@ function GroupedRunRow({
     </li>
   );
 }
+
 
 
 /* Vertical milestone strip derived from job.status + driver_id. No new fields. */
