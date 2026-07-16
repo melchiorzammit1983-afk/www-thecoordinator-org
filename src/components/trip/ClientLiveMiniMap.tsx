@@ -5,6 +5,7 @@ type Props = {
   lng: number;
   paxName?: string | null;
   capturedAt: string;
+  label?: string | null;
 };
 
 function ageLabel(ts: string) {
