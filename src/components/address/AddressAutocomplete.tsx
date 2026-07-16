@@ -80,6 +80,7 @@ export function AddressAutocomplete({
 
   const autocompleteFn = useServerFn(placesAutocomplete);
   const detailsFn = useServerFn(placesDetails);
+  const resolveFn = useServerFn(resolveAddresses);
 
   // Debounced fetch. Cancel stale responses via a rev counter.
   const revRef = React.useRef(0);
