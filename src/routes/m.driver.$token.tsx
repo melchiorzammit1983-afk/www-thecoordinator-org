@@ -1260,6 +1260,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   // --- Pre-acceptance route preview (pickup → dropoff) ---
   const isPending = !job.driver_accepted_at && !job.deletion_requested_at;
   const accepted = !!job.driver_accepted_at;
+
   const previewEnabled = !!isPending && !!job.from_location && !!job.to_location;
   const routeFn = useServerFn(computeDriverRoute);
   const { data: previewData } = useQuery({
