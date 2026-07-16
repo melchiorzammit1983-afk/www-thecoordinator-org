@@ -61,6 +61,7 @@ import {
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
+import { decodePolyline, distanceToPathMeters } from "@/lib/polyline";
 import { useWakeLock } from "@/hooks/use-wake-lock";
 import { useDriverAudio } from "@/hooks/use-driver-audio";
 
