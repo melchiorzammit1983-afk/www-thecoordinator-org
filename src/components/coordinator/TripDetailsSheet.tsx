@@ -826,6 +826,14 @@ export function TripDetailsSheet({
             {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
           </section>
 
+          {/* Live map + event pins + breadcrumb */}
+          <section className="space-y-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+              Trip map {job.status === "completed" ? "· replay" : "· live"}
+            </div>
+            <TripEventsMap jobId={job.id} isLive={job.status !== "completed" && job.status !== "cancelled"} />
+          </section>
+
           {/* Chain */}
           <section className="space-y-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Dispatch chain</div>
