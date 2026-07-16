@@ -41,7 +41,14 @@ import {
   Image as ImageIcon,
   Filter,
   Users2,
+  Phone,
+  MessageSquare,
+  ArrowRight,
+  Clock,
+  Plane,
+  User as UserIcon,
 } from "lucide-react";
+import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
 import {
   listConnections,
   dispatchJobToPartner,
