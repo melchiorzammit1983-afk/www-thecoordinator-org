@@ -15,7 +15,7 @@ function ageLabel(ts: string) {
   return `${m}m ago`;
 }
 
-export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt }: Props) {
+export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt, label }: Props) {
   const embedSrc = `https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed`;
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   return (
