@@ -1286,9 +1286,44 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     onSuccess: () => { toast.success("Deletion approved"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const logActionFn = useServerFn(logDriverAction);
+  const fireDriverActionLog = useCallback(
+    async (action: Parameters<typeof logActionFn>[0]["data"]["action"]) => {
+      // Best-effort: grab a quick GPS fix, then log. Never blocks primary flow.
+      const getPos = () =>
+        new Promise<GeolocationPosition | null>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve(p),
+            () => resolve(null),
+            { enableHighAccuracy: true, maximumAge: 15_000, timeout: 4_000 },
+          );
+        });
+      try {
+        const pos = await getPos();
+        await logActionFn({
+          data: {
+            token, job_id: job.id, action,
+            lat: pos?.coords.latitude,
+            lng: pos?.coords.longitude,
+            accuracy_m: pos?.coords.accuracy,
+          } as any,
+        });
+      } catch { /* swallow — logging must never block */ }
+    },
+    [logActionFn, token, job.id],
+  );
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
-    onSuccess: () => { toast.success("Status updated"); invalidate(); },
+    onSuccess: (_res, status) => {
+      toast.success("Status updated");
+      // Mirror driver-initiated status changes onto the coordinator's trip map.
+      // "arrived"/"in_progress"/"completed" are already covered by the DB
+      // trigger; we add "en_route" and "back_to_waiting" here.
+      if (status === "en_route") void fireDriverActionLog("en_route");
+      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
+      invalidate();
+    },
     onError: (e: Error) => toast.error(formatDriverStatusError(e)),
   });
   const payMut = useMutation({
