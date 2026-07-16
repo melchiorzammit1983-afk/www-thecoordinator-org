@@ -75,6 +75,7 @@ import {
 } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
+import { listGroupStops } from "@/lib/groups.functions";
 
 import {
   listJobs,
