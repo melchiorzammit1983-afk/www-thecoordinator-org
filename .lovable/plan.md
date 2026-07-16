@@ -1,71 +1,52 @@
+# Trips section redesign — Pro-dispatcher density view (ETA-safe)
 
-## What we're building
+Rework the `DispatchTripList` in `src/routes/_authenticated/coordinator.calendar.tsx` (lines 3213–3339) into a dense dispatcher table with a rich expanded panel. Only the presentation of that one component changes. All data fetching, filters (active + waiting), enrichment (`useEnrichVisibleJobs`), sorting (`urgencyRank`), and callbacks stay identical, so ETA behavior can't regress.
 
-1. **Trip card shows planned ETA and live ETA side by side.** Planned = the cached hotel→airport route duration. Live = driver's current GPS → next stop, refreshed only on meaningful movement.
-2. **Every driver event drops a pin on the trip map.** Arrived at pickup, in-progress, actual drop-off, pickup/drop-off GPS snaps, emergency overrides, plus a thin breadcrumb polyline of the actual path.
-3. **After the trip is done, coordinator can replay it** on the same trip sheet, or open a "Trip report" for an exportable PDF (planned vs actual, deltas, all pins, audit timeline).
+## ETA reliability guarantees
 
-## Data layer
+- Every ETA reads from the same source as today: `job.route_duration_sec` via `formatEtaMinutes` (already imported). No new server call, no new query key.
+- `useEnrichVisibleJobs(jobs, [["jobs"]])` stays at the top of the component, so missing/stale ETAs are still backfilled through the existing `backfillJobEnrichment` pipeline. Nothing about the trigger cadence changes.
+- ETA chip renders only when `formatEtaMinutes` returns a truthy string, so a job without an ETA shows nothing rather than "0 min" or a broken pill.
+- The expanded live map keeps using the existing `TripEventsMap` component, which owns its own `refreshLiveEta` polling. We do not touch that component or its refetch interval.
+- No status timestamps are read off `Job` beyond fields already present (`status`, `driver_id`, `pickup_at`, `route_duration_sec`); the milestone strip is derived from `status` only, so no schema drift.
 
-- New table `public.trip_map_events` (job_id, event_type, lat, lng, occurred_at, notes, meta jsonb) — the single source for pins. Written by a trigger on `jobs` status changes and by existing driver actions (arrive/snap/override) so we don't duplicate call sites.
-- Reuse existing `driver_locations` for the breadcrumb — add an index on `(job_id, recorded_at)` and only draw points where `job_id` matches the trip.
-- Reuse `jobs.route_duration_sec` / `route_computed_at` for planned ETA (already there).
-- Add `jobs.live_eta_sec` and `jobs.live_eta_updated_at`, refreshed by the driver client when GPS moves >500m or every 2 min, whichever first.
+## Collapsed row layout
 
-## Card UI (calendar + dashboard + trip sheet)
+- 4px left status rail: emerald for `live` tones (en_route/arrived/in_progress), blue for open wait sessions, slate for assigned/pending.
+- Route line: `from → to` via `displayLocation(raw, display_name)` (unchanged helper), truncation with `min-w-0`, tabular ETA chip when present.
+- Meta line: driver name, pickup time (`tabular-nums`), pax count, flight — same fields as today, restyled as small muted micro-type with lucide icons instead of emoji.
+- Right side: status pill using the existing `TONE_CLASS` map plus a ping dot on live jobs (already implemented).
 
-Two small chips next to the arrow:
+## Expanded panel
 
-```text
-Hotel Juliani → MLA    Plan 32m · Live 28m ▲4
-```
+Two columns on desktop (`lg:` breakpoint), stacked on mobile:
 
-- Live chip is green when ahead of plan, red when behind, grey pre-dispatch.
-- Falls back to "—" placeholder so the chip never collapses (same fix pattern as the driver panel).
+- **Map (2/3)** — swap the current `<iframe src="maps.google.com/…">` for `<TripEventsMap jobId={job.id} isLive={status.tone === "live"} />`. This is the same component already used in `TripDetailsSheet`, so it renders the planned route, driver breadcrumb, and event pins we already log. A thin dashed SVG overlay with the `animate-route-flow` keyframe sits above the map only while `q.isLoading` inside `TripEventsMap` — actually, the overlay lives in the parent behind the map container as a fallback shimmer only when we don't yet have a `route_duration_sec` value; once the map has data, the overlay is hidden. Nothing about the map's own ETA/refresh loop changes.
+- **Side rail (1/3)** — three stacked blocks:
+  1. **Live ETA card** — big number from `formatEtaMinutes(job.route_duration_sec)` plus the pickup clock time; muted "—" when unknown.
+  2. **Milestone strip** — vertical timeline derived purely from `status` and `driver_id`: Booked → Assigned → En route → Arrived → On board → Done. The step matching the current status pulses; earlier steps are filled; later steps muted. No new fields, no new queries.
+  3. **Actions** — `Chat`, `Call driver`, `Open full details →` wired to existing `onOpenChat`, `job.drivers?.phone`, `onOpenDetails` props exactly as today.
 
-## Trip map (coordinator sheet)
+## Motion & tokens
 
-- Existing map gains: A pin (planned pickup), B pin (planned drop-off), driver marker (live), breadcrumb polyline, plus event pins:
-  - 🟢 Arrived at pickup
-  - 🔵 On the way / in-progress
-  - 🔴 Actual drop-off — outlined orange when >150 m from planned
-  - 📍 Driver GPS snap (pickup or drop-off)
-  - ⚠️ Emergency override
-- Hover / tap a pin → popover with event type, timestamp, driver note, distance from planned.
+- Row expand uses the existing `animate-accordion-down` utility.
+- New `@keyframes route-flow` + `@utility animate-route-flow` added to `src/styles.css` for the dashed overlay.
+- All colors use semantic tokens (`bg-card`, `text-muted-foreground`, `border`, `bg-primary/10`, `text-primary`, `TONE_CLASS`). No hardcoded palette additions except the existing emerald/blue/slate used elsewhere in the file.
 
-## After-trip record
+## Files touched
 
-- Same map+timeline stays available on completed trips (read-only).
-- New button **"Trip report"** on completed trips → server function renders a PDF with:
-  - Header (client, driver, pickup/dropoff names, times)
-  - Planned vs actual ETA + delta
-  - Static map snapshot with all pins + breadcrumb
-  - Chronological event list from `trip_audit_log` + `trip_map_events`
-- Saved to `/mnt/documents`-equivalent storage bucket `trip-reports` (private), signed URL on download.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — rewrite the body of `DispatchTripList` only (lines 3213–3339). Add three small local helpers in the same file: `MilestoneStrip`, `RouteFlowOverlay`, `DriverAvatar`. Import `TripEventsMap` from `@/components/coordinator/TripEventsMap` and `Phone, MessageSquare, ArrowRight, Users, Clock, Plane` from `lucide-react` (some already imported).
+- `src/styles.css` — append `@keyframes route-flow` and `@utility animate-route-flow`.
 
-## Server functions / routes
+## Out of scope
 
-- `recordTripMapEvent` (driver, authenticated) — inserts a row; called from existing "Arrived", status change, snap, and override handlers.
-- `refreshLiveEta` (driver, throttled) — computes and writes `live_eta_sec`, gated by >500m movement or 2 min elapsed. Uses existing `computeDriverRoute`.
-- `getTripMap` (coordinator, authenticated) — returns pins + breadcrumb + latest live ETA for a job.
-- `generateTripReport` (coordinator) — builds PDF, stores in storage, returns signed URL.
+- No changes to `TripEventsMap`, `refreshLiveEta`, `backfillJobEnrichment`, `useEnrichVisibleJobs`, or any server function.
+- No changes to filters, sort, `WaitingNowStrip`, or `TripDetailsSheet`.
+- No DB migrations.
 
-## Feature/cost controls
+## Verification
 
-- Live ETA and report generation both go through `spend_points` with new feature keys `live_eta_refresh` and `trip_report_pdf`, admin-togglable in Portal Settings (same pattern as `route_eta` / `address_name_resolve`).
-
-## Rollout order
-
-1. Migration: `trip_map_events`, new `jobs` columns, feature-cost rows, index on `driver_locations`.
-2. Server functions + trigger wiring.
-3. Card chips (planned + live).
-4. Trip map pins + breadcrumb + hover popovers.
-5. Live ETA refresh on driver client (movement-based).
-6. Trip report PDF + download button.
-7. Admin toggles + docs.
-
-## Open follow-ups you may want later
-
-- Push notification to coordinator when live ETA slips >5 min behind plan.
-- "Compare to previous run" on the report for recurring trips.
-- Email the PDF straight to the client after completion.
+1. `tsgo` clean.
+2. Playwright script on `/coordinator/calendar` at 1280px: expand a live trip, screenshot, confirm ETA chip matches `route_duration_sec` and the map renders `TripEventsMap` (not an iframe).
+3. Repeat at 420px viewport, confirm the panel stacks and remains usable.
+4. Console has no new errors and the "Refresh ETA" flow on `TripDetailsSheet` still works (unchanged code path).

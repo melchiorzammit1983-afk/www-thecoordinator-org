@@ -41,7 +41,14 @@ import {
   Image as ImageIcon,
   Filter,
   Users2,
+  Phone,
+  MessageSquare,
+  ArrowRight,
+  Clock,
+  Plane,
+  User as UserIcon,
 } from "lucide-react";
+import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
 import {
   listConnections,
   dispatchJobToPartner,
@@ -3225,10 +3232,17 @@ function DispatchTripList({
   useEnrichVisibleJobs(jobs, [["jobs"]]);
   if (jobs.length === 0) return null;
   const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
+
   return (
-    <section className="rounded-lg border bg-card p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="text-sm font-medium">Trips ({list.length})</div>
+    <section className="rounded-lg border bg-card overflow-hidden">
+      {/* Header */}
+      <div className="px-3 py-2.5 border-b flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-sm font-semibold truncate">Active & Waiting Trips</h2>
+          <span className="shrink-0 inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">
+            {list.length} live
+          </span>
+        </div>
         {pendingApprovalCount > 0 && (
           <span
             className="inline-flex items-center gap-1 rounded-full bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 animate-pulse"
@@ -3238,7 +3252,8 @@ function DispatchTripList({
           </span>
         )}
       </div>
-      <ul className="space-y-1.5">
+
+      <ul className="divide-y">
         {list.map((job) => {
           const from = displayLocation(job.from_location, job.pickup_display_name);
           const to = displayLocation(job.to_location, job.dropoff_display_name);
@@ -3252,44 +3267,76 @@ function DispatchTripList({
           const flight = job.from_flight || job.to_flight;
           const driverName = job.drivers?.name ?? job.external_driver_name ?? null;
           const isOpen = expandedId === job.id;
-          const embedSrc = `https://maps.google.com/maps?q=${encodeURIComponent(
-            job.from_location,
-          )}+to:${encodeURIComponent(job.to_location)}&output=embed`;
+
+          const railColor =
+            status.tone === "live"
+              ? "bg-emerald-500"
+              : status.tone === "assigned"
+                ? "bg-blue-500"
+                : status.tone === "cancelled"
+                  ? "bg-destructive"
+                  : "bg-slate-300 dark:bg-slate-600";
 
           return (
             <li
               key={job.id}
-              className={`rounded-md border bg-background text-sm transition ${
-                isOpen ? "ring-1 ring-primary/40" : "hover:bg-muted/40"
+              data-job-id={job.id}
+              className={`relative bg-background text-sm transition ${
+                isOpen ? "bg-muted/30" : "hover:bg-muted/40"
               }`}
             >
+              {/* Status rail */}
+              <div className={`absolute left-0 top-0 bottom-0 w-1 ${railColor}`} aria-hidden />
+
               <button
                 type="button"
                 onClick={() => setExpandedId(isOpen ? null : job.id)}
-                className="w-full text-left px-2.5 py-2 flex items-start gap-2"
+                className="w-full text-left pl-3 pr-2.5 py-2.5 flex items-start gap-3"
               >
-                <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="min-w-0 flex-1 space-y-1">
+                  {/* Route line */}
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="truncate font-medium">{from}</span>
-                    <span className="text-muted-foreground shrink-0">→</span>
-                    <span className="truncate">{to}</span>
+                    <span className="truncate font-semibold text-foreground">{from}</span>
+                    <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                    <span className="truncate font-semibold text-foreground">{to}</span>
                     {eta && (
-                      <span className="shrink-0 inline-flex items-center rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5 py-0.5 ml-1">
+                      <span className="shrink-0 inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 ml-1 tabular-nums">
+                        <Clock className="h-2.5 w-2.5" />
                         {eta}
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                  {/* Meta line */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                     {driverName && (
-                      <span className="truncate max-w-[10rem]">👤 {driverName}</span>
+                      <span className="inline-flex items-center gap-1 truncate max-w-[12rem]">
+                        <UserIcon className="h-3 w-3" />
+                        <span className="truncate">{driverName}</span>
+                      </span>
                     )}
-                    {pickup && <span>🕒 {pickup}</span>}
-                    {paxCount > 0 && <span>👥 {paxCount}</span>}
-                    {flight && <span className="text-blue-600 dark:text-blue-400">✈ {flight}</span>}
+                    {pickup && (
+                      <span className="inline-flex items-center gap-1 tabular-nums">
+                        <Clock className="h-3 w-3" />
+                        {pickup}
+                      </span>
+                    )}
+                    {paxCount > 0 && (
+                      <span className="inline-flex items-center gap-1 tabular-nums">
+                        <Users2 className="h-3 w-3" />
+                        {paxCount}
+                      </span>
+                    )}
+                    {flight && (
+                      <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
+                        <Plane className="h-3 w-3" />
+                        {flight}
+                      </span>
+                    )}
                   </div>
                 </div>
+
                 <span
-                  className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${TONE_CLASS[status.tone]}`}
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${TONE_CLASS[status.tone]}`}
                 >
                   {status.tone === "live" && (
                     <span className="relative flex h-1.5 w-1.5">
@@ -3302,31 +3349,86 @@ function DispatchTripList({
               </button>
 
               {isOpen && (
-                <div className="border-t px-2.5 py-2 space-y-2">
-                  <iframe
-                    key={job.id}
-                    title={`Route ${from} → ${to}`}
-                    src={embedSrc}
-                    className="w-full h-40 rounded border-0"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    {onOpenChat && (
-                      <Button size="sm" variant="outline" onClick={() => onOpenChat(job)}>
-                        💬 Chat
-                      </Button>
-                    )}
-                    {job.drivers?.phone && (
-                      <Button size="sm" variant="outline" asChild>
-                        <a href={`tel:${job.drivers.phone}`}>📞 Call driver</a>
-                      </Button>
-                    )}
-                    {onOpenDetails && (
-                      <Button size="sm" onClick={() => onOpenDetails(job)}>
-                        Open full details →
-                      </Button>
-                    )}
+                <div className="border-t bg-muted/20 px-3 py-3 animate-accordion-down">
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    {/* Live map (2/3 on desktop) */}
+                    <div className="lg:col-span-2 relative rounded-lg overflow-hidden border bg-background min-h-[240px]">
+                      <TripEventsMap
+                        jobId={job.id}
+                        isLive={status.tone === "live" || status.tone === "assigned"}
+                      />
+                      {/* Fallback shimmer only when we don't yet have a route ETA */}
+                      {!eta && (
+                        <svg
+                          className="pointer-events-none absolute inset-0 w-full h-full opacity-40"
+                          preserveAspectRatio="none"
+                          aria-hidden
+                        >
+                          <path
+                            d="M20,80% Q40%,40% 80%,20%"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeDasharray="8 6"
+                            className="text-primary/60 animate-route-flow"
+                          />
+                        </svg>
+                      )}
+                    </div>
+
+                    {/* Side rail (1/3) */}
+                    <div className="space-y-3">
+                      {/* Live ETA card */}
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                          Live ETA
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-bold tabular-nums text-foreground">
+                            {eta ?? "—"}
+                          </span>
+                          {pickup && (
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              pickup {pickup}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Milestone strip */}
+                      <MilestoneStrip job={job} />
+
+                      {/* Actions */}
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          {onOpenChat && (
+                            <Button size="sm" variant="outline" onClick={() => onOpenChat(job)}>
+                              <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                              Chat
+                            </Button>
+                          )}
+                          {job.drivers?.phone ? (
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={`tel:${job.drivers.phone}`}>
+                                <Phone className="h-3.5 w-3.5 mr-1" />
+                                Call
+                              </a>
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" disabled>
+                              <Phone className="h-3.5 w-3.5 mr-1" />
+                              No phone
+                            </Button>
+                          )}
+                        </div>
+                        {onOpenDetails && (
+                          <Button size="sm" onClick={() => onOpenDetails(job)}>
+                            Open full details
+                            <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3337,6 +3439,72 @@ function DispatchTripList({
     </section>
   );
 }
+
+/* Vertical milestone strip derived from job.status + driver_id. No new fields. */
+function MilestoneStrip({ job }: { job: Job }) {
+  type Step = { key: string; label: string };
+  const steps: Step[] = [
+    { key: "booked", label: "Booked" },
+    { key: "assigned", label: "Assigned" },
+    { key: "en_route", label: "En route" },
+    { key: "arrived", label: "Arrived" },
+    { key: "in_progress", label: "On board" },
+    { key: "completed", label: "Done" },
+  ];
+  const currentIndex = (() => {
+    if (job.status === "completed") return 5;
+    if (job.status === "in_progress") return 4;
+    if (job.status === "arrived") return 3;
+    if (job.status === "en_route") return 2;
+    if (job.driver_id) return 1;
+    return 0;
+  })();
+
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
+        Progress
+      </div>
+      <ol className="relative space-y-2.5 ml-1">
+        <div className="absolute left-[5px] top-1.5 bottom-1.5 w-px bg-border" aria-hidden />
+        {steps.map((s, i) => {
+          const done = i < currentIndex;
+          const active = i === currentIndex;
+          return (
+            <li key={s.key} className="relative pl-5 flex items-center gap-2">
+              <span
+                className={`absolute left-0 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full ring-2 ring-background ${
+                  done
+                    ? "bg-emerald-500"
+                    : active
+                      ? "bg-emerald-500"
+                      : "bg-muted-foreground/30"
+                }`}
+              >
+                {active && (
+                  <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
+                )}
+              </span>
+              <span
+                className={`text-[11px] ${
+                  active
+                    ? "font-bold text-emerald-700 dark:text-emerald-300"
+                    : done
+                      ? "text-foreground"
+                      : "text-muted-foreground/60"
+                }`}
+              >
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+
 
 
 /* ------------------------------ Waiting-now strip ------------------------------ */
