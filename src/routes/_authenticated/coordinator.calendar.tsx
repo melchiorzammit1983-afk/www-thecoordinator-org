@@ -3259,8 +3259,13 @@ function DispatchTripList({
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   useEnrichVisibleJobs(jobs, [["jobs"]]);
-  if (jobs.length === 0) return null;
-  const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
+  // Hide completed/cancelled trips — they belong under the driver's history, not the live board.
+  const activeJobs = jobs.filter((j) => {
+    const tone = toSimpleStatus(j).tone;
+    return tone !== "done" && tone !== "cancelled";
+  });
+  if (activeJobs.length === 0) return null;
+  const list = [...activeJobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
   const items = bucketByGroup(list);
 
   return (
