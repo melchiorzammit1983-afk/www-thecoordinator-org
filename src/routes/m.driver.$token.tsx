@@ -3354,3 +3354,115 @@ function DriverStopReorderButton({ token, groupId }: { token: string; groupId: s
     </>
   );
 }
+
+/**
+ * Compact route summary shown under the preview map before the driver
+ * accepts a trip. Surfaces the four numbers a driver needs at a glance:
+ * pickup ETA (scheduled), dropoff ETA (scheduled pickup + driving time),
+ * distance, and current traffic delay.
+ */
+function PreviewRouteSummary({
+  pickupAtIso,
+  durationSec,
+  staticDurationSec,
+  distanceM,
+  trafficDelaySec,
+}: {
+  pickupAtIso: string | null;
+  durationSec: number | null;
+  staticDurationSec: number | null;
+  distanceM: number | null;
+  trafficDelaySec: number;
+}) {
+  const pickupMs = pickupAtIso ? new Date(pickupAtIso).getTime() : null;
+  const dropoffMs =
+    pickupMs != null && durationSec != null ? pickupMs + durationSec * 1000 : null;
+
+  const trafficMin = Math.round(trafficDelaySec / 60);
+  const severity =
+    trafficMin >= 10 ? "high" : trafficMin >= 4 ? "medium" : trafficMin >= 1 ? "low" : "none";
+  const trafficCls =
+    severity === "high"
+      ? "bg-red-500/10 text-red-700"
+      : severity === "medium"
+        ? "bg-amber-500/10 text-amber-700"
+        : severity === "low"
+          ? "bg-emerald-500/10 text-emerald-700"
+          : "bg-slate-500/10 text-slate-700";
+  const trafficLabel =
+    severity === "none"
+      ? staticDurationSec != null ? "Clear" : "—"
+      : `+${trafficMin} min`;
+
+  const distanceLabel =
+    distanceM == null
+      ? "—"
+      : distanceM < 950
+        ? `${Math.round(distanceM / 10) * 10} m`
+        : `${(distanceM / 1000).toFixed(distanceM < 10_000 ? 1 : 0)} km`;
+
+  const driveLabel =
+    durationSec == null
+      ? null
+      : durationSec < 60
+        ? `${Math.max(1, Math.round(durationSec))} s drive`
+        : `${Math.round(durationSec / 60)} min drive`;
+
+  return (
+    <div className="px-4 pt-3 pb-2">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+          Route summary
+        </div>
+        {driveLabel && (
+          <div className="text-[11px] text-slate-600 tabular-nums">{driveLabel}</div>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-2 tabular-nums">
+        <SummaryTile
+          label="Pickup"
+          value={pickupMs ? formatMaltaTime(new Date(pickupMs).toISOString()) : "—"}
+          hint={pickupMs ? "Scheduled" : "No time set"}
+        />
+        <SummaryTile
+          label="Drop-off"
+          value={dropoffMs ? formatMaltaTime(new Date(dropoffMs).toISOString()) : "—"}
+          hint={dropoffMs ? "Est. arrival" : "Awaiting route"}
+        />
+        <SummaryTile label="Distance" value={distanceLabel} hint="Pickup → Drop-off" />
+        <SummaryTile
+          label="Traffic"
+          value={trafficLabel}
+          hint={severity === "none" ? "vs typical" : "Extra time"}
+          valueClassName={trafficCls + " rounded px-1"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  hint,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white/80 px-2 py-1.5 min-w-0">
+      <div className="text-[9px] uppercase tracking-wide text-slate-500 font-semibold">
+        {label}
+      </div>
+      <div
+        className={`text-sm font-semibold text-slate-900 leading-tight truncate ${valueClassName ?? ""}`}
+      >
+        {value}
+      </div>
+      {hint && <div className="text-[10px] text-slate-500 truncate">{hint}</div>}
+    </div>
+  );
+}
