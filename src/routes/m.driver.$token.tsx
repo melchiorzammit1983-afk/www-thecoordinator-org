@@ -764,7 +764,9 @@ function DriverManifest() {
     if (audio.isSpeaking) { audio.cancelSpeech(); return; }
     if (lastAnnouncement) { audio.speak(lastAnnouncement); return; }
     if (activeJob) {
-      const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
+      const dest = activeJob.status === "in_progress"
+        ? displayLocation(activeJob.to_location, activeJob.dropoff_display_name)
+        : displayLocation(activeJob.from_location, activeJob.pickup_display_name);
       const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
       const nextInstructionText = getInstructionText(live.next_instruction);
       const parts = [
