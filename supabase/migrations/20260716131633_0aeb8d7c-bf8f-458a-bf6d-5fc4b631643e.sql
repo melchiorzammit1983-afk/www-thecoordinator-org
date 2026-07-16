@@ -1,0 +1,2 @@
+CREATE POLICY "admins can insert portal settings" ON public.admin_portal_settings FOR INSERT TO authenticated WITH CHECK (private.is_admin(auth.uid()));
+CREATE POLICY "admins can delete portal settings" ON public.admin_portal_settings FOR DELETE TO authenticated USING (private.is_admin(auth.uid()));
