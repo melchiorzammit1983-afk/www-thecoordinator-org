@@ -33,7 +33,14 @@ export function displayLocation(
   const name = (displayName ?? "").trim();
   if (name) return name;
   if (!raw) return "—";
-  if (looksLikeCode(raw)) return "Location pin";
+  if (looksLikeCode(raw)) {
+    // Plus-code strings often include a readable suffix like "VH79+7PC, Valletta" —
+    // prefer that human-readable tail over the generic "Location pin" fallback so
+    // hotel/business context is never lost when a place name hasn't been resolved yet.
+    const tail = raw.replace(/^[^,]+,\s*/, "").trim();
+    if (tail && tail !== raw && !looksLikeCode(tail)) return tail;
+    return "Location pin";
+  }
   return raw;
 }
 
