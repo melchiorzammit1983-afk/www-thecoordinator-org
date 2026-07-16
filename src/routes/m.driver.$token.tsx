@@ -1058,6 +1058,11 @@ function DriverManifest() {
         <NavigateFullscreen
           live={live}
           destination={routeDestination}
+          destinationLabel={
+            activeJob.status === "in_progress"
+              ? displayLocation(activeJob.to_location, activeJob.dropoff_display_name)
+              : displayLocation(activeJob.from_location, activeJob.pickup_display_name)
+          }
           externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(routeDestination ?? "")}&travelmode=driving`}
           onExit={() => setNavigateMode(false)}
           onSpeak={audio.speechSupported ? speakLatest : null}
