@@ -462,6 +462,98 @@ export const resolveJobPlaceNames = createServerFn({ method: "POST" })
     return { ok: true, patch };
   });
 
+// ---------- Server-side helper: name-only backfill (no auth middleware) ----------
+//
+// Used by public token flows (driver manifest, client tracker) so raw street
+// addresses get replaced with the resolved hotel/business name even before a
+// coordinator opens the trip. Charges the trip's owning company via the same
+// `address_name_resolve` feature so pricing stays consistent.
+export async function backfillJobNamesServer(jobIds: string[]): Promise<number> {
+  if (!jobIds.length) return 0;
+  let keys: { LOVABLE_API_KEY: string; GOOGLE_MAPS_API_KEY: string };
+  try { keys = assertKeys(); } catch { return 0; }
+  const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = keys;
+  const sb = await _admin();
+  const { data: rows } = await sb
+    .from("jobs")
+    .select("id, company_id, from_location, to_location, pickup_place_id, dropoff_place_id, pickup_display_name, dropoff_display_name")
+    .in("id", jobIds);
+  const jobs = (rows ?? []) as any[];
+  if (!jobs.length) return 0;
+
+  const nameCache = new Map<string, { display_name: string | null; place_id: string | null } | null>();
+  async function resolveName(text: string, placeId: string | null) {
+    const cacheKey = (placeId ?? text).toLowerCase();
+    if (nameCache.has(cacheKey)) return nameCache.get(cacheKey)!;
+    try {
+      let pid = placeId;
+      if (!pid) {
+        const r = await fetch(`${GATEWAY}/places/v1/places:autocomplete`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ input: text, ...biasBody(undefined) }),
+        });
+        if (!r.ok) { nameCache.set(cacheKey, null); return null; }
+        const j: any = await r.json();
+        pid = j?.suggestions?.[0]?.placePrediction?.placeId ?? null;
+        if (!pid) { nameCache.set(cacheKey, null); return null; }
+      }
+      const det = await fetch(`${GATEWAY}/places/v1/places/${encodeURIComponent(pid)}`, {
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+          "X-Goog-FieldMask": "id,displayName",
+        },
+      });
+      if (!det.ok) { nameCache.set(cacheKey, null); return null; }
+      const d: any = await det.json();
+      const result = { display_name: d.displayName?.text ?? null, place_id: pid };
+      nameCache.set(cacheKey, result);
+      return result;
+    } catch { nameCache.set(cacheKey, null); return null; }
+  }
+
+  let updated = 0;
+  const queue = [...jobs];
+  async function worker() {
+    while (queue.length) {
+      const j = queue.shift()!;
+      if (!j.company_id) continue;
+      const patch: Record<string, any> = {};
+      if (!j.pickup_display_name && j.from_location) {
+        const gate = await _tryCharge(j.company_id, "address_name_resolve", "Backfill pickup name (public)", j.id);
+        if (gate.charged) {
+          const r = await resolveName(j.from_location, j.pickup_place_id);
+          if (r?.display_name) {
+            patch.pickup_display_name = r.display_name;
+            if (r.place_id && !j.pickup_place_id) patch.pickup_place_id = r.place_id;
+          }
+        }
+      }
+      if (!j.dropoff_display_name && j.to_location) {
+        const gate = await _tryCharge(j.company_id, "address_name_resolve", "Backfill dropoff name (public)", j.id);
+        if (gate.charged) {
+          const r = await resolveName(j.to_location, j.dropoff_place_id);
+          if (r?.display_name) {
+            patch.dropoff_display_name = r.display_name;
+            if (r.place_id && !j.dropoff_place_id) patch.dropoff_place_id = r.place_id;
+          }
+        }
+      }
+      if (Object.keys(patch).length) {
+        await sb.from("jobs").update(patch as any).eq("id", j.id);
+        updated++;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: 4 }, worker));
+  return updated;
+}
+
 // ---------- Batch enrichment for visible trip cards ----------
 //
 // Called by the coordinator calendar / dashboard once per screen load with
