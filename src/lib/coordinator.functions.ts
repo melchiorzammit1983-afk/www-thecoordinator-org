@@ -2171,35 +2171,55 @@ async function _computeTripLiveStatus(data: {
       try {
         const nowMs = Date.now();
         const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
-        const depTime = pickupMs > nowMs + 60_000 ? String(Math.floor(pickupMs / 1000)) : "now";
-        // Route via the Lovable Google Maps connector gateway; the connector
-        // auto-attaches the Google API key via X-Connection-Api-Key.
-        const dmUrl =
-          `https://connector-gateway.lovable.dev/google_maps/maps/api/distancematrix/json` +
-          `?origins=${encodeURIComponent(data.from_location)}` +
-          `&destinations=${encodeURIComponent(data.to_location)}` +
-          `&departure_time=${depTime}&traffic_model=best_guess`;
-        const dmRes = await fetch(dmUrl, {
-          headers: {
-            Authorization: `Bearer ${lovableKey}`,
-            "X-Connection-Api-Key": apiKey,
+        const departureTime =
+          pickupMs > nowMs + 60_000 ? new Date(pickupMs).toISOString() : undefined;
+        // Routes API v2 (computeRouteMatrix) via the Lovable Google Maps
+        // connector gateway. The legacy Distance Matrix endpoint has been
+        // removed from the connector and now returns REQUEST_DENIED.
+        const body: Record<string, unknown> = {
+          origins: [{ waypoint: { address: data.from_location } }],
+          destinations: [{ waypoint: { address: data.to_location } }],
+          travelMode: "DRIVE",
+          routingPreference: "TRAFFIC_AWARE",
+        };
+        if (departureTime) body.departureTime = departureTime;
+        const rmRes = await fetch(
+          "https://connector-gateway.lovable.dev/google_maps/routes/distanceMatrix/v2:computeRouteMatrix",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${lovableKey}`,
+              "X-Connection-Api-Key": apiKey,
+              "Content-Type": "application/json",
+              "X-Goog-FieldMask":
+                "originIndex,destinationIndex,duration,staticDuration,distanceMeters,condition,status",
+            },
+            body: JSON.stringify(body),
           },
-        });
-        if (!dmRes.ok) {
-          const body = await dmRes.text().catch(() => "");
-          console.error(`[computeTripLiveStatus.dm] ${dmRes.status}: ${body.slice(0, 500)}`);
-          traffic = { ok: false, reason: `dm_${dmRes.status}` };
+        );
+        if (!rmRes.ok) {
+          const bodyText = await rmRes.text().catch(() => "");
+          console.error(`[computeTripLiveStatus.routes] ${rmRes.status}: ${bodyText.slice(0, 500)}`);
+          traffic = { ok: false, reason: `routes_${rmRes.status}` };
         } else {
-          const dm: any = await dmRes.json();
-          const topStatus = String(dm?.status ?? "").toUpperCase();
-          const el = dm?.rows?.[0]?.elements?.[0];
-          if (topStatus && topStatus !== "OK") {
-            traffic = { ok: false, reason: topStatus.toLowerCase() };
-          } else if (!el || el.status !== "OK") {
-            traffic = { ok: false, reason: el?.status ? String(el.status).toLowerCase() : "dm_failed" };
+          const rmJson: any = await rmRes.json();
+          // Response is either a JSON array of elements or a single element.
+          const el = Array.isArray(rmJson) ? rmJson[0] : rmJson;
+          const elStatus = el?.status?.code;
+          if (!el || (elStatus != null && elStatus !== 0) || el?.condition === "ROUTE_NOT_FOUND") {
+            traffic = { ok: false, reason: "no_route" };
           } else {
-            const dur = el.duration_in_traffic?.value ?? el.duration?.value ?? null;
-            const free = el.duration?.value ?? null;
+            const parseSec = (v: unknown): number | null => {
+              if (typeof v === "string" && v.endsWith("s")) {
+                const n = Number(v.slice(0, -1));
+                return Number.isFinite(n) ? n : null;
+              }
+              if (typeof v === "number" && Number.isFinite(v)) return v;
+              return null;
+            };
+            const dur = parseSec(el.duration);
+            const free = parseSec(el.staticDuration);
+            const meters = typeof el.distanceMeters === "number" ? el.distanceMeters : null;
             const delaySec = dur != null && free != null ? Math.max(0, dur - free) : 0;
             const delayMin = Math.round(delaySec / 60);
             const ratio = free && dur ? dur / free : 1;
@@ -2209,23 +2229,37 @@ async function _computeTripLiveStatus(data: {
             else if (ratio >= 1.15 || delayMin >= 5) severity = "moderate";
             const leaveBy =
               pickupIso && dur ? new Date(new Date(pickupIso).getTime() - dur * 1000).toISOString() : null;
+            const fmtDur = (s: number | null): string => {
+              if (!s || s <= 0) return "";
+              const mins = Math.round(s / 60);
+              if (mins < 60) return `${mins} min`;
+              const h = Math.floor(mins / 60);
+              const m = mins % 60;
+              return m ? `${h} h ${m} min` : `${h} h`;
+            };
+            const fmtDist = (m: number | null): string => {
+              if (m == null) return "";
+              if (m >= 1000) return `${(m / 1000).toFixed(m >= 10_000 ? 0 : 1)} km`;
+              return `${Math.round(m)} m`;
+            };
             traffic = {
               ok: true,
               delay_minutes: delayMin,
               severity,
-              duration_text: (el.duration_in_traffic ?? el.duration)?.text ?? "",
+              duration_text: fmtDur(dur),
               duration_seconds: dur ?? undefined,
               free_seconds: free ?? undefined,
-              distance_text: el.distance?.text ?? "",
+              distance_text: fmtDist(meters),
               leave_by_at: leaveBy,
             };
           }
         }
       } catch (e: any) {
-        console.error("[computeTripLiveStatus.dm] exception", e);
-        traffic = { ok: false, reason: "dm_failed" };
+        console.error("[computeTripLiveStatus.routes] exception", e);
+        traffic = { ok: false, reason: "routes_failed" };
       }
     }
+
   }
 
   return { pickup_at: pickupIso, flight, traffic };
