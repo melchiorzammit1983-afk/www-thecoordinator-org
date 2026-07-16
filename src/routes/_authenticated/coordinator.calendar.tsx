@@ -49,6 +49,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
+import { RouteThumb } from "@/components/coordinator/RouteThumb";
 import {
   listConnections,
   dispatchJobToPartner,
@@ -2452,11 +2453,32 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               {displayLocation(job.to_location, job.dropoff_display_name)}
             </div>
             {(job.route_duration_sec ?? 0) > 0 && (
-              <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-                <span className="rounded bg-muted px-1.5 py-0.5">
-                  {formatEta(job.route_duration_sec)}
-                  {job.route_distance_m ? ` · ${(job.route_distance_m / 1000).toFixed(1)} km` : ""}
+              <div className="mt-1 flex items-center gap-2 text-[11px] tabular-nums">
+                <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="font-semibold text-foreground">
+                  {formatEtaMinutes(job.route_duration_sec)}
                 </span>
+                {job.route_distance_m ? (
+                  <span className="text-muted-foreground">
+                    · {(job.route_distance_m / 1000).toFixed(1)} km
+                  </span>
+                ) : null}
+                {job.pickup_at && (job.route_duration_sec ?? 0) > 0 && (
+                  <span className="text-muted-foreground">
+                    · arr{" "}
+                    <span className="text-foreground font-medium">
+                      {new Date(
+                        new Date(job.pickup_at).getTime() +
+                          (job.route_duration_sec ?? 0) * 1000,
+                      ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </span>
+                )}
+                {(job.traffic_delay_minutes ?? 0) > 0 && (
+                  <span className="text-destructive font-medium">
+                    +{job.traffic_delay_minutes} min traffic
+                  </span>
+                )}
               </div>
             )}
             {job.clientcompanyname && (
@@ -2577,6 +2599,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </div>
             )}
           </div>
+          <RouteThumb
+            from={job.pickup_display_name || job.from_location}
+            to={job.dropoff_display_name || job.to_location}
+            className="hidden sm:block mr-6"
+          />
         </div>
       </button>
 

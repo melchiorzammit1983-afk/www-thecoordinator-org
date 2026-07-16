@@ -1,52 +1,49 @@
-# Trips section redesign — Pro-dispatcher density view (ETA-safe)
+## Goal
 
-Rework the `DispatchTripList` in `src/routes/_authenticated/coordinator.calendar.tsx` (lines 3213–3339) into a dense dispatcher table with a rich expanded panel. Only the presentation of that one component changes. All data fetching, filters (active + waiting), enrichment (`useEnrichVisibleJobs`), sorting (`urgencyRank`), and callbacks stay identical, so ETA behavior can't regress.
+On every trip card in the coordinator calendar, make it instantly obvious:
+1. How long the trip takes from **A → B** (with distance + freshness).
+2. What the route actually looks like — a small static route thumbnail.
 
-## ETA reliability guarantees
+Today the card only shows a tiny grey `32 min · 12.4 km` chip. There's no visual of the route until you expand the row.
 
-- Every ETA reads from the same source as today: `job.route_duration_sec` via `formatEtaMinutes` (already imported). No new server call, no new query key.
-- `useEnrichVisibleJobs(jobs, [["jobs"]])` stays at the top of the component, so missing/stale ETAs are still backfilled through the existing `backfillJobEnrichment` pipeline. Nothing about the trigger cadence changes.
-- ETA chip renders only when `formatEtaMinutes` returns a truthy string, so a job without an ETA shows nothing rather than "0 min" or a broken pill.
-- The expanded live map keeps using the existing `TripEventsMap` component, which owns its own `refreshLiveEta` polling. We do not touch that component or its refetch interval.
-- No status timestamps are read off `Job` beyond fields already present (`status`, `driver_id`, `pickup_at`, `route_duration_sec`); the milestone strip is derived from `status` only, so no schema drift.
+## Changes (frontend only, `src/routes/_authenticated/coordinator.calendar.tsx`)
 
-## Collapsed row layout
+### 1. Promote the ETA to a proper "trip time" row
+Replace the current small muted chip (lines 2454–2461) with a single readable line directly under the A → B route:
 
-- 4px left status rail: emerald for `live` tones (en_route/arrived/in_progress), blue for open wait sessions, slate for assigned/pending.
-- Route line: `from → to` via `displayLocation(raw, display_name)` (unchanged helper), truncation with `min-w-0`, tabular ETA chip when present.
-- Meta line: driver name, pickup time (`tabular-nums`), pax count, flight — same fields as today, restyled as small muted micro-type with lucide icons instead of emoji.
-- Right side: status pill using the existing `TONE_CLASS` map plus a ping dot on live jobs (already implemented).
+```
+🕒 32 min   •   12.4 km   •   ETA 14:07
+```
 
-## Expanded panel
+- Time uses `tabular-nums`, larger (text-xs → text-sm), foreground color.
+- Distance stays muted.
+- "ETA 14:07" = `pickup_at + route_duration_sec`, computed client-side, only when both values exist.
+- If `traffic_delay_minutes > 0`, append a red `+7 min traffic` inline (replaces the separate TrafficBadge for the collapsed view; expanded row keeps the full TrafficBadge).
+- Reserve height (min-h) so the row doesn't jump when ETA arrives async.
 
-Two columns on desktop (`lg:` breakpoint), stacked on mobile:
+### 2. Add a mini route thumbnail on the collapsed card
+New small component `RouteThumb` rendered to the right of the text block (hidden on mobile, shown ≥ sm):
 
-- **Map (2/3)** — swap the current `<iframe src="maps.google.com/…">` for `<TripEventsMap jobId={job.id} isLive={status.tone === "live"} />`. This is the same component already used in `TripDetailsSheet`, so it renders the planned route, driver breadcrumb, and event pins we already log. A thin dashed SVG overlay with the `animate-route-flow` keyframe sits above the map only while `q.isLoading` inside `TripEventsMap` — actually, the overlay lives in the parent behind the map container as a fallback shimmer only when we don't yet have a `route_duration_sec` value; once the map has data, the overlay is hidden. Nothing about the map's own ETA/refresh loop changes.
-- **Side rail (1/3)** — three stacked blocks:
-  1. **Live ETA card** — big number from `formatEtaMinutes(job.route_duration_sec)` plus the pickup clock time; muted "—" when unknown.
-  2. **Milestone strip** — vertical timeline derived purely from `status` and `driver_id`: Booked → Assigned → En route → Arrived → On board → Done. The step matching the current status pulses; earlier steps are filled; later steps muted. No new fields, no new queries.
-  3. **Actions** — `Chat`, `Call driver`, `Open full details →` wired to existing `onOpenChat`, `job.drivers?.phone`, `onOpenDetails` props exactly as today.
+- 96×64 rounded image using Google Static Maps via the existing connector gateway (same key path used elsewhere).
+- URL built from `pickup_lat/lng` + `dropoff_lat/lng` with a red A pin, green B pin, and a straight-line path styled subtly (Google auto-fits bounds).
+- Falls back to nothing (no broken image) when coords are missing.
+- Uses `loading="lazy"` and a stable `key` (pickup+dropoff coords) so React doesn't refetch on unrelated re-renders — prevents flashing.
+- On hover: subtle ring; on click: opens the existing expanded map panel (does not navigate).
 
-## Motion & tokens
+No new server function needed — Static Maps is a GET through the same gateway prefix already used for Routes/Places.
 
-- Row expand uses the existing `animate-accordion-down` utility.
-- New `@keyframes route-flow` + `@utility animate-route-flow` added to `src/styles.css` for the dashed overlay.
-- All colors use semantic tokens (`bg-card`, `text-muted-foreground`, `border`, `bg-primary/10`, `text-primary`, `TONE_CLASS`). No hardcoded palette additions except the existing emerald/blue/slate used elsewhere in the file.
+### 3. Live driver marker on the thumbnail (when trip is active)
+When `job.status` ∈ {en_route, arrived, in_progress} and we have `livePoint` (already computed in the row), add a third marker (blue dot) at the driver location so the coordinator sees at a glance where the car is on that A→B line — without expanding.
 
-## Files touched
-
-- `src/routes/_authenticated/coordinator.calendar.tsx` — rewrite the body of `DispatchTripList` only (lines 3213–3339). Add three small local helpers in the same file: `MilestoneStrip`, `RouteFlowOverlay`, `DriverAvatar`. Import `TripEventsMap` from `@/components/coordinator/TripEventsMap` and `Phone, MessageSquare, ArrowRight, Users, Clock, Plane` from `lucide-react` (some already imported).
-- `src/styles.css` — append `@keyframes route-flow` and `@utility animate-route-flow`.
+### 4. Readability polish (small, targeted)
+- Group the meta line (`clientcompanyname`, driver, flight) into a single row with `•` separators when short, so cards use fewer vertical lines.
+- Use `tabular-nums` on all time/eta/distance numbers to stop jitter as ETAs refresh.
+- Keep the existing expanded `TripEventsMap` untouched.
 
 ## Out of scope
+- No changes to server functions, DB, enrichment logic, or the expanded panel.
+- No change to the ETA computation source (still `route_duration_sec` + live refresh already wired).
 
-- No changes to `TripEventsMap`, `refreshLiveEta`, `backfillJobEnrichment`, `useEnrichVisibleJobs`, or any server function.
-- No changes to filters, sort, `WaitingNowStrip`, or `TripDetailsSheet`.
-- No DB migrations.
-
-## Verification
-
-1. `tsgo` clean.
-2. Playwright script on `/coordinator/calendar` at 1280px: expand a live trip, screenshot, confirm ETA chip matches `route_duration_sec` and the map renders `TripEventsMap` (not an iframe).
-3. Repeat at 420px viewport, confirm the panel stacks and remains usable.
-4. Console has no new errors and the "Refresh ETA" flow on `TripDetailsSheet` still works (unchanged code path).
+## Technical notes
+- Static Maps endpoint: `https://connector-gateway.lovable.dev/google_maps/maps/api/staticmap?...` with `Authorization` + `X-Connection-Api-Key`. Since `<img>` can't send those headers, we add a tiny server function `getStaticRouteMapUrl({ pickup, dropoff, driver? })` that returns a short-lived signed URL — OR simpler: server function that returns the image as base64 data URL, cached per coord pair for 10 min in-memory. Recommended: base64 route (no signed URL infra needed, small payload).
+- Thumbnail size kept small (≤ 8KB PNG) to keep the list light even with 50 trips.
