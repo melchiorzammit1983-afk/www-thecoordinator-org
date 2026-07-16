@@ -3273,13 +3273,17 @@ function DispatchTripList({
                     <span className="truncate font-medium">{from}</span>
                     <span className="text-muted-foreground shrink-0">→</span>
                     <span className="truncate">{to}</span>
+                    {eta && (
+                      <span className="shrink-0 inline-flex items-center rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5 py-0.5 ml-1">
+                        {eta}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                     {driverName && (
                       <span className="truncate max-w-[10rem]">👤 {driverName}</span>
                     )}
                     {pickup && <span>🕒 {pickup}</span>}
-                    {eta && <span>≈ {eta}</span>}
                     {paxCount > 0 && <span>👥 {paxCount}</span>}
                     {flight && <span className="text-blue-600 dark:text-blue-400">✈ {flight}</span>}
                   </div>
