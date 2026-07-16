@@ -21,7 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
+import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
+import { formatEtaMinutes } from "@/lib/trip-display";
+import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
   head: () => ({ meta: [{ title: "Dashboard — Coordinator" }] }),
@@ -43,6 +47,13 @@ function DashboardPage() {
   const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() });
 
   const [addOpen, setAddOpen] = useState(false);
+
+  const enrichable = [
+    ...((activity?.pending ?? []) as any[]),
+    ...((activity?.unassigned ?? []) as any[]),
+  ].filter((j) => j?.id);
+  useEnrichVisibleJobs(enrichable, [["coord-dash-activity"]]);
+
 
   const stats = [
     { to: "/coordinator/pending", label: "Pending", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500", pulse: (data?.pending_bookings ?? 0) > 0 },
@@ -132,7 +143,9 @@ function DashboardPage() {
               badge={b.status === "modification_pending" ? "Change" : "Pending"}
               badgeTone="bg-amber-500/15 text-amber-700 dark:text-amber-300"
               meta={b.pax_count ? `${b.pax_count} pax` : undefined}
+              job={b}
             />
+
           ))
         )}
       </div>
@@ -159,7 +172,9 @@ function DashboardPage() {
               time={j.time}
               badge="Unassigned"
               badgeTone="bg-blue-500/15 text-blue-700 dark:text-blue-300"
+              job={j}
             />
+
           ))
         )}
       </div>
@@ -207,13 +222,29 @@ function SectionHeader({
   );
 }
 
+type TripRowJob = {
+  route_duration_sec?: number | null;
+  live_eta_sec?: number | null;
+  live_eta_updated_at?: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+};
+
 function TripRow({
-  to, from, to_, date, time, badge, badgeTone, meta,
+  to, from, to_, date, time, badge, badgeTone, meta, job,
 }: {
   to: string; from?: string | null; to_?: string | null;
   date?: string | null; time?: string | null;
   badge: string; badgeTone: string; meta?: string;
+  job?: TripRowJob | null;
 }) {
+  const liveFresh =
+    job?.live_eta_sec != null &&
+    job?.live_eta_updated_at != null &&
+    Date.now() - new Date(job.live_eta_updated_at).getTime() < 10 * 60_000;
+  const etaSec = liveFresh ? job!.live_eta_sec! : job?.route_duration_sec ?? null;
+  const etaLabel = formatEtaMinutes(etaSec);
   return (
     <Link
       to={to}
@@ -228,16 +259,27 @@ function TripRow({
           {badge}
         </span>
       </div>
-      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3 w-3" />
           {date ?? ""}{time ? ` · ${time.slice(0, 5)}` : ""}
         </span>
+        {etaLabel && (
+          <span className="inline-flex items-center gap-1 font-medium text-foreground tabular-nums">
+            <Clock className="h-3 w-3 text-primary" />
+            {etaLabel}
+            {liveFresh && <span className="text-[9px] text-primary uppercase">live</span>}
+          </span>
+        )}
+        {job && (job.traffic_delay_minutes || job.traffic_severity || job.leave_by_at) && (
+          <TrafficBadge info={job} compact />
+        )}
         {meta && <span>· {meta}</span>}
       </div>
     </Link>
   );
 }
+
 
 function EmptyLine({ text }: { text: string }) {
   return (
