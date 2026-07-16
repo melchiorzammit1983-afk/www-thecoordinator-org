@@ -142,6 +142,36 @@ export const getDriverManifest = createServerFn({ method: "GET" })
 
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
+
+    // Backfill missing hotel/business names so the driver never sees a raw
+    // street address when a place lookup would resolve one. Best-effort:
+    // silently no-ops on missing keys / feature disabled / insufficient
+    // points (falls back to the raw address).
+    const needsName = (jobsRaw ?? [])
+      .filter((j: any) =>
+        (!j.pickup_display_name && j.from_location) ||
+        (!j.dropoff_display_name && j.to_location),
+      )
+      .map((j: any) => j.id as string);
+    if (needsName.length) {
+      try {
+        const { backfillJobNamesServer } = await import("@/lib/places.functions");
+        await backfillJobNamesServer(needsName);
+        const { data: refreshed } = await supabaseAdmin
+          .from("jobs")
+          .select("id, pickup_display_name, dropoff_display_name")
+          .in("id", needsName);
+        const byId = new Map<string, any>((refreshed ?? []).map((r: any) => [r.id, r]));
+        for (const j of jobsRaw ?? []) {
+          const patch = byId.get((j as any).id);
+          if (patch) {
+            (j as any).pickup_display_name = patch.pickup_display_name ?? (j as any).pickup_display_name;
+            (j as any).dropoff_display_name = patch.dropoff_display_name ?? (j as any).dropoff_display_name;
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+
     const jobs = (jobsRaw ?? []).map((j: any) => ({
       ...j,
       labels: Array.isArray(j.job_labels) ? j.job_labels.map((x: any) => x.trip_labels).filter(Boolean) : [],
