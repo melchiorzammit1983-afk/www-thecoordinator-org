@@ -1,49 +1,47 @@
-## Goal
+# Driver: Grouped Runs (Multi-Stop) UX
 
-On every trip card in the coordinator calendar, make it instantly obvious:
-1. How long the trip takes from **A → B** (with distance + freshness).
-2. What the route actually looks like — a small static route thumbnail.
+Goal: when a driver receives multiple jobs sharing a `group_id`, treat them as a single **Run** in the driver app. Accepts happen per trip, but the moment all group members are accepted the app collapses them into one Run Card. Status actions (On the way / Arrived / In progress / Completed) apply to the whole run and drive a stop-by-stop flow.
 
-Today the card only shows a tiny grey `32 min · 12.4 km` chip. There's no visual of the route until you expand the row.
+## Behavior
 
-## Changes (frontend only, `src/routes/_authenticated/coordinator.calendar.tsx`)
+1. **Accept — individually, auto-merge**
+   - Grouped jobs still show as separate accept cards in the incoming list (with a small `Run · 3 stops` chip so the driver knows it's part of a bigger run).
+   - Once every job in a group has `driver_response = accepted`, they merge into one **Run Card** in the driver dashboard. Partially-accepted groups keep showing the remaining trips to accept, with a progress hint (`2 of 3 accepted`).
 
-### 1. Promote the ETA to a proper "trip time" row
-Replace the current small muted chip (lines 2454–2461) with a single readable line directly under the A → B route:
+2. **One status per run (applies to whole group)**
+   - Run-level buttons: `On the way`, `Arrived`, `Start trip`, `Complete stop`.
+   - `On the way` → sets all jobs in the group to `en_route` in one call.
+   - `Arrived` / `Start trip` / `Complete stop` act on the **current stop only** and advance the pointer; each still writes its per-leg milestone into `trip_map_events` and job status, but the driver only sees "current stop" controls.
+   - `Complete stop` on the last stop marks the whole run completed and fires the existing `AutoNextJobSheet` for the next run/job.
 
-```
-🕒 32 min   •   12.4 km   •   ETA 14:07
-```
+3. **Current stop highlighted (stop list view)**
+   - Run Card shows a vertical stop list using the coordinator palette `#0EA5E9 / #22C55E / #F59E0B`:
+     - **Current stop**: large card, expanded, showing address (business name preferred), pax, ETA, navigate + status buttons.
+     - **Upcoming stops**: compact rows with number chip, name, pax; tap to preview (address + navigate) without changing the pointer.
+     - **Done stops**: collapsed, muted, with completion time + drop-off pin snap.
+   - Header shows `Stop 2 of 4 · Hilton → Corinthia · 12 min` with `tabular-nums` so it doesn't flash on ETA refresh (same stability treatment already used on the single-trip header).
 
-- Time uses `tabular-nums`, larger (text-xs → text-sm), foreground color.
-- Distance stays muted.
-- "ETA 14:07" = `pickup_at + route_duration_sec`, computed client-side, only when both values exist.
-- If `traffic_delay_minutes > 0`, append a red `+7 min traffic` inline (replaces the separate TrafficBadge for the collapsed view; expanded row keeps the full TrafficBadge).
-- Reserve height (min-h) so the row doesn't jump when ETA arrives async.
+4. **Instant reorder**
+   - Drag handle on each upcoming stop (done + current are locked).
+   - Reorder writes immediately via existing `reorderStops` server fn (no coordinator approval), and the coordinator's `GroupStopsPanel` sees it live.
+   - Chain reflow (from → to per leg) recomputes automatically from the new order, matching the coordinator-side logic already in `coordinator.calendar.tsx`.
 
-### 2. Add a mini route thumbnail on the collapsed card
-New small component `RouteThumb` rendered to the right of the text block (hidden on mobile, shown ≥ sm):
+5. **Safety Mode compatibility**
+   - When `useSafetyMode` engages, the Run Card collapses to only: current stop name, big Navigate button, and `Arrived` / `Complete` buttons. Reorder + upcoming list hide until unlocked.
 
-- 96×64 rounded image using Google Static Maps via the existing connector gateway (same key path used elsewhere).
-- URL built from `pickup_lat/lng` + `dropoff_lat/lng` with a red A pin, green B pin, and a straight-line path styled subtly (Google auto-fits bounds).
-- Falls back to nothing (no broken image) when coords are missing.
-- Uses `loading="lazy"` and a stable `key` (pickup+dropoff coords) so React doesn't refetch on unrelated re-renders — prevents flashing.
-- On hover: subtle ring; on click: opens the existing expanded map panel (does not navigate).
+## Files (technical)
 
-No new server function needed — Static Maps is a GET through the same gateway prefix already used for Routes/Places.
+- **New**: `src/components/driver/RunCard.tsx` — Run header, stop list, current-stop panel, reorder handles.
+- **New**: `src/components/driver/RunStopRow.tsx` — Numbered chip + status states (done/current/upcoming).
+- **New**: `src/hooks/use-driver-runs.ts` — Buckets the driver's assigned jobs by `group_id`, tracks accept progress, exposes `currentStopIndex`.
+- **Edit**: `src/routes/m.driver.$token.tsx` — Replace the flat job list with `RunCard` for grouped jobs; ungrouped jobs keep their current card. Wire run-level status actions to fan out across group members.
+- **Edit**: `src/lib/groups.functions.ts` — Add `advanceGroupStatus({ group_id, status })` server fn that updates all member jobs atomically and writes per-leg `trip_map_events`. Reuse existing `reorderStops` (already instant).
+- **Edit**: `src/hooks/use-auto-next-job.ts` — Ignore completions that are mid-run (`group_id` with remaining stops); only fire the "next job" sheet when the whole run is done.
 
-### 3. Live driver marker on the thumbnail (when trip is active)
-When `job.status` ∈ {en_route, arrived, in_progress} and we have `livePoint` (already computed in the row), add a third marker (blue dot) at the driver location so the coordinator sees at a glance where the car is on that A→B line — without expanding.
+## Open follow-ups worth adding later (not in this build)
 
-### 4. Readability polish (small, targeted)
-- Group the meta line (`clientcompanyname`, driver, flight) into a single row with `•` separators when short, so cards use fewer vertical lines.
-- Use `tabular-nums` on all time/eta/distance numbers to stop jitter as ETAs refresh.
-- Keep the existing expanded `TripEventsMap` untouched.
+- Per-stop pax boarding checklist inside the current-stop panel (uses existing `group_stops` boarding fields).
+- Voice announcement on stop advance (`use-driver-audio` already available).
+- "Skip stop" with reason → creates a no-show event.
 
-## Out of scope
-- No changes to server functions, DB, enrichment logic, or the expanded panel.
-- No change to the ETA computation source (still `route_duration_sec` + live refresh already wired).
-
-## Technical notes
-- Static Maps endpoint: `https://connector-gateway.lovable.dev/google_maps/maps/api/staticmap?...` with `Authorization` + `X-Connection-Api-Key`. Since `<img>` can't send those headers, we add a tiny server function `getStaticRouteMapUrl({ pickup, dropoff, driver? })` that returns a short-lived signed URL — OR simpler: server function that returns the image as base64 data URL, cached per coord pair for 10 min in-memory. Recommended: base64 route (no signed URL infra needed, small payload).
-- Thumbnail size kept small (≤ 8KB PNG) to keep the list light even with 50 trips.
+Confirm to build.
