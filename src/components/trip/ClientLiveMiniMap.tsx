@@ -27,7 +27,7 @@ export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt, label }: Prop
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
           </span>
           <MapPin className="h-3.5 w-3.5" />
-          Live · {paxName ?? "Passenger"} · {ageLabel(capturedAt)}
+          Live · {label ?? paxName ?? "Passenger"} · {ageLabel(capturedAt)}
         </div>
         <a
           href={mapsUrl}
