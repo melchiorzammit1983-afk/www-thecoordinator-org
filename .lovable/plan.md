@@ -1,128 +1,53 @@
-# Mobile Deployment Plan — Role-Targeted + Biometric Unlock
+# Bulletproof business names + ETA on every trip card
 
-Additive only. No changes to dispatch, safety, audit, or route-optimization workflows.
+Right now cards fall back to **"Location pin"** whenever the raw address is a plus-code / lat-lng, and ETA only shows if it happens to be cached on the row. The fix is to (a) make the display name always resolve, and (b) make ETA always show, everywhere the trip appears — coordinator calendar, coordinator dashboard, driver card, client portal, tracking page.
 
-## Role targeting
+## What changes
 
-| Role | Delivery | Push | Offline | GPS | Biometric |
-|---|---|---|---|---|---|
-| **Driver** | Android APK (Capacitor) | FCM native | App-shell + last manifest cache | Background location | Native fingerprint / face unlock |
-| **Client** | Installable PWA | Web Push (VAPID) | App-shell + trip cache | Foreground only | WebAuthn (platform authenticator) |
-| **Coordinator** | Installable PWA now; APK scaffolded for later | Web Push (VAPID) | App-shell | n/a | WebAuthn (platform authenticator) |
+### 1. Auto-resolve business/hotel names (so "Location pin" stops appearing)
 
-## Phase 1 — PWA (Client + Coordinator)
+- On **create / update** in `coordinator.functions.ts` (`createJob`, `updateJob`, `createJobsBulk`, portal accept in `coordinator-public.functions.ts`):
+  - If a side has coords / place_id / a plus-code text but no `*_display_name`, run the existing `resolveJobPlaceNames` inline (single point charge for the two lookups, gated by the admin `address_name_resolve` feature flag — same as today).
+- Add a **lightweight backfill server fn** `backfillJobPlaceNames({ job_ids: string[] })` that the calendar + dashboard queries call once per batch on jobs missing a display name. Concurrency-capped, deduped by `pickup_place_id` / `dropoff_place_id` within the batch to avoid double-charging when many trips share the same hotel.
+- Tighten `displayLocation` fallback: when we have `pickup_lat/lng` but no name yet, show **"Locating…"** briefly instead of "Location pin", so the UI never freezes on a code.
+- Respect the existing admin toggle — if `address_name_resolve` is disabled, keep today's behaviour (show raw address / "Location pin").
 
-- `vite-plugin-pwa` in `generateSW` mode, `filename: 'sw.js'`, `registerType: 'autoUpdate'`, `injectRegister: null`, `devOptions.enabled: false`.
-- Guarded `src/lib/pwa/register-sw.ts` — refuses on preview / iframe / dev / `?sw=off`; unregisters stale `/sw.js` in those contexts. Called from `src/start.ts`. Replaces existing `public/sw.js` at the same path so returning browsers auto-upgrade.
-- Workbox: `NetworkFirst` navigations, `CacheFirst` hashed assets, denylist `/~oauth`, `/_serverFn`, `/api`.
-- Manifests: `public/manifest.client.webmanifest` (`start_url: /m/client`), `public/manifest.coordinator.webmanifest` (`start_url: /coordinator`). Picked per pathname in `src/routes/__root.tsx` `head().links`.
-- Icons via `imagegen`: `public/icons/{client,coordinator}-{192,512,maskable-512}.png` + iOS apple-touch-icon.
-- `src/components/pwa/InstallPrompt.tsx` — role-aware banner using `beforeinstallprompt`; iOS Safari fallback instructions.
-- `src/components/pwa/UpdatePrompt.tsx` — toast on `onNeedRefresh` → `updateSW(true)`. Version = `import.meta.env.VITE_APP_VERSION`.
+### 2. ETA on every card, always
 
-## Phase 2 — Driver Android APK (Capacitor)
+- Add `ensureJobEta({ job_id })` server fn that:
+  - Returns cached `route_duration_sec` if `route_computed_at` is fresh (< 30 min for future trips, < 5 min for trips within the next hour).
+  - Otherwise calls `estimateRouteEta` with `cache_on_job: true` (same feature-flag gate).
+- Auto-compute on **create/update** whenever both `from_location` and `to_location` exist and ETA is null/stale.
+- Coordinator calendar dispatch list (the "Trips" section the user selected): move the `≈ 32 min` chip next to the arrow between `from → to` so it reads **"Hotel Juliani → MLA · ≈ 32 min"**. Add matching chip on:
+  - `coordinator.index.tsx` "New trips" + "Unassigned" mini cards
+  - `TripDetailsSheet` header (already partially — make sure it always renders when >0)
+  - `m.driver.$token.tsx` driver card (near the address block)
+  - `m/client/$token.tsx` client booking rows
+  - `t.$token.tsx` public tracking page (already prints minutes — keep as-is, just ensure value is populated)
+- Batch backfill: `backfillJobEtas({ job_ids })` for visible rows missing/stale ETA, single call per screen load; respects `route_eta` entitlement.
 
-Configs in repo; build runs on developer machine (Lovable sandbox cannot build APKs).
+### 3. Data flow guarantees ("bulletproof")
 
-- Update `capacitor.config.ts`: `appId: org.thecoordinator.driver`, `appName: "Coordinator Driver"`, `server.url` published domain.
-- Add `capacitor.coordinator.config.ts` scaffold for later.
-- Plugins: `@capacitor/push-notifications`, `@capacitor/geolocation`, `@capacitor/camera`, `@capacitor/splash-screen`, `@capacitor/app`, `@capacitor/status-bar`, `@capacitor-community/background-geolocation`, **`@capacitor-community/biometric-auth`** (or `capacitor-native-biometric`).
-- Permissions (documented one-time edits): FINE/COARSE/BACKGROUND_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION, CAMERA, READ_MEDIA_IMAGES, POST_NOTIFICATIONS, INTERNET, **USE_BIOMETRIC + USE_FINGERPRINT**.
-- Signing: upload keystore generated once; fingerprint recorded in plan doc.
-- `scripts/build-driver-apk.sh`: `bun run build && npx cap sync android && cd android && ./gradlew assembleRelease` → `dist-apk/driver-v{version}.apk`.
+- Wrap the two backfill fns behind a **debounced hook** `useEnrichVisibleJobs(jobIds)` so a screen only enriches once per minute, not on every re-render, and never charges twice for the same job during that window.
+- Skip enrichment entirely when the admin feature toggle is off (falls back to raw address + no ETA chip — same as today).
+- Store enrichment results back on the `jobs` row so subsequent renders and the client/driver views read the cached value without a second charge.
+- All server fns already sit behind `requireSupabaseAuth` + `_tryCharge` — no new points paths introduced.
 
-## Phase 3 — Push Notifications
+## Files touched
 
-**Migration** (with GRANT + RLS):
-- `push_devices` (`user_id`, `company_id`, `role`, `platform`, `token`, `endpoint`, `p256dh`, `auth`, `last_seen_at`, unique `(user_id, token)`).
-- `notification_preferences` (per-category booleans).
-- `notification_log` (`user_id`, `company_id`, `category`, `title`, `body`, `data`, `sent_at`, `delivered_at`, `clicked_at`, `error`, `device_id`).
-- RLS: user owns own devices + prefs; log readable by owner and company admins via `has_role`; `service_role` writes. GRANTs to `authenticated` + `service_role`.
+- `src/lib/trip-display.ts` — "Locating…" fallback when coords exist.
+- `src/lib/places.functions.ts` — add `backfillJobPlaceNames`, `backfillJobEtas`, `ensureJobEta`.
+- `src/lib/coordinator.functions.ts` — auto-resolve name + ETA in `createJob` / `updateJob` / `createJobsBulk`.
+- `src/lib/coordinator-public.functions.ts` — same auto-enrich on portal booking accept.
+- `src/hooks/use-enrich-jobs.ts` — new debounced enrichment hook.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — call hook, ETA chip inline with `from → to` on dispatch list + trip cards.
+- `src/routes/_authenticated/coordinator.index.tsx` — same enrichment + ETA chip on dashboard cards.
+- `src/routes/m.driver.$token.tsx` — ETA chip on driver card.
+- `src/routes/m/client/$token.tsx` — ETA chip on client booking row.
+- `src/components/coordinator/TripDetailsSheet.tsx` — enforce ETA badge always renders when value exists.
 
-**Server**
-- `src/lib/push.functions.ts`: `registerPushDevice`, `unregisterPushDevice`, `updateNotificationPreferences`.
-- `src/lib/push.server.ts` (server-only, dynamic-imported): `sendPushToUser(userId, category, payload)` — resolves devices, checks prefs + company, fans out to FCM HTTP v1 + Web Push (VAPID), writes `notification_log`. Rate-limited.
-- Trigger points (additive, no workflow edits):
-  - Driver: assign, boarding decided, safety alert, coord chat, emergency-override message, coord change request decided.
-  - Coordinator: boarding request, waiting proposal, driver override, breakdown/safety event, route optimization pending, driver cancel request.
-  - Client: driver assigned, arrived, delayed threshold, trip started, trip completed.
+## Not changed
 
-**Secrets requested via `add_secret`:** `FCM_SERVICE_ACCOUNT_JSON`, `VAPID_PUBLIC_KEY` (+ `VITE_VAPID_PUBLIC_KEY`), `VAPID_PRIVATE_KEY`.
-
-**Client wiring**
-- Web: `public/firebase-messaging-sw.js` kept separate from app-shell SW (per PWA skill). Registered after login.
-- Native (driver APK): `@capacitor/push-notifications` on launch; token upserted via `registerPushDevice`.
-- Settings UI: coordinator page, driver sheet, client toggle.
-
-## Phase 4 — Biometric Unlock
-
-Goal: after first successful login the app can be re-opened / re-foregrounded by fingerprint (or Face ID / Face Unlock) instead of re-entering the password. Session stays a normal Supabase session; biometric only guards local access to it.
-
-**Migration**
-- `user_security_settings` — `user_id` PK, `biometric_enabled bool`, `require_biometric_on_open bool`, `auto_lock_seconds int` (default 60), `updated_at`. GRANT + RLS: owner-only.
-
-**Native driver APK**
-- Plugin: `@capacitor-community/biometric-auth`.
-- `src/lib/biometric/native.ts` — `isAvailable()`, `enroll(userId)` (stores a random device-binding secret in Android Keystore behind biometric), `unlock()` (prompts fingerprint/face; on success returns the secret which is used to decrypt the cached Supabase refresh token in Capacitor Secure Storage).
-- App lifecycle: on `App.appStateChange` → background >`auto_lock_seconds`, clear in-memory session and show lock screen. Lock screen has fingerprint prompt + fallback "Sign in with password".
-- First-run flow: after successful password login → prompt "Enable fingerprint unlock?" → if yes, `enroll` + persist `user_security_settings.biometric_enabled = true`.
-
-**PWA (Client + Coordinator)**
-- WebAuthn `PublicKeyCredential` with `authenticatorSelection.authenticatorAttachment: 'platform'` + `userVerification: 'required'` — uses OS fingerprint/Face ID/Windows Hello.
-- New tables `webauthn_credentials` (`user_id`, `credential_id`, `public_key`, `sign_count`, `transports`, `created_at`, `last_used_at`) — GRANT + RLS: owner reads; server writes via service role.
-- Server fns in `src/lib/biometric/webauthn.functions.ts`:
-  - `beginRegistration` → returns challenge; `finishRegistration` → verifies attestation, stores credential.
-  - `beginAssertion` → challenge; `finishAssertion` → verifies signature. On success, calls a `service_role` helper to mint a fresh Supabase session via `admin.generateLink` / `signInWithIdToken` pattern OR unlocks a locally-cached refresh token protected by a random device key held behind the WebAuthn credential (chosen approach: local unlock only — no server-issued session — so we never bypass Supabase auth for a new device).
-- Uses `@simplewebauthn/server` + `@simplewebauthn/browser`.
-- Lock UI: `src/components/biometric/LockScreen.tsx` — shown when `require_biometric_on_open` and app was backgrounded past `auto_lock_seconds`. Fallback: "Sign in with password".
-- Settings UI: toggle in coordinator profile and in client portal settings — "Unlock with fingerprint / Face ID" + auto-lock timer.
-
-**Security rules**
-- Biometric is an **unlock**, not a login: no biometric flow creates a Supabase session on a fresh device — password (or existing OAuth) always required to enroll first.
-- Enrollment binds to a device-generated credential; loss of device just requires re-enrollment on new device.
-- Enrollment + unlock events written to `trip_audit_log`-adjacent `notification_log` (`category: 'security'`) so admins can see suspicious re-enrollments.
-- No secret material stored server-side; server keeps only the WebAuthn public key or (native) an opaque enrollment marker.
-
-## Phase 5 — Download Portal
-
-- Public route `src/routes/install.tsx`:
-  - **Driver** → APK download + unknown-sources instructions + QR of APK URL.
-  - **Client** → "Install app" (`beforeinstallprompt`) + iOS Add-to-Home-Screen steps + QR of `/m/client`.
-  - **Coordinator** → "Install app" + QR of `/coordinator`.
-- Hosting: `public/downloads/driver-latest.apk` + versioned copies; `public/releases.json`.
-- `qrcode` npm dep.
-- Linked from auth footer and coordinator More menu.
-
-## Phase 6 — Mobile UX Review
-
-`docs/MOBILE_UX_REVIEW.md`: driver, client, coordinator sweep. Touch ≥44px, font ≥14px, safe-area padding, permission-prompt copy, offline banner, notification opt-in placement, biometric prompt copy. Spacing/typography/copy only.
-
-## Security
-
-- APK signed with upload keystore; fingerprint documented.
-- All calls go through existing `requireSupabaseAuth`; RLS unchanged.
-- Push server verifies device `user_id` + `company_id` before send.
-- Biometric unlock never bypasses Supabase auth for new devices; server never stores biometric templates.
-- Existing audit trail + anti-tampering untouched.
-
-## Risks & Rollback
-
-- **SW breakage in preview** → guarded wrapper + `?sw=off`; kill-switch worker per PWA skill.
-- **iOS Web Push** → iOS 16.4+ Home-Screen install required; portal shows this.
-- **Sandbox cannot build APK** → docs + scripts; user runs locally.
-- **WebAuthn browser support** → falls back to password automatically; toggle hidden when `PublicKeyCredential` absent.
-- **Biometric lockout / no fingerprint** → password fallback always available; toggle can be disabled from settings.
-- **FCM cost / spam** → rate limit + prefs; `push_enabled` flag in `admin_portal_settings` for global kill.
-- **Rollback**: PWA — kill-switch SW, remove `VitePWA`. Push — flip `push_enabled=false`; tables retained. APK — publish previous version. Biometric — toggle off in `user_security_settings` (data retained).
-
-## Build order
-
-1. `docs/MOBILE_DEPLOYMENT_PLAN.md` (this plan, expanded).
-2. Phase 1 PWA (manifests, guarded SW, install/update prompts).
-3. Phase 3 DB migration + push server + web push registration on login.
-4. Phase 4 biometric: DB (`user_security_settings`, `webauthn_credentials`), WebAuthn server fns, LockScreen, settings toggle.
-5. Phase 5 download portal.
-6. Phase 2 Capacitor driver-APK config, splash/icons, biometric plugin wiring, build script + docs.
-7. Native push wiring inside driver APK.
-8. Phase 6 UX sweep.
-9. `docs/MOBILE_DEPLOYMENT_COMPLETED.md` + `docs/MOBILE_MANUAL_TESTING.md` (adds biometric enroll/unlock/fallback scenarios).
+- No new DB columns (all fields already exist: `pickup_display_name`, `dropoff_display_name`, `route_duration_sec`, `route_distance_m`, `route_computed_at`).
+- No changes to admin toggles or point pricing.
+- No workflow changes to booking/dispatch/driver-accept.
