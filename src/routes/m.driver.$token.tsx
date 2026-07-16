@@ -2176,6 +2176,14 @@ type LiveRouteInfo = {
  * Polls the Routes API server-side every 30s while a driver has an active
  * leg. Detects heavy traffic (primary duration >> staticDuration) and
  * surfaces a faster alternative route the driver can accept in one tap.
+ *
+ * Deviation-triggered recalculation: on every GPS update we measure the
+ * perpendicular distance from the driver's position to the active planned
+ * polyline. If the driver is more than ~60m off-route for two consecutive
+ * samples, we immediately invalidate the cached route and refetch — which
+ * pulls a fresh polyline, ETA, and traffic delay for the new path the
+ * driver is actually on. A "Rerouting…" flag is exposed to the UI while
+ * the recompute is in flight so users see something is happening.
  */
 function useLiveRoute({
   origin,
@@ -2187,14 +2195,23 @@ function useLiveRoute({
   enabled: boolean;
 }): LiveRouteInfo {
   const fn = useServerFn(computeDriverRoute);
+  const qc = useQueryClient();
   const [acceptedAltIdx, setAcceptedAltIdx] = useState<number | null>(null);
 
-  // Finer origin key (~11m) so route refetches as the driver actually moves.
-  const originKey = origin ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}` : null;
+  // Deviation state — mutable refs so we don't re-render on every GPS ping.
+  const consecutiveOffRef = useRef(0);
+  const lastRecalcAtRef = useRef<number | null>(null);
+  const lastForcedAtRef = useRef(0);
+  const [rerouting, setRerouting] = useState(false);
+  const [offRouteM, setOffRouteM] = useState(0);
 
+  // Coarser origin key (~110m) — we recompute on real movement, not GPS jitter.
+  // Fine-grained refetches now happen on-demand via the deviation detector.
+  const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
+  const queryKey = ["driver-live-route", destination, originKey];
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["driver-live-route", destination, originKey],
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey,
     enabled: enabled && !!origin && !!destination,
     refetchInterval: 30_000,
     staleTime: 20_000,
@@ -2227,12 +2244,66 @@ function useLiveRoute({
     }>,
   });
 
-  // Reset accepted alternative when the destination changes.
-  useEffect(() => { setAcceptedAltIdx(null); }, [destination]);
+  // Reset accepted alternative + deviation state when the destination changes.
+  useEffect(() => {
+    setAcceptedAltIdx(null);
+    consecutiveOffRef.current = 0;
+    setOffRouteM(0);
+  }, [destination]);
 
   const primary = data?.primary ?? null;
   const alternatives = data?.alternatives ?? [];
   const active = acceptedAltIdx != null ? alternatives[acceptedAltIdx] ?? primary : primary;
+
+  // Cache the decoded active polyline; decoding on every GPS ping is wasteful.
+  const activePolyline = active?.polyline ?? null;
+  const decodedPath = useMemo(
+    () => (activePolyline ? decodePolyline(activePolyline) : []),
+    [activePolyline],
+  );
+
+  // Track when the last successful response landed so the UI can show
+  // "Updated Xs ago" and clear the "Rerouting…" flag.
+  useEffect(() => {
+    if (data) {
+      lastRecalcAtRef.current = Date.now();
+      setRerouting(false);
+      consecutiveOffRef.current = 0;
+    }
+  }, [data]);
+
+  // Deviation detector — runs whenever a new GPS fix arrives.
+  useEffect(() => {
+    if (!enabled || !origin || decodedPath.length < 2) return;
+    const d = distanceToPathMeters(origin, decodedPath);
+    setOffRouteM(d);
+
+    // Thresholds tuned for city driving:
+    // - <60m: still on-route (accounts for parallel lanes and GPS wander).
+    // - 60m for 2 pings in a row: driver has truly deviated → recalc.
+    const OFF_ROUTE_M = 60;
+    const REFETCH_COOLDOWN_MS = 15_000;
+
+    if (d > OFF_ROUTE_M) {
+      consecutiveOffRef.current += 1;
+    } else {
+      consecutiveOffRef.current = 0;
+    }
+
+    const now = Date.now();
+    if (
+      consecutiveOffRef.current >= 2
+      && !isFetching
+      && now - lastForcedAtRef.current > REFETCH_COOLDOWN_MS
+    ) {
+      lastForcedAtRef.current = now;
+      setRerouting(true);
+      // Alternatives were computed for the old position — clear the choice
+      // so we don't stay on a stale "faster route" that no longer applies.
+      setAcceptedAltIdx(null);
+      qc.invalidateQueries({ queryKey: ["driver-live-route", destination] });
+    }
+  }, [origin, decodedPath, enabled, destination, qc, isFetching]);
 
   const delay_sec = primary?.duration_sec != null && primary?.static_duration_sec != null
     ? Math.max(0, primary.duration_sec - primary.static_duration_sec) : 0;
@@ -2260,6 +2331,9 @@ function useLiveRoute({
     reroute_saving_sec: bestAlt?.saving ?? 0,
     onAcceptReroute: () => { if (bestAlt) setAcceptedAltIdx(bestAlt.i); },
     isLoading,
+    off_route_m: offRouteM,
+    rerouting: rerouting && isFetching,
+    last_recalc_at: lastRecalcAtRef.current,
     steps: active?.steps ?? [],
   };
 }
