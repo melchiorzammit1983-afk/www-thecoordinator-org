@@ -404,7 +404,10 @@ export function TripDetailsSheet({
             <TripProgress status={job.status} />
             <div className="text-xs text-muted-foreground">
               {stageIdx >= 0 ? TRIP_STAGES[stageIdx].label : "Not started"}
-            </div>
+          </div>
+
+          {/* Route insights: pickup → dropoff always, driver → pickup after acceptance */}
+          <TripRouteInsights jobId={job.id} />
           </div>
 
           {/* Pricing (coordinator-only) */}
