@@ -222,13 +222,29 @@ function SectionHeader({
   );
 }
 
+type TripRowJob = {
+  route_duration_sec?: number | null;
+  live_eta_sec?: number | null;
+  live_eta_updated_at?: string | null;
+  traffic_delay_minutes?: number | null;
+  traffic_severity?: string | null;
+  leave_by_at?: string | null;
+};
+
 function TripRow({
-  to, from, to_, date, time, badge, badgeTone, meta,
+  to, from, to_, date, time, badge, badgeTone, meta, job,
 }: {
   to: string; from?: string | null; to_?: string | null;
   date?: string | null; time?: string | null;
   badge: string; badgeTone: string; meta?: string;
+  job?: TripRowJob | null;
 }) {
+  const liveFresh =
+    job?.live_eta_sec != null &&
+    job?.live_eta_updated_at != null &&
+    Date.now() - new Date(job.live_eta_updated_at).getTime() < 10 * 60_000;
+  const etaSec = liveFresh ? job!.live_eta_sec! : job?.route_duration_sec ?? null;
+  const etaLabel = formatEtaMinutes(etaSec);
   return (
     <Link
       to={to}
@@ -243,16 +259,27 @@ function TripRow({
           {badge}
         </span>
       </div>
-      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3 w-3" />
           {date ?? ""}{time ? ` · ${time.slice(0, 5)}` : ""}
         </span>
+        {etaLabel && (
+          <span className="inline-flex items-center gap-1 font-medium text-foreground tabular-nums">
+            <Clock className="h-3 w-3 text-primary" />
+            {etaLabel}
+            {liveFresh && <span className="text-[9px] text-primary uppercase">live</span>}
+          </span>
+        )}
+        {job && (job.traffic_delay_minutes || job.traffic_severity || job.leave_by_at) && (
+          <TrafficBadge info={job} compact />
+        )}
         {meta && <span>· {meta}</span>}
       </div>
     </Link>
   );
 }
+
 
 function EmptyLine({ text }: { text: string }) {
   return (
