@@ -1938,6 +1938,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
           mode="preview"
           live={previewLive}
           destination={job.from_location}
+          destinationLabel={displayLocation(job.from_location, job.pickup_display_name)}
           title={displayLocation(job.from_location, job.pickup_display_name)}
           externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
           onExit={() => setPreviewOpen(false)}
