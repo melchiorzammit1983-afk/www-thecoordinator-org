@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { midRunGroupIds } from "@/hooks/use-driver-runs";
 
 const SNOOZE_KEY = "auto-next-job-snooze-until";
 
@@ -10,7 +9,7 @@ const SNOOZE_KEY = "auto-next-job-snooze-until";
  * Client-side only. No new server contract; reads existing manifest data.
  */
 export function useAutoNextJob<
-  T extends { id: string; status?: string | null; pickup_at?: string | null; date?: string | null; group_id?: string | null; driver_accepted_at?: string | null },
+  T extends { id: string; status?: string | null; pickup_at?: string | null; date?: string | null },
 >(jobs: T[] | undefined, opts?: { enabled?: boolean }): {
   nextJob: T | null;
   dismiss: () => void;
@@ -24,15 +23,10 @@ export function useAutoNextJob<
     const snoozeUntil = Number(localStorage.getItem(SNOOZE_KEY) ?? "0");
     if (snoozeUntil && snoozeUntil > Date.now()) return;
 
-    // Suppress the "next job" nudge while the driver is mid-run — the RunCard
-    // already surfaces the next stop inline.
-    const midRun = midRunGroupIds(jobs);
-
     let triggered = false;
     for (const j of jobs) {
       const prev = prevStatuses.current[j.id];
       if (prev && prev !== "completed" && j.status === "completed") {
-        if (j.group_id && midRun.has(j.group_id)) continue;
         triggered = true;
         break;
       }

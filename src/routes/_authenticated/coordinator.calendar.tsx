@@ -2602,11 +2602,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
           <RouteThumb
             from={job.pickup_display_name || job.from_location}
             to={job.dropoff_display_name || job.to_location}
-            etaSec={job.route_duration_sec}
-            distanceM={job.route_distance_m}
             className="hidden sm:block mr-6"
           />
-
         </div>
       </button>
 

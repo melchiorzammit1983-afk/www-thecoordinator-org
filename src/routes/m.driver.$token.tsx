@@ -20,8 +20,6 @@ import {
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
-import { useDriverRuns, midRunGroupIds } from "@/hooks/use-driver-runs";
-import { RunCard } from "@/components/driver/RunCard";
 
 
 import { Badge } from "@/components/ui/badge";
@@ -580,7 +578,6 @@ function DriverManifest() {
     };
   }, [data]);
   const jobs = activeJobs;
-  const { runs: driverRuns, standaloneJobs: driverStandaloneJobs } = useDriverRuns(jobs);
   // Auto-reveal archived when there are none active but archived exist.
   useEffect(() => {
     if (jobs.length === 0 && archivedJobs.length > 0) setShowArchived(true);
@@ -1036,16 +1033,7 @@ function DriverManifest() {
               No active trips — archived trips are shown below.
             </div>
           )}
-          {driverRuns.map((run) => (
-            <RunCard
-              key={`run-${run.groupId}`}
-              run={run}
-              token={token}
-              isSafetyMode={isSafetyMode}
-              onOpenJob={(j) => setOpenJob(j as any)}
-            />
-          ))}
-          {driverStandaloneJobs.map((j) => (
+          {jobs.map((j) => (
             <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
           ))}
 

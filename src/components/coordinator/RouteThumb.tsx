@@ -1,60 +1,61 @@
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { MapIcon } from "lucide-react";
-
-const BROWSER_KEY = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY as
-  | string
-  | undefined;
+import { getRouteThumb } from "@/lib/static-map.functions";
 
 /**
- * Small map thumbnail showing the A → B route for a trip card.
+ * Small static-map thumbnail showing the A → B route for a trip card.
  *
- * Uses the Google Maps Embed API (Directions mode) via an iframe with the
- * referrer-restricted browser key. This works on `*.lovable.app` /
- * `*.lovableproject.com` and on connected custom domains without needing
- * Static Maps enabled on the server key.
- *
- * Optionally overlays an ETA / distance chip when provided.
+ * - Cached per (from, to, driver-cell) so scrolling the list doesn't refetch.
+ * - When the trip is live and we have a driver point, adds a small blue dot.
+ * - Falls back to a subtle placeholder when coords/addresses are missing or
+ *   the Static Maps call fails, so cards never render a broken image.
  */
 export function RouteThumb({
   from,
   to,
+  driver,
   className,
   onClick,
   title,
-  etaSec,
-  distanceM,
-  width = 176,
-  height = 72,
 }: {
   from: string | null | undefined;
   to: string | null | undefined;
+  driver?: { lat: number; lng: number } | null;
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
   title?: string;
-  etaSec?: number | null;
-  distanceM?: number | null;
-  width?: number;
-  height?: number;
 }) {
-  const hasAddrs =
-    !!from && !!to && from.trim().length > 1 && to.trim().length > 1;
-  const canEmbed = !!BROWSER_KEY && hasAddrs;
+  const fetchThumb = useServerFn(getRouteThumb);
 
-  const src = canEmbed
-    ? `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(
-        BROWSER_KEY!,
-      )}&origin=${encodeURIComponent(from!)}&destination=${encodeURIComponent(
-        to!,
-      )}&mode=driving`
+  // Round driver coord to ~50 m so tiny GPS jitter doesn't invalidate the cache.
+  const dCell = driver
+    ? `${driver.lat.toFixed(3)},${driver.lng.toFixed(3)}`
     : null;
 
-  const etaMin = etaSec && etaSec > 0 ? Math.max(1, Math.round(etaSec / 60)) : null;
-  const km = distanceM && distanceM > 0 ? (distanceM / 1000).toFixed(1) : null;
-  const chip =
-    etaMin != null || km != null
-      ? [etaMin != null ? `${etaMin} min` : null, km != null ? `${km} km` : null]
-          .filter(Boolean)
-          .join(" · ")
-      : null;
+  const enabled = !!(from && to && from.trim().length > 1 && to.trim().length > 1);
+
+  const q = useQuery({
+    queryKey: ["route-thumb", from, to, dCell],
+    queryFn: () =>
+      fetchThumb({
+        data: {
+          from: from!,
+          to: to!,
+          driver: driver ?? null,
+          width: 192,
+          height: 112,
+          scale: 2,
+        },
+      }),
+    enabled,
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  const dataUrl = q.data && (q.data as any).ok ? (q.data as any).dataUrl : null;
 
   const box =
     "relative shrink-0 rounded-md overflow-hidden border bg-muted/40 " +
@@ -63,7 +64,7 @@ export function RouteThumb({
   return (
     <div
       className={`${box} ${className ?? ""}`}
-      style={{ width, height }}
+      style={{ width: 96, height: 56 }}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(e);
@@ -71,29 +72,17 @@ export function RouteThumb({
       title={title ?? "Route preview — click to open trip"}
       aria-label="Route preview"
     >
-      {src ? (
-        <>
-          <iframe
-            src={src}
-            title="Route preview"
-            className="w-full h-full border-0 pointer-events-none"
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-          {/* Transparent overlay so clicks bubble to the parent card */}
-          <div className="absolute inset-0" />
-          {chip && (
-            <div className="absolute bottom-1 left-1 rounded bg-background/85 backdrop-blur px-1.5 py-0.5 text-[10px] font-semibold tabular-nums shadow-sm">
-              {chip}
-            </div>
-          )}
-        </>
+      {dataUrl ? (
+        <img
+          src={dataUrl}
+          alt="Route from pickup to dropoff"
+          loading="lazy"
+          className="w-full h-full object-cover"
+          draggable={false}
+        />
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-0.5">
+        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
           <MapIcon className="h-4 w-4 opacity-60" />
-          {chip && (
-            <span className="text-[10px] font-medium tabular-nums">{chip}</span>
-          )}
         </div>
       )}
     </div>
