@@ -48,6 +48,13 @@ function DashboardPage() {
 
   const [addOpen, setAddOpen] = useState(false);
 
+  const enrichable = [
+    ...((activity?.pending ?? []) as any[]),
+    ...((activity?.unassigned ?? []) as any[]),
+  ].filter((j) => j?.id);
+  useEnrichVisibleJobs(enrichable, [["coord-dash-activity"]]);
+
+
   const stats = [
     { to: "/coordinator/pending", label: "Pending", value: data?.pending_bookings ?? 0, icon: Inbox, tone: "text-amber-500", pulse: (data?.pending_bookings ?? 0) > 0 },
     { to: "/coordinator/calendar", label: "Proposals", value: data?.open_price_proposals ?? 0, icon: Euro, tone: "text-emerald-600", pulse: (data?.open_price_proposals ?? 0) > 0 },
