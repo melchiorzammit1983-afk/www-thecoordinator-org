@@ -2484,13 +2484,26 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
         {showLive && (
           <div className="mt-3 grid grid-cols-2 gap-2 min-h-[76px]">
             <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">ETA</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <span>ETA</span>
+                {live.rerouting && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 text-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider animate-pulse">
+                    <RouteIcon className="h-2.5 w-2.5" />
+                    Rerouting
+                  </span>
+                )}
+              </div>
               <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5 transition-opacity duration-200">
                 {live.eta_sec != null ? formatEtaMin(live.eta_sec) : "—"}
               </div>
               {live.delay_sec >= 120 && (
                 <div className="text-[11px] font-semibold text-amber-700 mt-0.5">
                   +{formatEtaMin(live.delay_sec)} in traffic
+                </div>
+              )}
+              {!live.rerouting && live.off_route_m >= 60 && live.delay_sec < 120 && (
+                <div className="text-[11px] font-semibold text-slate-600 mt-0.5">
+                  Off route · {formatDistance(live.off_route_m)}
                 </div>
               )}
             </div>
