@@ -73,6 +73,7 @@ import {
   type UrgencyThresholds,
 } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
+import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
 
 import {
   listJobs,
@@ -3232,6 +3233,7 @@ function DispatchTripList({
   useEnrichVisibleJobs(jobs, [["jobs"]]);
   if (jobs.length === 0) return null;
   const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
+  const items = bucketByGroup(list);
 
   return (
     <section className="rounded-lg border bg-card overflow-hidden">
@@ -3254,7 +3256,24 @@ function DispatchTripList({
       </div>
 
       <ul className="divide-y">
-        {list.map((job) => {
+        {items.map((it) => {
+          if (it.kind === "group") {
+            return (
+              <GroupedRunRow
+                key={it.group_id}
+                groupId={it.group_id}
+                jobs={it.jobs}
+                isOpen={expandedId === it.group_id}
+                onToggle={() =>
+                  setExpandedId(expandedId === it.group_id ? null : it.group_id)
+                }
+                onOpenDetails={onOpenDetails}
+                onOpenChat={onOpenChat}
+              />
+            );
+          }
+          const job = it.job;
+          return (() => {
           const from = displayLocation(job.from_location, job.pickup_display_name);
           const to = displayLocation(job.to_location, job.dropoff_display_name);
           const eta = formatEtaMinutes(job.route_duration_sec);
@@ -3434,11 +3453,218 @@ function DispatchTripList({
               )}
             </li>
           );
+          })();
         })}
       </ul>
     </section>
   );
 }
+
+/* ---------- Grouped run row (merged card for multi-stop trips) ---------- */
+
+/** Build a de-duped ordered stop chain from an ordered list of legs. */
+function buildStopChain(jobs: Job[]): Array<{ label: string; time?: string | null }> {
+  const chain: Array<{ label: string; time?: string | null }> = [];
+  const push = (label: string, time?: string | null) => {
+    const last = chain[chain.length - 1];
+    if (last && last.label.toLowerCase() === label.toLowerCase()) return;
+    chain.push({ label, time: time ?? null });
+  };
+  jobs.forEach((j, i) => {
+    const from = displayLocation(j.from_location, j.pickup_display_name);
+    const to = displayLocation(j.to_location, j.dropoff_display_name);
+    if (i === 0) push(from, j.time ?? null);
+    push(to, null);
+  });
+  return chain;
+}
+
+function GroupedRunRow({
+  groupId,
+  jobs,
+  isOpen,
+  onToggle,
+  onOpenDetails,
+  onOpenChat,
+}: {
+  groupId: string;
+  jobs: Job[];
+  isOpen: boolean;
+  onToggle: () => void;
+  onOpenDetails?: (j: Job) => void;
+  onOpenChat?: (j: Job) => void;
+}) {
+  const chain = buildStopChain(jobs);
+  const groupName = jobs.find((j) => j.group_name)?.group_name ?? null;
+  const totalPax = jobs.reduce((s, j) => s + (j.pax?.length ?? 0), 0);
+  const totalEtaSec = jobs.reduce((s, j) => s + (j.route_duration_sec ?? 0), 0);
+  const eta = formatEtaMinutes(totalEtaSec);
+  const earliest = jobs
+    .map((j) => j.pickup_at ?? (j.date && j.time ? `${j.date}T${j.time}` : null))
+    .filter(Boolean)
+    .sort()[0] as string | null;
+  const pickup = earliest
+    ? new Date(earliest).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : jobs[0]?.time?.slice(0, 5) ?? null;
+  const driverName =
+    jobs.find((j) => j.drivers?.name)?.drivers?.name ??
+    jobs.find((j) => j.external_driver_name)?.external_driver_name ??
+    null;
+  const anyLive = jobs.some((j) => {
+    const t = toSimpleStatus(j).tone;
+    return t === "live";
+  });
+  const allAssigned = jobs.every((j) => j.driver_id);
+  const tone: "live" | "assigned" | "queued" = anyLive
+    ? "live"
+    : allAssigned
+      ? "assigned"
+      : "queued";
+  const railColor =
+    tone === "live" ? "bg-emerald-500" : tone === "assigned" ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-600";
+
+  // Numbered-chip palette (from user pick)
+  const chipColors = ["bg-sky-500", "bg-emerald-500", "bg-amber-500"];
+
+  return (
+    <li
+      key={groupId}
+      className={`relative bg-background text-sm transition ${isOpen ? "bg-muted/30" : "hover:bg-muted/40"}`}
+    >
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${railColor}`} aria-hidden />
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full text-left pl-3 pr-2.5 py-2.5 flex items-start gap-3"
+      >
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5">
+              <Link2 className="h-2.5 w-2.5" />
+              {groupName ?? "Grouped run"} · {jobs.length} legs
+            </span>
+            {eta && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 tabular-nums">
+                <Clock className="h-2.5 w-2.5" />
+                total {eta}
+              </span>
+            )}
+          </div>
+          {/* Numbered stop chips */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {chain.map((c, i) => (
+              <span key={i} className="inline-flex items-center gap-1">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-md text-white text-[10px] font-bold px-1.5 py-0.5 ${chipColors[i % chipColors.length]}`}
+                >
+                  <span className="tabular-nums">{i + 1}</span>
+                  <span className="max-w-[10rem] truncate font-semibold">{c.label}</span>
+                </span>
+                {i < chain.length - 1 && (
+                  <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                )}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+            {driverName && (
+              <span className="inline-flex items-center gap-1 truncate max-w-[12rem]">
+                <UserIcon className="h-3 w-3" />
+                <span className="truncate">{driverName}</span>
+              </span>
+            )}
+            {pickup && (
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <Clock className="h-3 w-3" />
+                {pickup}
+              </span>
+            )}
+            {totalPax > 0 && (
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <Users2 className="h-3 w-3" />
+                {totalPax} pax
+              </span>
+            )}
+          </div>
+        </div>
+        <span
+          className={`shrink-0 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${TONE_CLASS[tone]}`}
+        >
+          {tone === "live" && (
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600" />
+            </span>
+          )}
+          {tone === "live" ? "Live" : tone === "assigned" ? "Assigned" : "Queued"}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div className="border-t bg-muted/20 px-3 py-3 space-y-3 animate-accordion-down">
+          {/* Reorder + auto-suggest via existing group stops panel */}
+          <GroupStopsPanel groupId={groupId} groupName={groupName} />
+
+          {/* Chain-reflowed legs */}
+          <div className="rounded-lg border bg-background">
+            <div className="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Legs (chain reflowed)
+            </div>
+            <ul className="divide-y">
+              {jobs.map((j, i) => {
+                const from = chain[i]?.label ?? displayLocation(j.from_location, j.pickup_display_name);
+                const to = chain[i + 1]?.label ?? displayLocation(j.to_location, j.dropoff_display_name);
+                const legEta = formatEtaMinutes(j.route_duration_sec);
+                const st = toSimpleStatus(j);
+                return (
+                  <li key={j.id} className="px-3 py-2 flex items-center gap-2 text-xs">
+                    <span
+                      className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-white text-[10px] font-bold ${chipColors[i % chipColors.length]}`}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate font-medium">{from}</span>
+                        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+                        <span className="truncate font-medium">{to}</span>
+                        {legEta && (
+                          <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold px-1 py-0.5 tabular-nums">
+                            {legEta}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground flex gap-2">
+                        {j.time && <span className="tabular-nums">{j.time.slice(0, 5)}</span>}
+                        {(j.pax?.length ?? 0) > 0 && <span>{j.pax!.length} pax</span>}
+                        <span className={`uppercase tracking-wider ${TONE_CLASS[st.tone]}`}>
+                          {st.label}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {onOpenChat && (
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); onOpenChat(j); }}>
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {onOpenDetails && (
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); onOpenDetails(j); }}>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 
 /* Vertical milestone strip derived from job.status + driver_id. No new fields. */
 function MilestoneStrip({ job }: { job: Job }) {
