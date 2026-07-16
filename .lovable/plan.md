@@ -1,38 +1,42 @@
-# Periodic ETA polling for coordinator badges
+# Fix "Refresh ETA — Traffic: request_denied"
 
-## Goal
-Keep the ETA chips on the coordinator dashboard (`/coordinator`) and calendar (`/coordinator/calendar`) fresh without a manual reload. Today `useEnrichVisibleJobs` only re-runs when the visible job id list changes, so a card that's been open for a few minutes shows stale "Live"/"Planned" values until the underlying query happens to refetch.
+## Root cause
+`_computeTripLiveStatus` in `src/lib/coordinator.functions.ts` (lines ~2170-2228) still calls the **legacy Distance Matrix API** through the connector gateway:
 
-## Approach
-Extend the existing `src/hooks/use-enrich-jobs.ts` hook with an internal polling loop. No new server work, no schema changes — the server function `backfillJobEnrichment` already knows how to refresh names + ETAs and the row-level React Query invalidation is already wired.
+```
+GET /google_maps/maps/api/distancematrix/json
+```
 
-### Behaviour
-- Every `POLL_MS` (default **60s**), re-evaluate which visible jobs need work and fire one batched backfill (max 40 ids, same as today).
-- A job is considered "needs polling" when either:
-  - `live_eta_updated_at` is older than `LIVE_STALE_MS` (default **90s**), OR
-  - existing conditions in the hook (missing display name, missing/stale `route_duration_sec` > 30 min).
-- Keep the current per-job debounce (60s) so bursts don't stack.
-- Pause polling while `document.visibilityState === "hidden"` and resume on `visibilitychange` — no wasted calls / points when the tab is backgrounded.
-- After a successful backfill, invalidate the caller-supplied React Query keys (already implemented) so the components re-read `live_eta_sec` / `live_eta_updated_at`.
+Per the Google Maps connector rules, this legacy endpoint is deprecated and removed from the connector — requests now come back with `REQUEST_DENIED`, which surfaces in the UI as **"Traffic: request_denied"**. The replacement is Routes API v2 (`routes/distanceMatrix/v2:computeRouteMatrix`), same one already used successfully in `src/lib/trip-map.functions.ts` for live ETA.
 
-### Consumers
-- `src/routes/_authenticated/coordinator.index.tsx` — already calls `useEnrichVisibleJobs(enrichable, [["coord-dash-activity"]])`. No changes needed; polling kicks in automatically.
-- `src/routes/_authenticated/coordinator.calendar.tsx` — already calls `useEnrichVisibleJobs(jobs, [["jobs"]])`. Same, no change needed.
+## Change
+Rewrite only the TRAFFIC block inside `_computeTripLiveStatus` to call:
 
-## Technical details
-1. In `src/hooks/use-enrich-jobs.ts`:
-   - Add `EnrichableJob.live_eta_updated_at?: string | null` to the type.
-   - Extract the "compute needsWork + dispatch" logic into a `runOnce()` closure inside the effect.
-   - Set up `setInterval(runOnce, POLL_MS)` + a `visibilitychange` listener that clears/restarts the interval.
-   - Keep the existing initial `runOnce()` on job-id-list change so first paint still enriches immediately.
-   - Cleanup: `clearInterval` and remove the visibility listener on unmount / deps change.
-2. No API surface change — both existing call sites keep working.
-3. Guardrails already in place we're relying on:
-   - Per-job 60s debounce prevents duplicate spend.
-   - Server-side feature flags (`address_name_resolve`, `route_eta`) still gate charging.
-   - `backfillJobEnrichment` skips jobs it can't improve, so idle rows cost nothing.
+```
+POST https://connector-gateway.lovable.dev/google_maps/routes/distanceMatrix/v2:computeRouteMatrix
+Headers: Authorization: Bearer LOVABLE_API_KEY
+         X-Connection-Api-Key: GOOGLE_MAPS_API_KEY
+         Content-Type: application/json
+         X-Goog-FieldMask: originIndex,destinationIndex,duration,staticDuration,distanceMeters,condition
+Body: {
+  origins: [{ waypoint: { address: from_location } }],
+  destinations: [{ waypoint: { address: to_location } }],
+  travelMode: "DRIVE",
+  routingPreference: "TRAFFIC_AWARE",
+  departureTime: <ISO string if pickup in the future, else omit>
+}
+```
+
+Response is a stream of JSON objects (one per origin×destination). Parse the first element and map:
+- `duration` (seconds string like `"1234s"`) → `duration_seconds` (traffic-aware)
+- `staticDuration` → `free_seconds`
+- `distanceMeters` → format `distance_text` ("12.3 km" / "789 m")
+- Derive `duration_text` from `duration_seconds` ("23 min", "1 h 5 min")
+- Keep existing `delay_minutes`, `severity`, `leave_by_at` derivation unchanged.
+- On non-OK HTTP status, surface `reason: routes_${status}` and log the body (same pattern as `refreshLiveEta`).
 
 ## Out of scope
-- No changes to badge rendering or `describeEtaFreshness` copy.
-- No realtime subscription for `jobs.live_eta_*` (heavier; can revisit if 60s polling isn't enough).
-- No changes to `TripEventsMap`'s own trip-map query (it already has its own refresh).
+No UI changes, no schema changes, no changes to flight lookup, no changes to metering, no changes to `refreshLiveEta` (already correct). Only the traffic block in `_computeTripLiveStatus` is touched.
+
+## Verify
+After the edit, click **Refresh ETA** on a trip row; expect a green toast with duration/distance instead of the red "Traffic: request_denied".
