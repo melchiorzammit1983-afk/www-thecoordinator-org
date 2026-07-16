@@ -76,7 +76,7 @@ export const getTripMap = createServerFn({ method: "GET" })
         lng: r.lng as number | null,
         accuracy_m: r.accuracy_m as number | null,
         notes: r.notes as string | null,
-        meta: (r.meta ?? null) as string | null,
+        meta: r.meta == null ? null : (JSON.stringify(r.meta) as string),
         occurred_at: r.occurred_at as string,
       })),
       breadcrumb: (crumbsRes.data ?? []).map((p: any) => ({
