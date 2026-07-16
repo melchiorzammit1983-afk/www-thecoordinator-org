@@ -244,4 +244,11 @@
 }
 
 
+/* Animated dashed route flow used on the dispatch trip list expanded map overlay. */
+@keyframes route-flow {
+  to { stroke-dashoffset: -24; }
+}
+@utility animate-route-flow {
+  animation: route-flow 1.2s linear infinite;
+}
 
