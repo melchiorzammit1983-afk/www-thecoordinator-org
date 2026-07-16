@@ -143,7 +143,9 @@ function DashboardPage() {
               badge={b.status === "modification_pending" ? "Change" : "Pending"}
               badgeTone="bg-amber-500/15 text-amber-700 dark:text-amber-300"
               meta={b.pax_count ? `${b.pax_count} pax` : undefined}
+              job={b}
             />
+
           ))
         )}
       </div>
