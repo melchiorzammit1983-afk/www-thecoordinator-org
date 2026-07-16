@@ -330,7 +330,7 @@ function ClientTripPortal() {
               <ul className="text-sm divide-y">
                 {data.siblings.map((s: any) => (
                   <li key={s.id} className="py-2 flex items-center justify-between">
-                    <span className="truncate">{s.from_location} → {s.to_location}</span>
+                    <span className="truncate">{displayLocation(s.from_location, s.pickup_display_name)} → {displayLocation(s.to_location, s.dropoff_display_name)}</span>
                     <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
                   </li>
                 ))}
