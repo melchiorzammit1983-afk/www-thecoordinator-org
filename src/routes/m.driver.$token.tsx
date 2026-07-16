@@ -1257,20 +1257,21 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   });
   const liveFresh = clientLive && (Date.now() - new Date(clientLive.captured_at).getTime()) < 90_000;
 
-  // --- Pre-acceptance route preview (driver → pickup) ---
+  // --- Pre-acceptance route preview (pickup → dropoff) ---
   const isPending = !job.driver_accepted_at && !job.deletion_requested_at;
-  const previewEnabled = !!isPending && !!driverPos && !!job.from_location;
+  const accepted = !!job.driver_accepted_at;
+
+  const previewEnabled = !!isPending && !!job.from_location && !!job.to_location;
   const routeFn = useServerFn(computeDriverRoute);
-  const previewOriginKey = driverPos ? `${driverPos.lat.toFixed(3)},${driverPos.lng.toFixed(3)}` : null;
   const { data: previewData } = useQuery({
-    queryKey: ["driver-preview-route", job.id, job.from_location, previewOriginKey],
+    queryKey: ["driver-trip-route", job.id, job.from_location, job.to_location],
     enabled: previewEnabled,
     refetchInterval: 60_000,
     staleTime: 45_000,
     queryFn: () => routeFn({
       data: {
-        origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
-        destination_address: job.from_location,
+        origin: { address: job.from_location! },
+        destination_address: job.to_location!,
       },
     }) as Promise<{
       primary: null | {
@@ -1283,6 +1284,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     }>,
   });
   const previewPrimary = previewData?.primary ?? null;
+  const previewTrafficDelaySec =
+    previewPrimary?.duration_sec != null && previewPrimary?.static_duration_sec != null
+      ? Math.max(0, previewPrimary.duration_sec - previewPrimary.static_duration_sec)
+      : 0;
   const previewLive: LiveRouteInfo = {
     polyline: previewPrimary?.polyline ?? null,
     eta_sec: previewPrimary?.duration_sec ?? null,
@@ -1290,7 +1295,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     next_instruction: previewPrimary?.next_instruction ?? null,
     next_maneuver: previewPrimary?.next_maneuver ?? null,
     next_step_distance_m: previewPrimary?.next_step_distance_m ?? null,
-    delay_sec: 0,
+    delay_sec: previewTrafficDelaySec,
     reroute_available: false,
     reroute_saving_sec: 0,
     onAcceptReroute: () => { /* no-op in preview */ },
@@ -1298,6 +1303,29 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     steps: previewPrimary?.steps ?? [],
   };
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // --- Post-acceptance ETA (driver GPS → pickup) — shown once accepted, until arrived ---
+  const enRouteToPickup =
+    accepted &&
+    !!driverPos &&
+    !!job.from_location &&
+    !job.deletion_requested_at &&
+    !["arrived_pickup", "boarding", "en_route_dropoff", "arrived_dropoff", "completed", "cancelled"].includes(job.status ?? "");
+  const { data: toPickupData } = useQuery({
+    queryKey: ["driver-to-pickup", job.id, job.from_location, driverPos ? `${driverPos.lat.toFixed(3)},${driverPos.lng.toFixed(3)}` : null],
+    enabled: enRouteToPickup,
+    refetchInterval: 60_000,
+    staleTime: 45_000,
+    queryFn: () => routeFn({
+      data: {
+        origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
+        destination_address: job.from_location!,
+      },
+    }) as Promise<{ primary: null | { duration_sec: number | null; static_duration_sec: number | null; distance_m: number | null } }>,
+  });
+  const toPickupPrimary = toPickupData?.primary ?? null;
+
+
 
 
 
@@ -1401,8 +1429,8 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
   const nextStatus = STATUS_FLOW[currentIdx + 1] ?? (currentIdx === -1 ? STATUS_FLOW[0] : null);
   const paid = job.payment_status === "paid";
-  const accepted = !!job.driver_accepted_at;
   const canReturnToWaiting = accepted && canReturnTripToWaiting(job.status);
+
   const problem = job.flight_status === "delayed" || job.flight_status === "cancelled" || !!job.deletion_requested_at;
   const pax = job.pax ?? [];
   const jobPaxSummary = getPaxSummary(pax);
@@ -1619,22 +1647,34 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                   <Navigation className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">To pickup</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip route</div>
+                  <div className="text-[11px] text-slate-700 truncate">
+                    {displayLocation(job.from_location, job.pickup_display_name)}
+                    <span className="mx-1 text-muted-foreground">→</span>
+                    {displayLocation(job.to_location, job.dropoff_display_name)}
+                  </div>
                   {previewPrimary ? (
-                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight">
-                      {(() => {
-                        const s = previewPrimary.duration_sec;
-                        if (s == null) return "—";
-                        const m = Math.max(1, Math.round(s / 60));
-                        return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
-                      })()}
-                      <span className="text-muted-foreground font-medium ml-2">
+                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>
+                        {(() => {
+                          const s = previewPrimary.duration_sec;
+                          if (s == null) return "—";
+                          const m = Math.max(1, Math.round(s / 60));
+                          return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                        })()}
+                      </span>
+                      <span className="text-muted-foreground font-medium">
                         {previewPrimary.distance_m != null
                           ? (previewPrimary.distance_m < 950
                               ? `${Math.round(previewPrimary.distance_m / 10) * 10} m`
                               : `${(previewPrimary.distance_m / 1000).toFixed(previewPrimary.distance_m < 10_000 ? 1 : 0)} km`)
                           : ""}
                       </span>
+                      {previewTrafficDelaySec >= 60 && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 text-[10px] font-semibold px-2 py-0.5">
+                          +{Math.round(previewTrafficDelaySec / 60)} min traffic
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground">Calculating route…</div>
@@ -1645,11 +1685,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                 </Button>
               </div>
             )}
-            {!previewEnabled && isPending && !driverPos && (
-              <div className="rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
-                Enable location to preview the route to pickup
-              </div>
-            )}
+
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Button className="h-14 text-base font-semibold" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
                 {acceptMut.isPending ? "Accepting…" : "Accept trip"}
@@ -1670,6 +1706,32 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         {/* ACCEPTED: single dominant primary CTA + icon row + More dropdown. */}
         {accepted && !job.deletion_requested_at && (
           <>
+            {enRouteToPickup && toPickupPrimary?.duration_sec != null && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 flex items-center gap-2 text-xs">
+                <Navigation className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-muted-foreground">ETA to pickup</span>
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {(() => {
+                    const m = Math.max(1, Math.round(toPickupPrimary.duration_sec! / 60));
+                    return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                  })()}
+                </span>
+                {toPickupPrimary.distance_m != null && (
+                  <span className="text-muted-foreground tabular-nums">
+                    · {toPickupPrimary.distance_m < 950
+                      ? `${Math.round(toPickupPrimary.distance_m / 10) * 10} m`
+                      : `${(toPickupPrimary.distance_m / 1000).toFixed(toPickupPrimary.distance_m < 10_000 ? 1 : 0)} km`}
+                  </span>
+                )}
+                {toPickupPrimary.static_duration_sec != null &&
+                  toPickupPrimary.duration_sec - toPickupPrimary.static_duration_sec >= 60 && (
+                    <span className="ml-auto inline-flex items-center rounded-full bg-amber-100 text-amber-900 text-[10px] font-semibold px-2 py-0.5">
+                      +{Math.round((toPickupPrimary.duration_sec - toPickupPrimary.static_duration_sec) / 60)} min traffic
+                    </span>
+                  )}
+              </div>
+            )}
+
             {/* Primary CTA — the next status step. Full-width, h-14. */}
             {nextStatus ? (
               <Button
@@ -2035,10 +2097,11 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         <NavigateFullscreen
           mode="preview"
           live={previewLive}
-          destination={job.from_location}
-          destinationLabel={displayLocation(job.from_location, job.pickup_display_name)}
-          title={displayLocation(job.from_location, job.pickup_display_name)}
-          externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
+          destination={job.to_location}
+          destinationLabel={displayLocation(job.to_location, job.dropoff_display_name)}
+          title={`${displayLocation(job.from_location, job.pickup_display_name)} → ${displayLocation(job.to_location, job.dropoff_display_name)}`}
+          externalNavUrl={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(job.from_location)}&destination=${encodeURIComponent(job.to_location)}&travelmode=driving`}
+
           onExit={() => setPreviewOpen(false)}
           onSpeak={null}
           isSpeaking={false}
