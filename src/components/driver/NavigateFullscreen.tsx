@@ -74,7 +74,7 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  */
 export function NavigateFullscreen({
   live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
-  mode = "navigate", footerSlot = null, title = null,
+  mode = "navigate", footerSlot = null, title = null, destinationLabel = null,
 }: {
   live: LiveRouteInfo;
   destination: string | null;
@@ -85,6 +85,7 @@ export function NavigateFullscreen({
   mode?: "navigate" | "preview";
   footerSlot?: React.ReactNode;
   title?: string | null;
+  destinationLabel?: string | null;
 }) {
   const isPreview = mode === "preview";
 
@@ -287,7 +288,7 @@ export function NavigateFullscreen({
 
     const end = full[full.length - 1];
     destMarkerRef.current = new gmaps.Marker({
-      map, position: end, title: destination ?? "Destination", zIndex: 500,
+      map, position: end, title: destinationLabel ?? destination ?? "Destination", zIndex: 500,
     });
 
     // Preview mode: fit bounds to the full route (+ driver) so the whole path is visible.
@@ -297,7 +298,7 @@ export function NavigateFullscreen({
       if (drvPosRef.current) bounds.extend(new gmaps.LatLng(drvPosRef.current.lat, drvPosRef.current.lng));
       try { map.fitBounds(bounds, { top: 96, bottom: 220, left: 40, right: 40 }); } catch { /* ignore */ }
     }
-  }, [ready, decodedSteps, stepIdx, destination, live.polyline, isPreview]);
+  }, [ready, decodedSteps, stepIdx, destination, destinationLabel, live.polyline, isPreview]);
 
   // Fullscreen API on mount (navigate mode only)
   useEffect(() => {

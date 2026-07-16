@@ -724,10 +724,12 @@ function DriverManifest() {
       try { if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.([180, 80, 180]); } catch { /* ignore */ }
       const j = newlyPending[0];
       const pickupLabel = j.pickup_at ? ` at ${formatMaltaTime(j.pickup_at)}` : "";
+      const fromLbl = displayLocation(j.from_location, j.pickup_display_name);
+      const toLbl = displayLocation(j.to_location, j.dropoff_display_name);
       const isReassign = !newJobs.some((nj) => nj.id === j.id);
       const text = isReassign
-        ? `Trip reassigned to you: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`
-        : `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`;
+        ? `Trip reassigned to you: ${fromLbl} to ${toLbl}${pickupLabel}. Please accept or decline.`
+        : `New trip assigned: ${fromLbl} to ${toLbl}${pickupLabel}. Please accept or decline.`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
@@ -744,7 +746,7 @@ function DriverManifest() {
     }
     if (bumpedJob) {
       audio.playChime("message");
-      const text = `New message on trip to ${bumpedJob.to_location}`;
+      const text = `New message on trip to ${displayLocation(bumpedJob.to_location, bumpedJob.dropoff_display_name)}`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
@@ -762,7 +764,9 @@ function DriverManifest() {
     if (audio.isSpeaking) { audio.cancelSpeech(); return; }
     if (lastAnnouncement) { audio.speak(lastAnnouncement); return; }
     if (activeJob) {
-      const dest = activeJob.status === "in_progress" ? activeJob.to_location : activeJob.from_location;
+      const dest = activeJob.status === "in_progress"
+        ? displayLocation(activeJob.to_location, activeJob.dropoff_display_name)
+        : displayLocation(activeJob.from_location, activeJob.pickup_display_name);
       const etaMin = live.eta_sec != null ? Math.max(1, Math.round(live.eta_sec / 60)) : null;
       const nextInstructionText = getInstructionText(live.next_instruction);
       const parts = [
@@ -1058,6 +1062,11 @@ function DriverManifest() {
         <NavigateFullscreen
           live={live}
           destination={routeDestination}
+          destinationLabel={
+            activeJob.status === "in_progress"
+              ? displayLocation(activeJob.to_location, activeJob.dropoff_display_name)
+              : displayLocation(activeJob.from_location, activeJob.pickup_display_name)
+          }
           externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(routeDestination ?? "")}&travelmode=driving`}
           onExit={() => setNavigateMode(false)}
           onSpeak={audio.speechSupported ? speakLatest : null}
@@ -1933,6 +1942,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
           mode="preview"
           live={previewLive}
           destination={job.from_location}
+          destinationLabel={displayLocation(job.from_location, job.pickup_display_name)}
           title={displayLocation(job.from_location, job.pickup_display_name)}
           externalNavUrl={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.from_location)}&travelmode=driving`}
           onExit={() => setPreviewOpen(false)}

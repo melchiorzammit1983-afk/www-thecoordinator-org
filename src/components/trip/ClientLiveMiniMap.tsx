@@ -5,6 +5,7 @@ type Props = {
   lng: number;
   paxName?: string | null;
   capturedAt: string;
+  label?: string | null;
 };
 
 function ageLabel(ts: string) {
@@ -14,7 +15,7 @@ function ageLabel(ts: string) {
   return `${m}m ago`;
 }
 
-export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt }: Props) {
+export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt, label }: Props) {
   const embedSrc = `https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed`;
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   return (
@@ -26,7 +27,7 @@ export function ClientLiveMiniMap({ lat, lng, paxName, capturedAt }: Props) {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
           </span>
           <MapPin className="h-3.5 w-3.5" />
-          Live · {paxName ?? "Passenger"} · {ageLabel(capturedAt)}
+          Live · {label ?? paxName ?? "Passenger"} · {ageLabel(capturedAt)}
         </div>
         <a
           href={mapsUrl}
