@@ -3232,6 +3232,7 @@ function DispatchTripList({
   useEnrichVisibleJobs(jobs, [["jobs"]]);
   if (jobs.length === 0) return null;
   const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
+  const items = bucketByGroup(list);
 
   return (
     <section className="rounded-lg border bg-card overflow-hidden">
@@ -3254,7 +3255,24 @@ function DispatchTripList({
       </div>
 
       <ul className="divide-y">
-        {list.map((job) => {
+        {items.map((it) => {
+          if (it.kind === "group") {
+            return (
+              <GroupedRunRow
+                key={it.group_id}
+                groupId={it.group_id}
+                jobs={it.jobs}
+                isOpen={expandedId === it.group_id}
+                onToggle={() =>
+                  setExpandedId(expandedId === it.group_id ? null : it.group_id)
+                }
+                onOpenDetails={onOpenDetails}
+                onOpenChat={onOpenChat}
+              />
+            );
+          }
+          const job = it.job;
+          return (() => {
           const from = displayLocation(job.from_location, job.pickup_display_name);
           const to = displayLocation(job.to_location, job.dropoff_display_name);
           const eta = formatEtaMinutes(job.route_duration_sec);
