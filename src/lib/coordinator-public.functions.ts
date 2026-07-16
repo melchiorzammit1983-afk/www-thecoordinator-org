@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
-import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
+import { DEFAULT_ARRIVAL_RADIUS_M } from "./gps.constants";
 import { BOARDING_OVERRIDE_MS } from "./boarding.constants";
 import {
   EMERGENCY_OVERRIDE_ACTION_LABELS,
@@ -11,23 +11,6 @@ import {
   EMERGENCY_OVERRIDE_TO_STATUS,
   isBackwardStatusTransition,
 } from "./emergency-override";
-
-/**
- * Haversine great-circle distance in metres.
- */
-function haversineMeters(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number,
-): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
