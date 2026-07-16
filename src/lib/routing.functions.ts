@@ -14,10 +14,13 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
-        origin: z.object({
-          latitude: z.number().min(-90).max(90),
-          longitude: z.number().min(-180).max(180),
-        }),
+        origin: z.union([
+          z.object({
+            latitude: z.number().min(-90).max(90),
+            longitude: z.number().min(-180).max(180),
+          }),
+          z.object({ address: z.string().min(2).max(500) }),
+        ]),
         destination_address: z.string().min(2).max(500),
       })
       .parse(input),
@@ -30,8 +33,12 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
     }
 
     const url = "https://connector-gateway.lovable.dev/google_maps/routes/directions/v2:computeRoutes";
+    const originField =
+      "address" in data.origin
+        ? { address: data.origin.address }
+        : { location: { latLng: data.origin } };
     const body = {
-      origin: { location: { latLng: data.origin } },
+      origin: originField,
       destination: { address: data.destination_address },
       travelMode: "DRIVE",
       routingPreference: "TRAFFIC_AWARE",
@@ -39,6 +46,7 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
       languageCode: "en-GB",
       units: "METRIC",
     };
+
 
     const res = await fetch(url, {
       method: "POST",
