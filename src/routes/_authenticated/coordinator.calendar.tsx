@@ -3221,6 +3221,7 @@ function DispatchTripList({
   pendingApprovalCount?: number;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  useEnrichVisibleJobs(jobs, [["jobs"]]);
   if (jobs.length === 0) return null;
   const list = [...jobs].sort((a, b) => urgencyRank(a) - urgencyRank(b));
   return (
