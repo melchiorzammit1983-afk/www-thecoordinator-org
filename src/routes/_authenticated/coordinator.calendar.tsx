@@ -3590,7 +3590,23 @@ function GroupedRunRow({
   }>;
 
   // Prefer persisted group_stops (the coordinator's merged route order); fall back to job legs.
-  const stopChain = stops.length >= 2 ? buildStopChainFromStops(stops) : [];
+  // Backfill missing display_name on stops using resolved hotel/business names from the jobs'
+  // pickup_display_name / dropoff_display_name so leg cards never show a generic "Location pin"
+  // when a business name has already been resolved for the same address.
+  const nameByAddress = new Map<string, string>();
+  for (const j of jobs) {
+    const from = (j.from_location ?? "").trim().toLowerCase();
+    const to = (j.to_location ?? "").trim().toLowerCase();
+    const fromName = (j.pickup_display_name ?? "").trim();
+    const toName = (j.dropoff_display_name ?? "").trim();
+    if (from && fromName && !nameByAddress.has(from)) nameByAddress.set(from, fromName);
+    if (to && toName && !nameByAddress.has(to)) nameByAddress.set(to, toName);
+  }
+  const enrichedStops = stops.map((s) => ({
+    address: s.address,
+    display_name: s.display_name ?? nameByAddress.get((s.address ?? "").trim().toLowerCase()) ?? null,
+  }));
+  const stopChain = enrichedStops.length >= 2 ? buildStopChainFromStops(enrichedStops) : [];
   const orderedJobs = stopChain.length >= 2 ? orderJobsByChain(jobs, stopChain) : jobs;
   const chain = stopChain.length >= 2 ? stopChain : buildStopChain(orderedJobs);
 
