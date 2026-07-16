@@ -65,6 +65,7 @@ import {
   DEFAULT_URGENCY,
   type UrgencyThresholds,
 } from "@/lib/trip-display";
+import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 
 import {
   listJobs,
