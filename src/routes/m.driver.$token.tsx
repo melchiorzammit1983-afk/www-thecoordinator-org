@@ -1257,20 +1257,20 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   });
   const liveFresh = clientLive && (Date.now() - new Date(clientLive.captured_at).getTime()) < 90_000;
 
-  // --- Pre-acceptance route preview (driver → pickup) ---
+  // --- Pre-acceptance route preview (pickup → dropoff) ---
   const isPending = !job.driver_accepted_at && !job.deletion_requested_at;
-  const previewEnabled = !!isPending && !!driverPos && !!job.from_location;
+  const accepted = !!job.driver_accepted_at;
+  const previewEnabled = !!isPending && !!job.from_location && !!job.to_location;
   const routeFn = useServerFn(computeDriverRoute);
-  const previewOriginKey = driverPos ? `${driverPos.lat.toFixed(3)},${driverPos.lng.toFixed(3)}` : null;
   const { data: previewData } = useQuery({
-    queryKey: ["driver-preview-route", job.id, job.from_location, previewOriginKey],
+    queryKey: ["driver-trip-route", job.id, job.from_location, job.to_location],
     enabled: previewEnabled,
     refetchInterval: 60_000,
     staleTime: 45_000,
     queryFn: () => routeFn({
       data: {
-        origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
-        destination_address: job.from_location,
+        origin: { address: job.from_location! },
+        destination_address: job.to_location!,
       },
     }) as Promise<{
       primary: null | {
@@ -1283,6 +1283,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     }>,
   });
   const previewPrimary = previewData?.primary ?? null;
+  const previewTrafficDelaySec =
+    previewPrimary?.duration_sec != null && previewPrimary?.static_duration_sec != null
+      ? Math.max(0, previewPrimary.duration_sec - previewPrimary.static_duration_sec)
+      : 0;
   const previewLive: LiveRouteInfo = {
     polyline: previewPrimary?.polyline ?? null,
     eta_sec: previewPrimary?.duration_sec ?? null,
@@ -1290,7 +1294,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     next_instruction: previewPrimary?.next_instruction ?? null,
     next_maneuver: previewPrimary?.next_maneuver ?? null,
     next_step_distance_m: previewPrimary?.next_step_distance_m ?? null,
-    delay_sec: 0,
+    delay_sec: previewTrafficDelaySec,
     reroute_available: false,
     reroute_saving_sec: 0,
     onAcceptReroute: () => { /* no-op in preview */ },
@@ -1298,6 +1302,29 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     steps: previewPrimary?.steps ?? [],
   };
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // --- Post-acceptance ETA (driver GPS → pickup) — shown once accepted, until arrived ---
+  const enRouteToPickup =
+    accepted &&
+    !!driverPos &&
+    !!job.from_location &&
+    !job.deletion_requested_at &&
+    !["arrived_pickup", "boarding", "en_route_dropoff", "arrived_dropoff", "completed", "cancelled"].includes(job.status ?? "");
+  const { data: toPickupData } = useQuery({
+    queryKey: ["driver-to-pickup", job.id, job.from_location, driverPos ? `${driverPos.lat.toFixed(3)},${driverPos.lng.toFixed(3)}` : null],
+    enabled: enRouteToPickup,
+    refetchInterval: 60_000,
+    staleTime: 45_000,
+    queryFn: () => routeFn({
+      data: {
+        origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
+        destination_address: job.from_location!,
+      },
+    }) as Promise<{ primary: null | { duration_sec: number | null; static_duration_sec: number | null; distance_m: number | null } }>,
+  });
+  const toPickupPrimary = toPickupData?.primary ?? null;
+
+
 
 
 
