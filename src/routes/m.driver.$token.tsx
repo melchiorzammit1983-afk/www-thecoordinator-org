@@ -2162,6 +2162,10 @@ type LiveRouteInfo = {
   onAcceptReroute: () => void;
   isLoading: boolean;
   steps: RouteStep[];
+  // Auto-recalc on deviation:
+  off_route_m: number;                // perpendicular distance from planned polyline
+  rerouting: boolean;                 // an auto-recalc is in-flight due to deviation
+  last_recalc_at: number | null;      // epoch ms of last successful route response
 };
 
 
