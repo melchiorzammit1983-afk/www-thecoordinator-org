@@ -1,47 +1,38 @@
-# Driver: Grouped Runs (Multi-Stop) UX
+## Collapse same-location runs into a single trip card
 
-Goal: when a driver receives multiple jobs sharing a `group_id`, treat them as a single **Run** in the driver app. Accepts happen per trip, but the moment all group members are accepted the app collapses them into one Run Card. Status actions (On the way / Arrived / In progress / Completed) apply to the whole run and drive a stop-by-stop flow.
+When a grouped run's jobs all share the same pickup AND the same dropoff (e.g. Medserv Operations Ltd → Sand Dune Hotel, x2 pax), render it like a normal single trip instead of a numbered multi-stop list.
 
-## Behavior
+### Detection (in `src/components/driver/RunCard.tsx`)
 
-1. **Accept — individually, auto-merge**
-   - Grouped jobs still show as separate accept cards in the incoming list (with a small `Run · 3 stops` chip so the driver knows it's part of a bigger run).
-   - Once every job in a group has `driver_response = accepted`, they merge into one **Run Card** in the driver dashboard. Partially-accepted groups keep showing the remaining trips to accept, with a progress hint (`2 of 3 accepted`).
+Add a `sameLocation` derived flag:
+- All jobs in the run have identical `from_location` (case-insensitive trim)
+- All jobs have identical `to_location`
+- Fallback to `pickup_display_name` / `dropoff_display_name` if raw location is missing
 
-2. **One status per run (applies to whole group)**
-   - Run-level buttons: `On the way`, `Arrived`, `Start trip`, `Complete stop`.
-   - `On the way` → sets all jobs in the group to `en_route` in one call.
-   - `Arrived` / `Start trip` / `Complete stop` act on the **current stop only** and advance the pointer; each still writes its per-leg milestone into `trip_map_events` and job status, but the driver only sees "current stop" controls.
-   - `Complete stop` on the last stop marks the whole run completed and fires the existing `AutoNextJobSheet` for the next run/job.
+### Rendering when `sameLocation === true`
 
-3. **Current stop highlighted (stop list view)**
-   - Run Card shows a vertical stop list using the coordinator palette `#0EA5E9 / #22C55E / #F59E0B`:
-     - **Current stop**: large card, expanded, showing address (business name preferred), pax, ETA, navigate + status buttons.
-     - **Upcoming stops**: compact rows with number chip, name, pax; tap to preview (address + navigate) without changing the pointer.
-     - **Done stops**: collapsed, muted, with completion time + drop-off pin snap.
-   - Header shows `Stop 2 of 4 · Hilton → Corinthia · 12 min` with `tabular-nums` so it doesn't flash on ETA refresh (same stability treatment already used on the single-trip header).
+- Header: single `From → To` using the shared pickup/dropoff (no "Stop 1 of N" pointer).
+- Badge: keep "Run" pill, but subtitle becomes `{groupName} · {totalPax} pax` (sum `pax.length` across all jobs). Drop the "N stops" wording.
+- Navigate button: exactly one button, same behavior as a standalone JobCard — destination = pickup while `pending`/`en_route`, flips to dropoff once `in_progress`.
+- Action buttons: unchanged labels but without the "at stop N" / "stop N" suffix — plain "Arrived", "Start trip", "Complete trip". Each action fans out to every job in the run (reuse existing `Promise.all` fan-out already used for "On the way").
+- Stop list `<ol>`: hidden. Replace footer hint with a compact passenger list (names from each job, comma-separated) so the driver still sees who's on board.
+- Safety mode: same collapse — show shared dropoff as the big label, single Navigate + single status button that fans out.
 
-4. **Instant reorder**
-   - Drag handle on each upcoming stop (done + current are locked).
-   - Reorder writes immediately via existing `reorderStops` server fn (no coordinator approval), and the coordinator's `GroupStopsPanel` sees it live.
-   - Chain reflow (from → to per leg) recomputes automatically from the new order, matching the coordinator-side logic already in `coordinator.calendar.tsx`.
+### Rendering when `sameLocation === false`
 
-5. **Safety Mode compatibility**
-   - When `useSafetyMode` engages, the Run Card collapses to only: current stop name, big Navigate button, and `Arrived` / `Complete` buttons. Reorder + upcoming list hide until unlocked.
+Unchanged — current multi-stop UI with numbered chips, chain-reflow legs, per-stop advance.
 
-## Files (technical)
+### Status fan-out helper
 
-- **New**: `src/components/driver/RunCard.tsx` — Run header, stop list, current-stop panel, reorder handles.
-- **New**: `src/components/driver/RunStopRow.tsx` — Numbered chip + status states (done/current/upcoming).
-- **New**: `src/hooks/use-driver-runs.ts` — Buckets the driver's assigned jobs by `group_id`, tracks accept progress, exposes `currentStopIndex`.
-- **Edit**: `src/routes/m.driver.$token.tsx` — Replace the flat job list with `RunCard` for grouped jobs; ungrouped jobs keep their current card. Wire run-level status actions to fan out across group members.
-- **Edit**: `src/lib/groups.functions.ts` — Add `advanceGroupStatus({ group_id, status })` server fn that updates all member jobs atomically and writes per-leg `trip_map_events`. Reuse existing `reorderStops` (already instant).
-- **Edit**: `src/hooks/use-auto-next-job.ts` — Ignore completions that are mid-run (`group_id` with remaining stops); only fire the "next job" sheet when the whole run is done.
+Extract the existing "On the way" fan-out pattern into a small local helper so "Arrived", "Start trip", and "Complete trip" can reuse it in the collapsed variant. Per-stop `advanceMut` stays for the multi-stop path.
 
-## Open follow-ups worth adding later (not in this build)
+### Out of scope
 
-- Per-stop pax boarding checklist inside the current-stop panel (uses existing `group_stops` boarding fields).
-- Voice announcement on stop advance (`use-driver-audio` already available).
-- "Skip stop" with reason → creates a no-show event.
+- No coordinator-side changes.
+- No changes to `use-driver-runs.ts` bucketing (still one run per group_id).
+- No changes to `use-auto-next-job.ts` — mid-run suppression still applies.
+- No DB or server function changes.
 
-Confirm to build.
+### Files touched
+
+- `src/components/driver/RunCard.tsx` — add `sameLocation` branch, shared fan-out helper, passenger summary line.
