@@ -347,7 +347,11 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
         .limit(5),
     ]);
     return {
-      pending: pendingRes.data ?? [],
+      pending: (pendingRes.data ?? []).map((b: any) => ({
+        ...b,
+        pickup_display_name: b.jobs?.pickup_display_name ?? null,
+        dropoff_display_name: b.jobs?.dropoff_display_name ?? null,
+      })),
       unassigned: unassignedRes.data ?? [],
     };
   });
