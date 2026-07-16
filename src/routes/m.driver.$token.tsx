@@ -1552,23 +1552,23 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
               <div className="rounded-md bg-background px-2 py-1">No-show <span className="font-semibold text-rose-600">{jobPaxSummary.noshow}</span></div>
               <div className="rounded-md bg-background px-2 py-1">Cancelled <span className="font-semibold">{jobPaxSummary.cancelled}</span></div>
             </div>
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {pax.map((p) => (
-                <li key={p.id} className="text-sm flex items-center justify-between gap-2">
+                <li key={p.id} className="min-h-11 rounded-md bg-background/60 px-2.5 flex items-center justify-between gap-2 text-sm">
                   <span className="truncate">{p.name}</span>
                   {p.status === "onboard" && (
-                    <span className="text-[10px] text-emerald-600 font-medium inline-flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> Onboard
+                    <span className="shrink-0 text-[11px] text-emerald-600 font-semibold inline-flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Onboard
                     </span>
                   )}
                   {p.status === "noshow" && (
-                    <span className="text-[10px] text-rose-600 font-medium inline-flex items-center gap-1">
-                      <UserX className="h-3 w-3" /> No-show
+                    <span className="shrink-0 text-[11px] text-rose-600 font-semibold inline-flex items-center gap-1">
+                      <UserX className="h-3.5 w-3.5" /> No-show
                     </span>
                   )}
                   {p.status === "cancelled" && (
-                    <span className="text-[10px] text-slate-700 font-medium inline-flex items-center gap-1">
-                      <X className="h-3 w-3" /> Cancelled
+                    <span className="shrink-0 text-[11px] text-slate-700 font-semibold inline-flex items-center gap-1">
+                      <X className="h-3.5 w-3.5" /> Cancelled
                     </span>
                   )}
                 </li>
