@@ -1,65 +1,28 @@
-# Driver screen mobile polish
+## Why ETA isn't showing today
 
-Focused UI-only pass on `src/routes/m.driver.$token.tsx`. No server-fn changes, no data-model changes, no changes to what the buttons *do* — only how they look and where they sit.
+The coordinator dashboard (`src/routes/_authenticated/coordinator/index.tsx`) renders trip rows via a local `TripRow` component that only prints `date · time · pax`. It never reads `route_duration_sec` / `live_eta_sec`, and `getDashboardActivity` doesn't select those columns — so even if the calendar has ETAs, the dashboard can't display them.
 
-## 1. Single sticky primary action
+Two gaps:
+1. `getDashboardActivity` selects only `id, from/to, date, time, pax_count, status` (+ display names). No ETA/traffic fields.
+2. `TripRow` has no slot to render an ETA chip.
 
-Today the driver card has multiple full-width buttons stacked (Accept, On the way, Arrived, Onboard, Completed…), each competing for attention. Replace with:
+## Plan
 
-- One **sticky bottom action bar** anchored to the viewport (`fixed bottom-0 inset-x-0`, `env(safe-area-inset-bottom)` padding, `bg-background/95 backdrop-blur border-t`).
-- Bar shows exactly **one** primary CTA — the next logical status step, chosen from current `job.status`:
-  - `pending` → **Accept trip**
-  - `accepted` → **On the way**
-  - `en_route` → **Arrived at pickup**
-  - `arrived` → **Passenger onboard**
-  - `in_progress` → **Complete trip**
-  - `completed` → hide the bar
-- CTA is `h-14`, full-width minus 16px gutters, `text-base font-semibold`, high-contrast primary token.
-- Secondary actions (Navigate, Call, Chat, Report late, Emergency) move to a small **kebab menu / bottom sheet** to the left of the primary CTA (56×56 tap target).
-- The primary CTA still fires the same `statusMut` + `fireDriverActionLog` flow — no logic changes.
+**1. Expand `getDashboardActivity` (`src/lib/coordinator.functions.ts`)**
+- Add `route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id` to both the `client_bookings → jobs` join and the `unassigned` jobs select.
+- Pass those fields through in the returned `pending` / `unassigned` shapes.
 
-## 2. Larger tap targets
+**2. Add ETA chip to `TripRow` in `coordinator/index.tsx`**
+- Prefer `live_eta_sec` (fresh <10 min) → else `route_duration_sec`. Format with existing `formatEtaMinutes` from `@/lib/trip-display`.
+- Show a small chip next to the badge: e.g. `⏱ 32 min` with `tabular-nums`, plus `+Nm traffic` when `traffic_delay_minutes > 0` (reuse `TrafficBadge` compact variant).
+- If neither value exists yet, render nothing (no shimmer — keeps layout stable).
 
-Audit every button on the driver card:
+**3. Trigger enrichment for the visible rows**
+- Call `useEnrichVisibleJobs([...pending, ...unassigned], [["coord-dash-activity"]])` so the dashboard auto-fills missing display names + ETAs the first time a booking appears, matching the calendar behavior.
 
-- Primary CTA: `min-h-14` (56px).
-- Icon buttons (Navigate, Call, Chat, Kebab): `min-h-12 min-w-12` (48px), `rounded-full`.
-- Per-pax Onboard / No-show chips: `min-h-11` (44px), full-tap surface (whole row is tappable, not just the icon).
-- Status/labels chips: `min-h-8`, `px-3`.
-- Increase spacing between adjacent taps to 8px minimum (`gap-2`) so fat-finger misses drop.
-
-## 3. Clearer status pill
-
-Replace the current small text-only status with a **status pill** at the top of each trip card:
-
-- Anatomy: colored dot · label · relative time (`Arrived · 2 min ago`).
-- Color per status using semantic tokens (add to `src/styles.css` if not present):
-  - `pending` → muted slate
-  - `accepted` → sky
-  - `en_route` → amber, animated pulse dot
-  - `arrived` → emerald, pulse dot
-  - `in_progress` → blue, pulse dot
-  - `completed` → violet, static
-  - `cancelled` / rejected → rose
-- Pill sits in the card header, `h-9`, `text-sm font-medium`, `rounded-full`, contrasting bg tint (`bg-<color>-500/10 text-<color>-700 dark:text-<color>-300`).
-- A second smaller pill next to it surfaces high-value context when relevant: `⏱ waiting 04:12`, `⚠ late reported +15 min`, `🛑 override active`.
-
-## 4. Cleanup that follows
-
-- Remove the now-redundant inline status action buttons from inside the card body.
-- Keep Accept / Reject as a **two-button** sticky bar only in the `pending` state (Reject = ghost, Accept = primary). Every other state has exactly one primary CTA.
-- Ensure the sticky bar reserves space at the bottom of the scroll container (`pb-24`) so the last card isn't hidden under it.
-- Respect the existing `formatDriverStatusError` toast flow — unchanged.
+**4. Keep it dashboard-scoped**
+- No changes to calendar, driver, or client views. No new server functions. No schema changes.
 
 ## Files touched
-
-- `src/routes/m.driver.$token.tsx` — reorganize the trip card (status pill at top, remove inline action grid) and add the sticky bottom action bar with kebab.
-- `src/styles.css` — add status pill color tokens if missing.
-- (Possibly) a small new component `src/components/driver/DriverActionBar.tsx` to keep the sticky bar isolated and testable — plain UI, no new hooks.
-
-## Out of scope
-
-- No changes to server functions, mutations, or trip-map logging.
-- No changes to the grouped-trip / multi-stop layouts (those are governed by the pending grouped-trips plan).
-- No design-token overhaul beyond the status pill colors.
-- No new dependencies.
+- `src/lib/coordinator.functions.ts` — extend `getDashboardActivity` select + return.
+- `src/routes/_authenticated/coordinator.index.tsx` — enrichment hook + ETA chip in `TripRow`.
