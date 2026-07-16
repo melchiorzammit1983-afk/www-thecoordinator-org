@@ -202,9 +202,9 @@ function ClientTripPortal() {
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-widest opacity-70 truncate">{company?.name ?? "Transfer"}</div>
             <div className="mt-1 font-semibold text-base leading-tight truncate">
-              {((job as any).pickup_display_name || job.from_location || "?")}{job.from_flight ? ` · ${job.from_flight}` : ""}
+              {displayLocation(job.from_location, (job as any).pickup_display_name)}{job.from_flight ? ` · ${job.from_flight}` : ""}
               <span className="opacity-70"> → </span>
-              {((job as any).dropoff_display_name || job.to_location || "?")}{job.to_flight ? ` · ${job.to_flight}` : ""}
+              {displayLocation(job.to_location, (job as any).dropoff_display_name)}{job.to_flight ? ` · ${job.to_flight}` : ""}
             </div>
             {(job as any).route_duration_sec > 0 && (
               <div className="mt-1 text-[11px] opacity-80">
