@@ -1647,22 +1647,34 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                   <Navigation className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">To pickup</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip route</div>
+                  <div className="text-[11px] text-slate-700 truncate">
+                    {displayLocation(job.from_location, job.pickup_display_name)}
+                    <span className="mx-1 text-muted-foreground">→</span>
+                    {displayLocation(job.to_location, job.dropoff_display_name)}
+                  </div>
                   {previewPrimary ? (
-                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight">
-                      {(() => {
-                        const s = previewPrimary.duration_sec;
-                        if (s == null) return "—";
-                        const m = Math.max(1, Math.round(s / 60));
-                        return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
-                      })()}
-                      <span className="text-muted-foreground font-medium ml-2">
+                    <div className="text-sm font-bold tabular-nums text-slate-900 leading-tight mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>
+                        {(() => {
+                          const s = previewPrimary.duration_sec;
+                          if (s == null) return "—";
+                          const m = Math.max(1, Math.round(s / 60));
+                          return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                        })()}
+                      </span>
+                      <span className="text-muted-foreground font-medium">
                         {previewPrimary.distance_m != null
                           ? (previewPrimary.distance_m < 950
                               ? `${Math.round(previewPrimary.distance_m / 10) * 10} m`
                               : `${(previewPrimary.distance_m / 1000).toFixed(previewPrimary.distance_m < 10_000 ? 1 : 0)} km`)
                           : ""}
                       </span>
+                      {previewTrafficDelaySec >= 60 && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 text-[10px] font-semibold px-2 py-0.5">
+                          +{Math.round(previewTrafficDelaySec / 60)} min traffic
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground">Calculating route…</div>
@@ -1673,11 +1685,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                 </Button>
               </div>
             )}
-            {!previewEnabled && isPending && !driverPos && (
-              <div className="rounded-xl border border-dashed border-muted-foreground/30 p-3 text-xs text-muted-foreground text-center">
-                Enable location to preview the route to pickup
-              </div>
-            )}
+
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Button className="h-14 text-base font-semibold" disabled={acceptMut.isPending} onClick={() => acceptMut.mutate()}>
                 {acceptMut.isPending ? "Accepting…" : "Accept trip"}
