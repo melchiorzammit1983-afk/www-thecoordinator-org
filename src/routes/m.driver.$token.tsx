@@ -17,6 +17,7 @@ import {
   driverSnapPickupToHere,
   driverSnapDropoffToHere,
   driverRequestCancel, driverWithdrawCancelRequest,
+  logDriverAction,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
