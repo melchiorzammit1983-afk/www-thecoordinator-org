@@ -21,7 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
+import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
+import { formatEtaMinutes } from "@/lib/trip-display";
+import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
   head: () => ({ meta: [{ title: "Dashboard — Coordinator" }] }),
