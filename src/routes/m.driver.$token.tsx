@@ -17,6 +17,7 @@ import {
   driverSnapPickupToHere,
   driverSnapDropoffToHere,
   driverRequestCancel, driverWithdrawCancelRequest,
+  logDriverAction,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
@@ -216,21 +217,9 @@ function formatDriverStatusError(error: Error): string {
   if (msg === "trip_cannot_return_to_waiting") {
     return "This trip can only go back to waiting before passengers are on board.";
   }
-  if (msg === "arrival_no_gps") {
-    return "No recent GPS location found. Make sure location sharing is active and try again.";
-  }
-  if (msg.startsWith("arrival_weak_gps:")) {
-    const parts = msg.split(":");
-    const accuracyStr = parts[1];
-    const radiusStr   = parts[2];
-    return `GPS accuracy is too weak (±${accuracyStr}m, need ±${radiusStr}m). Wait for a better signal and try again.`;
-  }
-  if (msg.startsWith("arrival_outside_radius:")) {
-    const parts = msg.split(":");
-    const distStr   = parts[1];
-    const radiusStr = parts[2];
-    return `You're ${distStr}m from the pickup (${radiusStr}m required). Move closer and try again.`;
-  }
+  // Arrival GPS gate was removed — drivers can always mark "arrived" without
+  // server-side geofencing. Every status change is still echoed to the trip
+  // map so the coordinator sees where and when it happened.
   if (msg === "partial_boarding_needs_approval") {
     return "Some passengers are still pending. Request coordinator approval or finish boarding decisions first.";
   }
@@ -1297,9 +1286,51 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     onSuccess: () => { toast.success("Deletion approved"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
+  const logActionFn = useServerFn(logDriverAction);
+  const fireDriverActionLog = useCallback(
+    async (
+      action:
+        | "en_route" | "arrived_pickup" | "in_progress" | "completed" | "back_to_waiting"
+        | "wait_started" | "wait_ended"
+        | "boarding_requested" | "boarding_approved"
+        | "pax_no_show" | "pax_cancelled"
+        | "navigate_opened" | "passenger_called",
+    ) => {
+      // Best-effort: grab a quick GPS fix, then log. Never blocks primary flow.
+      const getPos = () =>
+        new Promise<GeolocationPosition | null>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve(p),
+            () => resolve(null),
+            { enableHighAccuracy: true, maximumAge: 15_000, timeout: 4_000 },
+          );
+        });
+      try {
+        const pos = await getPos();
+        await logActionFn({
+          data: {
+            token, job_id: job.id, action,
+            lat: pos?.coords.latitude,
+            lng: pos?.coords.longitude,
+            accuracy_m: pos?.coords.accuracy,
+          } as any,
+        });
+      } catch { /* swallow — logging must never block */ }
+    },
+    [logActionFn, token, job.id],
+  );
   const statusMut = useMutation({
     mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
-    onSuccess: () => { toast.success("Status updated"); invalidate(); },
+    onSuccess: (_res, status) => {
+      toast.success("Status updated");
+      // Mirror driver-initiated status changes onto the coordinator's trip map.
+      // "arrived"/"in_progress"/"completed" are already covered by the DB
+      // trigger; we add "en_route" and "back_to_waiting" here.
+      if (status === "en_route") void fireDriverActionLog("en_route");
+      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
+      invalidate();
+    },
     onError: (e: Error) => toast.error(formatDriverStatusError(e)),
   });
   const payMut = useMutation({

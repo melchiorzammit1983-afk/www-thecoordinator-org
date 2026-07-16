@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
-import { DEFAULT_ARRIVAL_RADIUS_M, ARRIVAL_GPS_FRESH_MS } from "./gps.constants";
+import { DEFAULT_ARRIVAL_RADIUS_M } from "./gps.constants";
 import { BOARDING_OVERRIDE_MS } from "./boarding.constants";
 import {
   EMERGENCY_OVERRIDE_ACTION_LABELS,
@@ -11,23 +11,6 @@ import {
   EMERGENCY_OVERRIDE_TO_STATUS,
   isBackwardStatusTransition,
 } from "./emergency-override";
-
-/**
- * Haversine great-circle distance in metres.
- */
-function haversineMeters(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number,
-): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -874,6 +857,67 @@ async function loadDriverJob(token: string, job_id: string) {
   return { link, job, supabaseAdmin };
 }
 
+/**
+ * Record a driver-initiated action on the trip map so the coordinator can see
+ * exactly what happened and where — no server-side automation, purely a
+ * "carbon copy" of what the driver just did in the app. Falls back to the
+ * driver's most recent `driver_locations` fix when the client can't provide
+ * fresh coordinates. Never throws to the caller — logging must not block the
+ * primary action.
+ */
+export const logDriverAction = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      action: z.enum([
+        "en_route", "arrived_pickup", "in_progress", "completed", "back_to_waiting",
+        "wait_started", "wait_ended",
+        "boarding_requested", "boarding_approved",
+        "pax_no_show", "pax_cancelled",
+        "navigate_opened", "passenger_called",
+      ]),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+      accuracy_m: z.number().nonnegative().optional(),
+      notes: z.string().max(400).optional(),
+      meta: z.record(z.any()).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    try {
+      const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+      let lat = data.lat ?? null;
+      let lng = data.lng ?? null;
+      let acc = data.accuracy_m ?? null;
+      if ((lat == null || lng == null) && (job as any).driver_id) {
+        const { data: last } = await supabaseAdmin
+          .from("driver_locations")
+          .select("latitude, longitude, accuracy_m")
+          .eq("driver_id", (job as any).driver_id)
+          .eq("job_id", data.job_id)
+          .order("captured_at", { ascending: false })
+          .limit(1);
+        const p = last?.[0];
+        if (p) { lat = p.latitude as number; lng = p.longitude as number; acc = (p.accuracy_m as number) ?? acc; }
+      }
+      await supabaseAdmin.from("trip_map_events").insert({
+        job_id: data.job_id,
+        company_id: (job as any).executor_company_id ?? (job as any).company_id,
+        driver_id: (job as any).driver_id,
+        event_type: data.action,
+        lat, lng, accuracy_m: acc,
+        notes: data.notes ?? null,
+        meta: (data.meta ?? {}) as any,
+      } as any);
+      return { ok: true };
+    } catch (e: any) {
+      // Never block the primary action if logging fails.
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  });
+
+
 export const listJobPaxDriver = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) =>
     z.object({ token: z.string().min(8).max(128), job_id: z.string().uuid() }).parse(i),
@@ -913,89 +957,10 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       patch.driver_started_at = new Date().toISOString();
     }
 
-    // ── Arrival gate: only fires on the en_route → arrived transition ──────────
-    if (data.status === "arrived" && (job as any).status === "en_route") {
-      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-      const driverId = (job as any).driver_id as string | null;
-
-      // 1. Resolve the effective arrival radius for this company.
-      //    Falls back to DEFAULT_ARRIVAL_RADIUS_M when the company has no override.
-      const { data: company } = await supabaseAdmin
-        .from("companies")
-        .select("arrival_radius_m")
-        .eq("id", (job as any).company_id)
-        .maybeSingle();
-      const arrivalRadius = company?.arrival_radius_m ?? DEFAULT_ARRIVAL_RADIUS_M;
-
-      // 2. Require a fresh GPS point from driver_locations (within ARRIVAL_GPS_FRESH_MS).
-      const since = new Date(Date.now() - ARRIVAL_GPS_FRESH_MS).toISOString();
-      const { data: pts } = driverId
-        ? await supabaseAdmin
-            .from("driver_locations")
-            .select("latitude, longitude, accuracy_m, heading, speed_mps, captured_at")
-            .eq("driver_id", driverId)
-            .eq("job_id", data.job_id)
-            .gte("captured_at", since)
-            .order("captured_at", { ascending: false })
-            .limit(1)
-        : { data: null };
-      const pt = pts?.[0];
-      // GPS checks are best-effort: if any fail (no fresh point, weak accuracy,
-      // outside radius, or geocode failure) we still allow the driver to mark
-      // arrival — we just skip persisting verified telemetry. Drivers were
-      // getting stuck at "en_route" on short hops, weak-signal spots, and at
-      // venues where the geocoded pickup center is >150 m from the real lane.
-      let verified = false;
-      let destLat: number | null = (job as any).pickup_lat ?? null;
-      let destLng: number | null = (job as any).pickup_lng ?? null;
-
-      if (pt) {
-        const accuracyOk = pt.accuracy_m == null || pt.accuracy_m <= arrivalRadius;
-
-        if ((destLat == null || destLng == null) && job.from_location && apiKey) {
-          try {
-            const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(job.from_location)}&key=${apiKey}`;
-            const gj: any = await (await fetch(geoUrl)).json();
-            const loc = gj?.results?.[0]?.geometry?.location;
-            if (loc) { destLat = loc.lat; destLng = loc.lng; }
-          } catch { /* best-effort */ }
-        }
-
-        let distOk = true;
-        if (destLat != null && destLng != null) {
-          const distM = haversineMeters(pt.latitude, pt.longitude, destLat, destLng);
-          patch.arrival_distance_m = Math.round(distM);
-          distOk = distM <= arrivalRadius;
-        }
-
-        verified = accuracyOk && distOk;
-
-        // Reverse-geocode the driver's actual position (best-effort).
-        let streetAddress: string | null = null;
-        if (apiKey) {
-          try {
-            const rgUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.latitude},${pt.longitude}&key=${apiKey}`;
-            const rj: any = await (await fetch(rgUrl)).json();
-            streetAddress = rj?.results?.[0]?.formatted_address ?? null;
-          } catch { /* best-effort */ }
-        }
-
-        // Persist telemetry regardless (useful for audit); only stamp verified
-        // when all checks passed.
-        patch.arrival_lat            = pt.latitude;
-        patch.arrival_lng            = pt.longitude;
-        patch.arrival_accuracy_m     = pt.accuracy_m ?? null;
-        patch.arrival_heading        = pt.heading ?? null;
-        patch.arrival_speed_mps      = pt.speed_mps ?? null;
-        patch.arrival_street_address = streetAddress;
-      }
-
-      if (verified) {
-        patch.arrival_verified_at = new Date().toISOString();
-      }
-
-    }
-    // ── End arrival gate ─────────────────────────────────────────────────────
+    // Arrival is now driver-initiated with no server-side GPS gate. Every
+    // status change is echoed to `trip_map_events` by the DB trigger
+    // `log_job_status_map_event`, so the coordinator still sees when and
+    // where the driver marked arrival on the trip map.
 
     // ── Phase 3 — Boarding gate: only fires on the → in_progress transition ──
     if (data.status === "in_progress") {

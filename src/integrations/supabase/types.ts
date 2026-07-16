@@ -2493,6 +2493,14 @@ export type Database = {
       }
       jobs: {
         Row: {
+          arrival_accuracy_m: number | null
+          arrival_distance_m: number | null
+          arrival_heading: number | null
+          arrival_lat: number | null
+          arrival_lng: number | null
+          arrival_speed_mps: number | null
+          arrival_street_address: string | null
+          arrival_verified_at: string | null
           board_config: Json | null
           breakdown_flag_at: string | null
           breakdown_flag_note: string | null
@@ -2594,6 +2602,14 @@ export type Database = {
           vehicle: string | null
         }
         Insert: {
+          arrival_accuracy_m?: number | null
+          arrival_distance_m?: number | null
+          arrival_heading?: number | null
+          arrival_lat?: number | null
+          arrival_lng?: number | null
+          arrival_speed_mps?: number | null
+          arrival_street_address?: string | null
+          arrival_verified_at?: string | null
           board_config?: Json | null
           breakdown_flag_at?: string | null
           breakdown_flag_note?: string | null
@@ -2697,6 +2713,14 @@ export type Database = {
           vehicle?: string | null
         }
         Update: {
+          arrival_accuracy_m?: number | null
+          arrival_distance_m?: number | null
+          arrival_heading?: number | null
+          arrival_lat?: number | null
+          arrival_lng?: number | null
+          arrival_speed_mps?: number | null
+          arrival_street_address?: string | null
+          arrival_verified_at?: string | null
           board_config?: Json | null
           breakdown_flag_at?: string | null
           breakdown_flag_note?: string | null
