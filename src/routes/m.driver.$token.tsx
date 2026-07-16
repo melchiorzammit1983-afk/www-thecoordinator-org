@@ -580,6 +580,7 @@ function DriverManifest() {
     };
   }, [data]);
   const jobs = activeJobs;
+  const { runs: driverRuns, standaloneJobs: driverStandaloneJobs } = useDriverRuns(jobs);
   // Auto-reveal archived when there are none active but archived exist.
   useEffect(() => {
     if (jobs.length === 0 && archivedJobs.length > 0) setShowArchived(true);
