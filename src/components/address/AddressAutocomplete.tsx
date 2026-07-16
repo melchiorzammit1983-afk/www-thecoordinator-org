@@ -189,7 +189,30 @@ export function AddressAutocomplete({
             setOpen(true);
           }}
           onKeyDown={onKey}
-          onBlur={onBlur}
+          onBlur={async () => {
+            // If the user typed free text (or a plus-code) and never picked
+            // a suggestion, auto-resolve the top match so we still capture
+            // the business/hotel name for the trip cards.
+            const q = value.trim();
+            if (q.length >= 3 && !placeId) {
+              try {
+                const res: any = await resolveFn({
+                  data: { items: [{ key: "q", text: q }], bias },
+                });
+                const hit = res?.results?.q;
+                if (hit && hit.place_id) {
+                  onChange({
+                    address: hit.address || q,
+                    place_id: hit.place_id,
+                    lat: hit.lat ?? null,
+                    lng: hit.lng ?? null,
+                    display_name: hit.display_name ?? null,
+                  });
+                }
+              } catch { /* best-effort */ }
+            }
+            onBlur?.();
+          }}
           autoComplete="off"
         />
         {verified && !hideBadge && (
