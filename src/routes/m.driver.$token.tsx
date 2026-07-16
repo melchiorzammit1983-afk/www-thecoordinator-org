@@ -1288,7 +1288,14 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   });
   const logActionFn = useServerFn(logDriverAction);
   const fireDriverActionLog = useCallback(
-    async (action: Parameters<typeof logActionFn>[0]["data"]["action"]) => {
+    async (
+      action:
+        | "en_route" | "arrived_pickup" | "in_progress" | "completed" | "back_to_waiting"
+        | "wait_started" | "wait_ended"
+        | "boarding_requested" | "boarding_approved"
+        | "pax_no_show" | "pax_cancelled"
+        | "navigate_opened" | "passenger_called",
+    ) => {
       // Best-effort: grab a quick GPS fix, then log. Never blocks primary flow.
       const getPos = () =>
         new Promise<GeolocationPosition | null>((resolve) => {
