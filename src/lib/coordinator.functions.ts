@@ -333,13 +333,13 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
     const sb = await getAdminClient();
     const [pendingRes, unassignedRes] = await Promise.all([
       sb.from("client_bookings")
-        .select("id, from_location, to_location, date, time, pax_count, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name)")
+        .select("id, from_location, to_location, date, time, pax_count, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id)")
         .eq("company_id", c.id)
         .in("status", ["pending", "modification_pending"])
         .order("created_at", { ascending: false })
         .limit(5),
       sb.from("jobs")
-        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status")
+        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id")
         .eq("company_id", c.id)
         .is("driver_id", null)
         .gte("date", new Date().toISOString().slice(0, 10))
@@ -351,10 +351,21 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
         ...b,
         pickup_display_name: b.jobs?.pickup_display_name ?? null,
         dropoff_display_name: b.jobs?.dropoff_display_name ?? null,
+        route_duration_sec: b.jobs?.route_duration_sec ?? null,
+        route_distance_m: b.jobs?.route_distance_m ?? null,
+        route_computed_at: b.jobs?.route_computed_at ?? null,
+        live_eta_sec: b.jobs?.live_eta_sec ?? null,
+        live_eta_updated_at: b.jobs?.live_eta_updated_at ?? null,
+        traffic_delay_minutes: b.jobs?.traffic_delay_minutes ?? null,
+        traffic_severity: b.jobs?.traffic_severity ?? null,
+        leave_by_at: b.jobs?.leave_by_at ?? null,
+        pickup_at: b.jobs?.pickup_at ?? null,
+        driver_id: b.jobs?.driver_id ?? null,
       })),
       unassigned: unassignedRes.data ?? [],
     };
   });
+
 
 // ---------- JOBS ----------
 
