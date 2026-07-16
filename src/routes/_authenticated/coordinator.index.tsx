@@ -172,7 +172,9 @@ function DashboardPage() {
               time={j.time}
               badge="Unassigned"
               badgeTone="bg-blue-500/15 text-blue-700 dark:text-blue-300"
+              job={j}
             />
+
           ))
         )}
       </div>
