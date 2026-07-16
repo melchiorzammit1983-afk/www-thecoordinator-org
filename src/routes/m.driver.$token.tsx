@@ -1438,26 +1438,16 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
       {/* Header strip */}
-      <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="rounded-lg bg-background/80 px-2 py-1 text-sm font-mono font-bold tracking-tight">{timeLabel}</div>
-          <div className="text-xs font-medium text-muted-foreground truncate">{dateLabel}</div>
+      <div className={`px-4 py-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="shrink-0 rounded-lg bg-background/80 px-2 py-1 text-sm font-mono font-bold tracking-tight">{timeLabel}</div>
+          <div className="truncate text-xs font-medium text-muted-foreground">{dateLabel}</div>
         </div>
-        <div className="flex items-center gap-1">
-          {job.status === "in_progress" && (
-            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] gap-1 animate-pulse">
-              <span className="h-1.5 w-1.5 rounded-full bg-white" /> In progress
-            </Badge>
-          )}
+        <div className="flex shrink-0 items-center gap-1.5">
           {job.deletion_requested_at && (
             <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle className="h-3 w-3" /> Delete requested</Badge>
           )}
-          {accepted && !job.deletion_requested_at && job.status !== "in_progress" && (
-            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] gap-1"><CheckCircle2 className="h-3 w-3" /> Accepted</Badge>
-          )}
-          {!accepted && !job.deletion_requested_at && (
-            <Badge variant="outline" className="text-[10px] gap-1"><Clock className="h-3 w-3" /> Awaiting you</Badge>
-          )}
+          <DriverStatusPill status={job.status} accepted={accepted} problem={problem} />
         </div>
       </div>
 
