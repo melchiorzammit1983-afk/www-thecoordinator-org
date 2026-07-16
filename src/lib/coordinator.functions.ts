@@ -333,7 +333,7 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
     const sb = await getAdminClient();
     const [pendingRes, unassignedRes] = await Promise.all([
       sb.from("client_bookings")
-        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pax_count, status, created_at")
+        .select("id, from_location, to_location, date, time, pax_count, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name)")
         .eq("company_id", c.id)
         .in("status", ["pending", "modification_pending"])
         .order("created_at", { ascending: false })
