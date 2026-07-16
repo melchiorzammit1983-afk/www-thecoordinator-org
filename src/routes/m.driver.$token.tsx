@@ -1036,25 +1036,18 @@ function DriverManifest() {
               No active trips — archived trips are shown below.
             </div>
           )}
-          {(() => {
-            const { runs, standaloneJobs } = useDriverRuns(jobs);
-            return (
-              <>
-                {runs.map((run) => (
-                  <RunCard
-                    key={`run-${run.groupId}`}
-                    run={run}
-                    token={token}
-                    isSafetyMode={isSafetyMode}
-                    onOpenJob={(j) => setOpenJob(j as any)}
-                  />
-                ))}
-                {standaloneJobs.map((j) => (
-                  <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
-                ))}
-              </>
-            );
-          })()}
+          {driverRuns.map((run) => (
+            <RunCard
+              key={`run-${run.groupId}`}
+              run={run}
+              token={token}
+              isSafetyMode={isSafetyMode}
+              onOpenJob={(j) => setOpenJob(j as any)}
+            />
+          ))}
+          {driverStandaloneJobs.map((j) => (
+            <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
+          ))}
 
 
           {archivedJobs.length > 0 && (
