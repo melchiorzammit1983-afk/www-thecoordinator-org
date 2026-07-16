@@ -24,6 +24,7 @@ import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripAuditTimeline } from "./TripAuditTimeline";
 import { GroupStopsPanel } from "./GroupStopsPanel";
 import { TripEventsMap } from "./TripEventsMap";
+import { TripRouteInsights } from "./TripRouteInsights";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
@@ -403,7 +404,10 @@ export function TripDetailsSheet({
             <TripProgress status={job.status} />
             <div className="text-xs text-muted-foreground">
               {stageIdx >= 0 ? TRIP_STAGES[stageIdx].label : "Not started"}
-            </div>
+          </div>
+
+          {/* Route insights: pickup → dropoff always, driver → pickup after acceptance */}
+          <TripRouteInsights jobId={job.id} />
           </div>
 
           {/* Pricing (coordinator-only) */}
