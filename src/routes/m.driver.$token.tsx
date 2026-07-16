@@ -724,10 +724,12 @@ function DriverManifest() {
       try { if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.([180, 80, 180]); } catch { /* ignore */ }
       const j = newlyPending[0];
       const pickupLabel = j.pickup_at ? ` at ${formatMaltaTime(j.pickup_at)}` : "";
+      const fromLbl = displayLocation(j.from_location, j.pickup_display_name);
+      const toLbl = displayLocation(j.to_location, j.dropoff_display_name);
       const isReassign = !newJobs.some((nj) => nj.id === j.id);
       const text = isReassign
-        ? `Trip reassigned to you: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`
-        : `New trip assigned: ${j.from_location} to ${j.to_location}${pickupLabel}. Please accept or decline.`;
+        ? `Trip reassigned to you: ${fromLbl} to ${toLbl}${pickupLabel}. Please accept or decline.`
+        : `New trip assigned: ${fromLbl} to ${toLbl}${pickupLabel}. Please accept or decline.`;
       setLastAnnouncement(text);
       if (audio.autoRead) audio.speak(text);
     }
