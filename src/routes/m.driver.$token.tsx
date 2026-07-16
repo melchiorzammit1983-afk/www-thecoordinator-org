@@ -2224,7 +2224,7 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
       )}
 
 
-      <div className="px-5 pt-4 pb-3">
+      <div className="px-5 pt-4 pb-3 min-h-[188px]">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
           {job.status === "in_progress" ? "In progress" : job.status === "arrived" ? "At pickup" : "Next up"}
         </div>
@@ -2232,13 +2232,13 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
           {headline}
         </h2>
 
-        {/* Live ETA + remaining distance */}
-        {showLive && (live.eta_sec != null || live.distance_m != null) && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
+        {/* Live ETA + remaining distance — height reserved so values update without shifting */}
+        {showLive && (
+          <div className="mt-3 grid grid-cols-2 gap-2 min-h-[76px]">
             <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">ETA</div>
-              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5">
-                {formatEtaMin(live.eta_sec)}
+              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5 transition-opacity duration-200">
+                {live.eta_sec != null ? formatEtaMin(live.eta_sec) : "—"}
               </div>
               {live.delay_sec >= 120 && (
                 <div className="text-[11px] font-semibold text-amber-700 mt-0.5">
@@ -2248,8 +2248,8 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
             </div>
             <div className="rounded-xl bg-white/70 dark:bg-white/10 border border-white/60 px-3 py-2">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Remaining</div>
-              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5">
-                {formatDistance(live.distance_m)}
+              <div className="text-xl sm:text-2xl font-black tabular-nums leading-none mt-0.5 transition-opacity duration-200">
+                {live.distance_m != null ? formatDistance(live.distance_m) : "—"}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5 truncate">to {destinationLabel}</div>
             </div>
