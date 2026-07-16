@@ -1706,6 +1706,32 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         {/* ACCEPTED: single dominant primary CTA + icon row + More dropdown. */}
         {accepted && !job.deletion_requested_at && (
           <>
+            {enRouteToPickup && toPickupPrimary?.duration_sec != null && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 flex items-center gap-2 text-xs">
+                <Navigation className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="text-muted-foreground">ETA to pickup</span>
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {(() => {
+                    const m = Math.max(1, Math.round(toPickupPrimary.duration_sec! / 60));
+                    return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+                  })()}
+                </span>
+                {toPickupPrimary.distance_m != null && (
+                  <span className="text-muted-foreground tabular-nums">
+                    · {toPickupPrimary.distance_m < 950
+                      ? `${Math.round(toPickupPrimary.distance_m / 10) * 10} m`
+                      : `${(toPickupPrimary.distance_m / 1000).toFixed(toPickupPrimary.distance_m < 10_000 ? 1 : 0)} km`}
+                  </span>
+                )}
+                {toPickupPrimary.static_duration_sec != null &&
+                  toPickupPrimary.duration_sec - toPickupPrimary.static_duration_sec >= 60 && (
+                    <span className="ml-auto inline-flex items-center rounded-full bg-amber-100 text-amber-900 text-[10px] font-semibold px-2 py-0.5">
+                      +{Math.round((toPickupPrimary.duration_sec - toPickupPrimary.static_duration_sec) / 60)} min traffic
+                    </span>
+                  )}
+              </div>
+            )}
+
             {/* Primary CTA — the next status step. Full-width, h-14. */}
             {nextStatus ? (
               <Button
