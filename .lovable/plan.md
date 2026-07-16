@@ -1,54 +1,65 @@
-## 1. Fix "arrival_accuracy_m column not found"
+# Driver screen mobile polish
 
-Root cause: the Phase-1 migration that adds the eight `arrival_*` columns to `public.jobs` was never applied to the live database (verified — `information_schema` returns no `arrival_*` columns). `updateJobStatus` still tries to write them, so PostgREST rejects the update.
+Focused UI-only pass on `src/routes/m.driver.$token.tsx`. No server-fn changes, no data-model changes, no changes to what the buttons *do* — only how they look and where they sit.
 
-Two-part fix:
+## 1. Single sticky primary action
 
-- **Re-run the missing migration** so `arrival_verified_at, arrival_lat, arrival_lng, arrival_accuracy_m, arrival_heading, arrival_speed_mps, arrival_street_address, arrival_distance_m` exist. Kept only for audit history — no code will write them after step 2.
-- **Remove the arrival gate** in `src/lib/coordinator-public.functions.ts` (lines ~918-996): drop the whole `en_route → arrived` GPS validation block plus the now-unused `haversineMeters` helper and the `gps.constants` import. `updateJobStatus` will just set `status: "arrived"` (and the existing `driver_started_at` timestamping stays).
-- Update `formatDriverStatusError` in `src/routes/m.driver.$token.tsx` to drop the `arrival_no_gps / arrival_weak_gps / arrival_outside_radius` cases (no longer thrown).
+Today the driver card has multiple full-width buttons stacked (Accept, On the way, Arrived, Onboard, Completed…), each competing for attention. Replace with:
 
-Result: driver taps "Arrived at pickup" and it always succeeds. No automation of arrival/departure detection remains.
+- One **sticky bottom action bar** anchored to the viewport (`fixed bottom-0 inset-x-0`, `env(safe-area-inset-bottom)` padding, `bg-background/95 backdrop-blur border-t`).
+- Bar shows exactly **one** primary CTA — the next logical status step, chosen from current `job.status`:
+  - `pending` → **Accept trip**
+  - `accepted` → **On the way**
+  - `en_route` → **Arrived at pickup**
+  - `arrived` → **Passenger onboard**
+  - `in_progress` → **Complete trip**
+  - `completed` → hide the bar
+- CTA is `h-14`, full-width minus 16px gutters, `text-base font-semibold`, high-contrast primary token.
+- Secondary actions (Navigate, Call, Chat, Report late, Emergency) move to a small **kebab menu / bottom sheet** to the left of the primary CTA (56×56 tap target).
+- The primary CTA still fires the same `statusMut` + `fireDriverActionLog` flow — no logic changes.
 
-## 2. Record every driver button press on the coordinator map
+## 2. Larger tap targets
 
-Today the status-change trigger `log_job_status_map_event` only logs `arrived_pickup / in_progress / completed / actual_dropoff`. We extend coverage so the coordinator sees every driver action as a pin on `TripEventsMap`.
+Audit every button on the driver card:
 
-- New server helper `logDriverAction({ token, job_id, action, lat?, lng?, accuracy_m?, notes?, meta? })` in `src/lib/coordinator-public.functions.ts`. Uses `loadDriverJob` for auth, resolves company_id/driver_id, inserts a `trip_map_events` row. Falls back to the latest `driver_locations` fix when the client can't provide coords.
-- Driver client (`src/routes/m.driver.$token.tsx`) calls it on:
-  - status buttons: `en_route`, `arrived`, `in_progress`, `completed`, back-to-waiting
-  - waiting start/stop, boarding start/approve, no-show, pax cancel
-  - emergency override submit (already logged via `audit_emergency_overrides_trg`, but also mirror to `trip_map_events` so it shows on the map)
-  - "Navigate" opened, "Call passenger" tapped (informational pins)
-- Extend the `event_type` vocabulary consumed by `TripEventsMap.tsx` with a small legend/icon per action (status = colored dot, waiting = clock, boarding = user-check, override = red triangle, info actions = light-gray dot).
-- Coordinator hover tooltip already shows `event_type`, `occurred_at`, `notes`; we add a friendly label map so "Arrived at destination" etc. are readable.
+- Primary CTA: `min-h-14` (56px).
+- Icon buttons (Navigate, Call, Chat, Kebab): `min-h-12 min-w-12` (48px), `rounded-full`.
+- Per-pax Onboard / No-show chips: `min-h-11` (44px), full-tap surface (whole row is tappable, not just the icon).
+- Status/labels chips: `min-h-8`, `px-3`.
+- Increase spacing between adjacent taps to 8px minimum (`gap-2`) so fat-finger misses drop.
 
-Emergency overlay behavior is unchanged — the button still opens `EmergencyOverrideDialog`; we only add the map echo.
+## 3. Clearer status pill
 
-## 3. Driver UI polish (mobile-first, low-risk)
+Replace the current small text-only status with a **status pill** at the top of each trip card:
 
-Scope limited to `src/routes/m.driver.$token.tsx` and its child sheets — no logic changes to workflows.
+- Anatomy: colored dot · label · relative time (`Arrived · 2 min ago`).
+- Color per status using semantic tokens (add to `src/styles.css` if not present):
+  - `pending` → muted slate
+  - `accepted` → sky
+  - `en_route` → amber, animated pulse dot
+  - `arrived` → emerald, pulse dot
+  - `in_progress` → blue, pulse dot
+  - `completed` → violet, static
+  - `cancelled` / rejected → rose
+- Pill sits in the card header, `h-9`, `text-sm font-medium`, `rounded-full`, contrasting bg tint (`bg-<color>-500/10 text-<color>-700 dark:text-<color>-300`).
+- A second smaller pill next to it surfaces high-value context when relevant: `⏱ waiting 04:12`, `⚠ late reported +15 min`, `🛑 override active`.
 
-- **Primary action bar**: turn the current stacked status buttons into a single full-width sticky bottom bar with one large primary button showing the *next* action ("On the way" → "Arrived at pickup" → "Start trip" → "Complete trip"). Secondary actions (Navigate, Call, Chat, Emergency) collapse into an icon row above it.
-- **Confirm-on-tap** for `Complete trip` only (prevents accidental completes). Others are instant.
-- **Status pill** at the top with color + label ("En route · 12 min to Hilton").
-- **"Next up" panel** keeps its stable height (already done) and gains a one-line ETA refresh timestamp ("updated 12s ago").
-- **Emergency button** stays as a distinct red icon in the secondary row and inside the safety overlay — no automation, driver-triggered only.
-- Larger tap targets (min 48 px), tabular numerals for time/distance, safe-area padding for iOS.
+## 4. Cleanup that follows
 
-## Technical details
+- Remove the now-redundant inline status action buttons from inside the card body.
+- Keep Accept / Reject as a **two-button** sticky bar only in the `pending` state (Reject = ghost, Accept = primary). Every other state has exactly one primary CTA.
+- Ensure the sticky bar reserves space at the bottom of the scroll container (`pb-24`) so the last card isn't hidden under it.
+- Respect the existing `formatDriverStatusError` toast flow — unchanged.
 
-Files touched:
+## Files touched
 
-- `supabase/migrations/<new>_reapply_arrival_columns.sql` — idempotent re-run of the eight `arrival_*` columns (audit only, no writes going forward).
-- `src/lib/coordinator-public.functions.ts` — delete arrival gate block; delete `haversineMeters`; add `logDriverAction` server fn.
-- `src/lib/gps.constants.ts` — leave file (still imported for `ARRIVAL_GPS_FRESH_MS` used elsewhere? check and remove if unused).
-- `src/routes/m.driver.$token.tsx` — remove arrival error strings; call `logDriverAction` on each driver action; restructure action bar.
-- `src/components/coordinator/TripEventsMap.tsx` — add label/icon map for new `event_type` values.
-- `src/components/driver/EmergencyOverrideDialog.tsx` — no change to flow; server side already logs, plus new `trip_map_events` echo through `logDriverAction`.
+- `src/routes/m.driver.$token.tsx` — reorganize the trip card (status pill at top, remove inline action grid) and add the sticky bottom action bar with kebab.
+- `src/styles.css` — add status pill color tokens if missing.
+- (Possibly) a small new component `src/components/driver/DriverActionBar.tsx` to keep the sticky bar isolated and testable — plain UI, no new hooks.
 
-Non-goals: no changes to grouped-trip logic, RLS, billing, or the auto-next-job hook.
+## Out of scope
 
-## Open question
-
-Should the driver's "Navigate opened" and "Call passenger" taps also appear as pins, or only status/waiting/boarding/override events (map stays less noisy)? Default in this plan: include them but render as small light-gray dots the coordinator can filter off.
+- No changes to server functions, mutations, or trip-map logging.
+- No changes to the grouped-trip / multi-stop layouts (those are governed by the pending grouped-trips plan).
+- No design-token overhaul beyond the status pill colors.
+- No new dependencies.
