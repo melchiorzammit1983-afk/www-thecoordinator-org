@@ -1119,6 +1119,54 @@ function GpsRadiusChip({ distanceM, thresholdM }: { distanceM: number; threshold
   );
 }
 
+/**
+ * DriverStatusPill — one prominent, color-coded pill at the top of the trip
+ * card that replaces the previous cluster of small status badges. Live states
+ * (en_route / arrived / in_progress) get a pulsing dot so the driver can see
+ * "the app knows what I'm doing" at a glance.
+ */
+function DriverStatusPill({
+  status, accepted, problem,
+}: { status?: string | null; accepted: boolean; problem: boolean }) {
+  type Tone = { label: string; bg: string; text: string; dot: string; pulse: boolean };
+  const s = (status ?? "").toLowerCase();
+  let tone: Tone;
+  if (problem) {
+    tone = { label: "Attention needed", bg: "bg-rose-500/15 border-rose-500/40", text: "text-rose-700 dark:text-rose-300", dot: "bg-rose-500", pulse: true };
+  } else if (!accepted) {
+    tone = { label: "Awaiting your response", bg: "bg-amber-500/15 border-amber-500/40", text: "text-amber-800 dark:text-amber-200", dot: "bg-amber-500", pulse: true };
+  } else if (s === "en_route") {
+    tone = { label: "On the way", bg: "bg-sky-500/15 border-sky-500/40", text: "text-sky-700 dark:text-sky-300", dot: "bg-sky-500", pulse: true };
+  } else if (s === "arrived") {
+    tone = { label: "Arrived at pickup", bg: "bg-emerald-500/15 border-emerald-500/40", text: "text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500", pulse: true };
+  } else if (s === "in_progress") {
+    tone = { label: "Passenger on board", bg: "bg-blue-500/15 border-blue-500/40", text: "text-blue-700 dark:text-blue-300", dot: "bg-blue-500", pulse: true };
+  } else if (s === "completed") {
+    tone = { label: "Trip completed", bg: "bg-violet-500/15 border-violet-500/40", text: "text-violet-700 dark:text-violet-300", dot: "bg-violet-500", pulse: false };
+  } else if (s === "cancelled") {
+    tone = { label: "Cancelled", bg: "bg-rose-500/15 border-rose-500/40", text: "text-rose-700 dark:text-rose-300", dot: "bg-rose-500", pulse: false };
+  } else {
+    tone = { label: "Accepted — ready", bg: "bg-emerald-500/15 border-emerald-500/40", text: "text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500", pulse: false };
+  }
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 h-9 text-sm font-semibold ${tone.bg} ${tone.text}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="relative inline-flex h-2.5 w-2.5">
+        {tone.pulse && (
+          <span className={`absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping ${tone.dot}`} />
+        )}
+        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${tone.dot}`} />
+      </span>
+      <span className="truncate">{tone.label}</span>
+    </span>
+  );
+}
+
+
+
 function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; arrivalRadiusM: number; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
   const acceptFn = useServerFn(driverAcceptJob);
