@@ -298,7 +298,7 @@ export function NavigateFullscreen({
       if (drvPosRef.current) bounds.extend(new gmaps.LatLng(drvPosRef.current.lat, drvPosRef.current.lng));
       try { map.fitBounds(bounds, { top: 96, bottom: 220, left: 40, right: 40 }); } catch { /* ignore */ }
     }
-  }, [ready, decodedSteps, stepIdx, destination, live.polyline, isPreview]);
+  }, [ready, decodedSteps, stepIdx, destination, destinationLabel, live.polyline, isPreview]);
 
   // Fullscreen API on mount (navigate mode only)
   useEffect(() => {
