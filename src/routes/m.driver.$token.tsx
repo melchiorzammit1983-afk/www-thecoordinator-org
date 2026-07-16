@@ -1533,9 +1533,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
           {paid
             ? <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">Paid</Badge>
             : <Badge variant="outline" className="text-[10px]">Pending payment</Badge>}
-          {job.status && job.status !== "pending" && (
-            <Badge variant="outline" className="text-[10px] capitalize">{job.status.replace("_", " ")}</Badge>
-          )}
+          {/* status now lives in the header pill */}
           {(job.labels ?? []).map((l) => <LabelChip key={l.id} label={l} />)}
         </div>
 
