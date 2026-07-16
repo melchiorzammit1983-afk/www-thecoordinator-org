@@ -1,49 +1,54 @@
-## Goal
+## 1. Fix "arrival_accuracy_m column not found"
 
-On every trip card in the coordinator calendar, make it instantly obvious:
-1. How long the trip takes from **A → B** (with distance + freshness).
-2. What the route actually looks like — a small static route thumbnail.
+Root cause: the Phase-1 migration that adds the eight `arrival_*` columns to `public.jobs` was never applied to the live database (verified — `information_schema` returns no `arrival_*` columns). `updateJobStatus` still tries to write them, so PostgREST rejects the update.
 
-Today the card only shows a tiny grey `32 min · 12.4 km` chip. There's no visual of the route until you expand the row.
+Two-part fix:
 
-## Changes (frontend only, `src/routes/_authenticated/coordinator.calendar.tsx`)
+- **Re-run the missing migration** so `arrival_verified_at, arrival_lat, arrival_lng, arrival_accuracy_m, arrival_heading, arrival_speed_mps, arrival_street_address, arrival_distance_m` exist. Kept only for audit history — no code will write them after step 2.
+- **Remove the arrival gate** in `src/lib/coordinator-public.functions.ts` (lines ~918-996): drop the whole `en_route → arrived` GPS validation block plus the now-unused `haversineMeters` helper and the `gps.constants` import. `updateJobStatus` will just set `status: "arrived"` (and the existing `driver_started_at` timestamping stays).
+- Update `formatDriverStatusError` in `src/routes/m.driver.$token.tsx` to drop the `arrival_no_gps / arrival_weak_gps / arrival_outside_radius` cases (no longer thrown).
 
-### 1. Promote the ETA to a proper "trip time" row
-Replace the current small muted chip (lines 2454–2461) with a single readable line directly under the A → B route:
+Result: driver taps "Arrived at pickup" and it always succeeds. No automation of arrival/departure detection remains.
 
-```
-🕒 32 min   •   12.4 km   •   ETA 14:07
-```
+## 2. Record every driver button press on the coordinator map
 
-- Time uses `tabular-nums`, larger (text-xs → text-sm), foreground color.
-- Distance stays muted.
-- "ETA 14:07" = `pickup_at + route_duration_sec`, computed client-side, only when both values exist.
-- If `traffic_delay_minutes > 0`, append a red `+7 min traffic` inline (replaces the separate TrafficBadge for the collapsed view; expanded row keeps the full TrafficBadge).
-- Reserve height (min-h) so the row doesn't jump when ETA arrives async.
+Today the status-change trigger `log_job_status_map_event` only logs `arrived_pickup / in_progress / completed / actual_dropoff`. We extend coverage so the coordinator sees every driver action as a pin on `TripEventsMap`.
 
-### 2. Add a mini route thumbnail on the collapsed card
-New small component `RouteThumb` rendered to the right of the text block (hidden on mobile, shown ≥ sm):
+- New server helper `logDriverAction({ token, job_id, action, lat?, lng?, accuracy_m?, notes?, meta? })` in `src/lib/coordinator-public.functions.ts`. Uses `loadDriverJob` for auth, resolves company_id/driver_id, inserts a `trip_map_events` row. Falls back to the latest `driver_locations` fix when the client can't provide coords.
+- Driver client (`src/routes/m.driver.$token.tsx`) calls it on:
+  - status buttons: `en_route`, `arrived`, `in_progress`, `completed`, back-to-waiting
+  - waiting start/stop, boarding start/approve, no-show, pax cancel
+  - emergency override submit (already logged via `audit_emergency_overrides_trg`, but also mirror to `trip_map_events` so it shows on the map)
+  - "Navigate" opened, "Call passenger" tapped (informational pins)
+- Extend the `event_type` vocabulary consumed by `TripEventsMap.tsx` with a small legend/icon per action (status = colored dot, waiting = clock, boarding = user-check, override = red triangle, info actions = light-gray dot).
+- Coordinator hover tooltip already shows `event_type`, `occurred_at`, `notes`; we add a friendly label map so "Arrived at destination" etc. are readable.
 
-- 96×64 rounded image using Google Static Maps via the existing connector gateway (same key path used elsewhere).
-- URL built from `pickup_lat/lng` + `dropoff_lat/lng` with a red A pin, green B pin, and a straight-line path styled subtly (Google auto-fits bounds).
-- Falls back to nothing (no broken image) when coords are missing.
-- Uses `loading="lazy"` and a stable `key` (pickup+dropoff coords) so React doesn't refetch on unrelated re-renders — prevents flashing.
-- On hover: subtle ring; on click: opens the existing expanded map panel (does not navigate).
+Emergency overlay behavior is unchanged — the button still opens `EmergencyOverrideDialog`; we only add the map echo.
 
-No new server function needed — Static Maps is a GET through the same gateway prefix already used for Routes/Places.
+## 3. Driver UI polish (mobile-first, low-risk)
 
-### 3. Live driver marker on the thumbnail (when trip is active)
-When `job.status` ∈ {en_route, arrived, in_progress} and we have `livePoint` (already computed in the row), add a third marker (blue dot) at the driver location so the coordinator sees at a glance where the car is on that A→B line — without expanding.
+Scope limited to `src/routes/m.driver.$token.tsx` and its child sheets — no logic changes to workflows.
 
-### 4. Readability polish (small, targeted)
-- Group the meta line (`clientcompanyname`, driver, flight) into a single row with `•` separators when short, so cards use fewer vertical lines.
-- Use `tabular-nums` on all time/eta/distance numbers to stop jitter as ETAs refresh.
-- Keep the existing expanded `TripEventsMap` untouched.
+- **Primary action bar**: turn the current stacked status buttons into a single full-width sticky bottom bar with one large primary button showing the *next* action ("On the way" → "Arrived at pickup" → "Start trip" → "Complete trip"). Secondary actions (Navigate, Call, Chat, Emergency) collapse into an icon row above it.
+- **Confirm-on-tap** for `Complete trip` only (prevents accidental completes). Others are instant.
+- **Status pill** at the top with color + label ("En route · 12 min to Hilton").
+- **"Next up" panel** keeps its stable height (already done) and gains a one-line ETA refresh timestamp ("updated 12s ago").
+- **Emergency button** stays as a distinct red icon in the secondary row and inside the safety overlay — no automation, driver-triggered only.
+- Larger tap targets (min 48 px), tabular numerals for time/distance, safe-area padding for iOS.
 
-## Out of scope
-- No changes to server functions, DB, enrichment logic, or the expanded panel.
-- No change to the ETA computation source (still `route_duration_sec` + live refresh already wired).
+## Technical details
 
-## Technical notes
-- Static Maps endpoint: `https://connector-gateway.lovable.dev/google_maps/maps/api/staticmap?...` with `Authorization` + `X-Connection-Api-Key`. Since `<img>` can't send those headers, we add a tiny server function `getStaticRouteMapUrl({ pickup, dropoff, driver? })` that returns a short-lived signed URL — OR simpler: server function that returns the image as base64 data URL, cached per coord pair for 10 min in-memory. Recommended: base64 route (no signed URL infra needed, small payload).
-- Thumbnail size kept small (≤ 8KB PNG) to keep the list light even with 50 trips.
+Files touched:
+
+- `supabase/migrations/<new>_reapply_arrival_columns.sql` — idempotent re-run of the eight `arrival_*` columns (audit only, no writes going forward).
+- `src/lib/coordinator-public.functions.ts` — delete arrival gate block; delete `haversineMeters`; add `logDriverAction` server fn.
+- `src/lib/gps.constants.ts` — leave file (still imported for `ARRIVAL_GPS_FRESH_MS` used elsewhere? check and remove if unused).
+- `src/routes/m.driver.$token.tsx` — remove arrival error strings; call `logDriverAction` on each driver action; restructure action bar.
+- `src/components/coordinator/TripEventsMap.tsx` — add label/icon map for new `event_type` values.
+- `src/components/driver/EmergencyOverrideDialog.tsx` — no change to flow; server side already logs, plus new `trip_map_events` echo through `logDriverAction`.
+
+Non-goals: no changes to grouped-trip logic, RLS, billing, or the auto-next-job hook.
+
+## Open question
+
+Should the driver's "Navigate opened" and "Call passenger" taps also appear as pins, or only status/waiting/boarding/override events (map stays less noisy)? Default in this plan: include them but render as small light-gray dots the coordinator can filter off.
