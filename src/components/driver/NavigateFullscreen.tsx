@@ -288,7 +288,7 @@ export function NavigateFullscreen({
 
     const end = full[full.length - 1];
     destMarkerRef.current = new gmaps.Marker({
-      map, position: end, title: destination ?? "Destination", zIndex: 500,
+      map, position: end, title: destinationLabel ?? destination ?? "Destination", zIndex: 500,
     });
 
     // Preview mode: fit bounds to the full route (+ driver) so the whole path is visible.
