@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Building2, LogOut, Inbox, Activity, DollarSign, Coins, LineChart, KeyRound, Sparkles, MessageSquare } from "lucide-react";
+import { Building2, LogOut, Inbox, Activity, DollarSign, Coins, LineChart, KeyRound, Sparkles, MessageSquare, GraduationCap } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { whoAmI, countNewAccessRequests } from "@/lib/admin.functions";
