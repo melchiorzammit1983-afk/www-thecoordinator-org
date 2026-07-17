@@ -1401,17 +1401,37 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     [logActionFn, token, job.id],
   );
   const statusMut = useMutation({
-    mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
-    onSuccess: (_res, status) => {
+    mutationFn: (input: string | { status: string; override_reason?: string; override_note?: string }) => {
+      const arg = typeof input === "string" ? { status: input } : input;
+      return statusFn({ data: {
+        token, job_id: job.id, status: arg.status as never,
+        ...(driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : {}),
+        ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
+      } });
+    },
+    onSuccess: (_res, input) => {
+      const status = typeof input === "string" ? input : input.status;
       toast.success("Status updated");
-      // Mirror driver-initiated status changes onto the coordinator's trip map.
-      // "arrived"/"in_progress"/"completed" are already covered by the DB
-      // trigger; we add "en_route" and "back_to_waiting" here.
       if (status === "en_route") void fireDriverActionLog("en_route");
       else if (status === "pending") void fireDriverActionLog("back_to_waiting");
       invalidate();
     },
-    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
+    onError: (e: Error, input) => {
+      const status = typeof input === "string" ? input : input.status;
+      const msg = e.message ?? "";
+      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
+        const parts = msg.split(":");
+        const dist = Number(parts[1] ?? 0);
+        const ok = typeof window !== "undefined" && window.confirm(
+          `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
+        );
+        if (ok) {
+          statusMut.mutate({ status: "arrived", override_reason: "wrong_pin", override_note: `Driver override at ${dist}m from pin` });
+        }
+        return;
+      }
+      toast.error(formatDriverStatusError(e));
+    },
   });
   const payMut = useMutation({
     mutationFn: (status: "paid" | "pending") => payFn({ data: { token, job_id: job.id, status } }),
