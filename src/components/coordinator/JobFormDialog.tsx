@@ -32,6 +32,12 @@ import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
 import { Clock } from "lucide-react";
+import { useAssignmentPreview } from "@/hooks/use-driver-conflicts";
+import { ConflictChip } from "@/components/coordinator/ConflictChip";
+import { useServerFn as _useServerFn } from "@tanstack/react-start";
+import { previewAssignmentConflicts } from "@/lib/scheduling.functions";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
