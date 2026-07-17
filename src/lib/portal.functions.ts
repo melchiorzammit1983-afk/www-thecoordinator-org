@@ -405,10 +405,46 @@ export const updatePortalSettings = createServerFn({ method: "POST" })
     urgency_green_min: z.number().int().min(1).max(240).optional(),
     urgency_orange_min: z.number().int().min(1).max(240).optional(),
     urgency_red_min: z.number().int().min(1).max(240).optional(),
+    default_ai_monthly_cap: z.number().min(0).max(1_000_000).optional(),
+    default_ai_fallback_to_general: z.boolean().optional(),
+    ai_cap_behavior: z.enum(["block", "fallback", "warn"]).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase.from("admin_portal_settings" as any)
       .update({ ...data, updated_at: new Date().toISOString() } as any).eq("id", 1).select("*").single();
     if (error) throw new Error(error.message);
     return row;
+  });
+
+export const applyAiWalletDefaultsToAllCompanies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    apply_cap: z.boolean().default(true),
+    apply_fallback: z.boolean().default(true),
+    only_unset: z.boolean().default(false),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById((context as any).userId);
+    const email = userData?.user?.email?.toLowerCase();
+    const { data: adminRows } = await supabaseAdmin.from("admin_emails").select("email");
+    const isAdmin = !!email && (adminRows ?? []).some((r: any) => r.email?.toLowerCase() === email);
+    if (!isAdmin) throw new Error("Forbidden: admin only");
+    const { data: settings } = await supabaseAdmin
+      .from("admin_portal_settings" as any)
+      .select("default_ai_monthly_cap, default_ai_fallback_to_general")
+      .eq("id", 1)
+      .maybeSingle();
+    if (!settings) throw new Error("Settings not found");
+    const patch: Record<string, unknown> = {};
+    if (data.apply_cap) patch.ai_monthly_cap = (settings as any).default_ai_monthly_cap ?? 0;
+    if (data.apply_fallback) patch.ai_fallback_to_general = (settings as any).default_ai_fallback_to_general ?? true;
+    if (Object.keys(patch).length === 0) return { updated: 0 };
+    let q: any = (supabaseAdmin.from("companies") as any).update(patch);
+    if (data.only_unset && data.apply_cap) {
+      q = q.or("ai_monthly_cap.is.null,ai_monthly_cap.eq.0");
+    }
+    const { error, count } = await q.select("id", { count: "exact", head: true });
+    if (error) throw new Error(error.message);
+    return { updated: count ?? 0 };
   });

@@ -127,8 +127,11 @@ export type Database = {
       }
       admin_portal_settings: {
         Row: {
+          ai_cap_behavior: string
           allow_bulk: boolean
           allow_coord_pax_chat: boolean
+          default_ai_fallback_to_general: boolean
+          default_ai_monthly_cap: number
           default_points_per_booking: number
           default_seat_points: number
           id: number
@@ -140,8 +143,11 @@ export type Database = {
           urgency_red_min: number
         }
         Insert: {
+          ai_cap_behavior?: string
           allow_bulk?: boolean
           allow_coord_pax_chat?: boolean
+          default_ai_fallback_to_general?: boolean
+          default_ai_monthly_cap?: number
           default_points_per_booking?: number
           default_seat_points?: number
           id?: number
@@ -153,8 +159,11 @@ export type Database = {
           urgency_red_min?: number
         }
         Update: {
+          ai_cap_behavior?: string
           allow_bulk?: boolean
           allow_coord_pax_chat?: boolean
+          default_ai_fallback_to_general?: boolean
+          default_ai_monthly_cap?: number
           default_points_per_booking?: number
           default_seat_points?: number
           id?: number
