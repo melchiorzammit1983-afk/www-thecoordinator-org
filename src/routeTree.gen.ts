@@ -25,6 +25,7 @@ import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
+import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
@@ -54,6 +55,7 @@ import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
+import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
@@ -151,6 +153,11 @@ const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
   id: '/api/help-chat',
   path: '/api/help-chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedMyTicketsRoute = AuthenticatedMyTicketsRouteImport.update({
+  id: '/my-tickets',
+  path: '/my-tickets',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedCoordinatorRoute =
   AuthenticatedCoordinatorRouteImport.update({
@@ -322,6 +329,12 @@ const AuthenticatedAdminPasswordResetsRoute =
     path: '/password-resets',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminAiInsightsRoute =
+  AuthenticatedAdminAiInsightsRouteImport.update({
+    id: '/ai-insights',
+    path: '/ai-insights',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -440,6 +453,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
@@ -449,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -501,6 +516,7 @@ export interface FileRoutesByTo {
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
@@ -510,6 +526,7 @@ export interface FileRoutesByTo {
   '/track/$token': typeof TrackTokenRoute
   '/help': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -567,6 +584,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
@@ -576,6 +594,7 @@ export interface FileRoutesById {
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -633,6 +652,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin'
     | '/coordinator'
+    | '/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
@@ -642,6 +662,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help/'
     | '/admin/activity'
+    | '/admin/ai-insights'
     | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -694,6 +715,7 @@ export interface FileRouteTypes {
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
+    | '/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
@@ -703,6 +725,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help'
     | '/admin/activity'
+    | '/admin/ai-insights'
     | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -759,6 +782,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
+    | '/_authenticated/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
@@ -768,6 +792,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help/'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/ai-insights'
     | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
@@ -961,6 +986,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/help-chat'
       preLoaderRoute: typeof ApiHelpChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/my-tickets': {
+      id: '/_authenticated/my-tickets'
+      path: '/my-tickets'
+      fullPath: '/my-tickets'
+      preLoaderRoute: typeof AuthenticatedMyTicketsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/coordinator': {
       id: '/_authenticated/coordinator'
@@ -1165,6 +1197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPasswordResetsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/ai-insights': {
+      id: '/_authenticated/admin/ai-insights'
+      path: '/ai-insights'
+      fullPath: '/admin/ai-insights'
+      preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -1296,6 +1335,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
   AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
   AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
   AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
@@ -1307,6 +1347,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
   AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,
   AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
   AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
@@ -1397,11 +1438,13 @@ const AuthenticatedCoordinatorRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRouteWithChildren
+  AuthenticatedMyTicketsRoute: typeof AuthenticatedMyTicketsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRouteWithChildren,
+  AuthenticatedMyTicketsRoute: AuthenticatedMyTicketsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

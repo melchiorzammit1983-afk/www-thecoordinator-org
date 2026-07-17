@@ -40,12 +40,12 @@ export const logHelpQuestion = createServerFn({ method: "POST" })
     const companyId = await resolveMyCompanyId(context.userId);
     const { data: row, error } = await sb.from("help_ai_log").insert({
       user_id: context.userId,
-      company_id: companyId,
-      route: data.route ?? null,
+      company_id: companyId ?? undefined,
+      route: data.route,
       question: data.question,
-      answer: data.answer ?? null,
-      confidence: data.confidence ?? null,
-      sources_used: data.sources_used ? { list: data.sources_used } : null,
+      answer: data.answer,
+      confidence: data.confidence,
+      sources_used: data.sources_used ? { list: data.sources_used } : undefined,
     }).select("id").single();
     if (error) throw new Error(error.message);
 
@@ -197,13 +197,12 @@ export const adminSetTicketStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.userId))) throw new Error("Forbidden");
     const sb = await admin();
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (data.status) {
-      patch.status = data.status;
-      if (data.status === "resolved") patch.resolved_at = new Date().toISOString();
-    }
-    if (data.priority) patch.priority = data.priority;
-    await sb.from("support_tickets").update(patch).eq("id", data.id);
+    await sb.from("support_tickets").update({
+      updated_at: new Date().toISOString(),
+      status: data.status,
+      resolved_at: data.status === "resolved" ? new Date().toISOString() : undefined,
+      priority: data.priority,
+    }).eq("id", data.id);
     return { ok: true };
   });
 
