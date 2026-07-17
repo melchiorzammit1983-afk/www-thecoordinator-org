@@ -1019,6 +1019,116 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     return { ok: true, changed: true };
   });
 
+// Fields that must never carry over when duplicating a job. Everything else
+// on the row is preserved so the new card shows the full trip info
+// (addresses, business names, geo pins, flight, contact, price, etc.).
+const CLONE_STRIP_FIELDS = new Set<string>([
+  "id",
+  "created_at",
+  "updated_at",
+  // driver / assignment lifecycle
+  "driver_id",
+  "driver_accepted_at",
+  "driver_cancel_requested_at",
+  "driver_cancel_requested_by",
+  "driver_cancel_reason",
+  "driver_cancel_note",
+  "deletion_requested_at",
+  // trip status/telemetry — start fresh
+  "status",
+  "payment_status",
+  "coord_approved_at",
+  "client_confirmed_at",
+  "arrival_at",
+  "arrival_lat",
+  "arrival_lng",
+  "arrival_accuracy_m",
+  "arrival_speed_kmh",
+  "departure_at",
+  "started_at",
+  "completed_at",
+  "cancelled_at",
+  "event_payout_total_eur",
+  // routing / ETA cache — will recompute
+  "route_duration_sec",
+  "route_distance_m",
+  "route_computed_at",
+  "route_polyline",
+  "live_eta_sec",
+  "live_eta_updated_at",
+  "traffic_delay_minutes",
+  "traffic_severity",
+  "leave_by_at",
+  "pickup_shift_reason",
+  // linkage that must be minted fresh per clone
+  "client_link_token",
+  "parent_job_id",
+  "grouped_at",
+  "grouped_count",
+  // dispatch chain — clones don't inherit dispatch state
+  "dispatch_status",
+  "dispatched_at",
+  "dispatch_decided_at",
+  "origin_company_id",
+  "executor_company_id",
+  "dispatch_chain_company_ids",
+]);
+
+function mintLinkToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function buildClonedJobPayload(
+  src: Record<string, unknown>,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (CLONE_STRIP_FIELDS.has(k)) continue;
+    out[k] = v;
+  }
+  // Sensible resets for a brand-new trip.
+  out.status = "pending";
+  out.payment_status = "pending";
+  out.qr_strict_mode = false;
+  out.tracking_enabled = false;
+  out.driver_id = null;
+  out.coord_approved_at = new Date().toISOString();
+  out.client_link_token = mintLinkToken();
+  // Clear group linkage; caller can re-group if desired.
+  out.group_id = null;
+  out.group_name = null;
+  out.group_note = null;
+  return { ...out, ...overrides };
+}
+
+async function copyJobLabels(sb: any, srcJobId: string, newJobId: string) {
+  const { data: labels } = await sb.from("job_labels").select("label_id").eq("job_id", srcJobId);
+  if (labels && labels.length) {
+    await sb
+      .from("job_labels")
+      .insert(labels.map((l: any) => ({ job_id: newJobId, label_id: l.label_id })));
+  }
+}
+
+async function copyJobPax(sb: any, srcJobId: string, newJobId: string) {
+  const { data: pax } = await sb
+    .from("pax")
+    .select("name")
+    .eq("job_id", srcJobId);
+  if (pax && pax.length) {
+    await sb.from("pax").insert(
+      pax.map((p: any) => ({
+        job_id: newJobId,
+        name: p.name,
+        status: "pending",
+      })),
+    );
+  }
+}
+
 export const cloneJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
@@ -1035,25 +1145,24 @@ export const cloneJob = createServerFn({ method: "POST" })
       .single();
     if (error || !src) throw new Error("Job not found");
     const pickup_at = makePickupIso(data.target_date, src.time as string);
+    const payload = buildClonedJobPayload(src as Record<string, unknown>, {
+      company_id: c.id,
+      date: data.target_date,
+      time: src.time,
+      pickup_at,
+    });
     const { data: row, error: iErr } = await supabaseAdmin
       .from("jobs")
-      .insert({
-        company_id: c.id,
-        from_location: src.from_location,
-        to_location: src.to_location,
-        date: data.target_date,
-        time: src.time,
-        pickup_at,
-        flightorship: src.flightorship,
-        clientcompanyname: src.clientcompanyname,
-        qr_strict_mode: false,
-        tracking_enabled: false,
-        vehicle: src.vehicle,
-        driver_id: null,
-      })
+      .insert(payload as never)
       .select()
       .single();
     if (iErr) throw new Error(iErr.message);
+
+    // Copy labels + pax so the clone shows names and info immediately.
+    await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
+    await copyJobPax(supabaseAdmin, src.id as string, row.id as string);
+
+    await spendSoft(c.id, "trip_created", "Trip cloned", row.id as string);
     return row;
   });
 
@@ -1080,31 +1189,36 @@ export const splitJob = createServerFn({ method: "POST" })
       .eq("company_id", c.id)
       .single();
     if (error || !src) throw new Error("Job not found");
-    const rows = [];
+    const rows: any[] = [];
     for (const s of data.splits) {
+      const suffix = ` — ${s.label}`;
+      const payload = buildClonedJobPayload(src as Record<string, unknown>, {
+        company_id: c.id,
+        date: src.date,
+        time: src.time,
+        pickup_at: src.pickup_at,
+        clientcompanyname: `${(src.clientcompanyname as string | null) ?? ""}${suffix}`.trim(),
+        parent_job_id: src.id,
+        // Splits share the run but each has its own driver/vehicle later.
+        vehicle: null,
+      });
       const { data: row, error: iErr } = await supabaseAdmin
         .from("jobs")
-        .insert({
-          company_id: c.id,
-          from_location: src.from_location,
-          to_location: src.to_location,
-          date: src.date,
-          time: src.time,
-          pickup_at: src.pickup_at,
-          flightorship: src.flightorship,
-          clientcompanyname: `${src.clientcompanyname ?? ""} — ${s.label}`.trim(),
-          qr_strict_mode: false,
-          tracking_enabled: false,
-          vehicle: null,
-          driver_id: null,
-        })
+        .insert(payload as never)
         .select()
         .single();
       if (iErr) throw new Error(iErr.message);
+
+      // Every split inherits labels so the cards look complete.
+      await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
+
+      await spendSoft(c.id, "trip_created", "Trip split from parent", row.id as string);
       rows.push(row);
     }
     return rows;
   });
+
+
 
 export const deleteJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
