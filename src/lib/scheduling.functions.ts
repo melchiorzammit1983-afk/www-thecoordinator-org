@@ -209,7 +209,7 @@ async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
     const prevDrop = prev.dropoff_display_name || prev.to_location;
     const nextPick = next.pickup_display_name || next.from_location;
     if (prevDrop && nextPick) {
-      transitSec = await computeTransitSec(prevDrop, nextPick);
+      transitSec = await computeTransitSecCached(prevDrop, nextPick);
     }
     // Rough fallback: if both addresses exist assume ~10km / AVG_KMH_FALLBACK
     if (transitSec == null) transitSec = Math.round((10 / AVG_KMH_FALLBACK) * 3600);
