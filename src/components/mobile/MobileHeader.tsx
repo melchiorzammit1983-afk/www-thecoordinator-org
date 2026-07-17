@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useScrollDirection } from "@/hooks/use-scroll-direction";
 import { BrandLogo } from "@/components/branding/BrandLogo";
 import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
+import { AiWalletBadge } from "@/components/ai/AiWalletBadge";
 import { cn } from "@/lib/utils";
 
 type Props = {
