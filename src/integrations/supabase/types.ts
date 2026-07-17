@@ -167,6 +167,70 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_alerts: {
+        Row: {
+          company_id: string
+          created_at: string
+          detail: string | null
+          dismissed_at: string | null
+          driver_id: string | null
+          id: string
+          job_id: string | null
+          kind: string
+          severity: string
+          suggestion: Json | null
+          title: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          detail?: string | null
+          dismissed_at?: string | null
+          driver_id?: string | null
+          id?: string
+          job_id?: string | null
+          kind: string
+          severity?: string
+          suggestion?: Json | null
+          title: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          detail?: string | null
+          dismissed_at?: string | null
+          driver_id?: string | null
+          id?: string
+          job_id?: string | null
+          kind?: string
+          severity?: string
+          suggestion?: Json | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_alerts_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_alerts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_command_log: {
         Row: {
           actions: Json
@@ -300,6 +364,48 @@ export type Database = {
           metering_mode?: string
           points_cost?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      ai_insight_clusters: {
+        Row: {
+          created_at: string
+          id: string
+          lovable_prompt: string | null
+          period_end: string
+          period_start: string
+          question_count: number
+          sample_questions: Json | null
+          status: string
+          suggested_fix: string | null
+          summary: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lovable_prompt?: string | null
+          period_end: string
+          period_start: string
+          question_count?: number
+          sample_questions?: Json | null
+          status?: string
+          suggested_fix?: string | null
+          summary: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lovable_prompt?: string | null
+          period_end?: string
+          period_start?: string
+          question_count?: number
+          sample_questions?: Json | null
+          status?: string
+          suggested_fix?: string | null
+          summary?: string
+          title?: string
         }
         Relationships: []
       }
@@ -820,6 +926,11 @@ export type Database = {
           advert_enabled: boolean
           advert_link: string | null
           advert_url: string | null
+          ai_fallback_to_general: boolean
+          ai_monthly_cap: number | null
+          ai_period_reset_at: string
+          ai_points_balance: number
+          ai_points_used_this_period: number
           arrival_radius_m: number | null
           auto_next_job_enabled: boolean
           coordinator_phone: string | null
@@ -848,6 +959,11 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
+          ai_fallback_to_general?: boolean
+          ai_monthly_cap?: number | null
+          ai_period_reset_at?: string
+          ai_points_balance?: number
+          ai_points_used_this_period?: number
           arrival_radius_m?: number | null
           auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
@@ -876,6 +992,11 @@ export type Database = {
           advert_enabled?: boolean
           advert_link?: string | null
           advert_url?: string | null
+          ai_fallback_to_general?: boolean
+          ai_monthly_cap?: number | null
+          ai_period_reset_at?: string
+          ai_points_balance?: number
+          ai_points_used_this_period?: number
           arrival_radius_m?: number | null
           auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
@@ -934,6 +1055,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "company_ai_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_ai_shortcuts: {
+        Row: {
+          company_id: string
+          created_at: string
+          expansion: string
+          id: string
+          kind: string
+          shortcut: string
+          updated_at: string
+          uses: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          expansion: string
+          id?: string
+          kind?: string
+          shortcut: string
+          updated_at?: string
+          uses?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          expansion?: string
+          id?: string
+          kind?: string
+          shortcut?: string
+          updated_at?: string
+          uses?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_ai_shortcuts_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -1101,6 +1263,7 @@ export type Database = {
       }
       company_subscriptions: {
         Row: {
+          ai_points_remaining_this_period: number
           company_id: string
           created_at: string
           current_period_end: string
@@ -1112,6 +1275,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_points_remaining_this_period?: number
           company_id: string
           created_at?: string
           current_period_end?: string
@@ -1123,6 +1287,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_points_remaining_this_period?: number
           company_id?: string
           created_at?: string
           current_period_end?: string
@@ -1315,6 +1480,48 @@ export type Database = {
             foreignKeyName: "dispatch_forward_events_to_driver_id_fkey"
             columns: ["to_driver_id"]
             isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_ai_usage: {
+        Row: {
+          company_id: string
+          driver_id: string
+          monthly_quota: number
+          period_start: string
+          questions_used: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          driver_id: string
+          monthly_quota?: number
+          period_start?: string
+          questions_used?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          driver_id?: string
+          monthly_quota?: number
+          period_start?: string
+          questions_used?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_ai_usage_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_ai_usage_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: true
             referencedRelation: "drivers"
             referencedColumns: ["id"]
           },
@@ -1976,6 +2183,63 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_ai_log: {
+        Row: {
+          answer: string | null
+          company_id: string | null
+          confidence: number | null
+          created_at: string
+          escalated_ticket_id: string | null
+          id: string
+          question: string
+          route: string | null
+          sources_used: Json | null
+          thumbs: number | null
+          user_id: string | null
+        }
+        Insert: {
+          answer?: string | null
+          company_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          escalated_ticket_id?: string | null
+          id?: string
+          question: string
+          route?: string | null
+          sources_used?: Json | null
+          thumbs?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          answer?: string | null
+          company_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          escalated_ticket_id?: string | null
+          id?: string
+          question?: string
+          route?: string | null
+          sources_used?: Json | null
+          thumbs?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_ai_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "help_ai_log_escalated_ticket_id_fkey"
+            columns: ["escalated_ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
             referencedColumns: ["id"]
           },
         ]
@@ -3419,6 +3683,7 @@ export type Database = {
           created_at: string
           feature_keys: string[]
           id: string
+          included_ai_points: number
           included_points: number
           name: string
           price_monthly: number
@@ -3430,6 +3695,7 @@ export type Database = {
           created_at?: string
           feature_keys?: string[]
           id?: string
+          included_ai_points?: number
           included_points?: number
           name: string
           price_monthly?: number
@@ -3441,6 +3707,7 @@ export type Database = {
           created_at?: string
           feature_keys?: string[]
           id?: string
+          included_ai_points?: number
           included_points?: number
           name?: string
           price_monthly?: number
@@ -4038,6 +4305,100 @@ export type Database = {
           },
         ]
       }
+      support_ticket_messages: {
+        Row: {
+          author: string
+          author_user_id: string | null
+          body: string
+          created_at: string
+          id: string
+          ticket_id: string
+        }
+        Insert: {
+          author: string
+          author_user_id?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          ticket_id: string
+        }
+        Update: {
+          author?: string
+          author_user_id?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_ticket_messages_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          admin_unread: boolean
+          ai_thread: Json | null
+          company_id: string | null
+          created_at: string
+          id: string
+          priority: string
+          resolved_at: string | null
+          route: string | null
+          status: string
+          subject: string
+          updated_at: string
+          user_id: string
+          user_unread: boolean
+          viewport: string | null
+        }
+        Insert: {
+          admin_unread?: boolean
+          ai_thread?: Json | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          priority?: string
+          resolved_at?: string | null
+          route?: string | null
+          status?: string
+          subject: string
+          updated_at?: string
+          user_id: string
+          user_unread?: boolean
+          viewport?: string | null
+        }
+        Update: {
+          admin_unread?: boolean
+          ai_thread?: Json | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          priority?: string
+          resolved_at?: string | null
+          route?: string | null
+          status?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+          user_unread?: boolean
+          viewport?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -4472,9 +4833,17 @@ export type Database = {
       }
     }
     Functions: {
+      admin_grant_ai_points: {
+        Args: { _amount: number; _company_id: string; _note?: string }
+        Returns: number
+      }
       admin_grant_points: {
         Args: { _company_id: string; _note?: string; _points: number }
         Returns: undefined
+      }
+      allocate_to_ai_wallet: {
+        Args: { _amount: number; _company_id: string }
+        Returns: number
       }
       auto_assign_job: {
         Args: { _job_id: string }
@@ -4489,6 +4858,13 @@ export type Database = {
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
+      }
+      driver_guide_consume: {
+        Args: { _company_id: string; _driver_id: string }
+        Returns: {
+          remaining_free: number
+          used_free: boolean
+        }[]
       }
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
@@ -4538,6 +4914,14 @@ export type Database = {
         Returns: string
       }
       rollover_subscriptions: { Args: never; Returns: number }
+      set_ai_fallback: {
+        Args: { _company_id: string; _enabled: boolean }
+        Returns: undefined
+      }
+      set_ai_monthly_cap: {
+        Args: { _cap: number; _company_id: string }
+        Returns: undefined
+      }
       set_company_plan: {
         Args: { _company_id: string; _plan_id: string }
         Returns: undefined
