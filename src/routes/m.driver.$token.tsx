@@ -776,12 +776,14 @@ function DriverManifest() {
         <NextInstructionCard
           job={activeJob}
           token={token}
+          driverPos={driverPos}
           onOpenSummary={() => setOpenJob(activeJob)}
           live={live}
           canEnterNavigate={inMotion}
           onEnterNavigate={() => setNavigateMode(true)}
           canReturnToWaiting={isSafetyMode ? false : canReturnTripToWaiting(activeJob.status)}
         />
+
       ),
     }] : []),
     ...(!isSafetyMode && activeJob && (activeJob.status === "arrived" || activeJob.status === "in_progress") ? [{
