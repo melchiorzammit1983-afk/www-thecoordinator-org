@@ -199,11 +199,13 @@ export function TripEventsMap({
           : "";
         const plannedDelta = deltaFromPlanned(ev, job);
         const metaHtml = renderMetaHtml(ev);
+        const impactHtml = renderImpactHtml(ev);
         infoRef.current?.setContent(
           `<div style="min-width:200px;font:12px system-ui,sans-serif;">
              <div style="font-weight:600;">${meta.icon} ${meta.label}</div>
              <div style="color:#64748b;">${fmtTime(ev.occurred_at)}</div>
              ${plannedDelta ? `<div style="color:#b45309;margin-top:2px;">${plannedDelta}</div>` : ""}
+             ${impactHtml}
              ${noteHtml}
              ${metaHtml}
            </div>`,
