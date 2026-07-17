@@ -418,6 +418,194 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_lesson_feedback: {
+        Row: {
+          answer_redacted: string | null
+          company_id: string | null
+          correction_redacted: string | null
+          created_at: string
+          id: string
+          question_redacted: string | null
+          route: string | null
+          surface: string
+          user_id: string | null
+          vote: string
+        }
+        Insert: {
+          answer_redacted?: string | null
+          company_id?: string | null
+          correction_redacted?: string | null
+          created_at?: string
+          id?: string
+          question_redacted?: string | null
+          route?: string | null
+          surface: string
+          user_id?: string | null
+          vote: string
+        }
+        Update: {
+          answer_redacted?: string | null
+          company_id?: string | null
+          correction_redacted?: string | null
+          created_at?: string
+          id?: string
+          question_redacted?: string | null
+          route?: string | null
+          surface?: string
+          user_id?: string | null
+          vote?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_lesson_feedback_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_lesson_share_settings: {
+        Row: {
+          company_id: string
+          consume_global: boolean
+          contribute_to_global: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id: string
+          consume_global?: boolean
+          contribute_to_global?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          consume_global?: boolean
+          contribute_to_global?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_lesson_share_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_lessons: {
+        Row: {
+          approved_by: string | null
+          company_id: string | null
+          created_at: string
+          embedding: string | null
+          example_input_redacted: string
+          id: string
+          kind: string
+          negative_count: number
+          positive_count: number
+          reject_reason: string | null
+          rule_text: string
+          scope: string
+          status: string
+          submitted_by: string | null
+          title: string
+          updated_at: string
+          usage_count: number
+        }
+        Insert: {
+          approved_by?: string | null
+          company_id?: string | null
+          created_at?: string
+          embedding?: string | null
+          example_input_redacted: string
+          id?: string
+          kind: string
+          negative_count?: number
+          positive_count?: number
+          reject_reason?: string | null
+          rule_text: string
+          scope?: string
+          status?: string
+          submitted_by?: string | null
+          title: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Update: {
+          approved_by?: string | null
+          company_id?: string | null
+          created_at?: string
+          embedding?: string | null
+          example_input_redacted?: string
+          id?: string
+          kind?: string
+          negative_count?: number
+          positive_count?: number
+          reject_reason?: string | null
+          rule_text?: string
+          scope?: string
+          status?: string
+          submitted_by?: string | null
+          title?: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_lessons_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_pii_audit: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          id: string
+          input_length: number | null
+          output_length: number | null
+          source: string
+          stripped_types: Json
+          user_id: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          input_length?: number | null
+          output_length?: number | null
+          source: string
+          stripped_types?: Json
+          user_id?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          input_length?: number | null
+          output_length?: number | null
+          source?: string
+          stripped_types?: Json
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_pii_audit_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_training_logs: {
         Row: {
           ai_initial_output: Json
@@ -4926,6 +5114,24 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
+      match_ai_lessons: {
+        Args: {
+          _company_id: string
+          _kind: string
+          _limit?: number
+          query_embedding: string
+        }
+        Returns: {
+          example_input_redacted: string
+          id: string
+          kind: string
+          rule_text: string
+          scope: string
+          similarity: number
+          title: string
+        }[]
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -4935,6 +5141,7 @@ export type Database = {
         }
         Returns: number
       }
+      my_company_id: { Args: { _user_id: string }; Returns: string }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {
