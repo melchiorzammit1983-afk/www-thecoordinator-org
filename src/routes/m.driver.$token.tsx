@@ -559,9 +559,10 @@ function DriverManifest() {
       const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : Infinity;
       return ta - tb;
     });
+    const isDone = (s: string | null | undefined) => s === "completed" || s === "cancelled";
     return {
-      activeJobs: sorted.filter((j) => !j.driver_hidden_at),
-      archivedJobs: sorted.filter((j) => !!j.driver_hidden_at),
+      activeJobs: sorted.filter((j) => !j.driver_hidden_at && !isDone(j.status)),
+      archivedJobs: sorted.filter((j) => !!j.driver_hidden_at || isDone(j.status)),
     };
   }, [data]);
   const jobs = activeJobs;
