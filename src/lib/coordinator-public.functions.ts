@@ -139,9 +139,15 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     } else {
       q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
     }
+    // Hide finished trips from the driver manifest. Completed/cancelled jobs
+    // remain fully visible on the coordinator side (calendar + history) for
+    // auditing, payouts and reference — this filter only trims what the
+    // driver's phone shows so their list stays focused on live work.
+    q = q.not("status", "in", "(completed,cancelled)");
 
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
+
 
     // Backfill missing hotel/business names so the driver never sees a raw
     // street address when a place lookup would resolve one. Best-effort:
