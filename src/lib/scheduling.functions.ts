@@ -106,6 +106,71 @@ async function computeTransitSec(
   }
 }
 
+/**
+ * In-memory cache for handover-leg drive times.
+ *
+ * Handover legs (prev.dropoff → next.pickup) are address-pair scoped and
+ * traffic-aware but change slowly on a per-minute basis, so a short TTL
+ * absorbs the repeated hits we get from:
+ *   - the coordinator's 60s conflict poll,
+ *   - reopening the driver picker,
+ *   - `suggestAlternativeDrivers` scanning many drivers against the same
+ *     candidate leg (all drivers share the identical prev→next segments).
+ *
+ * We also dedup concurrent identical requests via an inflight Promise map so a
+ * burst of parallel evaluators fires exactly one Routes API call per leg.
+ *
+ * Cache is bounded to prevent unbounded growth in a long-lived Worker.
+ */
+const TRANSIT_TTL_MS = 5 * 60_000;
+const TRANSIT_MAX_ENTRIES = 500;
+type CacheEntry = { value: number; expires: number };
+const transitCache = new Map<string, CacheEntry>();
+const inflightTransit = new Map<string, Promise<number | null>>();
+
+function transitCacheKey(from: string, to: string): string {
+  return `${from.trim().toLowerCase()}||${to.trim().toLowerCase()}`;
+}
+
+function pruneTransitCache() {
+  if (transitCache.size <= TRANSIT_MAX_ENTRIES) return;
+  // Evict oldest expired first, then oldest overall (Map preserves insertion order).
+  const now = Date.now();
+  for (const [k, v] of transitCache) {
+    if (v.expires <= now) transitCache.delete(k);
+    if (transitCache.size <= TRANSIT_MAX_ENTRIES) return;
+  }
+  while (transitCache.size > TRANSIT_MAX_ENTRIES) {
+    const firstKey = transitCache.keys().next().value as string | undefined;
+    if (firstKey === undefined) break;
+    transitCache.delete(firstKey);
+  }
+}
+
+async function computeTransitSecCached(
+  from_address: string,
+  to_address: string,
+): Promise<number | null> {
+  const key = transitCacheKey(from_address, to_address);
+  const hit = transitCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const inflight = inflightTransit.get(key);
+  if (inflight) return inflight;
+
+  const promise = (async () => {
+    const value = await computeTransitSec(from_address, to_address);
+    if (value != null) {
+      transitCache.set(key, { value, expires: Date.now() + TRANSIT_TTL_MS });
+      pruneTransitCache();
+    }
+    return value;
+  })().finally(() => {
+    inflightTransit.delete(key);
+  });
+  inflightTransit.set(key, promise);
+  return promise;
+}
+
 function fmtHM(iso: string | null): string {
   if (!iso) return "?";
   const d = new Date(iso);
