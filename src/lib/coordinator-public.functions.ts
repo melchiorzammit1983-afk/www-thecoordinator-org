@@ -1078,6 +1078,23 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
 
+    // Auto-emit trip map pins for the transitions the DB trigger doesn't
+    // already cover (en_route + back_to_waiting), so a pin lands even if the
+    // driver's client-side logDriverAction call fails.
+    if (data.status === "en_route" || (isCorrection && data.status === "pending")) {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: job.id,
+        companyId,
+        driverId: (job as any).driver_id ?? null,
+        eventType: data.status === "en_route" ? "en_route" : "back_to_waiting",
+        lat: data.lat ?? null,
+        lng: data.lng ?? null,
+        accuracyM: data.accuracy_m ?? null,
+        meta: { from: prevStatus, to: data.status },
+      });
+    }
+
     // ── Correction / arrival-override map event ────────────────────────────
     // Record the walk-back or the "I really am here" override as a distinct
     // pin so the coordinator sees the correction without us destroying the
