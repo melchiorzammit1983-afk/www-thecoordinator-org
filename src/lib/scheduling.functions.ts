@@ -312,3 +312,90 @@ export const previewAssignmentConflicts = createServerFn({ method: "POST" })
 function rank(s: ConflictSeverity): number {
   return s === "conflict" ? 2 : s === "tight" ? 1 : 0;
 }
+
+/**
+ * Given a set of candidate drivers, evaluate each one against the same trip
+ * (existing job_id or a candidate payload) and return them ranked from best
+ * to worst — "free" first (largest slack), then "tight", then "conflict".
+ * Used by the driver picker to suggest a better alternative when the currently
+ * selected driver would collide.
+ */
+export const suggestAlternativeDrivers = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        driver_ids: z.array(z.string().uuid()).min(1).max(50),
+        exclude_driver_id: z.string().uuid().nullable().optional(),
+        job_id: z.string().uuid().optional(),
+        candidate: z
+          .object({
+            id: z.string().optional(),
+            pickup_at: z.string(),
+            from_location: z.string(),
+            to_location: z.string(),
+            pickup_display_name: z.string().nullable().optional(),
+            dropoff_display_name: z.string().nullable().optional(),
+            route_duration_sec: z.number().nullable().optional(),
+          })
+          .optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    // Resolve the candidate MinJob once.
+    let candidate: MinJob | null = null;
+    if (data.job_id) {
+      const { data: j } = await context.supabase
+        .from("jobs")
+        .select(
+          "id, pickup_at, from_location, to_location, pickup_display_name, dropoff_display_name, route_duration_sec, group_id, status",
+        )
+        .eq("id", data.job_id)
+        .maybeSingle();
+      if (j?.pickup_at) candidate = j as MinJob;
+    } else if (data.candidate?.pickup_at) {
+      candidate = {
+        id: data.candidate.id ?? "__candidate__",
+        pickup_at: data.candidate.pickup_at,
+        from_location: data.candidate.from_location,
+        to_location: data.candidate.to_location,
+        pickup_display_name: data.candidate.pickup_display_name ?? null,
+        dropoff_display_name: data.candidate.dropoff_display_name ?? null,
+        route_duration_sec: data.candidate.route_duration_sec ?? null,
+        group_id: null,
+        status: "pending",
+      };
+    }
+    if (!candidate) return { suggestions: [] as Array<{ driver_id: string; severity: ConflictSeverity; min_slack_min: number; pairs: ConflictPair[] }> };
+
+    const date = candidate.pickup_at!.slice(0, 10);
+    const excluded = data.exclude_driver_id ?? null;
+    const targets = data.driver_ids.filter((id) => id !== excluded);
+
+    const results = await Promise.all(
+      targets.map(async (driver_id) => {
+        const existing = await loadDriverDayJobs(context.supabase, driver_id, date);
+        const merged = [...existing.filter((j) => j.id !== candidate!.id), candidate!];
+        const pairs = await evaluatePairs(merged);
+        const involved = pairs.filter(
+          (p) => p.prev_job_id === candidate!.id || p.next_job_id === candidate!.id,
+        );
+        const worst = involved.reduce<ConflictSeverity>(
+          (acc, p) => (rank(p.severity) > rank(acc) ? p.severity : acc),
+          "free",
+        );
+        const minSlack = involved.length
+          ? Math.min(...involved.map((p) => p.slack_min))
+          : 9999;
+        return { driver_id, severity: worst, min_slack_min: minSlack, pairs: involved };
+      }),
+    );
+
+    results.sort((a, b) => {
+      const r = rank(a.severity) - rank(b.severity);
+      if (r !== 0) return r;
+      return b.min_slack_min - a.min_slack_min;
+    });
+    return { suggestions: results };
+  });
