@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Wallet, AlertTriangle, ArrowRightLeft } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sparkles, Wallet, AlertTriangle, ArrowRightLeft, Plus } from "lucide-react";
 import {
   allocateToAiWallet,
   getMyAiWallet,
