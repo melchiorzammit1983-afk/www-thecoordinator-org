@@ -410,6 +410,9 @@ export function TripDetailsSheet({
           <TripRouteInsights jobId={job.id} />
           </div>
 
+          {/* Driver schedule collision warning */}
+          <ScheduleConflictBanner jobId={job.id} driverId={job.driver_id} date={job.date} />
+
           {/* Pricing (coordinator-only) */}
           <TripPricingPanel jobId={job.id} />
 
