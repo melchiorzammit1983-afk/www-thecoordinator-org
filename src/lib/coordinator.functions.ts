@@ -2674,8 +2674,9 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     const { data: job, error: iErr } = await supabaseAdmin
       .from("jobs")
       .insert(insertPayload as never)
-      .select("id")
+      .select("*")
       .single();
+
     if (iErr) throw new Error(iErr.message);
 
     // Meter the child trip
