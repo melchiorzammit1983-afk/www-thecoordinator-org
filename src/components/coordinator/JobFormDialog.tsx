@@ -874,7 +874,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   };
 
   const cancelChat = () => {
-    setChatOpen(false); setChat([]); setPendingQuestion(null); setReply("");
+    setChatOpen(false); setChat([]); setPendingQuestion(null); setPendingQuestions([]); setReply("");
   };
 
 
