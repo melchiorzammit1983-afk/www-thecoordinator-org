@@ -2077,7 +2077,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       supabaseAdmin.from("jobs")
         .select("id, from_location, to_location, from_flight, to_flight, date, time, pickup_at, status, flight_status, driver_id, group_id, group_name")
         .in("id", ids),
-      supabaseAdmin.from("pax").select("id, name, status, job_id").in("job_id", ids).order("name"),
+      supabaseAdmin.from("pax").select("id, name, status, job_id").eq("job_id", job.id).order("name"),
       supabaseAdmin.from("companies").select("id, name").eq("id", job.company_id).maybeSingle(),
       job.driver_id
         ? supabaseAdmin.from("drivers").select("id, name, phone").eq("id", job.driver_id).maybeSingle()

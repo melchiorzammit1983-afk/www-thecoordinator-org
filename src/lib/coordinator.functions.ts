@@ -2635,31 +2635,20 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     // If the caller is a partner-executor of a dispatched trip, inherit the chain
     // so the creator continues to see the split children in the same partner lane.
     const inheritsChain = !isOwner && isExecutor;
-    const insertPayload: Record<string, unknown> = {
-      // Trip core
+
+    // Build the child payload from ALL source fields (business names,
+    // place ids, lat/lng, contact, room, pax_count, etc.) so the split
+    // child mirrors the parent's addressing and shows correctly on the
+    // client link. buildClonedJobPayload strips volatile fields and mints
+    // a fresh client_link_token by default.
+    const overrides: Record<string, unknown> = {
       company_id: inheritsChain ? src.company_id : c.id,
-      from_location: src.from_location,
-      to_location: src.to_location,
-      date: src.date,
-      time: src.time,
-      pickup_at: src.pickup_at,
-      flightorship: src.flightorship,
-      clientcompanyname: src.clientcompanyname,
+      parent_job_id: src.id,
+      driver_id: data.driver_id ?? null,
+      vehicle: data.vehicle || (src as any).vehicle || null,
       qr_strict_mode: false,
       tracking_enabled: false,
-      vehicle: data.vehicle || null,
-      driver_id: data.driver_id ?? null,
-      parent_job_id: src.id,
-      // Flight context
-      from_flight: src.from_flight ?? null,
-      to_flight: src.to_flight ?? null,
-      flight_status: src.flight_status ?? null,
-      flight_status_note: src.flight_status_note ?? null,
-      flight_status_updated_at: src.flight_status_updated_at ?? null,
-      flight_scheduled_at: src.flight_scheduled_at ?? null,
-      flight_estimated_at: src.flight_estimated_at ?? null,
-      // Contact + grouping + approval + provenance
-      contact_phone: src.contact_phone ?? null,
+      // Preserve grouping so the parent + split render together in group views.
       group_id: src.group_id ?? null,
       group_name: src.group_name ?? null,
       group_note: src.group_note ?? null,
@@ -2667,17 +2656,21 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
       grouped_at: src.grouped_at ?? null,
       coord_approved_at: src.coord_approved_at ?? new Date().toISOString(),
       source: src.source ?? null,
-      // Per-child client portal token
-      client_link_token: childToken,
     };
     if (inheritsChain) {
-      insertPayload.origin_company_id = src.origin_company_id ?? src.company_id;
-      insertPayload.executor_company_id = c.id;
-      insertPayload.dispatch_chain_company_ids = src.dispatch_chain_company_ids ?? [src.company_id, c.id];
-      insertPayload.dispatch_status = "accepted";
-      insertPayload.dispatched_at = src.dispatched_at ?? new Date().toISOString();
-      insertPayload.dispatch_decided_at = new Date().toISOString();
+      overrides.origin_company_id = src.origin_company_id ?? src.company_id;
+      overrides.executor_company_id = c.id;
+      overrides.dispatch_chain_company_ids = src.dispatch_chain_company_ids ?? [src.company_id, c.id];
+      overrides.dispatch_status = "accepted";
+      overrides.dispatched_at = src.dispatched_at ?? new Date().toISOString();
+      overrides.dispatch_decided_at = new Date().toISOString();
     }
+    const insertPayload = buildClonedJobPayload(src as Record<string, unknown>, overrides);
+    // buildClonedJobPayload mints its own token; use the childToken we
+    // already generated so the identity rebind below points at the
+    // exact same string.
+    insertPayload.client_link_token = childToken;
+
     const { data: job, error: iErr } = await supabaseAdmin
       .from("jobs")
       .insert(insertPayload as never)
