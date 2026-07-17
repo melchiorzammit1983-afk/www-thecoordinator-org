@@ -2112,11 +2112,15 @@ type LiveRouteInfo = {
  */
 function useLiveRoute({
   origin,
-  destination,
+  jobId,
+  leg,
+  token,
   enabled,
 }: {
   origin: { lat: number; lng: number } | null;
-  destination: string | null;
+  jobId: string | null;
+  leg: "to_pickup" | "to_dropoff";
+  token: string;
   enabled: boolean;
 }): LiveRouteInfo {
   const fn = useServerFn(computeDriverRoute);
@@ -2131,19 +2135,20 @@ function useLiveRoute({
   const [offRouteM, setOffRouteM] = useState(0);
 
   // Coarser origin key (~110m) — we recompute on real movement, not GPS jitter.
-  // Fine-grained refetches now happen on-demand via the deviation detector.
   const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
-  const queryKey = ["driver-live-route", destination, originKey];
+  const queryKey = ["driver-live-route", jobId, leg, originKey];
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey,
-    enabled: enabled && !!origin && !!destination,
+    enabled: enabled && !!origin && !!jobId,
     refetchInterval: 30_000,
     staleTime: 20_000,
     queryFn: () => fn({
       data: {
+        job_id: jobId!,
+        driver_token: token,
+        leg,
         origin: { latitude: origin!.lat, longitude: origin!.lng },
-        destination_address: destination!,
       },
     }) as Promise<{
       primary: null | {
