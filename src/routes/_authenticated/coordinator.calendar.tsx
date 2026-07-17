@@ -718,9 +718,15 @@ function CalendarPage() {
   const afterStatus = statusFilter.size
     ? afterSearch.filter((j) => statusFilter.has(String(j.status ?? "")))
     : afterSearch;
+  const afterCompleted = showCompleted
+    ? afterStatus
+    : afterStatus.filter((j) => j.status !== "completed" && j.status !== "cancelled");
   const afterDriver =
     driverFilter === "all"
-      ? afterStatus
+      ? afterCompleted
+      : driverFilter === "unassigned"
+        ? afterCompleted.filter((j) => !j.driver_id)
+        : afterCompleted.filter((j) => j.driver_id === driverFilter);
       : driverFilter === "unassigned"
         ? afterStatus.filter((j) => !j.driver_id)
         : afterStatus.filter((j) => j.driver_id === driverFilter);
