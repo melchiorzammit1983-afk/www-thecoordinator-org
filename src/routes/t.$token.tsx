@@ -28,6 +28,7 @@ import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
 import { BrandingBar } from "@/components/branding/BrandingBar";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { displayLocation } from "@/lib/trip-display";
+import { supabase } from "@/integrations/supabase/client";
 
 
 export const Route = createFileRoute("/t/$token")({
