@@ -1104,29 +1104,134 @@ function buildClonedJobPayload(
   return { ...out, ...overrides };
 }
 
-async function copyJobLabels(sb: any, srcJobId: string, newJobId: string) {
-  const { data: labels } = await sb.from("job_labels").select("label_id").eq("job_id", srcJobId);
-  if (labels && labels.length) {
-    await sb
-      .from("job_labels")
-      .insert(labels.map((l: any) => ({ job_id: newJobId, label_id: l.label_id })));
-  }
+async function copyJobLabels(
+  sb: any,
+  srcJobId: string,
+  newJobId: string,
+): Promise<{ expected: number; inserted: number }> {
+  const { data: labels, error: readErr } = await sb
+    .from("job_labels")
+    .select("label_id")
+    .eq("job_id", srcJobId);
+  if (readErr) throw new Error(`labels_read_failed: ${readErr.message}`);
+  const expected = labels?.length ?? 0;
+  if (!expected) return { expected: 0, inserted: 0 };
+  const { data: ins, error: insErr } = await sb
+    .from("job_labels")
+    .insert(labels.map((l: any) => ({ job_id: newJobId, label_id: l.label_id })))
+    .select("label_id");
+  if (insErr) throw new Error(`labels_copy_failed: ${insErr.message}`);
+  return { expected, inserted: ins?.length ?? 0 };
 }
 
-async function copyJobPax(sb: any, srcJobId: string, newJobId: string) {
-  const { data: pax } = await sb
+async function copyJobPax(
+  sb: any,
+  srcJobId: string,
+  newJobId: string,
+): Promise<{ expected: number; inserted: number }> {
+  const { data: pax, error: readErr } = await sb
     .from("pax")
     .select("name")
     .eq("job_id", srcJobId);
-  if (pax && pax.length) {
-    await sb.from("pax").insert(
-      pax.map((p: any) => ({
-        job_id: newJobId,
-        name: p.name,
-        status: "pending",
-      })),
+  if (readErr) throw new Error(`pax_read_failed: ${readErr.message}`);
+  const expected = pax?.length ?? 0;
+  if (!expected) return { expected: 0, inserted: 0 };
+  const { data: ins, error: insErr } = await sb
+    .from("pax")
+    .insert(
+      pax.map((p: any) => ({ job_id: newJobId, name: p.name, status: "pending" })),
+    )
+    .select("id");
+  if (insErr) throw new Error(`pax_copy_failed: ${insErr.message}`);
+  return { expected, inserted: ins?.length ?? 0 };
+}
+
+/**
+ * Verify a freshly-cloned/split job. Throws a descriptive error if any
+ * child resource (pax, labels) didn't fully round-trip, or if the driver /
+ * group linkage doesn't match what the caller asked for. Returns a small
+ * report the mutation can surface in toasts / logs.
+ */
+async function verifyClonedJob(
+  sb: any,
+  opts: {
+    src: Record<string, unknown>;
+    newRow: Record<string, unknown>;
+    labels: { expected: number; inserted: number };
+    pax: { expected: number; inserted: number } | null;
+    expect: {
+      driver_id: string | null;
+      group_id: string | null;
+      parent_job_id?: string | null;
+    };
+  },
+): Promise<{ ok: true; warnings: string[]; labels_copied: number; pax_copied: number }> {
+  const warnings: string[] = [];
+  const newId = opts.newRow.id as string;
+
+  if (opts.labels.expected !== opts.labels.inserted) {
+    throw new Error(
+      `clone_verification_failed: labels ${opts.labels.inserted}/${opts.labels.expected} copied`,
     );
   }
+  if (opts.pax && opts.pax.expected !== opts.pax.inserted) {
+    throw new Error(
+      `clone_verification_failed: pax ${opts.pax.inserted}/${opts.pax.expected} copied`,
+    );
+  }
+
+  // Re-read canonical child counts from the database — this catches races
+  // where an insert silently returned 0 rows (e.g. RLS filtering) or where
+  // a trigger removed them.
+  const [{ count: paxCount }, { count: labelCount }, { data: fresh }] = await Promise.all([
+    sb.from("pax").select("id", { count: "exact", head: true }).eq("job_id", newId),
+    sb.from("job_labels").select("label_id", { count: "exact", head: true }).eq("job_id", newId),
+    sb.from("jobs").select("driver_id, group_id, parent_job_id").eq("id", newId).single(),
+  ]);
+
+  const expectedPax = opts.pax?.expected ?? 0;
+  if ((paxCount ?? 0) !== expectedPax) {
+    throw new Error(
+      `clone_verification_failed: expected ${expectedPax} passengers on new trip, found ${paxCount ?? 0}`,
+    );
+  }
+  if ((labelCount ?? 0) !== opts.labels.expected) {
+    throw new Error(
+      `clone_verification_failed: expected ${opts.labels.expected} labels on new trip, found ${labelCount ?? 0}`,
+    );
+  }
+
+  if ((fresh?.driver_id ?? null) !== opts.expect.driver_id) {
+    throw new Error(
+      `clone_verification_failed: driver assignment mismatch (expected ${opts.expect.driver_id ?? "unassigned"}, got ${fresh?.driver_id ?? "unassigned"})`,
+    );
+  }
+  if ((fresh?.group_id ?? null) !== opts.expect.group_id) {
+    throw new Error(
+      `clone_verification_failed: group linkage mismatch (expected ${opts.expect.group_id ?? "none"}, got ${fresh?.group_id ?? "none"})`,
+    );
+  }
+  if (opts.expect.parent_job_id !== undefined
+      && (fresh?.parent_job_id ?? null) !== opts.expect.parent_job_id) {
+    throw new Error(
+      `clone_verification_failed: parent_job_id mismatch (expected ${opts.expect.parent_job_id ?? "none"}, got ${fresh?.parent_job_id ?? "none"})`,
+    );
+  }
+
+  // Non-fatal advisories.
+  if ((opts.src.driver_id as string | null) && !opts.expect.driver_id) {
+    warnings.push("source_had_driver_new_trip_unassigned");
+  }
+  if ((opts.src.group_id as string | null) && !opts.expect.group_id) {
+    warnings.push("source_was_grouped_new_trip_ungrouped");
+  }
+
+  return {
+    ok: true,
+    warnings,
+    labels_copied: opts.labels.inserted,
+    pax_copied: opts.pax?.inserted ?? 0,
+  };
 }
 
 export const cloneJob = createServerFn({ method: "POST" })
@@ -1159,11 +1264,19 @@ export const cloneJob = createServerFn({ method: "POST" })
     if (iErr) throw new Error(iErr.message);
 
     // Copy labels + pax so the clone shows names and info immediately.
-    await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
-    await copyJobPax(supabaseAdmin, src.id as string, row.id as string);
+    const labels = await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
+    const pax = await copyJobPax(supabaseAdmin, src.id as string, row.id as string);
+
+    const report = await verifyClonedJob(supabaseAdmin, {
+      src: src as Record<string, unknown>,
+      newRow: row as Record<string, unknown>,
+      labels,
+      pax,
+      expect: { driver_id: null, group_id: null, parent_job_id: null },
+    });
 
     await spendSoft(c.id, "trip_created", "Trip cloned", row.id as string);
-    return row;
+    return { ...(row as any), _validation: report };
   });
 
 export const splitJob = createServerFn({ method: "POST" })
@@ -1207,16 +1320,29 @@ export const splitJob = createServerFn({ method: "POST" })
         .insert(payload as never)
         .select()
         .single();
-      if (iErr) throw new Error(iErr.message);
+      if (iErr) throw new Error(`split_insert_failed (${s.label}): ${iErr.message}`);
 
       // Every split inherits labels so the cards look complete.
-      await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
+      const labels = await copyJobLabels(supabaseAdmin, src.id as string, row.id as string);
+
+      // Splits intentionally start with no pax so the coordinator can
+      // distribute passengers between the new cards. We still verify
+      // that no pax leaked in from a stale trigger.
+      const report = await verifyClonedJob(supabaseAdmin, {
+        src: src as Record<string, unknown>,
+        newRow: row as Record<string, unknown>,
+        labels,
+        pax: { expected: 0, inserted: 0 },
+        expect: { driver_id: null, group_id: null, parent_job_id: src.id as string },
+      });
 
       await spendSoft(c.id, "trip_created", "Trip split from parent", row.id as string);
-      rows.push(row);
+      rows.push({ ...(row as any), _validation: report });
     }
     return rows;
   });
+
+
 
 
 
