@@ -424,12 +424,12 @@ export const applyAiWalletDefaultsToAllCompanies = createServerFn({ method: "POS
     only_unset: z.boolean().default(false),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: (context as any).userId,
-      _role: "admin" as any,
-    });
-    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById((context as any).userId);
+    const email = userData?.user?.email?.toLowerCase();
+    const { data: adminRows } = await supabaseAdmin.from("admin_emails").select("email");
+    const isAdmin = !!email && (adminRows ?? []).some((r: any) => r.email?.toLowerCase() === email);
+    if (!isAdmin) throw new Error("Forbidden: admin only");
     const { data: settings } = await supabaseAdmin
       .from("admin_portal_settings" as any)
       .select("default_ai_monthly_cap, default_ai_fallback_to_general")
