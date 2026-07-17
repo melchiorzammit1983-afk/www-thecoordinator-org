@@ -727,9 +727,6 @@ function CalendarPage() {
       : driverFilter === "unassigned"
         ? afterCompleted.filter((j) => !j.driver_id)
         : afterCompleted.filter((j) => j.driver_id === driverFilter);
-      : driverFilter === "unassigned"
-        ? afterStatus.filter((j) => !j.driver_id)
-        : afterStatus.filter((j) => j.driver_id === driverFilter);
   const visibleAll = trafficFilter.size
     ? afterDriver.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
     : afterDriver;
