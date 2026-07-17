@@ -1,64 +1,61 @@
-## Goal
+## Problem
 
-Trim the driver and coordinator apps down to the essentials. Keep all existing trust/payout/audit plumbing untouched — only hide or remove the UI surfaces and their entry points.
+`cloneJob` and `splitJob` in `src/lib/coordinator.functions.ts` (lines 1022–1107) currently copy only ~10 columns from the source job:
 
-## 1. Remove Emergency Override (UI only)
+`from_location, to_location, date, time, pickup_at, flightorship, clientcompanyname, vehicle`
 
-Keep `job_emergency_overrides` table, `emergencyOverrideJobStatus` server function, and `src/lib/emergency-override.ts` intact so historical records and payout logic stay valid.
+Everything else is dropped, so on the new card the coordinator/driver see empty passenger name, no phone, no room, no pax count, no addresses with business names, no price/notes/flight info. The client tracking link also fails because:
 
-Remove from UI:
-- Delete the Emergency Override button + dialog mount in `src/routes/m.driver.$token.tsx`.
-- Delete component file `src/components/driver/EmergencyOverrideDialog.tsx`.
-- Remove any help/docs references to Emergency Override in the driver guide article (`src/content/help/articles/driver-guide.tsx`) if present.
+- No `pax` rows are copied → nothing for the client portal to attach to.
+- No client link token is minted (`client_link_token` / `client_link_identities`) → the shareable `/t/<token>` URL doesn't resolve for the split/cloned trip.
 
-The server function stays callable (unused) so any pending mobile builds don't crash.
+`splitPaxToNewJob` (line 2369) already does this correctly for the pax-split flow and is the reference pattern.
 
-## 2. Remove driver-initiated cancellation of a trip
+## Fix
 
-Scope confirmed as "when the driver cancelled the trip" — the driver's ability to cancel/decline an accepted trip.
+### 1. `cloneJob` — copy the full trip payload
 
-- Remove the cancel-trip action + confirmation from `src/routes/m.driver.$token.tsx` (driver manifest actions).
-- Leave coordinator-side cancellation intact — coordinator remains the only actor who can cancel.
+Extend the `insert(...)` payload to mirror every user-authored field from the source job:
 
-## 3. Remove cancellation-request flows (driver + client/portal)
+- Contact / passenger header: `name`, `surname`, `contact_phone`, `room_number`, `pax_count`, `notes`, `promo_note`
+- Addresses & geo (so business names + map pins render): `pickup_display_name`, `dropoff_display_name`, `pickup_place_id`, `dropoff_place_id`, `pickup_lat`, `pickup_lng`, `dropoff_lat`, `dropoff_lng`, `from_lat`, `from_lng`, `to_lat`, `to_lng`
+- Flight info: `from_flight`, `to_flight`
+- Pricing: `price_eur`, `currency`, `payment_status` (reset to `pending`)
+- Labels: copy rows from `job_labels` for the new job id
 
-Driver side:
-- Remove any "Request cancellation" button from the driver manifest and from `src/components/driver/CoordChangeRequestsPanel.tsx` (cancellation intent only — keep other change-request types like time/location if they exist there; if the panel is exclusively cancellation, remove the panel mount and file).
-- Remove the coordinator inbox surface for driver cancellation requests in `src/components/coordinator/TripDetailsSheet.tsx` and anywhere `job_coord_change_requests` cancellation types are rendered.
+Keep the existing reset of `driver_id: null`, `qr_strict_mode: false`, `tracking_enabled: false`, and force new `status: 'pending'`, `coord_approved_at: now()`, clear `driver_accepted_at`, `group_id`, `parent_job_id`, `client_confirmed_at`, `deletion_requested_at`. Update `date/time/pickup_at` to `target_date`.
 
-Client/portal side:
-- Remove the "Request cancellation" action from `src/routes/portal.$token.tsx` and `src/routes/api/public/portal/$token/change-requests.ts` handler (reject cancellation type with 410 Gone; keep endpoint for other change types).
-- Remove the cancellation UI in `src/components/client/EditBookingDialog.tsx` if present.
+After insert:
+- Copy `pax` rows (`name`, seat/order, notes) to the new `job_id` with fresh ids and `status='pending'`.
+- Mint a new `client_link_token` on the row and insert matching `client_link_identities` (mirror the pattern used in `splitPaxToNewJob` around lines 2390–2490) so a `/t/<token>` share link works for the clone.
 
-Database rows in `job_coord_change_requests` and `portal_change_requests` are left in place; only new cancellation requests are blocked.
+### 2. `splitJob` — same full copy, one row per split label
 
-## 4. Auto-hide completed trips
+Apply the identical payload copy for each split. Per split:
+- Suffix `clientcompanyname` (or a new `group_note`) with the split label as today.
+- Divide `pax_count` proportionally if provided, else leave equal to source.
+- Do **not** copy `pax` rows into every split (splitJob is a label-based split, not a pax move — that's what `splitPaxToNewJob` is for). Instead leave `pax` empty on children so the coordinator can drag pax into them via the existing Manage Pax dialog.
+- Mint a fresh `client_link_token` per child and add `client_link_identities` scoped to that child so any client the coordinator shares the link with sees only their split.
+- Set `parent_job_id = src.id` on each child so the audit chain and portal grouping already in `splitPaxToNewJob` continue to work.
 
-Apply a `status NOT IN ('completed','cancelled')` filter at these read sites (dispatch list already filters; extend to the rest):
+### 3. Shared helper
 
-- **Coordinator calendar** (`src/routes/_authenticated/coordinator.calendar.tsx`) — default view hides completed/cancelled; add a "Show completed" toggle in the filter bar so history stays reachable.
-- **Driver manifest** (`src/routes/m.driver.$token.tsx`) — filter completed jobs from the active list immediately after `status = completed`. Keep a collapsible "Completed today" section (count only, expand to view) so the driver can still confirm what they finished.
-- **Coordinator dashboard recent activity** (`src/routes/_authenticated/coordinator.index.tsx` → `getDashboardActivity`) — exclude completed/cancelled from the "recent trips" feed; keep them counted in the KPI tiles.
+Extract the "buildable clone payload" into a small internal helper `buildClonedJobPayload(src, overrides)` inside the same file so `cloneJob`, `splitJob`, and future duplicators stay in sync.
 
-## Suggestions to make it better (my recommendations, please confirm before I include)
+### 4. Client-side surfaces (no logic change, verify only)
 
-1. **Single driver status pill flow** — with override + cancel gone, collapse the driver bottom bar to one sticky primary CTA per state (On the way → Arrived → Passenger on board → Complete). Everything else moves into a "…" overflow.
-2. **Undo bar instead of confirmations** — when a driver taps Complete or a coordinator marks a trip done, show a 5-second "Undo" toast rather than a modal. Faster in the field, still safe.
-3. **"Completed today" strip** on the driver home — one-line summary (count, total wait minutes, earnings) so hiding completed trips doesn't feel like losing information.
-4. **Coordinator calendar "Show completed" toggle** persisted per user in localStorage so power users don't have to re-enable it every session.
-5. **Help center prune** — remove the Emergency Override section from the driver guide so docs match the app.
-
-## Technical notes
-
-- No database migrations. All four changes are frontend + one server route guard (portal cancellation endpoint returning 410).
-- `emergencyOverrideJobStatus` and `job_emergency_overrides` table remain — unreferenced from UI but callable.
-- Filter for completed trips uses existing `status` column; no schema changes.
-- Realtime subscriptions on `jobs` keep working; the client-side filter simply drops completed rows on receipt.
+- `TripDetailsSheet` and calendar cards already read `name/surname/pax/pickup_display_name/…`, so once the columns are populated the info renders automatically.
+- `/t/$token` (`src/routes/api/public/track/$token/index.ts` and `src/routes/t.$token.tsx`) already resolves via `client_link_token` + `client_link_identities`; minting the token in step 1–2 is what makes the link work.
 
 ## Out of scope
 
-- Coordinator status override (`CoordinatorStatusOverride.tsx`) stays — user confirmed the "approve" removal was about driver cancellation, not coordinator overrides.
-- Trust/payout/audit event pipeline untouched.
-- Boarding-approval flow untouched.
+- Grouped-run cascade (separate feature).
+- The pax-split flow (`splitPaxToNewJob`) — already correct.
+- No schema changes required; all target columns already exist on `jobs`, `pax`, `client_link_identities`.
 
-Confirm the 5 suggestions above (accept all / pick some / skip) and I'll implement.
+## Verification
+
+1. Create a trip with pax names, phone, room, flight, addresses w/ business names, price, and a client link.
+2. **Clone** to another date → open the clone: name/surname, pax list, addresses (with business names), flight, price all present; `/t/<new-token>` opens the clone in the client app.
+3. **Split** into 2 labels → both children show all trip info (same addresses/flight), each has its own working client link; parent still visible with `parent_job_id` back-references.
+4. Coordinator calendar and driver manifest show the full header (no more "Unnamed passenger").
