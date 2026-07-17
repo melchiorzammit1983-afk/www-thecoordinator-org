@@ -964,33 +964,87 @@ export const listJobPaxDriver = createServerFn({ method: "GET" })
 const DRIVER_RETURN_TO_WAITING_STATUSES = new Set(["en_route", "arrived"]);
 const DRIVER_EMERGENCY_OVERRIDE_ALLOWED_STATUSES = new Set(["pending", "en_route", "arrived", "in_progress", "active"]);
 
+/** Radius (metres) inside which "Arrived at pickup" is silently accepted. */
+const ARRIVAL_PICKUP_RADIUS_M = 150;
+
+const ARRIVAL_OVERRIDE_REASONS = [
+  "wrong_pin",
+  "blocked_access",
+  "passenger_meeting_elsewhere",
+  "other",
+] as const;
+
+function haversineMetersLL(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       token: z.string().min(8).max(128),
       job_id: z.string().uuid(),
       status: z.enum(["pending", "en_route", "arrived", "in_progress", "active", "completed"]),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+      accuracy_m: z.number().nonnegative().optional(),
+      override_reason: z.enum(ARRIVAL_OVERRIDE_REASONS).optional(),
+      override_note: z.string().max(400).optional(),
+      correction_note: z.string().max(400).optional(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
+    const prevStatus = job.status ?? null;
+    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
+    const now = new Date().toISOString();
     const patch: Record<string, unknown> = { status: data.status };
-    if (data.status === "pending" && job.status !== "pending") {
-      if (!DRIVER_RETURN_TO_WAITING_STATUSES.has(job.status ?? "")) {
+
+    // Correction path — reverting to an earlier status. Do NOT wipe timestamps
+    // (we keep them so history stays intact); log the correction to the map
+    // so the coordinator sees the driver walked something back.
+    const isCorrection = data.status === "pending" && prevStatus !== "pending";
+    if (isCorrection) {
+      if (!DRIVER_RETURN_TO_WAITING_STATUSES.has(prevStatus ?? "")) {
         throw new Error("trip_cannot_return_to_waiting");
       }
-      patch.driver_started_at = null;
-      patch.driver_completed_at = null;
+      // Keep driver_started_at / driver_completed_at as-is (audit trail).
     }
     // First "on the way" transition starts the trip timer.
     if (data.status === "en_route" && !(job as any).driver_started_at) {
       patch.driver_started_at = new Date().toISOString();
     }
 
-    // Arrival is now driver-initiated with no server-side GPS gate. Every
-    // status change is echoed to `trip_map_events` by the DB trigger
-    // `log_job_status_map_event`, so the coordinator still sees when and
-    // where the driver marked arrival on the trip map.
+    // ── Arrival GPS advisory ────────────────────────────────────────────────
+    // Not a hard geofence — if the driver's device provides a fresh GPS fix
+    // and we know the pickup coordinates, refuse the arrival unless they
+    // pick an explicit override reason. Missing/stale GPS or missing pickup
+    // coords means we can't advise, so we accept.
+    if (data.status === "arrived" && !data.override_reason) {
+      const pLat = (job as any).pickup_lat as number | null;
+      const pLng = (job as any).pickup_lng as number | null;
+      if (
+        pLat != null && pLng != null &&
+        data.lat != null && data.lng != null
+      ) {
+        const distance = haversineMetersLL(data.lat, data.lng, pLat, pLng);
+        if (distance > ARRIVAL_PICKUP_RADIUS_M) {
+          const err: any = new Error(
+            `too_far_from_pickup:${Math.round(distance)}:${ARRIVAL_PICKUP_RADIUS_M}`,
+          );
+          err.code = "too_far_from_pickup";
+          err.distance_m = Math.round(distance);
+          err.radius_m = ARRIVAL_PICKUP_RADIUS_M;
+          throw err;
+        }
+      }
+    }
 
     // ── Phase 3 — Boarding gate: only fires on the → in_progress transition ──
     if (data.status === "in_progress") {
@@ -1000,7 +1054,6 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         .eq("job_id", data.job_id);
       const hasPendingPax = (paxRows ?? []).some((p: any) => p.status === "pending");
       if (hasPendingPax) {
-        // Allow if a boarding approval has been given (approved or overridden).
         const { data: approval } = await supabaseAdmin
           .from("job_boarding_approvals")
           .select("id, status")
@@ -1013,10 +1066,8 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         }
       }
     }
-    // ── End boarding gate ─────────────────────────────────────────────────────
 
     if (data.status === "completed") {
-      // Legacy merge-grouped counter still clears on this trip.
       patch.grouped_count = null;
       patch.grouped_at = null;
       if (!(job as any).driver_completed_at) {
@@ -1027,13 +1078,41 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
 
-    const companyId: string = (job as any).executor_company_id ?? (job as any).company_id;
-    const now = new Date().toISOString();
+    // ── Correction / arrival-override map event ────────────────────────────
+    // Record the walk-back or the "I really am here" override as a distinct
+    // pin so the coordinator sees the correction without us destroying the
+    // primary status log written by the DB trigger.
+    if (isCorrection || (data.status === "arrived" && data.override_reason)) {
+      try {
+        await supabaseAdmin.from("trip_map_events").insert({
+          job_id: job.id,
+          company_id: companyId,
+          driver_id: (job as any).driver_id ?? null,
+          event_type: isCorrection ? "status_corrected" : "arrived_pickup_override",
+          lat: data.lat ?? null,
+          lng: data.lng ?? null,
+          accuracy_m: data.accuracy_m ?? null,
+          notes: isCorrection
+            ? (data.correction_note ?? null)
+            : (data.override_note ?? null),
+          meta: isCorrection
+            ? { from: prevStatus, to: data.status }
+            : {
+                reason: data.override_reason,
+                distance_m:
+                  (job as any).pickup_lat != null && (job as any).pickup_lng != null && data.lat != null && data.lng != null
+                    ? Math.round(haversineMetersLL(data.lat, data.lng, (job as any).pickup_lat, (job as any).pickup_lng))
+                    : null,
+              },
+        } as any);
+      } catch { /* map event failures never block the primary action */ }
+    }
 
-    // Phase 2 — Waiting system hooks
+    // ── Phase 2 — Waiting system hooks ─────────────────────────────────────
     if (data.status === "arrived") {
-      // Auto-start a wait session when driver marks arrived.
-      // The unique index prevents duplicates; ignore if one is already open.
+      // Auto-start a wait session anchored to max(now, pickup_at) so a driver
+      // arriving early doesn't accrue billable waiting time before the
+      // scheduled pickup.
       const { data: existing } = await supabaseAdmin
         .from("job_wait_sessions")
         .select("id")
@@ -1043,9 +1122,13 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         .maybeSingle();
       if (!existing) {
         const { freeWaitMinutes } = await loadWaitPolicy(supabaseAdmin, companyId);
-        const startedAt = now;
+        const arrivedAt = now;
+        const pickupAt = (job as any).pickup_at as string | null;
+        const chargeableFrom = pickupAt && new Date(pickupAt).getTime() > new Date(arrivedAt).getTime()
+          ? pickupAt
+          : arrivedAt;
         const freeEndsAt = freeWaitMinutes > 0
-          ? new Date(new Date(startedAt).getTime() + freeWaitMinutes * 60000).toISOString()
+          ? new Date(new Date(chargeableFrom).getTime() + freeWaitMinutes * 60000).toISOString()
           : null;
         await supabaseAdmin.from("job_wait_sessions").insert({
           job_id: job.id,
@@ -1053,16 +1136,15 @@ export const updateJobStatus = createServerFn({ method: "POST" })
           company_id: companyId,
           source: "manual",
           auto_started: true,
-          started_at: startedAt,
+          started_at: chargeableFrom, // billing anchor
+          arrived_at: arrivedAt,
+          chargeable_from: chargeableFrom,
           free_ends_at: freeEndsAt,
         } as never);
       }
     }
 
     if (data.status === "en_route" || data.status === "in_progress" || data.status === "completed") {
-      // Auto-close any open wait session when the driver departs the pickup,
-      // starts the trip, or completes it. This also writes the job_adjustments
-      // "waiting" row so the auto-started session on arrival is reconciled.
       await closeOpenWaitSession(
         supabaseAdmin,
         job.id,
@@ -1072,9 +1154,30 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       );
     }
 
+    // If the driver reverts a mistaken arrival, do NOT delete the open wait
+    // session — close it as zero so we keep the audit trace.
+    if (isCorrection) {
+      const { data: openWait } = await supabaseAdmin
+        .from("job_wait_sessions")
+        .select("id")
+        .eq("job_id", job.id)
+        .is("ended_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (openWait) {
+        await supabaseAdmin
+          .from("job_wait_sessions")
+          .update({
+            ended_at: now,
+            calculated_amount: 0,
+            agreed_amount: 0,
+            driver_note: "reverted by driver correction",
+          } as never)
+          .eq("id", (openWait as any).id);
+      }
+    }
 
-    // Reversible-group auto-dissolve: if this trip belonged to a group and all
-    // sibling trips are now completed/cancelled, clear group_id on all members.
+    // Reversible-group auto-dissolve.
     if (data.status === "completed") {
       const gid = (job as any).group_id as string | null | undefined;
       if (gid) {
