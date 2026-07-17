@@ -31,6 +31,7 @@ export type TripMapEventType =
   | "boarding_rejected"
   | "status_corrected"
   | "arrived_pickup_override"
+  | "coord_status_override"
   | "pax_no_show"
   | "pax_cancelled"
   | "navigate_opened"
