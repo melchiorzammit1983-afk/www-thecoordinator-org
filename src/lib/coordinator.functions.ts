@@ -3852,8 +3852,9 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     // Best-effort envelope recovery: accept the documented shape, then fall back
     // to inspecting payload shape when `type` is missing/wrong.
     const rawPayload = parsed?.payload;
-    const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
-    const isData = parsed?.type === "data" || Array.isArray(rawPayload);
+    const isQuestions = parsed?.type === "questions" && Array.isArray(rawPayload);
+    const isQuestion = !isQuestions && (parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data"));
+    const isData = parsed?.type === "data" || Array.isArray(rawPayload) && !isQuestions;
     if (isData && Array.isArray(rawPayload)) {
       const rows = rawPayload.map(normalizeTripRow);
       // Server-side confidence: trust the model's flag, but also flip to true
@@ -3864,9 +3865,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       );
 
       // ---------- DYNAMIC BILLING: accuracy score ----------
-      // Score = filled required fields / total expected required fields.
-      // Required per row: pickupDate, pickupTime, pickupAddress, deliveryAddress, quantity (pax).
-      // <75% → is_half_price=true, applies 50% discount to the bulk processing fee.
       const REQ_KEYS = ["pickupDate", "pickupTime", "pickupAddress", "deliveryAddress", "quantity"] as const;
       const totalExpected = rows.length * REQ_KEYS.length;
       let filled = 0;
@@ -3879,13 +3877,29 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       const accuracy_score = totalExpected > 0 ? filled / totalExpected : 0;
       const is_half_price = totalExpected > 0 && accuracy_score < 0.75;
 
+      const followRaw = Array.isArray(parsed?.follow_up_questions) ? parsed.follow_up_questions : [];
+      const follow_up_questions: string[] = followRaw
+        .filter((q: any) => typeof q === "string")
+        .map((q: string) => q.trim())
+        .filter((q: string) => q.length > 0 && q.length <= 200)
+        .slice(0, 3);
+
       return {
         type: "data" as const,
         payload: rows,
         is_low_confidence: modelFlag || missingMandatory,
         accuracy_score,
         is_half_price,
+        follow_up_questions,
       };
+    }
+    if (isQuestions) {
+      const qs: string[] = (rawPayload as any[])
+        .filter((q) => typeof q === "string")
+        .map((q: string) => q.trim())
+        .filter((q) => q.length > 0 && q.length <= 200)
+        .slice(0, 3);
+      if (qs.length) return { type: "questions" as const, payload: qs };
     }
     if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
       return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
