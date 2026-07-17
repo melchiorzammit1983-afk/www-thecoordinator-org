@@ -2110,12 +2110,6 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         } : null}
       />
 
-      <EmergencyOverrideDialog
-        open={emergencyOpen}
-        onOpenChange={setEmergencyOpen}
-        token={token}
-        job={{ id: job.id, status: job.status }}
-      />
 
       {previewOpen && (
         <NavigateFullscreen
