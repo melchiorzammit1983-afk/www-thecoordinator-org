@@ -1402,6 +1402,28 @@ export const updateJobStatus = createServerFn({ method: "POST" })
         }
       }
     }
+
+    // Push a realtime broadcast so magic-link viewers (driver manifest,
+    // client tracking) refetch without waiting for their next poll.
+    {
+      const driverId = (job as any).driver_id as string | null;
+      const gid = (job as any).group_id as string | null | undefined;
+      const jobIds = new Set<string>([job.id]);
+      if (gid && driverId) {
+        const { data: sibs } = await supabaseAdmin.from("jobs")
+          .select("id").eq("group_id" as any, gid).eq("driver_id", driverId);
+        for (const s of (sibs ?? []) as any[]) jobIds.add(s.id);
+      }
+      const ids = Array.from(jobIds);
+      await broadcastJobUpdate(
+        [
+          driverId ? `driver:${driverId}` : "",
+          gid ? `group:${gid}` : "",
+          ...ids.map((id) => `job:${id}`),
+        ],
+        { job_ids: ids, group_id: gid ?? null, kind: `status:${data.status}` },
+      );
+    }
     return { ok: true };
   });
 
