@@ -180,6 +180,12 @@ async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
       severity,
       reason,
       transit_sec: transitSec,
+      buffer_min: PAX_DROPOFF_BUFFER_MIN,
+      prev_duration_sec: prevDur,
+      prev_from_label: pickLabel(prev, "pickup"),
+      prev_to_label: pickLabel(prev, "dropoff"),
+      next_from_label: pickLabel(next, "pickup"),
+      next_to_label: pickLabel(next, "dropoff"),
     });
   }
   return out;
