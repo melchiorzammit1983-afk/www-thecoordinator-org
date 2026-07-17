@@ -5,6 +5,7 @@ import { getTripMap } from "@/lib/trip-map.functions";
 import { loadGoogleMaps } from "@/components/driver/DriverDashboardMap";
 import { formatEta } from "@/lib/trip-display";
 import { supabase } from "@/integrations/supabase/client";
+import { TripTimelinePdfButton } from "@/components/coordinator/TripTimelinePdfButton";
 
 /**
  * Live + historical trip map for the coordinator sheet.
@@ -245,6 +246,9 @@ export function TripEventsMap({
             · updated {fmtTime(q.data.job.live_eta_updated_at)}
           </span>
         )}
+        <div className="ml-auto">
+          <TripTimelinePdfButton jobId={jobId} />
+        </div>
       </div>
       <div
         ref={containerRef}
