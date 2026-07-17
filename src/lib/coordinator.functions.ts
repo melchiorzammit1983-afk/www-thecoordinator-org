@@ -2722,7 +2722,7 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
         .in("pax_id", data.pax_ids);
     }
 
-    return { ok: true, new_job_id: job.id };
+    return { ok: true, new_job_id: job.id, job };
   });
 
 export const movePaxToJob = createServerFn({ method: "POST" })
