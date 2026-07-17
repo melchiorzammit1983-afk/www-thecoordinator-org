@@ -262,7 +262,21 @@ export function AskGuidePanel() {
           </div>
         </div>
       </div>
+      {showEscalate && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-4" onClick={() => setShowEscalate(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-background border p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="font-semibold text-sm flex items-center gap-2"><LifeBuoy className="h-4 w-4 text-primary" /> Escalate to admin</div>
+            <p className="text-xs text-muted-foreground">Your full Guide conversation and current screen will be attached so an admin can help.</p>
+            <Input placeholder="Short subject (optional)" value={escSubject} onChange={(e) => setEscSubject(e.target.value)} />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowEscalate(false)}>Cancel</Button>
+              <Button size="sm" onClick={submitEscalation}>Create ticket</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+
   );
 }
 
