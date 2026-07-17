@@ -4,7 +4,7 @@ import { Sparkles, Loader2, ShieldAlert } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { submitLesson } from "@/lib/ai-lessons.functions";
-import { redactPii } from "@/lib/ai-pii.client";
+import { redactPii } from "@/lib/ai-pii-preview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
