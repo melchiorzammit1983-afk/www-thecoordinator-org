@@ -53,7 +53,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useSafetyMode } from "@/hooks/use-safety-mode";
 
 import {
-  CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
+  CheckCircle2, Check, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
   Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
