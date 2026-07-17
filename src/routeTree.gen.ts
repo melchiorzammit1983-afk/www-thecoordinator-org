@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RequestAccessRouteImport } from './routes/request-access'
 import { Route as InstallRouteImport } from './routes/install'
 import { Route as HelpRouteImport } from './routes/help'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
@@ -97,6 +98,11 @@ const InstallRoute = InstallRouteImport.update({
 const HelpRoute = HelpRouteImport.update({
   id: '/help',
   path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -475,6 +481,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
@@ -545,6 +552,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/demo': typeof DemoRoute
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -614,6 +622,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
@@ -686,6 +695,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/demo'
     | '/help'
     | '/install'
     | '/request-access'
@@ -756,6 +766,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/demo'
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
@@ -824,6 +835,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/admin-auth'
     | '/auth'
+    | '/demo'
     | '/help'
     | '/install'
     | '/request-access'
@@ -896,6 +908,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminAuthRoute: typeof AdminAuthRoute
   AuthRoute: typeof AuthRoute
+  DemoRoute: typeof DemoRoute
   HelpRoute: typeof HelpRouteWithChildren
   InstallRoute: typeof InstallRoute
   RequestAccessRoute: typeof RequestAccessRoute
@@ -953,6 +966,13 @@ declare module '@tanstack/react-router' {
       path: '/help'
       fullPath: '/help'
       preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1568,6 +1588,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminAuthRoute: AdminAuthRoute,
   AuthRoute: AuthRoute,
+  DemoRoute: DemoRoute,
   HelpRoute: HelpRouteWithChildren,
   InstallRoute: InstallRoute,
   RequestAccessRoute: RequestAccessRoute,
