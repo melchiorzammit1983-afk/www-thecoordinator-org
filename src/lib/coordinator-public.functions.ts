@@ -1515,6 +1515,17 @@ export const markPaxNoShow = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
       driver_id: link.subject_id ?? null,
     } as never);
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId: (job as any).executor_company_id ?? job.company_id,
+        driverId: link.subject_id ?? (job as any).driver_id ?? null,
+        eventType: "pax_no_show",
+        notes: `No-show: ${(paxRow as any).name}`,
+        meta: { pax_id: data.pax_id, pax_name: (paxRow as any).name },
+      });
+    }
     return { ok: true };
   });
 
