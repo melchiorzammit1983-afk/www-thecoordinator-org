@@ -2,9 +2,15 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Send, Sparkles, RotateCcw, Loader2 } from "lucide-react";
+import { X, Send, Sparkles, RotateCcw, Loader2, LifeBuoy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useServerFn } from "@tanstack/react-start";
+import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useAskGuide } from "./AskGuideProvider";
+import { logHelpQuestion, createSupportTicket } from "@/lib/support.functions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "coord.help-chat.v1";
@@ -48,6 +54,14 @@ export function AskGuidePanel() {
     transport,
   });
 
+  const logFn = useServerFn(logHelpQuestion);
+  const escalateFn = useServerFn(createSupportTicket);
+  const navigate = useNavigate();
+  const [lastLoggedId, setLastLoggedId] = useState<string | null>(null);
+  const [showEscalate, setShowEscalate] = useState(false);
+  const [escSubject, setEscSubject] = useState("");
+  const loggedForRef = useRef<string | null>(null);
+
   // Persist history
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -55,6 +69,23 @@ export function AskGuidePanel() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     } catch {}
   }, [messages]);
+
+  // Log Q&A when assistant finishes a response
+  useEffect(() => {
+    if (status !== "ready" || messages.length < 2) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    if (loggedForRef.current === last.id) return;
+    const prevUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!prevUser) return;
+    const q = prevUser.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+    const a = last.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+    if (!q) return;
+    loggedForRef.current = last.id;
+    logFn({ data: { question: q, answer: a, route: typeof window !== "undefined" ? window.location.pathname : undefined } })
+      .then((r) => setLastLoggedId(r.id))
+      .catch(() => {});
+  }, [status, messages, logFn]);
 
   // Autoscroll
   useEffect(() => {
@@ -82,8 +113,33 @@ export function AskGuidePanel() {
 
   const clear = () => {
     setMessages([]);
+    setLastLoggedId(null);
+    loggedForRef.current = null;
     try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
   };
+
+  const submitEscalation = async () => {
+    const subject = escSubject.trim() || (messages.find((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("").slice(0, 80) ?? "Guide couldn't help");
+    const thread = messages.map((m) => ({ role: m.role, text: m.parts.map((p) => (p.type === "text" ? p.text : "")).join("") }));
+    try {
+      const { id } = await escalateFn({ data: {
+        subject,
+        body: "Escalated from Ask the Guide. Full conversation attached.",
+        route: typeof window !== "undefined" ? window.location.pathname : undefined,
+        viewport: typeof window !== "undefined" ? `${window.innerWidth}x${window.innerHeight}` : undefined,
+        ai_thread: thread,
+        from_log_id: lastLoggedId ?? undefined,
+      } });
+      toast.success("Ticket created — an admin will follow up.");
+      setShowEscalate(false);
+      close();
+      navigate({ to: "/my-tickets" });
+      void id;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create ticket");
+    }
+  };
+
 
   return (
     <>
@@ -104,6 +160,15 @@ export function AskGuidePanel() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {messages.length >= 2 && (
+              <button
+                onClick={() => setShowEscalate(true)}
+                title="Ask a human"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <LifeBuoy className="h-4 w-4" />
+              </button>
+            )}
             {messages.length > 0 && (
               <button
                 onClick={clear}
@@ -197,7 +262,21 @@ export function AskGuidePanel() {
           </div>
         </div>
       </div>
+      {showEscalate && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-4" onClick={() => setShowEscalate(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-background border p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="font-semibold text-sm flex items-center gap-2"><LifeBuoy className="h-4 w-4 text-primary" /> Escalate to admin</div>
+            <p className="text-xs text-muted-foreground">Your full Guide conversation and current screen will be attached so an admin can help.</p>
+            <Input placeholder="Short subject (optional)" value={escSubject} onChange={(e) => setEscSubject(e.target.value)} />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowEscalate(false)}>Cancel</Button>
+              <Button size="sm" onClick={submitEscalation}>Create ticket</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+
   );
 }
 
