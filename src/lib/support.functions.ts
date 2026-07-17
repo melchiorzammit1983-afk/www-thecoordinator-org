@@ -54,9 +54,9 @@ export const logHelpQuestion = createServerFn({ method: "POST" })
       await sb.rpc("spend_points", {
         _company_id: companyId,
         _feature_key: "ai_guide_chat",
-        _job_id: null,
+        _job_id: undefined,
         _note: "Ask the Guide question",
-        _cost_override: null,
+        _cost_override: undefined,
       });
     }
     return { id: row.id };
