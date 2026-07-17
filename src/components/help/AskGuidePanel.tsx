@@ -56,11 +56,15 @@ export function AskGuidePanel() {
 
   const logFn = useServerFn(logHelpQuestion);
   const escalateFn = useServerFn(createSupportTicket);
+  const analyzeFn = useServerFn(analyzeHelpTurn);
   const navigate = useNavigate();
   const [lastLoggedId, setLastLoggedId] = useState<string | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
   const [escSubject, setEscSubject] = useState("");
+  const [turnMeta, setTurnMeta] = useState<{ confidence: number; clarifying: string[]; escalate: boolean; suggested_subject: string | null } | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const loggedForRef = useRef<string | null>(null);
+  const analyzedForRef = useRef<string | null>(null);
 
   // Persist history
   useEffect(() => {
