@@ -220,12 +220,16 @@ export function AskGuidePanel() {
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-foreground">Ask the Guide</div>
-              <div className="text-xs text-muted-foreground">AI-powered · knows your system</div>
+              <div className="text-sm font-semibold text-foreground">
+                {anon ? "Chat with a product expert" : "Ask the Guide"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {anon ? "See if The Coordinator fits your team" : "AI-powered · knows your system"}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {messages.length >= 2 && (
+            {!anon && messages.length >= 2 && (
               <button
                 onClick={() => setShowEscalate(true)}
                 title="Ask a human"
