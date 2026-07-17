@@ -382,7 +382,29 @@ function ManualForm({
           )}
         </div>
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
-        <div className="space-y-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></div>
+        <div className="space-y-1.5">
+          <Label>Time</Label>
+          <div className="flex items-center gap-1.5">
+            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
+            <div className="flex items-center gap-0.5">
+              {[-15, -5, 5, 15].map((delta) => (
+                <Button
+                  key={delta}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-1.5 text-[10px] font-mono tabular-nums"
+                  onClick={() => setTime(shiftTime(time, delta))}
+                  disabled={!time}
+                  title={`Shift ${delta > 0 ? "+" : ""}${delta} min`}
+                >
+                  {delta > 0 ? `+${delta}` : delta}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
+        </div>
         <div className="space-y-1.5"><Label>Client company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Phone number</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
         <div className="space-y-1.5 col-span-2">
