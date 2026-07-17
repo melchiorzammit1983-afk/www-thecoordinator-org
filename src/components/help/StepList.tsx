@@ -1,7 +1,20 @@
 import type { ReactNode } from "react";
 
-export function StepList({ children }: { children: ReactNode }) {
-  return <ol className="my-6 space-y-6">{children}</ol>;
+type Item = { title: string; body: ReactNode };
+
+export function StepList(
+  props: { items: Item[] } | { children: ReactNode },
+) {
+  if ("items" in props) {
+    return (
+      <ol className="not-prose my-6 space-y-6">
+        {props.items.map((it, i) => (
+          <Step key={i} n={i + 1} title={it.title}>{it.body}</Step>
+        ))}
+      </ol>
+    );
+  }
+  return <ol className="not-prose my-6 space-y-6">{props.children}</ol>;
 }
 
 export function Step({
@@ -19,7 +32,7 @@ export function Step({
         {n}
       </div>
       <div className="min-w-0 space-y-2">
-        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
         <div className="text-sm leading-relaxed text-muted-foreground">{children}</div>
       </div>
     </li>

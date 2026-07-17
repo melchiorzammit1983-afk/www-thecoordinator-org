@@ -12,17 +12,20 @@ const KIND: Record<Kind, { icon: typeof Info; classes: string }> = {
 };
 
 export function Callout({
-  kind = "info",
+  kind,
+  tone,
   title,
   children,
 }: {
   kind?: Kind;
+  /** Alias for `kind`. */
+  tone?: Kind;
   title?: string;
   children: ReactNode;
 }) {
-  const { icon: Icon, classes } = KIND[kind];
+  const { icon: Icon, classes } = KIND[tone ?? kind ?? "info"];
   return (
-    <div className={cn("my-4 flex gap-3 rounded-lg border p-4", classes)}>
+    <div className={cn("not-prose my-4 flex gap-3 rounded-lg border p-4", classes)}>
       <Icon className="mt-0.5 h-5 w-5 shrink-0" />
       <div className="min-w-0 space-y-1 text-sm leading-relaxed">
         {title && <div className="font-semibold">{title}</div>}
