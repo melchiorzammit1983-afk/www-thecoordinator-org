@@ -69,8 +69,10 @@ export function PaxSplitDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
+
         <DialogHeader>
           <DialogTitle>Passengers</DialogTitle>
           <DialogDescription>{jobLabel}</DialogDescription>
