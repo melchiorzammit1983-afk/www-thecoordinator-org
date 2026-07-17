@@ -12,6 +12,9 @@ import { logHelpQuestion, createSupportTicket, analyzeHelpTurn } from "@/lib/sup
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { SafetyBanner } from "@/components/ai/SafetyBanner";
+import { AiFeedback } from "@/components/ai/AiFeedback";
+import { TeachAiDialog } from "@/components/ai/TeachAiDialog";
 
 const STORAGE_KEY = "coord.help-chat.v1";
 
