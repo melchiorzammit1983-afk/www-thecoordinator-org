@@ -419,6 +419,8 @@ function ManualForm({
           <DriverAssignmentConflictHint
             driverId={driverId === "__none__" ? null : driverId}
             jobId={job?.id ?? null}
+            drivers={drivers}
+            onPickDriver={(id) => setDriverId(id)}
             candidate={
               job
                 ? null
