@@ -444,6 +444,11 @@ export const respondToDispatch = createServerFn({ method: "POST" })
           body: `⚠️ ${c.name ?? "Partner"} declined this dispatch${data.note ? ` — ${data.note}` : ""}. Returning to previous coordinator.`,
           thread_kind: "driver_coord",
         } as never);
+        // Auto-forward attempt (best-effort; never blocks the reject flow)
+        try {
+          const { tryAutoForward } = await import("@/lib/availability.server");
+          await tryAutoForward(data.job_id, "rejected");
+        } catch { /* ignore */ }
       }
     } catch {
       // Compensation: revert the hop back to pending so operator state is coherent.
