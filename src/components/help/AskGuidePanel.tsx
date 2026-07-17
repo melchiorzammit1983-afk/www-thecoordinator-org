@@ -305,14 +305,17 @@ export function AskGuidePanel() {
                       <div className="flex items-center justify-between gap-2 pl-1">
                         <AiFeedback surface="guide" question={qText} answer={aText}
                           route={typeof window !== "undefined" ? window.location.pathname : undefined} />
-                        <TeachAiDialog
-                          defaultKind="qa"
-                          defaultExample={qText}
-                          trigger={
-                            <button className="text-[11px] text-primary hover:underline">
-                              Teach the AI
-                            </button>
-                          }
+                        {!anon && (
+                          <TeachAiDialog
+                            defaultKind="qa"
+                            defaultExample={qText}
+                            trigger={
+                              <button className="text-[11px] text-primary hover:underline">
+                                Teach the AI
+                              </button>
+                            }
+                          />
+                        )}
                         />
                       </div>
                     )}
