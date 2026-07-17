@@ -392,6 +392,22 @@ function ManualForm({
               {drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          <DriverAssignmentConflictHint
+            driverId={driverId === "__none__" ? null : driverId}
+            jobId={job?.id ?? null}
+            candidate={
+              job
+                ? null
+                : {
+                    pickup_at: makeIsoOrNull(date, time),
+                    from_location: from || (fromFlight ? "Airport" : ""),
+                    to_location: to || (toFlight ? "Airport" : ""),
+                    pickup_display_name: fromDisplayName ?? null,
+                    dropoff_display_name: toDisplayName ?? null,
+                    route_duration_sec: etaResult && "duration_sec" in etaResult ? etaResult.duration_sec : null,
+                  }
+            }
+          />
         </div>
       </div>
       {/* Live from → to ETA (from Google, billed via `route_eta` feature) */}
