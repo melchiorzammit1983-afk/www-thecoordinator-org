@@ -380,14 +380,14 @@ export const adminAiActivity = createServerFn({ method: "GET" })
       ticket_status?: string | null;
       ticket_priority?: string | null;
       resolved_at?: string | null;
-      actions?: unknown;
-      executed_actions?: unknown;
+      actions?: any;
+      executed_actions?: any;
       affected_count?: number | null;
       status?: string | null;
       error?: string | null;
       mode?: string | null;
-      sources_used?: unknown;
-      ai_thread?: unknown;
+      sources_used?: any;
+      ai_thread?: any;
     };
 
     const events: Event[] = [];
