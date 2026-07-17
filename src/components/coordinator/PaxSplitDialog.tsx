@@ -29,6 +29,8 @@ export function PaxSplitDialog({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [driverId, setDriverId] = useState<string>("__none__");
+  const [preview, setPreview] = useState<NewTripRow[]>([]);
+
 
   useEffect(() => { if (open) { setSelected(new Set()); setDriverId("__none__"); } }, [open, jobId]);
 
