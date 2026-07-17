@@ -2913,7 +2913,7 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
                 <Button size="sm" variant="outline" onClick={() => saveCols(DRIVER_DEFAULT_COLS)}>Defaults</Button>
                 <Button size="sm" variant="outline" onClick={() => saveCols([])}>None</Button>
               </div>
-              {["Trip","Route","People","Ops"].map((g) => (
+              {["Trip","Payment","Route","People","Ops"].map((g) => (
                 <div key={g}>
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{g}</div>
                   <div className="flex flex-wrap gap-1.5">
