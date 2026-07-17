@@ -103,6 +103,26 @@ function ClientTripPortal() {
     return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
   }, [beatFn, token, deviceId, online]);
 
+  // Realtime broadcast: server pushes on job:<id> / group:<gid> after every
+  // driver status change or grouped-run cascade so the tracking page flips
+  // instantly instead of waiting for the 15s poll.
+  const jobId = (liveData as any)?.job?.id ?? (cached?.data as any)?.job?.id ?? null;
+  const groupId = (liveData as any)?.job?.group_id ?? (cached?.data as any)?.job?.group_id ?? null;
+  useEffect(() => {
+    if (!jobId) return;
+    const topics = [`job:${jobId}`, ...(groupId ? [`group:${groupId}`] : [])];
+    const channels = topics.map((topic) =>
+      supabase
+        .channel(topic, { config: { broadcast: { self: false } } })
+        .on("broadcast", { event: "jobs_updated" }, () => {
+          qc.invalidateQueries({ queryKey: ["client-portal", token] });
+        })
+        .subscribe(),
+    );
+    return () => { for (const ch of channels) supabase.removeChannel(ch); };
+  }, [jobId, groupId, token, qc]);
+
+
   const confirmFn = useServerFn(confirmClientTrip);
   const confirmMut = useMutation({
     mutationFn: () => confirmFn({ data: { token, device_id: deviceId } }),
