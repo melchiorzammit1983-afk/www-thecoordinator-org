@@ -526,6 +526,7 @@ function DriverBoardingApprovalPanel({
 function DriverManifest() {
   const { token } = Route.useParams();
   const fn = useServerFn(getDriverManifest);
+  const qcTop = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["driver-manifest", token],
     queryFn: () => fn({ data: { token } }) as Promise<DriverManifestResponse>,
@@ -539,6 +540,22 @@ function DriverManifest() {
   useEffect(() => {
     if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
   }, [data?.driver]);
+
+  // Realtime broadcast: server pushes `jobs_updated` on driver:<id> whenever
+  // any of this driver's jobs (or a grouped cascade) changes, so sibling
+  // cards flip statuses instantly across all open driver sessions.
+  const driverId = data?.driver?.id ?? null;
+  useEffect(() => {
+    if (!driverId) return;
+    const ch = supabase
+      .channel(`driver:${driverId}`, { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "jobs_updated" }, () => {
+        qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [driverId, token, qcTop]);
+
 
   const [showArchived, setShowArchived] = useState(false);
   const isMobile = useIsMobile();
