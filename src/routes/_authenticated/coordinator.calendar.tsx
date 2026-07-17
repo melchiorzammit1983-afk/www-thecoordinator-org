@@ -315,6 +315,15 @@ function CalendarPage() {
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [showCompleted, setShowCompleted] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("calendar.showCompleted") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("calendar.showCompleted", showCompleted ? "1" : "0");
+    }
+  }, [showCompleted]);
   const [driverFilter, setDriverFilter] = useState<string>("all"); // "all" | "unassigned" | driver id
   const toggleStatusFilter = (s: string) =>
     setStatusFilter((prev) => {
