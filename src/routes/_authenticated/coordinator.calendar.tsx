@@ -915,6 +915,16 @@ function CalendarPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <Button
+            size="sm"
+            variant={showCompleted ? "default" : "outline"}
+            className="h-8 text-xs"
+            onClick={() => setShowCompleted((v) => !v)}
+            title="Toggle completed and cancelled trips"
+          >
+            {showCompleted ? "Hide completed" : "Show completed"}
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="outline" className="h-8 text-xs">
