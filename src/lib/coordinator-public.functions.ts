@@ -1018,6 +1018,43 @@ function haversineMetersLL(lat1: number, lng1: number, lat2: number, lng2: numbe
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
+/**
+ * Broadcast a job/group update to the Supabase Realtime broadcast topic.
+ * Bypasses RLS (broadcasts are unauthenticated by design) so magic-link
+ * viewers (driver / client tracking page) receive push updates without
+ * needing SELECT on `jobs`. Best-effort — never throws to the caller.
+ */
+async function broadcastJobUpdate(
+  topics: string[],
+  payload: { job_ids: string[]; group_id?: string | null; kind: string },
+) {
+  try {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return;
+    const uniqueTopics = Array.from(new Set(topics.filter(Boolean)));
+    if (!uniqueTopics.length) return;
+    await fetch(`${url}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: uniqueTopics.map((topic) => ({
+          topic,
+          event: "jobs_updated",
+          payload,
+          private: false,
+        })),
+      }),
+    });
+  } catch { /* never block */ }
+}
+
+
+
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
