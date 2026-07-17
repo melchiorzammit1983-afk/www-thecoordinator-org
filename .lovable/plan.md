@@ -1,37 +1,71 @@
-## Goal
 
-"Preview route" on a pending trip must show the **full pickup → dropoff route** (hotel → airport) with ETA, distance, and traffic delay — not the driver's current location → pickup. The driver→pickup ETA only appears **after** the driver accepts. Coordinators get the same pickup→dropoff view on trip cards.
+# Driver Schedule Collision Detection
 
-## Current behavior (why it's wrong)
+Warn the coordinator (and block, if they want) when assigning a trip to a driver whose existing trips would overlap once travel time + a passenger buffer are factored in.
 
-`src/routes/m.driver.$token.tsx` (lines 1260–1300) calls `computeDriverRoute` with `origin = driver GPS` and `destination = pickup address`, so the preview panel + `PreviewRoute` map always render the "drive to pickup" leg. The pickup → dropoff leg is never shown pre-acceptance.
+## What the coordinator will see
 
-## Changes
+1. **In the driver picker (assign / reassign dropdown)** — each driver row gets a status chip:
+   - 🟢 **Free** — no conflict
+   - 🟡 **Tight** — arrives with <5 min slack
+   - 🔴 **Conflict** — arrives after next pickup, or previous trip not finished in time
+   Hovering the chip shows the reasoning ("Finishes prev trip 8:05 + 10 min buffer → next pickup 8:10 → 5 min short").
 
-### 1. Routing server fn — support address→address
-`src/lib/routing.functions.ts`
-- Extend the input validator: `origin` accepts EITHER `{ latitude, longitude }` OR `{ address: string }`.
-- Build the Routes API body with `origin.address` when given, `origin.location.latLng` otherwise. Everything else (traffic-aware, alternatives, field mask, response normalization) stays the same.
+2. **On the trip card / Trip Details sheet** — if the currently assigned driver has a conflict, show a red banner:
+   *"Schedule conflict: driver is on trip #1234 until ~8:05. This 8:10 pickup needs ~25 min drive → arrives 8:30 (20 min late). [Reassign] [Override]"*
 
-### 2. Driver app — pre-acceptance shows trip route
-`src/routes/m.driver.$token.tsx`
-- Replace the driver→pickup preview query with a **trip route** query: `origin = job.from_location`, `destination = job.to_location` (address-based, no GPS required).
-- `previewEnabled` becomes `isPending && !!job.from_location && !!job.to_location` — drop the `driverPos` requirement and remove the "Enable location to preview the route to pickup" hint.
-- Header label changes from "To pickup" to "Trip route" and shows `Pickup → Dropoff` names above the ETA line.
-- Add a **traffic delay** chip using `duration_sec - static_duration_sec` (same math as coordinator TrafficBadge) so the driver sees "+8 min traffic" when relevant.
-- The `PreviewRoute` fullscreen map (`previewOpen`) already renders the polyline from `previewLive`; it will now render the pickup→dropoff polyline unchanged.
-- **After acceptance:** add a small secondary "ETA to pickup" chip in the accepted-state panel that uses driver GPS → pickup via the same server fn (this is the old query, just gated on `accepted && driverPos && status < arrived_pickup`). Auto-refresh every 60s like today.
+3. **On the calendar board** — trips assigned to the same driver get a subtle red left-rail if they collide with a sibling.
 
-### 3. Coordinator — pickup→dropoff preview on trip cards
-`src/routes/_authenticated/coordinator.calendar.tsx` and `coordinator.index.tsx`
-- The dashboard/calendar already show pickup→dropoff duration + traffic via `useEnrichVisibleJobs` / `TrafficBadge` and `RouteThumb`. Confirm the "Preview route" affordance on the expanded trip panel (calendar) opens `TripEventsMap` with the pickup→dropoff polyline from the cached job enrichment (`route_polyline`), not the driver breadcrumb.
-- If `route_polyline` isn't populated on a card, fall back to calling `computeDriverRoute` with `{ origin: { address: from_location }, destination_address: to_location }` and cache the result in the existing enrichment hook.
-- Once the driver has accepted AND a live driver location exists, additionally render the driver→pickup leg on the same map in a secondary color so the coordinator sees both legs.
+## How the math works
 
-### 4. Types
-Update the inline `LiveRouteInfo` / query result types in `m.driver.$token.tsx` to match the widened validator (no behavior change beyond compilation).
+For each candidate driver, take their trips on the same day and sort by `pickup_at`. For each adjacent pair (prev → next):
 
-## Out of scope
-- No schema changes.
-- No changes to acceptance/wait/status workflows.
-- No new components — reuses `PreviewRoute`, `TripEventsMap`, `TrafficBadge`, `RouteThumb`.
+```text
+prev.end_estimate   = prev.pickup_at + prev.duration_sec (from route cache / Routes API)
+handover_ready_at   = prev.end_estimate + PAX_DROPOFF_BUFFER (default 10 min)
+transit_to_next     = Routes API: prev.dropoff → next.pickup (traffic-aware)
+must_leave_by       = next.pickup_at − transit_to_next
+slack_min           = (must_leave_by − handover_ready_at) / 60
+```
+
+- `slack_min >= 5` → Free
+- `0 <= slack_min < 5` → Tight
+- `slack_min < 0` → Conflict (magnitude = minutes late)
+
+Buffers are admin-tunable (single row in `ai_configuration` or a new `company_scheduling_settings`): `pax_dropoff_buffer_min` (default 10), `tight_threshold_min` (default 5).
+
+## Implementation
+
+### 1. Server function — `src/lib/scheduling.functions.ts` (new)
+
+- `checkDriverConflicts({ driver_id, job_id? })` — returns `{ conflicts: [{ withJobId, kind: 'late_arrival'|'overlap', slack_min, reason }], suggestion?: 'reassign' }`.
+- `checkAssignmentPreview({ job_id, driver_id })` — same math run before commit; used by the picker.
+- Uses `job_route_cache` first (already populated by existing route-insights work). Only calls Routes API for the transit leg when cache is missing/stale (>30 min). Batches with `computeRouteMatrix`.
+- RLS-scoped via `requireSupabaseAuth`; only returns jobs the caller can already see.
+
+### 2. Hook — `src/hooks/use-driver-conflicts.ts` (new)
+
+Lightweight wrapper around `useQuery` keyed by `driver_id` + trip date, refetch every 60 s, invalidated on any job status/assignment mutation.
+
+### 3. UI touchpoints (frontend only, small, isolated)
+
+- `src/components/coordinator/DriverPicker.tsx` (or wherever the current select lives — will locate during build) → append `<ConflictChip />`.
+- `src/components/coordinator/TripDetailsSheet.tsx` → new `<ScheduleConflictBanner />` at top when conflicts exist.
+- `src/routes/_authenticated/coordinator.calendar.tsx` → tint the row rail red when the job is part of a conflict pair.
+- Reuse existing `TrafficBadge` colour tokens (emerald / amber / red) — no new palette.
+
+### 4. Blocking vs. warning
+
+Non-blocking by default (banner + confirm modal on Save). Add a company setting later if the user wants a hard block; leaving that out of v1 to avoid workflow disruption per project rules.
+
+## Out of scope for this pass
+
+- Multi-driver auto-reassignment suggestions (only flags; doesn't auto-swap).
+- Grouped/chained runs already share a driver — collision math skips within the same `group_id`.
+- Push notification to driver about tight schedule (can follow after coordinator UX lands).
+
+## Files to add / edit
+
+- **New:** `src/lib/scheduling.functions.ts`, `src/hooks/use-driver-conflicts.ts`, `src/components/coordinator/ScheduleConflictBanner.tsx`, `src/components/coordinator/ConflictChip.tsx`
+- **Edit:** `src/components/coordinator/TripDetailsSheet.tsx`, `src/routes/_authenticated/coordinator.calendar.tsx`, and the driver-assign control (located during build)
+- **No migration required** for v1 (buffers hardcoded with sane defaults; can be lifted to `ai_configuration` later without breaking callers).
