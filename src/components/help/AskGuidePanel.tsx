@@ -99,9 +99,15 @@ export function AskGuidePanel() {
     const a = last.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
     if (!q || !a) return;
     loggedForRef.current = last.id;
-    logFn({ data: { question: q, answer: a, route: typeof window !== "undefined" ? window.location.pathname : undefined } })
-      .then((r) => setLastLoggedId(r.id))
-      .catch(() => {});
+    (async () => {
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data: sess } = await supabase.auth.getSession();
+        if (!sess.session) return; // logging requires auth; skip for anonymous users
+        const r = await logFn({ data: { question: q, answer: a, route: typeof window !== "undefined" ? window.location.pathname : undefined } });
+        setLastLoggedId(r.id);
+      } catch {}
+    })();
 
     if (analyzedForRef.current === last.id) return;
     analyzedForRef.current = last.id;
