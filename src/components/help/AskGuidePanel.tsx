@@ -54,6 +54,14 @@ export function AskGuidePanel() {
     transport,
   });
 
+  const logFn = useServerFn(logHelpQuestion);
+  const escalateFn = useServerFn(createSupportTicket);
+  const navigate = useNavigate();
+  const [lastLoggedId, setLastLoggedId] = useState<string | null>(null);
+  const [showEscalate, setShowEscalate] = useState(false);
+  const [escSubject, setEscSubject] = useState("");
+  const loggedForRef = useRef<string | null>(null);
+
   // Persist history
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -61,6 +69,23 @@ export function AskGuidePanel() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     } catch {}
   }, [messages]);
+
+  // Log Q&A when assistant finishes a response
+  useEffect(() => {
+    if (status !== "ready" || messages.length < 2) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    if (loggedForRef.current === last.id) return;
+    const prevUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!prevUser) return;
+    const q = prevUser.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+    const a = last.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+    if (!q) return;
+    loggedForRef.current = last.id;
+    logFn({ data: { question: q, answer: a, route: typeof window !== "undefined" ? window.location.pathname : undefined } })
+      .then((r) => setLastLoggedId(r.id))
+      .catch(() => {});
+  }, [status, messages, logFn]);
 
   // Autoscroll
   useEffect(() => {
@@ -88,8 +113,33 @@ export function AskGuidePanel() {
 
   const clear = () => {
     setMessages([]);
+    setLastLoggedId(null);
+    loggedForRef.current = null;
     try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
   };
+
+  const submitEscalation = async () => {
+    const subject = escSubject.trim() || (messages.find((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("").slice(0, 80) ?? "Guide couldn't help");
+    const thread = messages.map((m) => ({ role: m.role, text: m.parts.map((p) => (p.type === "text" ? p.text : "")).join("") }));
+    try {
+      const { id } = await escalateFn({ data: {
+        subject,
+        body: "Escalated from Ask the Guide. Full conversation attached.",
+        route: typeof window !== "undefined" ? window.location.pathname : undefined,
+        viewport: typeof window !== "undefined" ? `${window.innerWidth}x${window.innerHeight}` : undefined,
+        ai_thread: thread,
+        from_log_id: lastLoggedId ?? undefined,
+      } });
+      toast.success("Ticket created — an admin will follow up.");
+      setShowEscalate(false);
+      close();
+      navigate({ to: "/my-tickets" });
+      void id;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create ticket");
+    }
+  };
+
 
   return (
     <>
