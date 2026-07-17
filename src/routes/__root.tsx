@@ -17,6 +17,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { registerServiceWorker } from "@/lib/pwa/register-sw";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
+import { AskGuideProvider } from "@/components/help/AskGuideProvider";
+import { AskGuidePanel } from "@/components/help/AskGuidePanel";
+import { AskGuideFab } from "@/components/help/AskGuideFab";
 
 
 function NotFoundComponent() {
@@ -181,11 +184,16 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster />
-      <InstallPrompt />
-      <UpdatePrompt />
+      <AskGuideProvider>
+        <Outlet />
+        <Toaster />
+        <InstallPrompt />
+        <UpdatePrompt />
+        <AskGuideFab />
+        <AskGuidePanel />
+      </AskGuideProvider>
     </QueryClientProvider>
   );
 }
+
 
