@@ -28,11 +28,17 @@ function loadHistory(): UIMessage[] {
   } catch { return []; }
 }
 
-const SUGGESTIONS = [
+const SUGGESTIONS_COACH = [
   "Why is my trip card glowing red?",
-  "How does the AI trip extraction work?",
+  "How do I clone a trip?",
   "What starts the waiting-time meter?",
-  "What happens when I override a driver's status?",
+  "How do I mark a driver payout as paid?",
+];
+const SUGGESTIONS_SALES = [
+  "What does The Coordinator do?",
+  "How much does it cost?",
+  "Is my data safe?",
+  "Can I try it before I buy?",
 ];
 
 export function AskGuidePanel() {
