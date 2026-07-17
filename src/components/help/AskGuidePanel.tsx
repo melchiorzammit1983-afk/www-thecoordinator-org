@@ -136,6 +136,7 @@ export function AskGuidePanel() {
       } catch {}
     })();
 
+    if (anon) return; // analysis + escalation flow is operator-only
     if (analyzedForRef.current === last.id) return;
     analyzedForRef.current = last.id;
     setAnalyzing(true);
@@ -144,7 +145,7 @@ export function AskGuidePanel() {
       .then((meta) => setTurnMeta(meta))
       .catch(() => {})
       .finally(() => setAnalyzing(false));
-  }, [status, messages, logFn, analyzeFn]);
+  }, [status, messages, logFn, analyzeFn, anon]);
 
   // Reset per-turn UI when the user sends a new message
   useEffect(() => {
