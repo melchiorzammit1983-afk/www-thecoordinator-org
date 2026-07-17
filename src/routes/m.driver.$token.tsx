@@ -1217,31 +1217,8 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // ----- Driver-initiated cancellation (requires coordinator approval) -----
-  const requestCancelFn = useServerFn(driverRequestCancel);
-  const withdrawCancelFn = useServerFn(driverWithdrawCancelRequest);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState<string>("");
-  const [cancelNote, setCancelNote] = useState("");
-  const requestCancelMut = useMutation({
-    mutationFn: () => requestCancelFn({ data: { token, job_id: job.id, reason: cancelReason, note: cancelNote || null } }),
-    onSuccess: () => {
-      toast.success("Cancellation request sent to coordinator");
-      setCancelOpen(false);
-      setCancelReason("");
-      setCancelNote("");
-      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const withdrawCancelMut = useMutation({
-    mutationFn: () => withdrawCancelFn({ data: { token, job_id: job.id } }),
-    onSuccess: () => {
-      toast.success("Cancellation request withdrawn");
-      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+
+
 
 
 
