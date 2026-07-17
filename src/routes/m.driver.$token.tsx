@@ -2779,7 +2779,7 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
     staleTime: 15_000,
   });
   const previewRows = (previewQuery.data ?? []) as Array<Record<string, unknown>>;
-  const payoutTotals = previewRows.reduce(
+  const payoutTotals = previewRows.reduce<{ billed: number; received: number }>(
     (acc, r) => {
       acc.billed += Number((r as any).price_amount ?? 0);
       acc.received += Number((r as any).driver_paid_amount ?? 0);
