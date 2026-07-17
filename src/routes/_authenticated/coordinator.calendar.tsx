@@ -318,8 +318,9 @@ function CalendarPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [showCompleted, setShowCompleted] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("calendar.showCompleted") === "1";
+    if (typeof window === "undefined") return true;
+    const v = window.localStorage.getItem("calendar.showCompleted");
+    return v === null ? true : v === "1";
   });
   useEffect(() => {
     if (typeof window !== "undefined") {
