@@ -35,7 +35,10 @@ function BillingPage() {
         <RequestTopupDialog />
       </div>
 
+      <AiWalletCard />
+
       <div className="grid gap-4 md:grid-cols-3">
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground font-medium">Current plan</CardTitle>
