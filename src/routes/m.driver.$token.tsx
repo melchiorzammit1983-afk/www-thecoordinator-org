@@ -2179,7 +2179,7 @@ function useLiveRoute({
     setAcceptedAltIdx(null);
     consecutiveOffRef.current = 0;
     setOffRouteM(0);
-  }, [destination]);
+  }, [jobId, leg]);
 
   const primary = data?.primary ?? null;
   const alternatives = data?.alternatives ?? [];
