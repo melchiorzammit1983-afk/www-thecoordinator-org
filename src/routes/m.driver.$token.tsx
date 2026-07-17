@@ -2772,6 +2772,22 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
     search: search || undefined,
   } }) as Promise<Array<Record<string, unknown>>>;
 
+  const previewQuery = useQuery({
+    queryKey: ["driver-statement-preview", token, from, to, payment],
+    queryFn: build,
+    enabled: open,
+    staleTime: 15_000,
+  });
+  const previewRows = (previewQuery.data ?? []) as Array<Record<string, unknown>>;
+  const payoutTotals = previewRows.reduce(
+    (acc, r) => {
+      acc.billed += Number((r as any).price_amount ?? 0);
+      acc.received += Number((r as any).driver_paid_amount ?? 0);
+      return acc;
+    },
+    { billed: 0, received: 0 },
+  );
+
   function fileBase() {
     const slug = driverName.replace(/\s+/g, "_") || "driver";
     return `statement_${slug}_${from}_${to}`;
