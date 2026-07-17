@@ -45,8 +45,29 @@ export function AskGuidePanel() {
   const { isOpen, ctx, close } = useAskGuide();
   const [initial] = useState<UIMessage[]>(() => loadHistory());
   const [input, setInput] = useState("");
+  const [isAuthed, setIsAuthed] = useState<boolean | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled) setIsAuthed(!!data.session);
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+          if (!cancelled) setIsAuthed(!!sess);
+        });
+        return () => sub.subscription.unsubscribe();
+      } catch {
+        if (!cancelled) setIsAuthed(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const anon = isAuthed === false;
+  const SUGGESTIONS = anon ? SUGGESTIONS_SALES : SUGGESTIONS_COACH;
 
   const transport = useMemo(
     () =>
