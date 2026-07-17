@@ -45,6 +45,7 @@ import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
+import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorAiCenterRouteImport } from './routes/_authenticated/coordinator.ai-center'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
 import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
@@ -267,6 +268,12 @@ const AuthenticatedCoordinatorBillingRoute =
     path: '/billing',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorAvailabilityRoute =
+  AuthenticatedCoordinatorAvailabilityRouteImport.update({
+    id: '/availability',
+    path: '/availability',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorAiCenterRoute =
   AuthenticatedCoordinatorAiCenterRouteImport.update({
     id: '/ai-center',
@@ -450,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -510,6 +518,7 @@ export interface FileRoutesByTo {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -575,6 +584,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/_authenticated/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -640,6 +650,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
+    | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -700,6 +711,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
+    | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -764,6 +776,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/topups'
     | '/_authenticated/coordinator/address-settings'
     | '/_authenticated/coordinator/ai-center'
+    | '/_authenticated/coordinator/availability'
     | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/board-creator'
     | '/_authenticated/coordinator/branding'
@@ -1089,6 +1102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorBillingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/availability': {
+      id: '/_authenticated/coordinator/availability'
+      path: '/availability'
+      fullPath: '/coordinator/availability'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/ai-center': {
       id: '/_authenticated/coordinator/ai-center'
       path: '/ai-center'
@@ -1317,6 +1337,7 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
   AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
+  AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
@@ -1340,6 +1361,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorAddressSettingsRoute,
     AuthenticatedCoordinatorAiCenterRoute:
       AuthenticatedCoordinatorAiCenterRoute,
+    AuthenticatedCoordinatorAvailabilityRoute:
+      AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
     AuthenticatedCoordinatorBoardCreatorRoute:
       AuthenticatedCoordinatorBoardCreatorRoute,
