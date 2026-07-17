@@ -554,7 +554,8 @@ type AiRow = {
 };
 type AiResp =
   | { type: "question"; payload: string }
-  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean; accuracy_score?: number; is_half_price?: boolean };
+  | { type: "questions"; payload: string[] }
+  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean; accuracy_score?: number; is_half_price?: boolean; follow_up_questions?: string[] };
 type ChatMsg = { role: "user" | "model"; text: string };
 
 function rowsToTsv(rows: AiRow[]): string {
