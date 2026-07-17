@@ -2,9 +2,15 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Send, Sparkles, RotateCcw, Loader2 } from "lucide-react";
+import { X, Send, Sparkles, RotateCcw, Loader2, LifeBuoy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useServerFn } from "@tanstack/react-start";
+import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useAskGuide } from "./AskGuideProvider";
+import { logHelpQuestion, createSupportTicket } from "@/lib/support.functions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "coord.help-chat.v1";
