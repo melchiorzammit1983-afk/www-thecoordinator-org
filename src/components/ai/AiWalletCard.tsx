@@ -32,6 +32,8 @@ export function AiWalletCard() {
 
   const [amount, setAmount] = useState("");
   const [capInput, setCapInput] = useState("");
+  const [quickAmount, setQuickAmount] = useState("");
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const allocate = useMutation({
     mutationFn: async () => allocFn({ data: { amount: Number(amount) } }),
