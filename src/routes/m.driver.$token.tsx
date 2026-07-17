@@ -832,7 +832,7 @@ function DriverManifest() {
         onDriverPosition={setDriverPos}
       />
 
-      {!navigateMode && <CoordChangeRequestsPanel token={token} />}
+      
 
 
 
