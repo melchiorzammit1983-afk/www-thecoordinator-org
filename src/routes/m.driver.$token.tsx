@@ -2947,6 +2947,16 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
           )}
         </div>
 
+        <DriverPayoutList
+          token={token}
+          rows={previewRows}
+          loading={previewQuery.isFetching}
+          totals={payoutTotals}
+          onChanged={() => previewQuery.refetch()}
+        />
+
+
+
         <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
           <Button variant="outline" disabled={busy || !selectedCols.length} onClick={() => csvMut.mutate()}>
             <Download className="h-4 w-4 mr-1" /> {csvMut.isPending ? "Preparing…" : "Download CSV"}
