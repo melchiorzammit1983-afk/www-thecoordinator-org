@@ -1,71 +1,120 @@
 
-# Payments on Statements — plan
+# AI That Learns From Everyone (Safely)
 
-Add a lightweight "mark paid" workflow on the existing statement pages (coordinator + driver), so once a statement is exported the same list can be used to reconcile who has been paid.
+Turn the Guide + extraction + suggestion AIs into a system that gets smarter every time a company or coordinator teaches it — while keeping personal data out of the shared brain and reminding users to verify every answer.
 
-## 1. Database (migration)
+## The three learning layers
 
-Extend `public.jobs` with payment metadata (kept next to the existing `payment_status` / `payment_method` columns so nothing else breaks):
+```text
+┌──────────────────────────────────────────────────────────┐
+│  GLOBAL BRAIN  (approved by platform admin)              │
+│  • Parsing patterns (hotel email formats, WhatsApp)      │
+│  • Q&A knowledge ("how does X work")                     │
+│  • Signal → fix mappings                                 │
+│         ↑ promoted after PII strip + admin approval      │
+├──────────────────────────────────────────────────────────┤
+│  COMPANY BRAIN  (private to one company)                 │
+│  • Pricing rules, preferred drivers, shorthand           │
+│  • Company-specific hotel/venue aliases                  │
+│  • Coordinator playbook ("we always confirm 2h ahead")   │
+│         ↑ auto-captured from edits + explicit teach      │
+├──────────────────────────────────────────────────────────┤
+│  BEHAVIOR SIGNALS  (aggregated, anonymized)              │
+│  • Accepted vs rejected suggestions                      │
+│  • Extraction fields the user corrected                  │
+│  • Guide answers rated 👎                                │
+└──────────────────────────────────────────────────────────┘
+```
 
-- `paid_at timestamptz` — when marked paid
-- `paid_amount numeric(10,2)` — actual received (supports partial)
-- `paid_method text` — `cash | bank_transfer | card | other`
-- `paid_reference text` — invoice #, txn id, free note
-- `paid_by_user_id uuid` — who ticked it
-- `paid_by_role text` — `coordinator | driver | admin`
-- `driver_paid_at timestamptz`, `driver_paid_amount`, `driver_paid_method`, `driver_paid_reference`, `driver_paid_by_user_id` — driver-side receipt (separate so client-side payment and driver-payout reconciliation don't overwrite each other)
+## What we'll build
 
-`payment_status` on `jobs` continues to drive UI. When `paid_amount >= price_amount` we flip it to `paid`; a partial payment sets it to `partial` (new enum value); clearing resets to `pending`. Same rule for the driver side via a small computed `driver_payout_status` field (`pending | partial | paid`).
+### 1. Data model (new tables)
+- `ai_lessons` — one row per taught pattern. Columns: `id`, `kind` (`parse_pattern | qa | suggestion_rule | signal_fix`), `scope` (`company | global`), `company_id`, `title`, `example_input_redacted`, `rule_text`, `embedding vector(1536)`, `status` (`pending | approved | rejected | archived`), `submitted_by`, `approved_by`, `usage_count`, `success_rate`, `created_at`.
+- `ai_lesson_feedback` — thumbs up/down + free-text correction from any AI surface. Feeds the review queue.
+- `ai_lesson_share_settings` (per company) — two toggles: `contribute_to_global`, `consume_global`.
+- `ai_pii_audit` — every redaction pass logs what was stripped (type + count only, never the value) so admins can prove compliance.
 
-RLS: reuse existing job policies. Add a targeted policy so a driver assigned to a job can UPDATE only their own `driver_paid_*` columns (via a `SECURITY DEFINER` fn that whitelists those columns).
+RLS: company brain readable only by that company's members; global brain readable by any company that opted-in; write to global requires platform admin.
 
-## 2. Server functions (`src/lib/coordinator.functions.ts`, `coordinator-public.functions.ts`)
+### 2. Three ways users teach the AI
 
-- `markJobPayment({ job_id, side: "client" | "driver", amount?, method, reference?, paid_at? })` — coordinator/admin only; upserts the correct set of columns and recomputes status.
-- `unmarkJobPayment({ job_id, side })` — clears fields, resets status to `pending`.
-- `bulkMarkPayment({ job_ids, side, method, paid_at? })` — one-shot "mark all rows on this statement paid in full".
-- `driverMarkPayoutReceived({ job_id, method, reference?, amount? })` — driver-only, only their assigned jobs.
-- Extend `buildStatement` and `getDriverStatement` DTOs to return the new fields plus a derived `payment` block per row (`{ status, paid_amount, method, reference, paid_at, marked_by }`).
+**a. Thumbs + correction (every AI output)**
+Add a compact `<AiFeedback />` component under every extraction card, Guide answer, and coordinator suggestion. 👎 opens "what was wrong?" with a suggested fix field.
 
-All writes log to `admin_activity_log` (already auto-logged) and add a `trip_map_events` entry `payment_marked` / `payment_cleared` for the audit timeline.
+**b. Explicit "Teach the AI" button**
+On the extraction preview and Guide, a button opens a dialog: paste the raw message, describe the rule ("pax count is in brackets after passenger name"). Company admin sets scope (company only vs propose to global).
 
-## 3. Coordinator statements UI (`src/routes/_authenticated/coordinator.statements.tsx`)
+**c. Silent auto-learn from edits**
+When a coordinator edits an AI-extracted trip, we diff the AI output vs the saved trip and queue a candidate lesson. If the same correction appears 3+ times, it auto-promotes to a company lesson.
 
-- New "Payment" column with a status pill: Paid (green) / Partial (amber) / Unpaid (grey), showing method + date on hover.
-- Row action: "Mark paid" → small popover with **Amount**, **Method** (select), **Date paid** (defaults today), **Reference** (text). "Save" calls `markJobPayment`.
-- If already paid: "Edit payment" / "Mark unpaid".
-- Toolbar: checkbox selection column + **Bulk actions** bar → "Mark selected as paid" (asks method + date, applies full amount to each row).
-- Filter chip: **Payment**: All / Unpaid / Partial / Paid (uses the existing `payment_status` filter, extended to include `partial`).
-- Totals footer split into **Billed / Received / Outstanding**.
+### 3. PII stripping (mandatory before storage)
+Every submitted example goes through a two-stage redactor before it ever touches the `ai_lessons` table:
+- Regex sweep: emails, phones (E.164 + local Malta), flight numbers, IBANs, license plates, credit-card patterns.
+- LLM redaction pass (Gemini flash-lite): replaces person names, exact addresses, hotel guest identifiers with `<NAME>`, `<ADDRESS>`, `<GUEST_ID>` placeholders — pattern shape preserved so parsing still learns.
+- Reject if any 4+ digit sequence survives that isn't a time/date.
+- Log to `ai_pii_audit`.
 
-## 4. Driver statements UI (`src/routes/_authenticated/coordinator.my-driving.tsx` and the driver PWA statement view under `m.driver.$token`)
+### 4. Admin curation queue (`/admin/ai-lessons`)
+- Tabs: **Pending global** / **Company approved** / **Rejected** / **All**.
+- Each card shows redacted example, proposed rule, submitting company, similar existing lessons (via embedding search), usage stats.
+- Actions: Approve → global, Approve → company only, Edit rule, Reject with reason, Merge with existing lesson.
+- Bulk approve for obviously-safe patterns.
 
-- Same Payment column, but the mark-paid dialog updates the `driver_paid_*` side (i.e. "I received payout for this trip").
-- Read-only view of the coordinator's client-payment status.
-- Bulk "Mark all shown as received" button.
+### 5. Retrieval at inference time
+Before every AI call (extraction, Guide, suggestion) we run a vector search:
+1. Company lessons matching the input (always included if company opted-in to contribute).
+2. Global lessons matching the input (included only if company opted-in to consume).
+3. Top 5 are injected into the system prompt as "Learned patterns to apply".
+Embeddings via `openai/text-embedding-3-small` through the gateway; stored in `ai_lessons.embedding`.
 
-## 5. Exports
+### 6. Persistent safety UI (already partial, we'll complete)
+- Update `AskGuidePanel` footer disclaimer from tiny text to a visible banner: **"AI answers can be wrong. Always verify before acting on payments, driver assignments, or passenger info. Personal data is never shared between companies."**
+- Same banner in extraction preview, coordinator suggestions, and the Teach dialog.
+- Every AI response ends with a subtle "Was this helpful?" bar including the verify reminder.
 
-Both PDF and CSV exports include:
-- New column: **Payment** (`Paid — Cash — 2026-07-14 — INV-402`, or `Unpaid`)
-- Footer totals: Billed / Received / Outstanding
-- Optional toggle "Split paid vs outstanding" — renders two tables in the same PDF.
+### 7. Company settings page (`/coordinator/ai-learning`)
+- Two clear toggles with plain-language explanations.
+- Table of lessons taught by this company (with edit/archive).
+- Table of global lessons currently active for this company.
+- "See what data we would share" preview button — shows the redacted example that would leave the company.
 
-## 6. Realtime
+## Technical details
 
-Reuse existing `broadcastJobUpdate`; when payment is marked, coordinator + driver views refresh through the existing `jobs` invalidation hooks so both sides see the update within a second.
+**New files**
+- `supabase/migrations/*_ai_lessons.sql` — 4 tables + RLS + `match_ai_lessons(embedding, company_id, kind)` RPC.
+- `src/lib/ai-lessons.functions.ts` — `submitLesson`, `voteLesson`, `listPendingLessons`, `approveLesson`, `rejectLesson`, `searchRelevantLessons`, `setShareSettings`.
+- `src/lib/ai-pii.server.ts` — regex + LLM redactor + audit logger.
+- `src/lib/ai-context.server.ts` — helper called by every AI route: `buildLearnedContext(companyId, kind, input) → string` injected into system prompt.
+- `src/components/ai/AiFeedback.tsx` — thumbs + correction UI.
+- `src/components/ai/TeachAiDialog.tsx` — explicit teach flow.
+- `src/components/ai/SafetyBanner.tsx` — reused across surfaces.
+- `src/routes/_authenticated/admin.ai-lessons.tsx` — curation queue.
+- `src/routes/_authenticated/coordinator.ai-learning.tsx` — company settings.
 
-## Technical notes (for reviewers)
+**Files updated**
+- `src/routes/api/help-chat.ts` — inject `buildLearnedContext` into system prompt; append `AiFeedback` metadata to log rows.
+- `src/lib/help-ai.server.ts` — extend system prompt with `## Learned patterns` section + hardened safety instruction ("Never repeat personal names, phone numbers, or addresses from one conversation into another. Always end answers with 'verify before acting'.")
+- Extraction pipeline in `src/lib/parse-trips.ts` and the bulk-understand path — call `buildLearnedContext('parse_pattern', ...)` and log corrections when coordinator edits before saving.
+- `AskGuidePanel.tsx` — swap the tiny disclaimer for the visible `SafetyBanner`.
+- `src/lib/docs-facts.ts` — no change (still ground truth for constants).
 
-- New migration adds columns + `partial` to the `payment_status` enum + a trigger that keeps `payment_status` in sync with `paid_amount` vs `price_amount`.
-- Driver-side column whitelist is enforced by a `SECURITY DEFINER` function `driver_mark_payout(_job, _amount, _method, _ref)` — the RLS UPDATE policy only allows drivers to call that fn, not free-form updates.
-- No changes to trip/dispatch/wait logic. Payment tracking is additive.
+**Safety invariants (unit-tested)**
+- No lesson row can be inserted without passing the PII redactor.
+- Global scope requires `approved_by IS NOT NULL AND approver has platform_admin role`.
+- Company A can never read Company B's `ai_lessons` rows (RLS test).
+- Redaction audit logs never store raw values.
 
-## Suggestions to make it better (please confirm)
+## Rollout order
+1. Migration + RLS + share-settings table.
+2. `AiFeedback` component + logging (no learning yet — just collect data).
+3. PII redactor + `TeachAiDialog` + submission flow.
+4. Admin curation queue.
+5. Retrieval integration into Guide first, then extraction, then suggestions.
+6. Company settings page + safety banners everywhere.
 
-1. **Weekly "Payment run" view** — group unpaid rows by driver/company with one-click "mark whole run paid".
-2. **Auto-reminders** — email/WhatsApp the driver/partner a link to their outstanding statement every N days.
-3. **Attach proof** — allow uploading a receipt/screenshot when marking paid (stored in existing storage bucket).
-4. **Ledger export** — a monthly CSV per driver with running balance for accountant handover.
+## Open choices for you
+- **Auto-promote threshold**: after how many identical coordinator corrections should a company lesson auto-activate? Default suggestion: 3.
+- **Global approval**: only you (platform owner) approve, or delegate to trusted "curator" role? Default: only platform admins.
+- **Points cost**: should teaching the AI cost points, be free, or *earn* points as a thank-you? Default: free to teach, small reward when your lesson gets promoted to global.
 
-Say which of 1–4 you want and I'll fold them in before building.
+Reply with your preferences on those three and I'll build.

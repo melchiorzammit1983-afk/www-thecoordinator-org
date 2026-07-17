@@ -69,6 +69,23 @@ export const Route = createFileRoute("/api/help-chat")({
           system += `\n\n--- CURRENT USER CONTEXT ---\n${body.context.slice(0, 2000)}`;
         }
 
+        // Inject learned lessons (company + opted-in global) relevant to the latest user turn.
+        try {
+          const lastUser = [...(messages as UIMessage[])].reverse().find((m) => m.role === "user");
+          const lastText = lastUser?.parts?.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim() ?? "";
+          if (lastText) {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            const { data: co } = await supabaseAdmin
+              .from("companies").select("id").eq("owner_user_id", userRes.user.id).maybeSingle();
+            if (co?.id) {
+              const { buildLearnedContext } = await import("@/lib/ai-context.server");
+              system += await buildLearnedContext({ companyId: co.id, kind: "qa", input: lastText, limit: 5 });
+            }
+          }
+        } catch { /* non-fatal */ }
+
+        system += "\n\nSAFETY: Never repeat or invent personal data (names, phones, addresses, card numbers). Always remind the user to verify before acting on payments or assignments.";
+
         const gateway = createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3.5-flash");
 

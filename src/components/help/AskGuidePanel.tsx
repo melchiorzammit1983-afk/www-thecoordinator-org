@@ -12,6 +12,9 @@ import { logHelpQuestion, createSupportTicket, analyzeHelpTurn } from "@/lib/sup
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { SafetyBanner } from "@/components/ai/SafetyBanner";
+import { AiFeedback } from "@/components/ai/AiFeedback";
+import { TeachAiDialog } from "@/components/ai/TeachAiDialog";
 
 const STORAGE_KEY = "coord.help-chat.v1";
 
@@ -215,6 +218,10 @@ export function AskGuidePanel() {
           </div>
         </div>
 
+        <div className="border-b border-border px-4 py-2">
+          <SafetyBanner compact />
+        </div>
+
         {/* Messages */}
         <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 py-4">
           {messages.length === 0 ? (
@@ -245,9 +252,34 @@ export function AskGuidePanel() {
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((m) => (
-                <ChatMessage key={m.id} message={m} />
-              ))}
+              {messages.map((m, idx) => {
+                const isLastAssistant = m.role === "assistant" && idx === messages.length - 1 && status === "ready";
+                const prevUser = m.role === "assistant"
+                  ? [...messages.slice(0, idx)].reverse().find((x) => x.role === "user")
+                  : null;
+                const qText = prevUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
+                const aText = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                return (
+                  <div key={m.id} className="space-y-1.5">
+                    <ChatMessage message={m} />
+                    {isLastAssistant && aText.trim() && (
+                      <div className="flex items-center justify-between gap-2 pl-1">
+                        <AiFeedback surface="guide" question={qText} answer={aText}
+                          route={typeof window !== "undefined" ? window.location.pathname : undefined} />
+                        <TeachAiDialog
+                          defaultKind="qa"
+                          defaultExample={qText}
+                          trigger={
+                            <button className="text-[11px] text-primary hover:underline">
+                              Teach the AI
+                            </button>
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {status === "submitted" && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
