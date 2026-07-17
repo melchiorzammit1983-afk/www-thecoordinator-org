@@ -3754,9 +3754,10 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
-      'Output JSON only, no markdown. Prefer the data envelope: {"type":"data","payload":[{...8 keys...}],"is_low_confidence":false}. Use the question envelope {"type":"question","payload":"..."} ONLY when the input is completely unreadable or empty — never as a substitute for a partial row.',
+      'Output JSON only, no markdown. Prefer the data envelope: {"type":"data","payload":[{...8 keys...}],"is_low_confidence":false,"follow_up_questions":[]}. When the input is completely unreadable/empty OR when you need 1-3 short clarifications before you can even draft rows, use {"type":"questions","payload":["short q1","short q2"]} (max 3, each <120 chars, phrased so the user can answer in one line). The legacy {"type":"question","payload":"..."} single-string form is still accepted.',
       'BEST-EFFORT RULE: Always return a data row for anything that looks like a trip, even when unsure. Fill in as many of the 8 keys as you reasonably can. Leave any unknown value as an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown", never invent fake data.',
       'CONFIDENCE FLAG: Set "is_low_confidence": true on the envelope when ANY of the following is true: you left one or more mandatory fields (pickupDate, pickupAddress, deliveryAddress) blank on any row, you had to guess a value, the source text was ambiguous/fragmented, or you were forced to skip fields. Otherwise set it to false.',
+      'FOLLOW-UP QUESTIONS: When returning data with is_low_confidence=true, also populate "follow_up_questions" with 1-3 short, targeted questions that would resolve the specific ambiguities (e.g. "Which airport — MLA or LCA?", "Is 3/4 March or April?", "How many passengers on trip 2?"). Leave the array empty when confidence is high.',
     ].join("\n");
     const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
 
@@ -3851,8 +3852,9 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     // Best-effort envelope recovery: accept the documented shape, then fall back
     // to inspecting payload shape when `type` is missing/wrong.
     const rawPayload = parsed?.payload;
-    const isQuestion = parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data");
-    const isData = parsed?.type === "data" || Array.isArray(rawPayload);
+    const isQuestions = parsed?.type === "questions" && Array.isArray(rawPayload);
+    const isQuestion = !isQuestions && (parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data"));
+    const isData = parsed?.type === "data" || Array.isArray(rawPayload) && !isQuestions;
     if (isData && Array.isArray(rawPayload)) {
       const rows = rawPayload.map(normalizeTripRow);
       // Server-side confidence: trust the model's flag, but also flip to true
@@ -3863,9 +3865,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       );
 
       // ---------- DYNAMIC BILLING: accuracy score ----------
-      // Score = filled required fields / total expected required fields.
-      // Required per row: pickupDate, pickupTime, pickupAddress, deliveryAddress, quantity (pax).
-      // <75% → is_half_price=true, applies 50% discount to the bulk processing fee.
       const REQ_KEYS = ["pickupDate", "pickupTime", "pickupAddress", "deliveryAddress", "quantity"] as const;
       const totalExpected = rows.length * REQ_KEYS.length;
       let filled = 0;
@@ -3878,13 +3877,29 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       const accuracy_score = totalExpected > 0 ? filled / totalExpected : 0;
       const is_half_price = totalExpected > 0 && accuracy_score < 0.75;
 
+      const followRaw = Array.isArray(parsed?.follow_up_questions) ? parsed.follow_up_questions : [];
+      const follow_up_questions: string[] = followRaw
+        .filter((q: any) => typeof q === "string")
+        .map((q: string) => q.trim())
+        .filter((q: string) => q.length > 0 && q.length <= 200)
+        .slice(0, 3);
+
       return {
         type: "data" as const,
         payload: rows,
         is_low_confidence: modelFlag || missingMandatory,
         accuracy_score,
         is_half_price,
+        follow_up_questions,
       };
+    }
+    if (isQuestions) {
+      const qs: string[] = (rawPayload as any[])
+        .filter((q) => typeof q === "string")
+        .map((q: string) => q.trim())
+        .filter((q) => q.length > 0 && q.length <= 200)
+        .slice(0, 3);
+      if (qs.length) return { type: "questions" as const, payload: qs };
     }
     if (isQuestion && typeof rawPayload === "string" && rawPayload.trim()) {
       return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
