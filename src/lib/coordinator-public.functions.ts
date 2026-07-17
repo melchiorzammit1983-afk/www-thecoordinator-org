@@ -2698,6 +2698,21 @@ export const startWaitSession = createServerFn({ method: "POST" })
       free_ends_at: freeEndsAt,
     } as never).select("id, started_at, free_ends_at").maybeSingle();
     if (error) throw new Error(error.message);
+
+    // Auto-emit wait_started pin.
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId: job.id,
+      companyId,
+      driverId: (job as any).driver_id ?? null,
+      eventType: "wait_started",
+      meta: {
+        source: data.source,
+        started_at: (row as any).started_at,
+        free_ends_at: (row as any).free_ends_at ?? null,
+      },
+    });
+
     return {
       ok: true,
       session_id: (row as any).id,
