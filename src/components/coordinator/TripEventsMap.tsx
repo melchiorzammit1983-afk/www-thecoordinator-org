@@ -75,12 +75,28 @@ export function TripEventsMap({
   const [err, setErr] = useState<string | null>(null);
 
   const fn = useServerFn(getTripMap);
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["trip-map", jobId],
     queryFn: () => fn({ data: { job_id: jobId } }) as Promise<any>,
     refetchInterval: isLive ? 30_000 : false,
     staleTime: isLive ? 15_000 : 5 * 60_000,
   });
+
+  // Realtime: refetch immediately whenever a new pin is inserted for this job
+  // so the coordinator sees driver actions the moment they happen.
+  useEffect(() => {
+    if (!isLive) return;
+    const ch = supabase
+      .channel(`trip-map-events:${jobId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "trip_map_events", filter: `job_id=eq.${jobId}` },
+        () => qc.invalidateQueries({ queryKey: ["trip-map", jobId] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [isLive, jobId, qc]);
 
   // Boot map
   useEffect(() => {
