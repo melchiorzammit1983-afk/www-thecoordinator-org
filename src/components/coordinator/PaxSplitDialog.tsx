@@ -49,12 +49,14 @@ export function PaxSplitDialog({
       pax_ids: Array.from(selected),
       driver_id: driverId === "__none__" ? null : driverId,
     } }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       toast.success("Passengers moved to new trip");
       qc.invalidateQueries({ queryKey: ["jobs"] });
       refetch();
       onOpenChange(false);
+      if (res?.job) setPreview([res.job as NewTripRow]);
     },
+
     onError: (e: Error) => toast.error(e.message),
   });
 
