@@ -23,7 +23,8 @@ export type FeatureKey =
   | "client_offline_mode"
   | "branding_advert"
   | "address_name_resolve"
-  | "route_eta";
+  | "route_eta"
+  | "availability_autoforward";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -51,6 +52,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "branding_advert",  label: "Branding & advert",   description: "Coordinator logo + advert banner shown at bottom of driver and client apps" },
   { key: "address_name_resolve", label: "Address name lookup", description: "Show hotel / business name (from Google Places) instead of plus-codes or coordinates on cards, sheets, and client portal. Coordinates stay stored for routing." },
   { key: "route_eta",        label: "From → To ETA",      description: "Estimate driving time & distance between pickup and dropoff. Shown in the trip form, on calendar cards, and in the client portal." },
+  { key: "availability_autoforward", label: "Availability & auto-forward", description: "Set opening hours for the company and each driver. Off-hours or unanswered trips auto-jump to the next available partner in your network. Admin charges a small per-forward fee." },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];

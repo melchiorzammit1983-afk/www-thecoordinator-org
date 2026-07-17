@@ -341,6 +341,167 @@ export type Database = {
           },
         ]
       }
+      availability_exceptions: {
+        Row: {
+          created_at: string
+          date: string
+          end_time: string | null
+          id: string
+          is_open: boolean
+          note: string | null
+          schedule_id: string
+          start_time: string | null
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          end_time?: string | null
+          id?: string
+          is_open?: boolean
+          note?: string | null
+          schedule_id: string
+          start_time?: string | null
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          id?: string
+          is_open?: boolean
+          note?: string | null
+          schedule_id?: string
+          start_time?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "availability_exceptions_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "availability_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      availability_policies: {
+        Row: {
+          company_id: string
+          created_at: string
+          forwarding_enabled: boolean
+          max_forward_hops: number
+          notify_timeout_min: number
+          off_hours_mode: string
+          preferred_partner_ids: string[]
+          unanswered_timeout_min: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          forwarding_enabled?: boolean
+          max_forward_hops?: number
+          notify_timeout_min?: number
+          off_hours_mode?: string
+          preferred_partner_ids?: string[]
+          unanswered_timeout_min?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          forwarding_enabled?: boolean
+          max_forward_hops?: number
+          notify_timeout_min?: number
+          off_hours_mode?: string
+          preferred_partner_ids?: string[]
+          unanswered_timeout_min?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "availability_policies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      availability_schedules: {
+        Row: {
+          always_open: boolean
+          company_id: string
+          created_at: string
+          id: string
+          owner_id: string
+          owner_type: string
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          always_open?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          owner_id: string
+          owner_type: string
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          always_open?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          owner_id?: string
+          owner_type?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "availability_schedules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      availability_windows: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: string
+          schedule_id: string
+          start_time: string
+          weekday: number
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: string
+          schedule_id: string
+          start_time: string
+          weekday: number
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: string
+          schedule_id?: string
+          start_time?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "availability_windows_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "availability_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_booking_modifications: {
         Row: {
           acknowledged_at: string | null
@@ -1090,6 +1251,71 @@ export type Database = {
             columns: ["partner_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatch_forward_events: {
+        Row: {
+          created_at: string
+          from_company_id: string | null
+          id: string
+          job_id: string
+          meta: Json
+          points_charged: number
+          reason: string
+          to_company_id: string | null
+          to_driver_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          from_company_id?: string | null
+          id?: string
+          job_id: string
+          meta?: Json
+          points_charged?: number
+          reason: string
+          to_company_id?: string | null
+          to_driver_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          from_company_id?: string | null
+          id?: string
+          job_id?: string
+          meta?: Json
+          points_charged?: number
+          reason?: string
+          to_company_id?: string | null
+          to_driver_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_forward_events_from_company_id_fkey"
+            columns: ["from_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_forward_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_forward_events_to_company_id_fkey"
+            columns: ["to_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_forward_events_to_driver_id_fkey"
+            columns: ["to_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
             referencedColumns: ["id"]
           },
         ]
@@ -2563,6 +2789,9 @@ export type Database = {
           flight_status_updated_at: string | null
           flight_terminal: string | null
           flightorship: string | null
+          forward_after: string | null
+          forward_hop_count: number
+          forward_tried_company_ids: string[]
           from_flight: string | null
           from_location: string
           group_id: string | null
@@ -2675,6 +2904,9 @@ export type Database = {
           flight_status_updated_at?: string | null
           flight_terminal?: string | null
           flightorship?: string | null
+          forward_after?: string | null
+          forward_hop_count?: number
+          forward_tried_company_ids?: string[]
           from_flight?: string | null
           from_location: string
           group_id?: string | null
@@ -2787,6 +3019,9 @@ export type Database = {
           flight_status_updated_at?: string | null
           flight_terminal?: string | null
           flightorship?: string | null
+          forward_after?: string | null
+          forward_hop_count?: number
+          forward_tried_company_ids?: string[]
           from_flight?: string | null
           from_location?: string
           group_id?: string | null

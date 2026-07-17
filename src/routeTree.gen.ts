@@ -45,6 +45,7 @@ import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
+import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorAiCenterRouteImport } from './routes/_authenticated/coordinator.ai-center'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
 import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
@@ -57,6 +58,7 @@ import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authen
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
+import { Route as ApiPublicCronAutoForwardRouteImport } from './routes/api/public/cron/auto-forward'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
 import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
 import { Route as ApiPublicTrackTokenIndexRouteImport } from './routes/api/public/track/$token/index'
@@ -266,6 +268,12 @@ const AuthenticatedCoordinatorBillingRoute =
     path: '/billing',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorAvailabilityRoute =
+  AuthenticatedCoordinatorAvailabilityRouteImport.update({
+    id: '/availability',
+    path: '/availability',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorAiCenterRoute =
   AuthenticatedCoordinatorAiCenterRouteImport.update({
     id: '/ai-center',
@@ -336,6 +344,12 @@ const ApiPublicCronRolloverSubscriptionsRoute =
   ApiPublicCronRolloverSubscriptionsRouteImport.update({
     id: '/api/public/cron/rollover-subscriptions',
     path: '/api/public/cron/rollover-subscriptions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicCronAutoForwardRoute =
+  ApiPublicCronAutoForwardRouteImport.update({
+    id: '/api/public/cron/auto-forward',
+    path: '/api/public/cron/auto-forward',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicCronAiAutoCoordinateRoute =
@@ -443,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -463,6 +478,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
+  '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -502,6 +518,7 @@ export interface FileRoutesByTo {
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -522,6 +539,7 @@ export interface FileRoutesByTo {
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
+  '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -566,6 +584,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/_authenticated/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
+  '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -586,6 +605,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/_authenticated/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
+  '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -630,6 +650,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
+    | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -650,6 +671,7 @@ export interface FileRouteTypes {
     | '/coordinator/'
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
+    | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
@@ -689,6 +711,7 @@ export interface FileRouteTypes {
     | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
+    | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -709,6 +732,7 @@ export interface FileRouteTypes {
     | '/coordinator'
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
+    | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
@@ -752,6 +776,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/topups'
     | '/_authenticated/coordinator/address-settings'
     | '/_authenticated/coordinator/ai-center'
+    | '/_authenticated/coordinator/availability'
     | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/board-creator'
     | '/_authenticated/coordinator/branding'
@@ -772,6 +797,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/'
     | '/_authenticated/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
+    | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
@@ -806,6 +832,7 @@ export interface RootRouteChildren {
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
+  ApiPublicCronAutoForwardRoute: typeof ApiPublicCronAutoForwardRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
@@ -1075,6 +1102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorBillingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/availability': {
+      id: '/_authenticated/coordinator/availability'
+      path: '/availability'
+      fullPath: '/coordinator/availability'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/ai-center': {
       id: '/_authenticated/coordinator/ai-center'
       path: '/ai-center'
@@ -1157,6 +1191,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/cron/rollover-subscriptions'
       fullPath: '/api/public/cron/rollover-subscriptions'
       preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/auto-forward': {
+      id: '/api/public/cron/auto-forward'
+      path: '/api/public/cron/auto-forward'
+      fullPath: '/api/public/cron/auto-forward'
+      preLoaderRoute: typeof ApiPublicCronAutoForwardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/cron/ai-auto-coordinate': {
@@ -1296,6 +1337,7 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
   AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
+  AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
@@ -1319,6 +1361,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorAddressSettingsRoute,
     AuthenticatedCoordinatorAiCenterRoute:
       AuthenticatedCoordinatorAiCenterRoute,
+    AuthenticatedCoordinatorAvailabilityRoute:
+      AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
     AuthenticatedCoordinatorBoardCreatorRoute:
       AuthenticatedCoordinatorBoardCreatorRoute,
@@ -1405,6 +1449,7 @@ const rootRouteChildren: RootRouteChildren = {
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
+  ApiPublicCronAutoForwardRoute: ApiPublicCronAutoForwardRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
   ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
@@ -1424,13 +1469,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
