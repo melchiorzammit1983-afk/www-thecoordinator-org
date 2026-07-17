@@ -25,6 +25,7 @@ import { TripAuditTimeline } from "./TripAuditTimeline";
 import { GroupStopsPanel } from "./GroupStopsPanel";
 import { TripEventsMap } from "./TripEventsMap";
 import { TripRouteInsights } from "./TripRouteInsights";
+import { ScheduleConflictBanner } from "./ScheduleConflictBanner";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
