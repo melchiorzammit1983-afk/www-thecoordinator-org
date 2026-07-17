@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Coins, Sparkles, TrendingDown } from "lucide-react";
 import { RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AiWalletCard } from "@/components/ai/AiWalletCard";
 
 export const Route = createFileRoute("/_authenticated/coordinator/billing")({
   component: BillingPage,
