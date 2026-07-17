@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getTripMap } from "@/lib/trip-map.functions";
 import { loadGoogleMaps } from "@/components/driver/DriverDashboardMap";
 import { formatEta } from "@/lib/trip-display";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Live + historical trip map for the coordinator sheet.
