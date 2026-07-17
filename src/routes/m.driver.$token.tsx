@@ -2689,8 +2689,15 @@ const STMT_COLUMNS: { key: string; label: string; group: string }[] = [
   { key: "date", label: "Date", group: "Trip" },
   { key: "time", label: "Time", group: "Trip" },
   { key: "status", label: "Status", group: "Trip" },
-  { key: "payment_status", label: "Payment", group: "Trip" },
-  { key: "payment_method", label: "Payment method", group: "Trip" },
+  { key: "payment_status", label: "Client paid?", group: "Payment" },
+  { key: "paid_amount", label: "Received (client)", group: "Payment" },
+  { key: "paid_at", label: "Received on", group: "Payment" },
+  { key: "driver_payout_status", label: "My payout?", group: "Payment" },
+  { key: "driver_paid_amount", label: "My payout amount", group: "Payment" },
+  { key: "driver_paid_method", label: "My payout method", group: "Payment" },
+  { key: "driver_paid_at", label: "My payout on", group: "Payment" },
+  { key: "driver_paid_reference", label: "My payout ref.", group: "Payment" },
+  { key: "payment_method", label: "Agreed method", group: "Trip" },
   { key: "price_display", label: "Amount", group: "Trip" },
   { key: "price_currency", label: "Currency", group: "Trip" },
   { key: "price_set_by", label: "Price set by", group: "Trip" },
@@ -2713,8 +2720,8 @@ const STMT_COLUMNS: { key: string; label: string; group: string }[] = [
   { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
 ];
 const DRIVER_DEFAULT_COLS = [
-  "date","time","from_location","to_location","flight","clientcompanyname",
-  "pax_names","pax_count","status","payment_status","price_display",
+  "date","time","from_location","to_location","clientcompanyname",
+  "pax_count","status","price_display","driver_payout_status","driver_paid_amount",
 ];
 const STMT_STATUSES = ["pending","assigned","accepted","en_route","arrived","in_progress","completed","cancelled"];
 const STMT_FLIGHT_STATUSES = ["scheduled","active","landed","delayed","cancelled","diverted"];
