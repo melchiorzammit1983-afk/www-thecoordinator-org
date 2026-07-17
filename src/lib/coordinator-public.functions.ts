@@ -626,14 +626,41 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    const { error } = await supabaseAdmin.from("jobs").update({
-      driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
-    } as never).eq("id", data.job_id);
-    if (error) throw new Error(error.message);
-    // Only announce on the first acceptance, not on idempotent re-taps.
-    if (!job.driver_accepted_at) {
+
+    // Cascade acceptance to every sibling in the same group_id that's still
+    // assigned to this same driver and hasn't already been closed out. This
+    // makes a grouped run a single "Accept" for the driver.
+    const gid = (job as any).group_id as string | null | undefined;
+    const driverId = (job as any).driver_id as string | null;
+    let targetJobs: Array<{ id: string; driver_accepted_at: string | null }> = [
+      { id: data.job_id, driver_accepted_at: (job as any).driver_accepted_at ?? null },
+    ];
+    if (gid && driverId) {
+      const { data: sibs } = await supabaseAdmin.from("jobs")
+        .select("id, driver_accepted_at, status")
+        .eq("group_id" as any, gid)
+        .eq("driver_id", driverId);
+      const active = (sibs ?? []).filter((s: any) => s.status !== "completed" && s.status !== "cancelled");
+      if (active.length) {
+        targetJobs = active.map((s: any) => ({ id: s.id, driver_accepted_at: s.driver_accepted_at ?? null }));
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const idsToStamp = targetJobs.filter((t) => !t.driver_accepted_at).map((t) => t.id);
+    if (idsToStamp.length) {
+      const { error } = await supabaseAdmin.from("jobs")
+        .update({ driver_accepted_at: nowIso } as never)
+        .in("id", idsToStamp);
+      if (error) throw new Error(error.message);
+    }
+
+    // Announce once per newly-accepted leg so the coordinator chat reflects
+    // each trip, not just the tapped one.
+    for (const t of targetJobs) {
+      if (t.driver_accepted_at) continue;
       await supabaseAdmin.from("trip_messages").insert({
-        job_id: data.job_id,
+        job_id: t.id,
         company_id: job.company_id,
         sender_kind: "system",
         sender_label: "System",
@@ -642,16 +669,18 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         driver_id: link.subject_id ?? null,
       } as never);
     }
-    // Withdraw any still-open price proposals from this driver on this job.
+
+    // Withdraw any still-open price proposals from this driver on every
+    // sibling — accepting one leg accepts the run.
     if (link.subject_id) {
       await supabaseAdmin.from("job_price_proposals").update({
         status: "recalled", responded_at: new Date().toISOString(),
       } as never)
-        .eq("job_id", data.job_id)
+        .in("job_id", targetJobs.map((t) => t.id))
         .eq("from_driver_id", link.subject_id)
         .in("status", ["proposed", "countered"]);
     }
-    return { ok: true };
+    return { ok: true, cascaded_ids: targetJobs.map((t) => t.id) };
   });
 
 export const driverRejectJob = createServerFn({ method: "POST" })
@@ -1195,6 +1224,120 @@ export const updateJobStatus = createServerFn({ method: "POST" })
             driver_note: "reverted by driver correction",
           } as never)
           .eq("id", (openWait as any).id);
+      }
+    }
+
+    // ── Cascade transition to sibling legs in the same group ──────────────
+    // A grouped run behaves as one trip for the driver: tapping "On the way",
+    // "Arrived", "Start trip", or the walk-back correction on any leg fans
+    // out to the other legs assigned to this same driver. Per-leg controls
+    // (Complete stop, boarding) stay per-leg and don't cascade here.
+    const cascadeGid = (job as any).group_id as string | null | undefined;
+    const cascadeDriverId = (job as any).driver_id as string | null;
+    const cascadeStatuses = new Set(["en_route", "arrived", "in_progress", "pending"]);
+    if (cascadeGid && cascadeDriverId && cascadeStatuses.has(data.status)) {
+      const { data: sibs } = await supabaseAdmin.from("jobs")
+        .select("id, status, driver_started_at, pickup_lat, pickup_lng, pickup_at")
+        .eq("group_id" as any, cascadeGid)
+        .eq("driver_id", cascadeDriverId)
+        .neq("id", job.id);
+      const statusOrder = ["pending", "en_route", "arrived", "in_progress", "active", "completed"];
+      const newIdx = statusOrder.indexOf(data.status);
+      const tappedPLat = (job as any).pickup_lat as number | null;
+      const tappedPLng = (job as any).pickup_lng as number | null;
+      for (const sib of (sibs ?? []) as any[]) {
+        if (sib.status === "completed" || sib.status === "cancelled") continue;
+        if (isCorrection) {
+          if (!DRIVER_RETURN_TO_WAITING_STATUSES.has(sib.status ?? "")) continue;
+        } else {
+          const sibIdx = statusOrder.indexOf(sib.status ?? "pending");
+          if (sibIdx >= newIdx) continue;
+        }
+        // For arrival / start-trip, only cascade to legs sharing a pickup
+        // (within ~300 m). Different-pickup siblings still get en_route.
+        if ((data.status === "arrived" || data.status === "in_progress")
+            && tappedPLat != null && tappedPLng != null
+            && sib.pickup_lat != null && sib.pickup_lng != null) {
+          const d = haversineMetersLL(sib.pickup_lat, sib.pickup_lng, tappedPLat, tappedPLng);
+          if (d > 300) continue;
+        }
+
+        // Boarding gate per sibling.
+        if (data.status === "in_progress") {
+          const { data: sibPax } = await supabaseAdmin
+            .from("pax").select("id, status").eq("job_id", sib.id);
+          const hasPending = (sibPax ?? []).some((p: any) => p.status === "pending");
+          if (hasPending) {
+            const { data: ok } = await supabaseAdmin.from("job_boarding_approvals")
+              .select("id").eq("job_id", sib.id)
+              .in("status", ["approved", "overridden"]).limit(1).maybeSingle();
+            if (!ok) continue;
+          }
+        }
+
+        const sibPatch: Record<string, unknown> = { status: data.status };
+        if (data.status === "en_route" && !sib.driver_started_at) {
+          sibPatch.driver_started_at = new Date().toISOString();
+        }
+        const { error: sibErr } = await supabaseAdmin.from("jobs")
+          .update(sibPatch as never).eq("id", sib.id);
+        if (sibErr) continue;
+
+        // Map event pin per sibling.
+        try {
+          const evType = isCorrection ? "back_to_waiting"
+            : data.status === "en_route" ? "en_route"
+            : data.status === "arrived" ? (data.override_reason ? "arrived_pickup_override" : "arrived_pickup")
+            : data.status === "in_progress" ? "in_progress"
+            : data.status;
+          await supabaseAdmin.from("trip_map_events").insert({
+            job_id: sib.id,
+            company_id: companyId,
+            driver_id: cascadeDriverId,
+            event_type: evType,
+            lat: data.lat ?? null,
+            lng: data.lng ?? null,
+            accuracy_m: data.accuracy_m ?? null,
+            meta: { from: sib.status, to: data.status, cascaded_from: job.id },
+          } as any);
+        } catch { /* logging never blocks */ }
+
+        // Wait session bookkeeping mirrored per sibling.
+        if (data.status === "arrived") {
+          const { data: existing } = await supabaseAdmin
+            .from("job_wait_sessions").select("id").eq("job_id", sib.id)
+            .is("ended_at", null).limit(1).maybeSingle();
+          if (!existing) {
+            const { freeWaitMinutes } = await loadWaitPolicy(supabaseAdmin, companyId);
+            const arrivedAt = now;
+            const pickupAt = sib.pickup_at as string | null;
+            const chargeableFrom = pickupAt && new Date(pickupAt).getTime() > new Date(arrivedAt).getTime()
+              ? pickupAt : arrivedAt;
+            const freeEndsAt = freeWaitMinutes > 0
+              ? new Date(new Date(chargeableFrom).getTime() + freeWaitMinutes * 60000).toISOString()
+              : null;
+            await supabaseAdmin.from("job_wait_sessions").insert({
+              job_id: sib.id, driver_id: cascadeDriverId, company_id: companyId,
+              source: "manual", auto_started: true,
+              started_at: chargeableFrom, arrived_at: arrivedAt,
+              chargeable_from: chargeableFrom, free_ends_at: freeEndsAt,
+            } as never);
+          }
+        }
+        if (data.status === "en_route" || data.status === "in_progress") {
+          await closeOpenWaitSession(supabaseAdmin, sib.id, cascadeDriverId, companyId, now);
+        }
+        if (isCorrection) {
+          const { data: openWait } = await supabaseAdmin
+            .from("job_wait_sessions").select("id").eq("job_id", sib.id)
+            .is("ended_at", null).limit(1).maybeSingle();
+          if (openWait) {
+            await supabaseAdmin.from("job_wait_sessions").update({
+              ended_at: now, calculated_amount: 0, agreed_amount: 0,
+              driver_note: "reverted by driver correction (cascaded)",
+            } as never).eq("id", (openWait as any).id);
+          }
+        }
       }
     }
 
