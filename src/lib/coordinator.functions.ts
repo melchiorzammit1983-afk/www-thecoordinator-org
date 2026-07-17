@@ -3754,9 +3754,10 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       `Extract transport trips. Today=${today}. Dates YYYY-MM-DD, times 24h HH:MM.`,
       "Keys: pickupDate, pickupTime, pickupAddress, deliveryAddress, customerName, contactNumber, transportType, quantity.",
       "Flight (e.g. KM101): set matching address to 'Airport'; put the flight code into pickupTime.",
-      'Output JSON only, no markdown. Prefer the data envelope: {"type":"data","payload":[{...8 keys...}],"is_low_confidence":false}. Use the question envelope {"type":"question","payload":"..."} ONLY when the input is completely unreadable or empty — never as a substitute for a partial row.',
+      'Output JSON only, no markdown. Prefer the data envelope: {"type":"data","payload":[{...8 keys...}],"is_low_confidence":false,"follow_up_questions":[]}. When the input is completely unreadable/empty OR when you need 1-3 short clarifications before you can even draft rows, use {"type":"questions","payload":["short q1","short q2"]} (max 3, each <120 chars, phrased so the user can answer in one line). The legacy {"type":"question","payload":"..."} single-string form is still accepted.',
       'BEST-EFFORT RULE: Always return a data row for anything that looks like a trip, even when unsure. Fill in as many of the 8 keys as you reasonably can. Leave any unknown value as an empty string "" (or "1" for quantity) — never omit a key, never use null, never use "unknown", never invent fake data.',
       'CONFIDENCE FLAG: Set "is_low_confidence": true on the envelope when ANY of the following is true: you left one or more mandatory fields (pickupDate, pickupAddress, deliveryAddress) blank on any row, you had to guess a value, the source text was ambiguous/fragmented, or you were forced to skip fields. Otherwise set it to false.',
+      'FOLLOW-UP QUESTIONS: When returning data with is_low_confidence=true, also populate "follow_up_questions" with 1-3 short, targeted questions that would resolve the specific ambiguities (e.g. "Which airport — MLA or LCA?", "Is 3/4 March or April?", "How many passengers on trip 2?"). Leave the array empty when confidence is high.',
     ].join("\n");
     const systemInstruction = co ? await buildSystemPrompt(co.id, baseInstruction) : baseInstruction;
 
