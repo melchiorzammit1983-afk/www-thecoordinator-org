@@ -23,7 +23,8 @@ export type FeatureKey =
   | "client_offline_mode"
   | "branding_advert"
   | "address_name_resolve"
-  | "route_eta";
+  | "route_eta"
+  | "availability_autoforward";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
