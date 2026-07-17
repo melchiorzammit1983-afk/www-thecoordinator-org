@@ -2772,6 +2772,22 @@ export const stopWaitSession = createServerFn({ method: "POST" })
     } as never);
     if (adjErr) throw new Error(adjErr.message);
 
+    // Auto-emit wait_ended pin with the confirmed amount.
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId: job.id,
+      companyId: sessionCompanyId,
+      driverId: (job as any).driver_id ?? null,
+      eventType: "wait_ended",
+      notes: data.note ?? null,
+      meta: {
+        elapsed_minutes: elapsedMinutes,
+        chargeable_minutes: chargeableMinutes,
+        calculated_amount: calculatedAmount,
+        agreed_amount: data.agreed_amount,
+      },
+    });
+
     return { ok: true, elapsed_minutes: elapsedMinutes, calculated_amount: calculatedAmount, agreed_amount: data.agreed_amount };
   });
 
