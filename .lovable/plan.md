@@ -1,89 +1,157 @@
-## Goal
 
-Every driver-facing event lands on the coordinator's trip map as a pin the moment it happens, with GPS + context, and the pins keep flowing even when the driver's device drops out mid-action. Events must also flow into the money side (waiting minutes/amount, override notes) so the pin math matches the payment math.
+# The Coordinator — Living Help Center + "Ask the Guide" AI Assistant
 
-## Current state (what already works)
+A sidebar-style docs portal (Stripe/Linear-inspired) with a **built-in AI assistant** that understands how the system works, why the UI is behaving a certain way, and how to fix it — grounded in the same living documentation.
 
-- `trip_map_events` table + `TripEventsMap` renders all 19 event types (icons/labels/colors already defined).
-- Status pins (`arrived_pickup`, `in_progress`, `completed`, `actual_dropoff`) are auto-inserted by the DB trigger `log_job_status_map_event`.
-- Client `logDriverAction()` in the driver app posts pins for: `en_route`, `arrived_pickup`, `in_progress`, `completed`, `back_to_waiting`, `wait_started`, `wait_ended`, `boarding_requested`, `boarding_approved`, `pax_no_show`, `pax_cancelled`, `navigate_opened`, `passenger_called`.
-- Emergency overrides insert into `job_emergency_overrides` (which mirrors to `trip_audit_log`).
-- `pickup_snap` / `dropoff_snap` are inserted by the snap functions.
+## Two entry points
 
-## Gaps to close
+- **`/how-it-works`** — public route, SEO-friendly, no login. Marketing overview.
+- **`/help`** and `/help/$topic` — in-app docs (linked from a `?` button in the header + sidebar). Full sidebar-navigated documentation with the AI guide.
 
-1. **Client-only logging is unreliable** — if the driver taps "On the way" in a tunnel and the `logDriverAction` request fails, no pin ever lands. It has to be emitted server-side by the same handler that changes state.
-2. **Wait session pins** are only client-side. Server-side auto-close paths (`closeOpenWaitSession` called from status change / emergency override) skip `wait_ended` entirely and never write `wait_started` at all if the client dropped.
-3. **Emergency override / safety_concern / breakdown** never write to `trip_map_events`, so the map is missing exactly the pins that matter most for trust.
-4. **Boarding & pax events** (`boarding_requested`, `boarding_approved`, `pax_no_show`, `pax_cancelled`) are only client-side — the server RPCs (`requestBoardingApproval`, `resolveBoardingApproval`, `markPaxNoShow`, cancel pax) don't emit map events.
-5. **Live sync**: the sheet polls `trip-map` every 30 s. New pins should appear instantly instead of after the next poll.
+## Layout
 
-## Implementation
-
-### 1. Server-side event emitter helper
-
-New file `src/lib/trip-map.server.ts` (server-only, not client-imported at module scope):
-
-```ts
-export async function insertTripMapEvent(sb, {
-  jobId, companyId, driverId, eventType,
-  lat, lng, accuracyM, notes, meta,
-}) {
-  // If lat/lng missing, fall back to the latest driver_locations fix for this job.
-  // Never throws — logging must not block the primary action.
-}
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Search • Role filter • Ask the Guide 🤖 • Back to app       │
+├────────────┬──────────────────────────────────────┬─────────┤
+│ Sidebar    │  Article body                        │ On this │
+│ Getting    │  Updated auto · v2026.07.17          │ page ▼  │
+│  Started   │                                      │ Step 1  │
+│ Coordinat. │  [Live screenshot with pin overlays] │ Step 2  │
+│ Drivers    │                                      │ Step 3  │
+│ Clients    │  ## Step 1 …                         │         │
+│ Admins     │  [Flow diagram]                      │         │
+│ Concepts   │                                      │         │
+│ FAQ        │                                      │         │
+└────────────┴──────────────────────────────────────┴─────────┘
+                                              ┌───────────────┐
+                                              │ 🤖 Ask Guide  │◄─ floating
+                                              └───────────────┘   button, app-wide
 ```
 
-Used by every server function below.
+## Content (first release)
 
-### 2. Wait sessions
+**Getting Started** · welcome, roles, install apps.
+**Coordinator** · dashboard, calendar & dispatch, manual trip creation, AI trip extraction, driver assignment + conflict detection, live tracking, status overrides, waiting-time rules.
+**Driver** · install/permissions, biometric unlock, status flow, emergency buttons, waiting/no-show impact on trust & payout, live rerouting.
+**Client** · booking link, tracking portal, ETA meaning.
+**Admin** · users/roles, points/plans, FCM/VAPID push, branded slugs, security posture.
+**Concepts** · trip event catalog, ETA freshness, grouping & chain reflow, AI pipeline, conflict math.
+**FAQ / Troubleshooting** · ETA not updating, GPS off, wrong status, failed extractions, red-glowing cards, etc.
 
-- `startWaitSession` → insert `wait_started` with `meta = { source, chargeable_from, free_ends_at }`.
-- `stopWaitSession` → insert `wait_ended` with `meta = { elapsed_minutes, chargeable_minutes, calculated_amount, agreed_amount }`.
-- `closeOpenWaitSession` helper (called from `updateJobStatus` transitions and emergency overrides) → also insert `wait_ended` with the same meta plus `reason` (`auto_status_change` / `auto_override`).
+## Visuals
 
-### 3. Emergency overrides (`submitEmergencyOverride`)
+- **Real screenshots** via headless Playwright, saved to `src/assets/help/screenshots/`, annotated with CSS pin overlays.
+- **AI diagrams** for concepts (AI pipeline, trip lifecycle, event → payout/trust impact, chain reflow, conflict timeline).
+- Click-to-zoom lightbox on every image.
 
-After the `job_emergency_overrides` insert, also insert into `trip_map_events` with:
-- `event_type = safety_concern | breakdown | emergency_override` (mapped from `reason`)
-- `lat/lng/accuracy_m` from the payload
-- `notes = "{action label} — {reason label}{ note?}"`
-- `meta = { from_status, to_status, reason, action, photo_url }`
+## The "living document" system (auto-updates)
 
-### 4. Boarding & pax
+Docs never go stale. Every fact is pulled live from code.
 
-- `requestBoardingApproval` → `boarding_requested`
-- `resolveBoardingApproval` (approved path) → `boarding_approved`
-- `markPaxNoShow` → `pax_no_show` (meta: pax id, name)
-- Pax cancel path → `pax_cancelled`
+1. **`src/lib/docs-facts.ts`** re-exports real constants (`waitProximityMeters`, `conflictBufferMin`, `etaPollSeconds`, `noShowFeeEur`, `TRIP_EVENT_CATALOG`, …). Articles render `<Fact name="conflictBufferMin" unit="min" />` — update the constant, docs update on next build.
+2. **Auto-generated trip event catalog** from `TRIP_EVENT_CATALOG` — add an event type, docs get a new row automatically.
+3. **Auto-refreshed screenshots** via `scripts/capture-help-screenshots.ts` (Playwright). Each image shows its capture date.
+4. **Version + changelog banner** — `Updated automatically · <commit date>`. `/help/changelog` generated from `CHANGELOG.md`; "What's new" toast on new entries.
+5. **Contextual `<HelpLink slug="…" />`** typed against the manifest so broken links fail at build.
+6. **`manifest.ts`** = single source of truth for sidebar, search, prev/next, role filtering.
+7. **`fuse.js`** client-side search auto-indexes new articles.
 
-### 5. Status transitions (`updateJobStatus`)
+## 🤖 Ask the Guide — AI assistant
 
-The DB trigger already covers `arrived_pickup`, `in_progress`, `completed`, `actual_dropoff`. Also emit `en_route` and `back_to_waiting` from the server handler (currently only the client logs these), so the pin exists even when the client request to `logDriverAction` fails.
+An always-available AI chat that understands the system and the user's current context. Two entry points:
 
-### 6. Client-side logging stays
+- **Floating `Ask the Guide` button** app-wide (bottom-right).
+- **Inline** — on any docs article ("Ask a follow-up") and next to key UI signals ("Why is this red?" button on a glowing trip card).
 
-Keep the existing `logDriverAction` calls in the driver app — they add fresh device GPS/timestamp. Server-side inserts are idempotent-ish (duplicate pins within 5 s of the same `event_type` for the same `job_id` are suppressed by a small guard in `insertTripMapEvent`) so we don't end up with two pins per action.
+### What it knows
 
-### 7. Realtime instant sync
+The AI is grounded in a **live knowledge index** (not "trained" — it does retrieval every request):
 
-In `TripDetailsSheet` (and any place that reads `getTripMap`), subscribe to Postgres changes on `trip_map_events` filtered by `job_id` and invalidate the `["trip-map", jobId]` query on INSERT. Requires adding `trip_map_events` to `supabase_realtime` publication (migration). Falls back to the existing 30 s poll if realtime is unavailable.
+1. **Every help article** (title, headings, body text) — indexed at build.
+2. **Live facts** from `docs-facts.ts` (real thresholds, fees, timings).
+3. **The trip event catalog** with each event's payout/trust impact.
+4. **UI state vocabulary** — a curated map of every visual signal the app shows and what it means:
+   - Red-glowing trip card → schedule conflict (see `ScheduleConflictBanner`).
+   - Orange ETA chip → planned (stale > 5min).
+   - Green ETA chip → live traffic-aware.
+   - Purple pin on map → coordinator status override.
+   - "Waiting" chip → driver stopped within 150m after `pickup_at`.
+   - …one entry per visual state, kept alongside the component that renders it via a `registerSignal()` helper so new signals auto-register.
 
-### 8. Coordinator map polish (no design change)
+### What it can do (tool calls)
 
-- The pin popup already shows `notes` and `occurred_at`. Extend it to render key `meta` fields when present: waiting minutes/amount, override reason, pax name — so the map explains itself without opening another panel.
+The AI can call **read-only** server tools to answer contextual questions:
 
-## Files touched
+- `getTripContext(jobId)` — returns trip state, latest map events, current ETA, driver location, active conflicts. Used to answer "why is trip #A123 red?".
+- `getConflictExplanation(jobId)` — returns the full conflict math (prev end + buffer + handover + next pickup) already computed by `suggestAlternativeDrivers`.
+- `searchHelp(query)` — semantic search over the help articles.
+- `getEventImpact(eventType)` — returns the payout/trust delta for an event.
 
-- `src/lib/trip-map.server.ts` (new, server-only)
-- `src/lib/coordinator-public.functions.ts` — wait sessions, emergency override, pax no-show/cancel, boarding request, en_route/back_to_waiting emissions
-- `src/lib/coordinator.functions.ts` — boarding approval resolution, any admin/coordinator-side status changes
-- `src/components/coordinator/TripEventsMap.tsx` — richer popup content from `meta`
-- `src/components/coordinator/TripDetailsSheet.tsx` — realtime subscription
-- Migration: add `trip_map_events` to `supabase_realtime` publication (only if not already published)
+Every tool is auth-scoped through `requireSupabaseAuth`; the assistant sees only what the signed-in user can see (coordinator sees their trips, driver sees only theirs).
 
-## What stays out of scope
+### Contextual "Why is this red?" hooks
 
-- No changes to how statuses/waiting/overrides work — only add the map-pin side effect.
-- No new event types; the 19 listed are already in `EVENT_META`.
-- No changes to the driver UI beyond the logging that already runs.
+A `<ExplainThis context={{ kind: 'trip', jobId, signal: 'conflict' }}>` button opens the assistant pre-loaded with the right context. Wired into:
+
+- Trip cards with a conflict rail → "Why is this red?"
+- ETA chips → "Why is ETA stale?"
+- Status override dialog → "What happens if I override?"
+- AI extraction error → "Why did this fail? What do I do?"
+- Waiting timer → "Why is waiting not counting?"
+
+Clicking the button opens the chat with a prefilled question and the AI resolves the answer by calling `getTripContext` / `getConflictExplanation`.
+
+### Answer shape
+
+The AI is instructed to always answer in three parts:
+
+1. **Diagnosis** — plain-language explanation of what's happening.
+2. **Why it matters** — impact on payment, trust, or workflow.
+3. **How to fix it** — concrete steps, with a `<HelpLink>` to the full article and (when applicable) a deep link to the relevant screen (e.g. "Open trip #A123" or "Try suggested driver → Marc").
+
+### Implementation
+
+- **Route** `src/routes/api/help-chat.ts` — streaming chat via AI SDK + Lovable AI Gateway. Uses `google/gemini-3.5-flash` for speed and multimodal (users can even paste a screenshot).
+- **System prompt** is generated at build time from the help manifest, facts, event catalog, and signal registry so the model always has the current knowledge.
+- **Tools** defined with `tool()` + Zod schemas, all read-only and auth-scoped via `requireSupabaseAuth` middleware.
+- **UI** built with AI Elements (`conversation`, `message`, `prompt-input`, `tool`, `shimmer`) per the chat-ui-composition guidance. Assistant messages plain (no bubble), user messages with `primary`/`primary-foreground`, tool cards collapsed by default.
+- **History** — one conversation per user in `localStorage` (per chat-agent-ui-contract: no threading needed for a help assistant). "New conversation" button clears it.
+- **Cost guard** — surface 429 (rate limit) and 402 (credits) cleanly.
+
+## Files added (roughly)
+
+**Routes**
+- `src/routes/how-it-works.tsx` (public)
+- `src/routes/help.tsx` (layout), `help.index.tsx`, `help.$topic.tsx`, `help.changelog.tsx`
+- `src/routes/api/help-chat.ts` (AI streaming)
+
+**Components** (`src/components/help/`)
+- `HelpSidebar`, `HelpArticle`, `HelpToc`, `HelpSearch`, `Screenshot`, `Callout`, `StepList`, `RoleBadge`, `Fact`, `EventCatalogTable`, `HelpLink`, `FeedbackWidget`
+- `AskGuideButton` (floating), `AskGuidePanel` (sheet), `ExplainThis` (contextual button)
+
+**Content** (`src/content/help/`)
+- `manifest.ts`, `screenshots.manifest.ts`, `docs-facts.ts`
+- One `.tsx` per article
+- `signal-registry.ts` — visual state → meaning map
+
+**Automation**
+- `scripts/capture-help-screenshots.ts`
+- `src/lib/help-changelog.ts`
+- `src/lib/help-ai.server.ts` — system prompt builder + tool definitions
+
+**Optional DB (small)**
+- `help_feedback (article_slug, thumbs, note, user_id, created_at)` with RLS + GRANT.
+- `help_chat_events (user_id, question, tools_used, resolved, created_at)` — lightweight analytics so we can see which questions users actually ask.
+
+## Rollout in one build pass
+
+1. Scaffold routes, sidebar, article shell, manifest, search, `Fact` + `EventCatalogTable`.
+2. Wire `docs-facts.ts` to real constants; auto-generate event catalog.
+3. Capture initial screenshots + generate 5 AI diagrams.
+4. Write first-wave articles (Getting Started + one per role + 3 concept deep-dives).
+5. Build `/api/help-chat` with AI SDK, tools (`getTripContext`, `getConflictExplanation`, `searchHelp`, `getEventImpact`), and system prompt from live knowledge.
+6. Build `AskGuideButton`, `AskGuidePanel`, `ExplainThis` and wire into 4–5 high-value UI spots (conflict rail, ETA chip, status override, AI extraction, waiting timer).
+7. SEO metadata for `/how-it-works`, changelog page, `help_feedback` + `help_chat_events` migrations.
+
+New dependencies: `fuse.js` (search) + AI Elements packages already available. No workflow changes.
