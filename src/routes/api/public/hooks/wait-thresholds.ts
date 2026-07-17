@@ -2,10 +2,26 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const THRESHOLDS = [15, 60] as const;
 
+/**
+ * Wait-threshold notification sweep — called by pg_cron on a schedule.
+ *
+ * Auth: requires the server-only `CRON_SECRET` env var in either the
+ * `x-cron-secret` header or an `Authorization: Bearer <CRON_SECRET>` header.
+ * Previously this endpoint was completely unauthenticated, letting anyone
+ * spam trip_messages with "driver waiting" system notes.
+ */
 export const Route = createFileRoute("/api/public/hooks/wait-thresholds")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        const expected = process.env.CRON_SECRET ?? "";
+        if (!expected) return new Response("Cron secret not configured", { status: 500 });
+        const header = request.headers.get("x-cron-secret")
+          ?? (request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+        if (header !== expected) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: open, error } = await supabaseAdmin
           .from("job_wait_sessions" as any)

@@ -1,14 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Daily AI Auto-Coordinate pass across all companies that opted in.
-// Called by pg_cron with the Supabase publishable/anon key in the `apikey` header.
+/**
+ * Daily AI Auto-Coordinate pass across all companies that opted in.
+ *
+ * Auth: requires the server-only `CRON_SECRET` env var in one of:
+ *   - `x-cron-secret` header
+ *   - `Authorization: Bearer <CRON_SECRET>` header
+ *
+ * The Supabase publishable/anon key is NOT a secret (it ships in every
+ * browser bundle) and must never be used to gate write-heavy or
+ * cost-incurring endpoints.
+ */
 export const Route = createFileRoute("/api/public/cron/ai-auto-coordinate")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const apiKey = request.headers.get("apikey") ?? "";
-        const expected = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? "";
-        if (!expected || apiKey !== expected) {
+        const expected = process.env.CRON_SECRET ?? "";
+        if (!expected) return new Response("Cron secret not configured", { status: 500 });
+        const header = request.headers.get("x-cron-secret")
+          ?? (request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+        if (header !== expected) {
           return new Response("Unauthorized", { status: 401 });
         }
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
