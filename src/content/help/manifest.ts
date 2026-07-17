@@ -14,8 +14,20 @@ export type HelpArticle = {
 };
 
 // Lazy so bundle stays lean; each article is its own chunk.
-const A = (path: string) =>
-  lazy(() => import(/* @vite-ignore */ `./articles/${path}.tsx`));
+// Explicit imports (Vite requires static specifiers for tree-shaking).
+const A = {
+  welcome: lazy(() => import("./articles/welcome")),
+  "install-apps": lazy(() => import("./articles/install-apps")),
+  "coordinator-dashboard": lazy(() => import("./articles/coordinator-dashboard")),
+  "coordinator-dispatch": lazy(() => import("./articles/coordinator-dispatch")),
+  "coordinator-ai-extraction": lazy(() => import("./articles/coordinator-ai-extraction")),
+  "driver-guide": lazy(() => import("./articles/driver-guide")),
+  "event-catalog": lazy(() => import("./articles/event-catalog")),
+  faq: lazy(() => import("./articles/faq")),
+} as const;
+
+type Slug = keyof typeof A;
+const load = (slug: Slug) => A[slug];
 
 export const HELP_ARTICLES: HelpArticle[] = [
   {
