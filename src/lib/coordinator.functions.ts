@@ -6172,3 +6172,137 @@ export const decideDriverCancelRequest = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+/**
+ * Coordinator status override.
+ *
+ * Lets a coordinator (or admin) fix the trip status after the fact — e.g. the
+ * driver forgot to press "Completed", or the wrong stage got set. Always logs
+ * a `coord_status_override` map pin with { from, to, actor: "coordinator",
+ * user_id, reason } so there is a permanent audit record of who changed
+ * the status, when, and why. Does NOT run the driver-side guards (GPS
+ * radius, boarding gate, etc) since the coordinator is manually correcting
+ * ground truth.
+ */
+export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_id: z.string().uuid(),
+      status: z.enum(["pending", "en_route", "arrived", "in_progress", "completed", "cancelled"]),
+      reason: z.string().trim().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await getAdminClient();
+
+    // Authorize: caller must be admin, or own the job's company / executor /
+    // origin. Load the job first so we can check.
+    const { data: job, error: jerr } = await sb
+      .from("jobs")
+      .select(
+        "id, status, company_id, executor_company_id, origin_company_id, driver_id, driver_started_at, driver_completed_at",
+      )
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (jerr) throw new Error(jerr.message);
+    if (!job) throw new Error("job_not_found");
+
+    const isAdmin = await checkIsAdmin(context.userId);
+    if (!isAdmin) {
+      const { data: co } = await sb
+        .from("companies")
+        .select("id")
+        .eq("owner_user_id", context.userId)
+        .maybeSingle();
+      const myCompanyId = co?.id as string | undefined;
+      const allowedCompanyIds = new Set(
+        [
+          (job as any).company_id,
+          (job as any).executor_company_id,
+          (job as any).origin_company_id,
+        ].filter(Boolean) as string[],
+      );
+      if (!myCompanyId || !allowedCompanyIds.has(myCompanyId)) {
+        throw new Error("not_authorized");
+      }
+    }
+
+    const prevStatus = (job as any).status ?? null;
+    if (prevStatus === data.status) {
+      return { ok: true, unchanged: true };
+    }
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { status: data.status };
+
+    // Fill / clear timestamp checkpoints so the trip timeline stays coherent
+    // when the coordinator jumps stages.
+    if (data.status === "en_route" && !(job as any).driver_started_at) {
+      patch.driver_started_at = now;
+    }
+    if (data.status === "completed" && !(job as any).driver_completed_at) {
+      patch.driver_completed_at = now;
+    }
+    if (data.status === "pending") {
+      // Coordinator walking the trip back to waiting — keep historical
+      // timestamps so the audit trail stays intact.
+    }
+
+    const { error: uerr } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    if (uerr) throw new Error(uerr.message);
+
+    // Resolve actor email for the audit pin, best-effort.
+    let actorEmail: string | null = null;
+    try {
+      const { data: u } = await sb.auth.admin.getUserById(context.userId);
+      actorEmail = u.user?.email ?? null;
+    } catch { /* ignore */ }
+
+    // Log the override as a distinct map pin. The BEFORE-INSERT trigger
+    // `apply_trip_event_impact` has no rule for `coord_status_override`, so
+    // it contributes zero payout / zero trust — coordinator fixes must
+    // never penalise the driver.
+    const companyId =
+      ((job as any).executor_company_id as string | null) ??
+      ((job as any).company_id as string);
+    try {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(sb, {
+        jobId: (job as any).id as string,
+        companyId,
+        driverId: ((job as any).driver_id as string | null) ?? null,
+        eventType: "coord_status_override",
+        notes: data.reason ?? null,
+        skipGpsFallback: true,
+        meta: {
+          actor: isAdmin ? "admin" : "coordinator",
+          actor_user_id: context.userId,
+          actor_email: actorEmail,
+          from_status: prevStatus,
+          to_status: data.status,
+          reason: data.reason ?? null,
+        },
+      });
+    } catch { /* map log failures never block the status change */ }
+
+    // Also write to the tamper-evident trip audit chain so the coordinator's
+    // action shows in the audit timeline next to driver actions.
+    try {
+      await sb.rpc("record_trip_audit" as never, {
+        _job_id: (job as any).id,
+        _event_type: "coord_status_override",
+        _previous: { status: prevStatus },
+        _new: { status: data.status },
+        _notes: data.reason ?? null,
+        _driver_id: ((job as any).driver_id as string | null) ?? null,
+        _actor_label: isAdmin ? "admin" : "coordinator",
+      } as never);
+    } catch { /* audit failures never block the primary action */ }
+
+    return {
+      ok: true,
+      from: prevStatus,
+      to: data.status,
+    };
+  });

@@ -16,7 +16,8 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, decideDriverCancelRequest } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, decideDriverCancelRequest, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
+import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -401,7 +402,10 @@ export function TripDetailsSheet({
 
           {/* Progress */}
           <div className="rounded-md border p-3 space-y-2 bg-muted/40">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip status</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Trip status</div>
+              <CoordinatorStatusOverride jobId={job.id} currentStatus={job.status} />
+            </div>
             <TripProgress status={job.status} />
             <div className="text-xs text-muted-foreground">
               {stageIdx >= 0 ? TRIP_STAGES[stageIdx].label : "Not started"}
