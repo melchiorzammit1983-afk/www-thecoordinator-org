@@ -199,11 +199,13 @@ export function TripEventsMap({
           : "";
         const plannedDelta = deltaFromPlanned(ev, job);
         const metaHtml = renderMetaHtml(ev);
+        const impactHtml = renderImpactHtml(ev);
         infoRef.current?.setContent(
           `<div style="min-width:200px;font:12px system-ui,sans-serif;">
              <div style="font-weight:600;">${meta.icon} ${meta.label}</div>
              <div style="color:#64748b;">${fmtTime(ev.occurred_at)}</div>
              ${plannedDelta ? `<div style="color:#b45309;margin-top:2px;">${plannedDelta}</div>` : ""}
+             ${impactHtml}
              ${noteHtml}
              ${metaHtml}
            </div>`,
@@ -276,6 +278,31 @@ function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Render the payout / trust impact chip inside the info window when the
+// event has a recorded impact (e.g. wait charge, no-show fee, trust penalty).
+function renderImpactHtml(ev: any): string {
+  const payout = Number(ev.payout_delta_eur ?? 0);
+  const trust = Number(ev.trust_delta ?? 0);
+  if (!payout && !trust) return "";
+  const chips: string[] = [];
+  if (payout) {
+    chips.push(
+      `<span style="display:inline-block;padding:1px 6px;border-radius:9999px;background:#ecfdf5;color:#047857;font-weight:600;">Payout +€${payout.toFixed(2)}</span>`,
+    );
+  }
+  if (trust) {
+    const positive = trust > 0;
+    chips.push(
+      `<span style="display:inline-block;padding:1px 6px;border-radius:9999px;background:${
+        positive ? "#eff6ff" : "#fef2f2"
+      };color:${positive ? "#1d4ed8" : "#b91c1c"};font-weight:600;">Trust ${
+        positive ? "+" : ""
+      }${trust}</span>`,
+    );
+  }
+  return `<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">${chips.join("")}</div>`;
 }
 
 // Render human-friendly `meta` fields on the info window (waiting duration

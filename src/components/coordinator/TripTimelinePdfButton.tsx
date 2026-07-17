@@ -136,6 +136,8 @@ export function TripTimelinePdfButton({
           notes: string | null;
           meta: string | null;
           occurred_at: string;
+          payout_delta_eur?: number | null;
+          trust_delta?: number | null;
         }>;
       };
 
@@ -159,6 +161,16 @@ export function TripTimelinePdfButton({
       doc.text(`Job ${payload.job.id}`, pageW - marginX, 64, { align: "right" });
       doc.setTextColor(0);
 
+      // Compute payout & trust totals across all events for this trip
+      const totalPayout = events.reduce(
+        (a, e) => a + Number(e.payout_delta_eur ?? 0),
+        0,
+      );
+      const totalTrust = events.reduce(
+        (a, e) => a + Number(e.trust_delta ?? 0),
+        0,
+      );
+
       // Trip summary block
       doc.setFontSize(10);
       const summary = [
@@ -173,6 +185,8 @@ export function TripTimelinePdfButton({
           }`,
         ],
         ["Recorded events", String(events.length)],
+        ["Auto payout impact", `€${totalPayout.toFixed(2)}`],
+        ["Trust score impact", `${totalTrust > 0 ? "+" : ""}${totalTrust}`],
       ];
       autoTable(doc, {
         startY: 78,
@@ -191,29 +205,41 @@ export function TripTimelinePdfButton({
       const startY = ((doc as any).lastAutoTable?.finalY ?? 78) + 14;
       autoTable(doc, {
         startY,
-        head: [["#", "When", "Event", "Coords", "Notes", "Details"]],
-        body: events.map((ev, i) => [
-          String(i + 1),
-          fmtDateTime(ev.occurred_at),
-          EVENT_LABEL[ev.event_type] ?? ev.event_type,
-          ev.lat != null && ev.lng != null
-            ? `${Number(ev.lat).toFixed(5)}, ${Number(ev.lng).toFixed(5)}${
-                ev.accuracy_m ? ` ±${Math.round(ev.accuracy_m)}m` : ""
-              }`
-            : "—",
-          ev.notes ?? "",
-          flattenMeta(ev.meta),
-        ]),
+        head: [["#", "When", "Event", "Coords", "Impact", "Notes", "Details"]],
+        body: events.map((ev, i) => {
+          const payout = Number(ev.payout_delta_eur ?? 0);
+          const trust = Number(ev.trust_delta ?? 0);
+          const impact = [
+            payout ? `€${payout.toFixed(2)}` : "",
+            trust ? `Trust ${trust > 0 ? "+" : ""}${trust}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return [
+            String(i + 1),
+            fmtDateTime(ev.occurred_at),
+            EVENT_LABEL[ev.event_type] ?? ev.event_type,
+            ev.lat != null && ev.lng != null
+              ? `${Number(ev.lat).toFixed(5)}, ${Number(ev.lng).toFixed(5)}${
+                  ev.accuracy_m ? ` ±${Math.round(ev.accuracy_m)}m` : ""
+                }`
+              : "—",
+            impact || "—",
+            ev.notes ?? "",
+            flattenMeta(ev.meta),
+          ];
+        }),
         theme: "striped",
         headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 9 },
         styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak", valign: "top" },
         columnStyles: {
           0: { cellWidth: 22 },
-          1: { cellWidth: 110 },
-          2: { cellWidth: 110 },
-          3: { cellWidth: 105 },
-          4: { cellWidth: 90 },
-          5: { cellWidth: "auto" },
+          1: { cellWidth: 100 },
+          2: { cellWidth: 100 },
+          3: { cellWidth: 95 },
+          4: { cellWidth: 70 },
+          5: { cellWidth: 75 },
+          6: { cellWidth: "auto" },
         },
         margin: { left: marginX, right: marginX },
         didDrawPage: () => {
