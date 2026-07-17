@@ -2422,8 +2422,10 @@ export type Database = {
       job_wait_sessions: {
         Row: {
           agreed_amount: number | null
+          arrived_at: string | null
           auto_started: boolean
           calculated_amount: number | null
+          chargeable_from: string | null
           company_id: string | null
           created_at: string
           currency: string
@@ -2440,8 +2442,10 @@ export type Database = {
         }
         Insert: {
           agreed_amount?: number | null
+          arrived_at?: string | null
           auto_started?: boolean
           calculated_amount?: number | null
+          chargeable_from?: string | null
           company_id?: string | null
           created_at?: string
           currency?: string
@@ -2458,8 +2462,10 @@ export type Database = {
         }
         Update: {
           agreed_amount?: number | null
+          arrived_at?: string | null
           auto_started?: boolean
           calculated_amount?: number | null
+          chargeable_from?: string | null
           company_id?: string | null
           created_at?: string
           currency?: string
