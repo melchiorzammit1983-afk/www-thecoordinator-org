@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
         const body = await request.json().catch(() => ({}));
         const parsed = z.object({
           booking_id: z.string().uuid(),
-          kind: z.enum(["edit", "cancel", "reschedule"]),
+          kind: z.enum(["edit", "reschedule"]),
           requested_changes: z.record(z.string(), z.any()).optional(),
         }).safeParse(body);
         if (!parsed.success) return Response.json({ error: "bad_input" }, { status: 400 });

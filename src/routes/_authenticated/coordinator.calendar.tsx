@@ -315,6 +315,15 @@ function CalendarPage() {
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [showCompleted, setShowCompleted] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("calendar.showCompleted") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("calendar.showCompleted", showCompleted ? "1" : "0");
+    }
+  }, [showCompleted]);
   const [driverFilter, setDriverFilter] = useState<string>("all"); // "all" | "unassigned" | driver id
   const toggleStatusFilter = (s: string) =>
     setStatusFilter((prev) => {
@@ -709,12 +718,15 @@ function CalendarPage() {
   const afterStatus = statusFilter.size
     ? afterSearch.filter((j) => statusFilter.has(String(j.status ?? "")))
     : afterSearch;
+  const afterCompleted = showCompleted
+    ? afterStatus
+    : afterStatus.filter((j) => j.status !== "completed" && j.status !== "cancelled");
   const afterDriver =
     driverFilter === "all"
-      ? afterStatus
+      ? afterCompleted
       : driverFilter === "unassigned"
-        ? afterStatus.filter((j) => !j.driver_id)
-        : afterStatus.filter((j) => j.driver_id === driverFilter);
+        ? afterCompleted.filter((j) => !j.driver_id)
+        : afterCompleted.filter((j) => j.driver_id === driverFilter);
   const visibleAll = trafficFilter.size
     ? afterDriver.filter((j) => trafficFilter.has(String(j.traffic_severity ?? "")))
     : afterDriver;
@@ -902,6 +914,16 @@ function CalendarPage() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Button
+            size="sm"
+            variant={showCompleted ? "default" : "outline"}
+            className="h-8 text-xs"
+            onClick={() => setShowCompleted((v) => !v)}
+            title="Toggle completed and cancelled trips"
+          >
+            {showCompleted ? "Hide completed" : "Show completed"}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
