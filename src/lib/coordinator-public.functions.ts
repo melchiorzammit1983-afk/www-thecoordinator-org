@@ -1668,6 +1668,18 @@ export const requestBoardingApproval = createServerFn({ method: "POST" })
       driver_id: link.subject_id ?? null,
     } as never);
 
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId,
+        driverId: link.subject_id ?? null,
+        eventType: "boarding_requested",
+        notes: `${pendingCount} passenger(s) pending`,
+        meta: { approval_id: (approval as any).id, pax_summary: paxSummary, driver_note: data.driver_note ?? null },
+      });
+    }
+
     return { ok: true, approval_id: (approval as any).id, requested_at: (approval as any).requested_at };
   });
 
