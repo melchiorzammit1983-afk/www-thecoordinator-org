@@ -682,7 +682,19 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const [chatOpen, setChatOpen] = useState(false);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [pendingQuestions, setPendingQuestions] = useState<string[]>([]);
   const [reply, setReply] = useState("");
+
+  // Preview draft — AI's proposal held for review before it overwrites the paste.
+  type PendingDraft = {
+    rows: AiRow[];
+    is_low_confidence: boolean;
+    accuracy_score: number;
+    is_half_price: boolean;
+    follow_up_questions: string[];
+    keep: boolean[];
+  };
+  const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
 
   // Voice-to-trip transcript (surfaced when the coordinator uses the voice button)
   const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
@@ -719,38 +731,70 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
     onSuccess: (res) => {
       if (res.type === "question") {
         setPendingQuestion(res.payload);
+        setPendingQuestions([]);
         setChat((prev) => [...prev, { role: "model", text: res.payload }]);
+        return;
+      }
+      if (res.type === "questions") {
+        const intro = "I need a quick clarification before I extract the trips:";
+        setPendingQuestion(intro);
+        setPendingQuestions(res.payload);
+        setChat((prev) => [
+          ...prev,
+          { role: "model", text: `${intro}\n${res.payload.map((q, i) => `${i + 1}. ${q}`).join("\n")}` },
+        ]);
         return;
       }
       const rows = res.payload ?? [];
       if (!rows.length) { toast.error("AI could not find any trips"); return; }
-      // Capture the first AI draft + the raw text that produced it so we
-      // can compare against the coordinator's final edits on save.
-      const firstUserMsg = aiMut.variables?.messages?.find((m) => m.role === "user")?.text ?? raw;
-      setAiOriginalText(firstUserMsg);
-      setAiInitialOutput(rows);
-      setRaw(rowsToTsv(rows));
-      setAiLowConfidence(res.is_low_confidence === true);
-      // Dynamic billing: record the accuracy-based discount flag so the bulk
-      // save can forward it to the billing/invoice module.
-      const score = typeof res.accuracy_score === "number" ? res.accuracy_score : 1;
-      const halfPrice = res.is_half_price === true;
-      setAiBilling({ is_half_price: halfPrice, accuracy_score: score });
-      setChatOpen(false);
-      setChat([]);
+      // Stage the draft for the coordinator to review before we overwrite `raw`.
+      setPendingDraft({
+        rows,
+        is_low_confidence: res.is_low_confidence === true,
+        accuracy_score: typeof res.accuracy_score === "number" ? res.accuracy_score : 1,
+        is_half_price: res.is_half_price === true,
+        follow_up_questions: res.follow_up_questions ?? [],
+        keep: rows.map(() => true),
+      });
       setPendingQuestion(null);
-      setReply("");
-      setAttachments([]);
-      if (halfPrice) {
-        toast.warning(`AI accuracy ${Math.round(score * 100)}% — 50% discount will apply on save.`);
-      } else if (res.is_low_confidence) {
-        toast.warning("AI extracted trips, but confidence is low — please review.");
-      } else {
-        toast.success(`AI extracted ${rows.length} trip${rows.length === 1 ? "" : "s"}`);
-      }
+      setPendingQuestions([]);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const applyPendingDraft = () => {
+    if (!pendingDraft) return;
+    const kept = pendingDraft.rows.filter((_, i) => pendingDraft.keep[i]);
+    if (!kept.length) { toast.error("Pick at least one trip to apply"); return; }
+    const firstUserMsg = aiMut.variables?.messages?.find((m) => m.role === "user")?.text ?? raw;
+    setAiOriginalText(firstUserMsg);
+    setAiInitialOutput(kept);
+    setRaw(rowsToTsv(kept));
+    setAiLowConfidence(pendingDraft.is_low_confidence);
+    setAiBilling({ is_half_price: pendingDraft.is_half_price, accuracy_score: pendingDraft.accuracy_score });
+    setChatOpen(false);
+    setChat([]);
+    setPendingQuestion(null);
+    setPendingQuestions([]);
+    setAttachments([]);
+    if (pendingDraft.is_half_price) {
+      toast.warning(`AI accuracy ${Math.round(pendingDraft.accuracy_score * 100)}% — 50% discount will apply on save.`);
+    } else if (pendingDraft.is_low_confidence) {
+      toast.warning(`Applied ${kept.length} trip${kept.length === 1 ? "" : "s"} — confidence low, please review.`);
+    } else {
+      toast.success(`Applied ${kept.length} trip${kept.length === 1 ? "" : "s"}`);
+    }
+    setPendingDraft(null);
+  };
+
+  const discardPendingDraft = () => {
+    setPendingDraft(null);
+    setChatOpen(false);
+    setChat([]);
+    setPendingQuestion(null);
+    setPendingQuestions([]);
+  };
+
 
   const addFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files);
