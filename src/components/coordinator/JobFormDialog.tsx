@@ -1323,6 +1323,17 @@ function makeIsoOrNull(date: string, time: string): string | null {
   }
 }
 
+/** Add/subtract minutes from an HH:MM string, wrapping across day boundary. */
+function shiftTime(hhmm: string, deltaMin: number): string {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+  const [h, m] = hhmm.split(":").map(Number);
+  let total = h * 60 + m + deltaMin;
+  total = ((total % 1440) + 1440) % 1440;
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
 /**
  * Shows a preview of schedule conflicts if the currently selected driver is
  * assigned to this trip. Runs `previewAssignmentConflicts` server-side.
