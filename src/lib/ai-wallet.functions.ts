@@ -99,7 +99,10 @@ export const setMyAiMonthlyCap = createServerFn({ method: "POST" })
     const sb = await admin();
     const companyId = await resolveMyCompanyId(context.userId);
     if (!companyId) throw new Error("No company assigned");
-    const { error } = await sb.rpc("set_ai_monthly_cap", { _company_id: companyId, _cap: data.cap });
+    const { error } = await sb.rpc("set_ai_monthly_cap", {
+      _company_id: companyId,
+      _cap: data.cap as number, // rpc typing requires number; DB accepts null
+    });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -136,32 +139,30 @@ export const listMyAiUsage = createServerFn({ method: "GET" })
 
 async function assertAdmin(userId: string) {
   const sb = await admin();
-  const { data: email } = await sb.from("admin_emails").select("email").limit(1);
-  // fall back: is_admin RPC
-  const { data: ok } = await sb.rpc("is_admin_user", { _uid: userId } as never).catch(() => ({ data: null }));
-  if (ok === true) return;
   const u = await sb.auth.admin.getUserById(userId);
   const em = u.data.user?.email?.toLowerCase();
-  const list = (email ?? []).map((r) => r.email.toLowerCase());
-  if (!em || !list.includes(em)) throw new Error("admin_only");
+  if (!em) throw new Error("admin_only");
+  const { data: rows } = await sb.from("admin_emails").select("email");
+  const list = (rows ?? []).map((r) => String(r.email).toLowerCase());
+  if (!list.includes(em)) throw new Error("admin_only");
 }
+
+const AdminGrantInput = z.object({
+  company_id: z.string().uuid(),
+  amount: z.number().min(-1_000_000).max(1_000_000).refine((n) => n !== 0, "amount required"),
+  note: z.string().trim().max(500).optional(),
+});
 
 export const adminGrantAiPoints = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({
-      company_id: z.string().uuid(),
-      amount: z.number().refine((n) => n !== 0, "amount required").min(-1_000_000).max(1_000_000),
-      note: z.string().trim().max(500).optional(),
-    }).parse(i),
-  )
+  .inputValidator((i: unknown) => AdminGrantInput.parse(i))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
     const sb = await admin();
     const { data: newBal, error } = await sb.rpc("admin_grant_ai_points", {
       _company_id: data.company_id,
       _amount: data.amount,
-      _note: data.note ?? null,
+      _note: data.note ?? undefined,
     });
     if (error) throw new Error(error.message);
     return { ai_points_balance: Number(newBal) };
@@ -175,7 +176,11 @@ export const adminSetAiMonthlyCap = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
     const sb = await admin();
-    const { error } = await sb.rpc("set_ai_monthly_cap", { _company_id: data.company_id, _cap: data.cap });
+    const { error } = await sb.rpc("set_ai_monthly_cap", {
+      _company_id: data.company_id,
+      _cap: data.cap as number,
+    });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
