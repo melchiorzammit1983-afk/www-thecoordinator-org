@@ -544,6 +544,8 @@ export const getDriverStatement = createServerFn({ method: "POST" })
         flight_status, flight_status_note,
         clientcompanyname, vehicle,
         price_amount, price_currency, payment_method, price_set_by,
+        paid_at, paid_amount, paid_method, paid_reference, paid_by_role,
+        driver_paid_at, driver_paid_amount, driver_paid_method, driver_paid_reference, driver_payout_status,
         driver_actual_minutes, driver_reported_km,
         driver_accepted_at, deletion_requested_at, created_at,
         drivers(id,name,phone,vehicle),
