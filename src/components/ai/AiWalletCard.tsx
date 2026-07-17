@@ -36,10 +36,12 @@ export function AiWalletCard() {
   const [quickOpen, setQuickOpen] = useState(false);
 
   const allocate = useMutation({
-    mutationFn: async () => allocFn({ data: { amount: Number(amount) } }),
-    onSuccess: () => {
-      toast.success(`Moved ${amount} points to AI wallet`);
+    mutationFn: async (n: number) => allocFn({ data: { amount: n } }),
+    onSuccess: (_d, n) => {
+      toast.success(`Moved ${n} points to AI wallet`);
       setAmount("");
+      setQuickAmount("");
+      setQuickOpen(false);
       qc.invalidateQueries({ queryKey: ["ai-wallet"] });
       qc.invalidateQueries({ queryKey: ["my-billing"] });
     },
