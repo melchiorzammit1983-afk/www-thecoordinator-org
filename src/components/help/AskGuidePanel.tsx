@@ -160,6 +160,15 @@ export function AskGuidePanel() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {messages.length >= 2 && (
+              <button
+                onClick={() => setShowEscalate(true)}
+                title="Ask a human"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <LifeBuoy className="h-4 w-4" />
+              </button>
+            )}
             {messages.length > 0 && (
               <button
                 onClick={clear}
