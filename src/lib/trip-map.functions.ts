@@ -36,7 +36,7 @@ export const getTripMap = createServerFn({ method: "GET" })
       supabase
         .from("trip_map_events")
         .select(
-          "id, event_type, lat, lng, accuracy_m, notes, meta, occurred_at",
+          "id, event_type, lat, lng, accuracy_m, notes, meta, occurred_at, payout_delta_eur, trust_delta, adjustment_id",
         )
         .eq("job_id", data.job_id)
         .order("occurred_at", { ascending: true }),
