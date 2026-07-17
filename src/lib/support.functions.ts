@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -226,4 +228,60 @@ export const adminHelpInsights = createServerFn({ method: "GET" })
       thumbsDownCount: thumbsDown.count ?? 0,
       ticketsLast30d: tickets7d.count ?? 0,
     };
+  });
+
+/**
+ * Analyze the latest Guide turn: returns a confidence score, clarifying
+ * questions the AI would like the user to answer, and whether it recommends
+ * escalating to a human admin. Uses a small structured JSON call.
+ */
+export const analyzeHelpTurn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw) => z.object({
+    question: z.string().min(1),
+    answer: z.string().min(1),
+    thread: z.array(z.object({ role: z.string(), text: z.string() })).max(20).optional(),
+  }).parse(raw))
+  .handler(async ({ data }) => {
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) return { confidence: 0.5, clarifying: [], escalate: false, suggested_subject: null };
+
+    const gateway = createLovableAiGatewayProvider(key);
+    const model = gateway("google/gemini-3.1-flash-lite");
+
+    const transcript = (data.thread ?? [{ role: "user", text: data.question }, { role: "assistant", text: data.answer }])
+      .slice(-8)
+      .map((t) => `${t.role.toUpperCase()}: ${t.text}`)
+      .join("\n\n");
+
+    const prompt = `You are a QA reviewer for an in-app AI Help Guide.
+Given the recent conversation, output STRICT JSON (no markdown, no code fences) with:
+- "confidence": number 0..1 — how likely the assistant's LAST answer fully resolves the user's problem
+- "clarifying": array of up to 3 short questions (<=80 chars each) the assistant should ask to resolve the issue. Empty if none needed.
+- "escalate": boolean — true if a human admin should take over (low confidence, missing data only an admin has, bug report, billing dispute, or the user seems stuck)
+- "suggested_subject": short (<=60 chars) support-ticket subject if escalate=true, else null
+
+CONVERSATION:
+${transcript}
+
+JSON:`;
+
+    try {
+      const { text } = await generateText({ model, prompt });
+      const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+      const parsed = JSON.parse(cleaned) as {
+        confidence?: number; clarifying?: unknown; escalate?: boolean; suggested_subject?: string | null;
+      };
+      const confidence = Math.max(0, Math.min(1, Number(parsed.confidence ?? 0.5)));
+      const clarifying = Array.isArray(parsed.clarifying)
+        ? parsed.clarifying.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 3).map((s) => s.slice(0, 120))
+        : [];
+      const escalate = Boolean(parsed.escalate) || confidence < 0.4;
+      const suggested_subject = typeof parsed.suggested_subject === "string" && parsed.suggested_subject.trim()
+        ? parsed.suggested_subject.slice(0, 80)
+        : null;
+      return { confidence, clarifying, escalate, suggested_subject };
+    } catch {
+      return { confidence: 0.5, clarifying: [], escalate: false, suggested_subject: null };
+    }
   });
