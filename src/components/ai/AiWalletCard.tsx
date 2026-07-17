@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Wallet, AlertTriangle, ArrowRightLeft } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sparkles, Wallet, AlertTriangle, ArrowRightLeft, Plus } from "lucide-react";
 import {
   allocateToAiWallet,
   getMyAiWallet,
@@ -31,12 +32,16 @@ export function AiWalletCard() {
 
   const [amount, setAmount] = useState("");
   const [capInput, setCapInput] = useState("");
+  const [quickAmount, setQuickAmount] = useState("");
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const allocate = useMutation({
-    mutationFn: async () => allocFn({ data: { amount: Number(amount) } }),
-    onSuccess: () => {
-      toast.success(`Moved ${amount} points to AI wallet`);
+    mutationFn: async (n: number) => allocFn({ data: { amount: n } }),
+    onSuccess: (_d, n) => {
+      toast.success(`Moved ${n} points to AI wallet`);
       setAmount("");
+      setQuickAmount("");
+      setQuickOpen(false);
       qc.invalidateQueries({ queryKey: ["ai-wallet"] });
       qc.invalidateQueries({ queryKey: ["my-billing"] });
     },
@@ -76,6 +81,56 @@ export function AiWalletCard() {
               <AlertTriangle className="h-3 w-3" /> Low balance
             </Badge>
           )}
+          <Popover open={quickOpen} onOpenChange={setQuickOpen}>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="default" className="ml-auto h-7 gap-1">
+                <Plus className="h-3.5 w-3.5" /> Add AI points
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 space-y-3">
+              <div>
+                <div className="text-sm font-medium">Move general → AI</div>
+                <p className="text-xs text-muted-foreground">
+                  {w.general_points_balance.toLocaleString()} general points available.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[100, 500, 1000].map((n) => (
+                  <Button
+                    key={n}
+                    size="sm"
+                    variant="outline"
+                    disabled={n > w.general_points_balance || allocate.isPending}
+                    onClick={() => allocate.mutate(n)}
+                  >
+                    +{n}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={quickAmount}
+                  onChange={(e) => setQuickAmount(e.target.value)}
+                  placeholder="Custom"
+                  className="h-8"
+                />
+                <Button
+                  size="sm"
+                  disabled={
+                    !quickAmount ||
+                    Number(quickAmount) <= 0 ||
+                    Number(quickAmount) > w.general_points_balance ||
+                    allocate.isPending
+                  }
+                  onClick={() => allocate.mutate(Number(quickAmount))}
+                >
+                  Move
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -122,7 +177,7 @@ export function AiWalletCard() {
                 placeholder="Points to allocate"
               />
               <Button
-                onClick={() => allocate.mutate()}
+                onClick={() => allocate.mutate(Number(amount))}
                 disabled={!amount || Number(amount) <= 0 || Number(amount) > w.general_points_balance || allocate.isPending}
               >
                 Move
