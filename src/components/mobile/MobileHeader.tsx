@@ -34,6 +34,7 @@ export function MobileHeader({ logoUrl, name, onChangePassword }: Props) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold">{name}</div>
       </div>
+      <AiWalletBadge />
       <RequestTopupDialog
         trigger={
           <button type="button" className="inline-flex shrink-0">
