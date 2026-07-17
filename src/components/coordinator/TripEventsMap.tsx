@@ -32,7 +32,8 @@ const EVENT_META: Record<
   wait_started:        { label: "Waiting started",        color: "#f59e0b", icon: "⏱️" },
   wait_ended:          { label: "Waiting ended",          color: "#f59e0b", icon: "▶️" },
   boarding_requested:  { label: "Boarding approval req.", color: "#a855f7", icon: "🙋" },
-  boarding_approved:   { label: "Boarding approved",      color: "#a855f7", icon: "✅" },
+  boarding_approved:   { label: "Boarding approved",      color: "#22c55e", icon: "✅" },
+  boarding_rejected:   { label: "Boarding rejected",      color: "#dc2626", icon: "⛔" },
   pax_no_show:         { label: "Passenger no-show",      color: "#94a3b8", icon: "👤" },
   pax_cancelled:       { label: "Passenger cancelled",    color: "#94a3b8", icon: "🚫" },
   navigate_opened:     { label: "Navigation opened",      color: "#94a3b8", icon: "🧭" },
@@ -42,6 +43,8 @@ const EVENT_META: Record<
   emergency_override:  { label: "Emergency override",     color: "#dc2626", icon: "⚠️" },
   safety_concern:      { label: "Safety concern",         color: "#dc2626", icon: "🛑" },
   breakdown:           { label: "Breakdown",              color: "#dc2626", icon: "🔧" },
+  status_corrected:    { label: "Status corrected",       color: "#64748b", icon: "↺" },
+  arrived_pickup_override: { label: "Arrived (override)", color: "#f97316", icon: "⚠️" },
 };
 
 function fmtTime(iso: string) {
