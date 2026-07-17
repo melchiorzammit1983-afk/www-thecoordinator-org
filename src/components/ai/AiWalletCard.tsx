@@ -177,7 +177,7 @@ export function AiWalletCard() {
                 placeholder="Points to allocate"
               />
               <Button
-                onClick={() => allocate.mutate()}
+                onClick={() => allocate.mutate(Number(amount))}
                 disabled={!amount || Number(amount) <= 0 || Number(amount) > w.general_points_balance || allocate.isPending}
               >
                 Move
