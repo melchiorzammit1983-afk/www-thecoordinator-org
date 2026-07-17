@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.2",
-    "@ai-sdk/react": "^4.0.32",
+    "@ai-sdk/react": "2",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.1",
     "@capacitor/cli": "^8.4.1",
