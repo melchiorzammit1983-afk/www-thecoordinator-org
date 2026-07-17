@@ -2231,9 +2231,9 @@ function useLiveRoute({
       // Alternatives were computed for the old position — clear the choice
       // so we don't stay on a stale "faster route" that no longer applies.
       setAcceptedAltIdx(null);
-      qc.invalidateQueries({ queryKey: ["driver-live-route", destination] });
+      qc.invalidateQueries({ queryKey: ["driver-live-route", jobId, leg] });
     }
-  }, [origin, decodedPath, enabled, destination, qc, isFetching]);
+  }, [origin, decodedPath, enabled, jobId, leg, qc, isFetching]);
 
   const delay_sec = primary?.duration_sec != null && primary?.static_duration_sec != null
     ? Math.max(0, primary.duration_sec - primary.static_duration_sec) : 0;
