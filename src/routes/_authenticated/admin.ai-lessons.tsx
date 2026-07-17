@@ -34,8 +34,9 @@ function AiLessonsAdmin() {
     queryFn: () => listFn({ data: { status: tab } }) as Promise<Lesson[]>,
   });
 
+  type DecideInput = { id: string; action: "approve_global" | "approve_company" | "reject" | "archive"; reason?: string; edited_rule?: string; edited_title?: string };
   const decide = useMutation({
-    mutationFn: (v: Parameters<typeof decideFn>[0]["data"]) => decideFn({ data: v }),
+    mutationFn: (v: DecideInput) => decideFn({ data: v }),
     onSuccess: () => {
       toast.success("Updated");
       qc.invalidateQueries({ queryKey: ["admin", "ai-lessons"] });
