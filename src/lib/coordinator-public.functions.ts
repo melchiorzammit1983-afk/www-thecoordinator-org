@@ -1428,6 +1428,37 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
       driver_id: driverId,
     } as never);
 
+    // Auto-emit a map pin so the coordinator's TripEventsMap shows exactly
+    // where the driver invoked the override (safety/breakdown/generic).
+    {
+      const pinType: "safety_concern" | "breakdown" | "emergency_override" =
+        data.reason === "safety_concern"
+          ? "safety_concern"
+          : data.reason === "breakdown"
+            ? "breakdown"
+            : "emergency_override";
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId,
+        driverId,
+        eventType: pinType,
+        lat: gpsLat,
+        lng: gpsLng,
+        accuracyM: gpsAccuracy,
+        notes: `${actionLabel} — ${reasonLabel}${data.reason_note?.trim() ? `. ${data.reason_note.trim()}` : ""}`,
+        meta: {
+          from_status: fromStatus,
+          to_status: toStatus,
+          reason: data.reason,
+          action: data.action,
+          backward: backwardOverride,
+          street_address: streetAddress,
+          photo_url: photoUrl,
+        },
+      });
+    }
+
     return { ok: true, to_status: toStatus, photo_url: photoUrl };
   });
 
