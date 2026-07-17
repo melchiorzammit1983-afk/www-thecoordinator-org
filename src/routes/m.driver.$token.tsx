@@ -16,7 +16,6 @@ import {
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
   driverSnapDropoffToHere,
-  driverRequestCancel, driverWithdrawCancelRequest,
   logDriverAction,
 } from "@/lib/coordinator-public.functions";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
