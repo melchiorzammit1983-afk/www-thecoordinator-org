@@ -11,7 +11,7 @@ import {
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
   driverReportLate, markPaxCancelled, requestBoardingApproval, driverOverrideBoardingApproval,
   getBoardingApprovalStatusDriver,
-  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
+  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement, driverMarkPayoutReceived,
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
