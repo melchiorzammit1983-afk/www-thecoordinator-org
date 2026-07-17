@@ -136,6 +136,8 @@ export function TripTimelinePdfButton({
           notes: string | null;
           meta: string | null;
           occurred_at: string;
+          payout_delta_eur?: number | null;
+          trust_delta?: number | null;
         }>;
       };
 
