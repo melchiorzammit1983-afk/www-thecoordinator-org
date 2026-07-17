@@ -660,7 +660,9 @@ function DriverManifest() {
 
   const live = useLiveRoute({
     origin: driverPos,
-    destination: routeDestination,
+    jobId: activeJob?.id ?? null,
+    leg: activeJob?.status === "in_progress" ? "to_dropoff" : "to_pickup",
+    token,
     enabled: !!activeJob && !!driverPos && !!routeDestination,
   });
 
