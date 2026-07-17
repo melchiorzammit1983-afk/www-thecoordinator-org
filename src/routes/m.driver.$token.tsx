@@ -2404,8 +2404,9 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  * active/accepted trip. Extra-large instruction text + a 64px+ primary
  * action so the button stays tappable while the phone is dashboard-mounted.
  */
-function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate, onEnterNavigate, canReturnToWaiting }: {
+function NextInstructionCard({ job, token, onOpenSummary, live, driverPos, canEnterNavigate, onEnterNavigate, canReturnToWaiting }: {
   job: Job; token: string; onOpenSummary: () => void; live: LiveRouteInfo;
+  driverPos?: { lat: number; lng: number } | null;
   canEnterNavigate?: boolean; onEnterNavigate?: () => void;
   canReturnToWaiting?: boolean;
 }) {
@@ -2413,9 +2414,30 @@ function NextInstructionCard({ job, token, onOpenSummary, live, canEnterNavigate
   const statusFn = useServerFn(updateJobStatus);
   const jobPaxSummary = getPaxSummary(job.pax);
   const statusMut = useMutation({
-    mutationFn: (status: string) => statusFn({ data: { token, job_id: job.id, status: status as never } }),
+    mutationFn: (input: string | { status: string; override_reason?: string; override_note?: string }) => {
+      const arg = typeof input === "string" ? { status: input } : input;
+      return statusFn({ data: {
+        token, job_id: job.id, status: arg.status as never,
+        ...(driverPos ? { lat: driverPos.lat, lng: driverPos.lng } : {}),
+        ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
+      } });
+    },
     onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
-    onError: (e: Error) => toast.error(formatDriverStatusError(e)),
+    onError: (e: Error, input) => {
+      const status = typeof input === "string" ? input : input.status;
+      const msg = e.message ?? "";
+      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
+        const dist = Number(msg.split(":")[1] ?? 0);
+        const ok = typeof window !== "undefined" && window.confirm(
+          `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
+        );
+        if (ok) {
+          statusMut.mutate({ status: "arrived", override_reason: "wrong_pin", override_note: `Driver override at ${dist}m from pin` });
+        }
+        return;
+      }
+      toast.error(formatDriverStatusError(e));
+    },
   });
 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
