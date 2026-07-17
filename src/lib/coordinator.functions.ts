@@ -342,6 +342,7 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
         .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id")
         .eq("company_id", c.id)
         .is("driver_id", null)
+        .not("status", "in", "(completed,cancelled)")
         .gte("date", new Date().toISOString().slice(0, 10))
         .order("pickup_at", { ascending: true })
         .limit(5),
