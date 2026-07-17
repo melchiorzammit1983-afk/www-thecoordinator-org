@@ -218,6 +218,10 @@ export function AskGuidePanel() {
           </div>
         </div>
 
+        <div className="border-b border-border px-4 py-2">
+          <SafetyBanner compact />
+        </div>
+
         {/* Messages */}
         <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 py-4">
           {messages.length === 0 ? (
