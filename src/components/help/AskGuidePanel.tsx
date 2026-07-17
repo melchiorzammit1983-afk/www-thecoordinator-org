@@ -74,7 +74,7 @@ export function AskGuidePanel() {
     } catch {}
   }, [messages]);
 
-  // Log Q&A when assistant finishes a response
+  // Log Q&A + analyze confidence/clarifying/escalation when assistant finishes a response
   useEffect(() => {
     if (status !== "ready" || messages.length < 2) return;
     const last = messages[messages.length - 1];
@@ -84,12 +84,26 @@ export function AskGuidePanel() {
     if (!prevUser) return;
     const q = prevUser.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
     const a = last.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
-    if (!q) return;
+    if (!q || !a) return;
     loggedForRef.current = last.id;
     logFn({ data: { question: q, answer: a, route: typeof window !== "undefined" ? window.location.pathname : undefined } })
       .then((r) => setLastLoggedId(r.id))
       .catch(() => {});
-  }, [status, messages, logFn]);
+
+    if (analyzedForRef.current === last.id) return;
+    analyzedForRef.current = last.id;
+    setAnalyzing(true);
+    const thread = messages.map((m) => ({ role: m.role, text: m.parts.map((p) => (p.type === "text" ? p.text : "")).join("") }));
+    analyzeFn({ data: { question: q, answer: a, thread } })
+      .then((meta) => setTurnMeta(meta))
+      .catch(() => {})
+      .finally(() => setAnalyzing(false));
+  }, [status, messages, logFn, analyzeFn]);
+
+  // Reset per-turn UI when the user sends a new message
+  useEffect(() => {
+    if (status === "submitted") setTurnMeta(null);
+  }, [status]);
 
   // Autoscroll
   useEffect(() => {
