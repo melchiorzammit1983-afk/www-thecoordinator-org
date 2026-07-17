@@ -1,14 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Called by pg_cron to roll over monthly subscriptions and per-feature usage counters.
-// Uses Supabase publishable/anon key in the `apikey` header (public /api/public/*).
+/**
+ * Called by pg_cron to roll over monthly subscriptions and per-feature usage counters.
+ *
+ * Auth: requires the server-only `CRON_SECRET` env var in one of:
+ *   - `x-cron-secret` header
+ *   - `Authorization: Bearer <CRON_SECRET>` header
+ */
 export const Route = createFileRoute("/api/public/cron/rollover-subscriptions")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const apiKey = request.headers.get("apikey") ?? "";
-        const expected = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? "";
-        if (!expected || apiKey !== expected) {
+        const expected = process.env.CRON_SECRET ?? "";
+        if (!expected) return new Response("Cron secret not configured", { status: 500 });
+        const header = request.headers.get("x-cron-secret")
+          ?? (request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+        if (header !== expected) {
           return new Response("Unauthorized", { status: 401 });
         }
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
