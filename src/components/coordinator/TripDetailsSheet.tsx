@@ -25,6 +25,7 @@ import { TripAuditTimeline } from "./TripAuditTimeline";
 import { GroupStopsPanel } from "./GroupStopsPanel";
 import { TripEventsMap } from "./TripEventsMap";
 import { TripRouteInsights } from "./TripRouteInsights";
+import { ScheduleConflictBanner } from "./ScheduleConflictBanner";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
@@ -409,6 +410,9 @@ export function TripDetailsSheet({
           {/* Route insights: pickup → dropoff always, driver → pickup after acceptance */}
           <TripRouteInsights jobId={job.id} />
           </div>
+
+          {/* Driver schedule collision warning */}
+          <ScheduleConflictBanner jobId={job.id} driverId={job.driver_id} date={job.date} />
 
           {/* Pricing (coordinator-only) */}
           <TripPricingPanel jobId={job.id} />

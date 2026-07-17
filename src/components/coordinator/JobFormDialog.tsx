@@ -31,7 +31,8 @@ import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
-import { Clock } from "lucide-react";
+import { Clock, AlertTriangle } from "lucide-react";
+import { previewAssignmentConflicts } from "@/lib/scheduling.functions";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -392,6 +393,22 @@ function ManualForm({
               {drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          <DriverAssignmentConflictHint
+            driverId={driverId === "__none__" ? null : driverId}
+            jobId={job?.id ?? null}
+            candidate={
+              job
+                ? null
+                : {
+                    pickup_at: makeIsoOrNull(date, time),
+                    from_location: from || (fromFlight ? "Airport" : ""),
+                    to_location: to || (toFlight ? "Airport" : ""),
+                    pickup_display_name: fromDisplayName ?? null,
+                    dropoff_display_name: toDisplayName ?? null,
+                    route_duration_sec: etaResult && "duration_sec" in etaResult ? etaResult.duration_sec : null,
+                  }
+            }
+          />
         </div>
       </div>
       {/* Live from → to ETA (from Google, billed via `route_eta` feature) */}
@@ -1271,5 +1288,108 @@ function PaxEditor({ jobId }: { jobId: string }) {
     </div>
   );
 }
+
+function makeIsoOrNull(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  try {
+    return new Date(`${date}T${time}:00`).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shows a preview of schedule conflicts if the currently selected driver is
+ * assigned to this trip. Runs `previewAssignmentConflicts` server-side.
+ * For a saved trip we pass job_id; for a new trip we send a candidate payload.
+ */
+function DriverAssignmentConflictHint({
+  driverId,
+  jobId,
+  candidate,
+}: {
+  driverId: string | null;
+  jobId: string | null;
+  candidate:
+    | {
+        pickup_at: string | null;
+        from_location: string;
+        to_location: string;
+        pickup_display_name: string | null;
+        dropoff_display_name: string | null;
+        route_duration_sec: number | null;
+      }
+    | null;
+}) {
+  const fn = useServerFn(previewAssignmentConflicts);
+  const enabled = !!driverId && (!!jobId || (!!candidate && !!candidate.pickup_at));
+  const q = useQuery({
+    queryKey: [
+      "assignment-preview",
+      driverId,
+      jobId,
+      candidate?.pickup_at,
+      candidate?.from_location,
+      candidate?.to_location,
+    ],
+    enabled,
+    staleTime: 30_000,
+    queryFn: () =>
+      fn({
+        data: jobId
+          ? { driver_id: driverId!, job_id: jobId }
+          : {
+              driver_id: driverId!,
+              candidate: {
+                pickup_at: candidate!.pickup_at!,
+                from_location: candidate!.from_location,
+                to_location: candidate!.to_location,
+                pickup_display_name: candidate!.pickup_display_name,
+                dropoff_display_name: candidate!.dropoff_display_name,
+                route_duration_sec: candidate!.route_duration_sec,
+              },
+            },
+      }),
+  });
+
+  if (!enabled) return null;
+  if (q.isLoading) {
+    return (
+      <div className="text-[11px] text-muted-foreground">Checking driver's schedule…</div>
+    );
+  }
+  const data = q.data;
+  if (!data || data.severity === "free") {
+    if (data?.severity === "free") {
+      return (
+        <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+          ✓ Driver has no schedule conflicts around this time.
+        </div>
+      );
+    }
+    return null;
+  }
+
+  const isHard = data.severity === "conflict";
+  const cls = isHard
+    ? "border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-200"
+    : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200";
+  return (
+    <div className={`rounded-md border px-2.5 py-1.5 text-[11px] leading-snug ${cls}`}>
+      <div className="flex items-start gap-1.5">
+        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <div className="font-semibold">
+            {isHard ? "Schedule conflict" : "Tight schedule"}
+          </div>
+          {data.pairs.map((p, i) => (
+            <div key={i} className="opacity-90">{p.reason}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
