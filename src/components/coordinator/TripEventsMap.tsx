@@ -274,6 +274,47 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// Render human-friendly `meta` fields on the info window (waiting duration
+// and amount, boarding approval id, pax names, override context, etc).
+function renderMetaHtml(ev: any): string {
+  let meta: Record<string, unknown> | null = null;
+  try {
+    meta = typeof ev.meta === "string" ? JSON.parse(ev.meta) : ev.meta;
+  } catch { meta = null; }
+  if (!meta || typeof meta !== "object") return "";
+  const rows: string[] = [];
+  const push = (label: string, val: unknown) => {
+    if (val == null || val === "") return;
+    rows.push(
+      `<div style="display:flex;justify-content:space-between;gap:8px;color:#475569;">
+         <span>${escapeHtml(label)}</span>
+         <span style="color:#0f172a;font-weight:500;">${escapeHtml(String(val))}</span>
+       </div>`,
+    );
+  };
+  if (meta.elapsed_minutes != null) push("Elapsed", `${meta.elapsed_minutes} min`);
+  if (meta.chargeable_minutes != null) push("Chargeable", `${meta.chargeable_minutes} min`);
+  if (meta.calculated_amount != null) push("Calculated", `€${Number(meta.calculated_amount).toFixed(2)}`);
+  if (meta.agreed_amount != null) push("Agreed", `€${Number(meta.agreed_amount).toFixed(2)}`);
+  if (meta.pax_name) push("Passenger", meta.pax_name as string);
+  if (meta.pax_summary && typeof meta.pax_summary === "object") {
+    const s = meta.pax_summary as Record<string, number>;
+    push("Boarded", s.boarded ?? 0);
+    push("Pending", s.pending ?? 0);
+  }
+  if (meta.reason) push("Reason", String(meta.reason).replace(/_/g, " "));
+  if (meta.action) push("Action", String(meta.action).replace(/_/g, " "));
+  if (meta.from_status && meta.to_status) push("Transition", `${meta.from_status} → ${meta.to_status}`);
+  if (meta.street_address) push("Near", meta.street_address as string);
+  if (meta.photo_url) {
+    rows.push(
+      `<div style="margin-top:6px;"><a href="${escapeHtml(String(meta.photo_url))}" target="_blank" rel="noopener" style="color:#2563eb;">View photo</a></div>`,
+    );
+  }
+  if (!rows.length) return "";
+  return `<div style="margin-top:6px;display:grid;gap:2px;font-size:11px;">${rows.join("")}</div>`;
+}
+
 // Return a human-readable note about how far the actual event drifted from
 // the planned point (only meaningful for the drop-off pin).
 function deltaFromPlanned(ev: any, job: any): string | null {
