@@ -2632,6 +2632,10 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     crypto.getRandomValues(bytes);
     const childToken = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
+    // If the caller is a partner-executor of a dispatched trip, inherit the chain
+    // so the creator continues to see the split children in the same partner lane.
+    const inheritsChain = !isOwner && isExecutor;
+
     // Build the child payload from ALL source fields (business names,
     // place ids, lat/lng, contact, room, pax_count, etc.) so the split
     // child mirrors the parent's addressing and shows correctly on the
