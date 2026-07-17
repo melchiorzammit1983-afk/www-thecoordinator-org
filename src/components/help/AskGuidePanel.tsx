@@ -137,7 +137,7 @@ export function AskGuidePanel() {
   };
 
   const submitEscalation = async () => {
-    const subject = escSubject.trim() || (messages.find((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("").slice(0, 80) ?? "Guide couldn't help");
+    const subject = escSubject.trim() || turnMeta?.suggested_subject || (messages.find((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("").slice(0, 80) ?? "Guide couldn't help");
     const thread = messages.map((m) => ({ role: m.role, text: m.parts.map((p) => (p.type === "text" ? p.text : "")).join("") }));
     try {
       const { id } = await escalateFn({ data: {
