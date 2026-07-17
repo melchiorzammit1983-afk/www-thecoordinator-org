@@ -73,14 +73,6 @@ const REJECT_REASONS = [
   "Other",
 ] as const;
 
-const CANCEL_REASONS = [
-  "No longer available",
-  "Vehicle issue / breakdown",
-  "Passenger issue",
-  "Safety concern",
-  "Traffic / unable to reach",
-  "Other",
-] as const;
 
 
 export const Route = createFileRoute("/m/driver/$token")({
