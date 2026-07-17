@@ -1,71 +1,69 @@
 
-# Driver Schedule Collision Detection
+## Goals
 
-Warn the coordinator (and block, if they want) when assigning a trip to a driver whose existing trips would overlap once travel time + a passenger buffer are factored in.
+1. When a driver taps **Arrived at pickup** while GPS shows they're far from the pickup, warn them and offer clear options — don't silently accept or hard-block.
+2. Waiting time must count from **max(pickup_at, arrived_at)** — arriving early never earns wait charges; arriving late starts immediately.
+3. When a driver changes something later (fixed a mistaken status, undoes an arrival, changes route), the coordinator's live board stays coherent, and the correction is preserved as a **map/audit event** rather than a destructive overwrite.
 
-## What the coordinator will see
+## 1. GPS-aware arrival confirmation (driver side)
 
-1. **In the driver picker (assign / reassign dropdown)** — each driver row gets a status chip:
-   - 🟢 **Free** — no conflict
-   - 🟡 **Tight** — arrives with <5 min slack
-   - 🔴 **Conflict** — arrives after next pickup, or previous trip not finished in time
-   Hovering the chip shows the reasoning ("Finishes prev trip 8:05 + 10 min buffer → next pickup 8:10 → 5 min short").
+Server: extend `updateJobStatus` in `src/lib/coordinator-public.functions.ts` to accept optional `{ lat, lng, accuracy_m, override_reason? }` and, for the `arrived` transition only, compute distance to `pickup_lat/lng` (fall back to geocoding pickup label if needed, cached).
 
-2. **On the trip card / Trip Details sheet** — if the currently assigned driver has a conflict, show a red banner:
-   *"Schedule conflict: driver is on trip #1234 until ~8:05. This 8:10 pickup needs ~25 min drive → arrives 8:30 (20 min late). [Reassign] [Override]"*
+- If distance ≤ `DEFAULT_ARRIVAL_RADIUS_M` (150 m) → accept as today.
+- If distance > radius **and** no `override_reason` → return `{ ok: false, reason: "too_far_from_pickup", distance_m, radius_m }` instead of writing.
+- If `override_reason` is present (`wrong_pin`, `blocked_access`, `passenger_meeting_elsewhere`, `other` + free-text) → accept, but write a `trip_map_events` row `arrived_pickup_override` with the reason + distance in `meta`. Also log via existing `logDriverAction` path so the coordinator map pin shows an amber flag.
+- Missing/stale GPS (> `ARRIVAL_GPS_FRESH_MS`) → treat as "unknown distance" and go straight to the override prompt (no silent accept).
 
-3. **On the calendar board** — trips assigned to the same driver get a subtle red left-rail if they collide with a sibling.
+Client (`src/routes/m.driver.$token.tsx`): wrap the primary "Arrived at pickup" CTA. On `too_far_from_pickup`, open a bottom sheet (reuse ResponsiveDialog):
 
-## How the math works
+> "You're ~420 m from the pickup point. Are you sure you're here?"
+> - **I'm at the right spot** (pin is wrong) → resend with `override_reason: "wrong_pin"`
+> - **Passenger asked me to meet somewhere else** → `passenger_meeting_elsewhere`, optional note
+> - **Can't get closer (access blocked)** → `blocked_access`
+> - **Not yet — go back**
 
-For each candidate driver, take their trips on the same day and sort by `pickup_at`. For each adjacent pair (prev → next):
+Pass current geolocation from the existing driver location hook so the server doesn't have to guess.
 
-```text
-prev.end_estimate   = prev.pickup_at + prev.duration_sec (from route cache / Routes API)
-handover_ready_at   = prev.end_estimate + PAX_DROPOFF_BUFFER (default 10 min)
-transit_to_next     = Routes API: prev.dropoff → next.pickup (traffic-aware)
-must_leave_by       = next.pickup_at − transit_to_next
-slack_min           = (must_leave_by − handover_ready_at) / 60
-```
+## 2. Waiting anchored to the trip time, not driver arrival
 
-- `slack_min >= 5` → Free
-- `0 <= slack_min < 5` → Tight
-- `slack_min < 0` → Conflict (magnitude = minutes late)
+Change wait-session start logic in two places (both call sites in `coordinator-public.functions.ts`):
 
-Buffers are admin-tunable (single row in `ai_configuration` or a new `company_scheduling_settings`): `pax_dropoff_buffer_min` (default 10), `tight_threshold_min` (default 5).
+- **Auto-start on `arrived`** (lines ~1034-1059 in `updateJobStatus`)
+- **Manual `startWaitSession`** (line 2529)
 
-## Implementation
+New behaviour:
 
-### 1. Server function — `src/lib/scheduling.functions.ts` (new)
+- Compute `startedAt = max(now, job.pickup_at)`.
+- Store the actual arrival timestamp in a new `arrived_at` column on `job_wait_sessions` (or reuse `meta` jsonb) so we can show both "Arrived 09:45 · Waiting starts 10:00".
+- `free_ends_at = startedAt + freeWaitMinutes`.
+- If `now < pickup_at`, the session row exists but `chargeable_from = pickup_at`; the driver UI shows a chip **"Waiting starts at 10:00"** counting down instead of a running meter.
 
-- `checkDriverConflicts({ driver_id, job_id? })` — returns `{ conflicts: [{ withJobId, kind: 'late_arrival'|'overlap', slack_min, reason }], suggestion?: 'reassign' }`.
-- `checkAssignmentPreview({ job_id, driver_id })` — same math run before commit; used by the picker.
-- Uses `job_route_cache` first (already populated by existing route-insights work). Only calls Routes API for the transit leg when cache is missing/stale (>30 min). Batches with `computeRouteMatrix`.
-- RLS-scoped via `requireSupabaseAuth`; only returns jobs the caller can already see.
+`stopWaitSession` / `computeCalculatedAmount` already work off `started_at`, so no change once `started_at` is the anchored time.
 
-### 2. Hook — `src/hooks/use-driver-conflicts.ts` (new)
+Add a migration to introduce `job_wait_sessions.arrived_at timestamptz` (nullable) and backfill NULLs.
 
-Lightweight wrapper around `useQuery` keyed by `driver_id` + trip date, refetch every 60 s, invalidated on any job status/assignment mutation.
+## 3. Coordinator sees corrections as history, not overwrites
 
-### 3. UI touchpoints (frontend only, small, isolated)
+Today `updateJobStatus` with `pending` from `arrived`/`en_route` clears `driver_started_at`/`driver_completed_at`. Instead:
 
-- `src/components/coordinator/DriverPicker.tsx` (or wherever the current select lives — will locate during build) → append `<ConflictChip />`.
-- `src/components/coordinator/TripDetailsSheet.tsx` → new `<ScheduleConflictBanner />` at top when conflicts exist.
-- `src/routes/_authenticated/coordinator.calendar.tsx` → tint the row rail red when the job is part of a conflict pair.
-- Reuse existing `TrafficBadge` colour tokens (emerald / amber / red) — no new palette.
+- Keep those timestamps as-is and add a `trip_map_events` row of type `status_corrected` with `{from, to, reason?}` in `meta`.
+- Add `back_to_pending` / `undo_arrival` / `undo_in_progress` to the `logDriverAction` enum so every driver correction is a map pin, colour-coded amber, with the original status in the tooltip.
+- If an `arrived` is undone, **do not** delete the open wait session — close it with `ended_at = now`, `calculated_amount = 0`, `agreed_amount = 0`, `driver_note = "reverted"` so we keep the trace.
+- Coordinator dashboard/calendar already subscribes to `trip_map_events` and job status; the corrected status flows through naturally. Add a small `↺ corrected` badge on the trip row when the latest `trip_map_events.event_type` is a `*_corrected`/`undo_*`.
 
-### 4. Blocking vs. warning
+## 4. Files to touch
 
-Non-blocking by default (banner + confirm modal on Save). Add a company setting later if the user wants a hard block; leaving that out of v1 to avoid workflow disruption per project rules.
+- `src/lib/coordinator-public.functions.ts` — arrival guard, wait anchoring, correction logging, extend `logDriverAction` enum.
+- `src/routes/m.driver.$token.tsx` — arrival confirmation sheet, "Waiting starts at HH:MM" chip, disabled state until pickup_at when tapping "Start waiting" manually before pickup_at (with same override).
+- `src/components/driver/DriverWaitingPanel.tsx` — read the anchored chargeable-from and render the countdown vs. live meter.
+- `src/components/coordinator/TripEventsMap.tsx` + `TripDetailsSheet.tsx` — new pin colour/icon for `arrived_pickup_override`, `status_corrected`, `undo_*`.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — small "corrected" chip on affected rows.
+- New migration:
+  - `alter table public.job_wait_sessions add column arrived_at timestamptz, add column chargeable_from timestamptz;`
+  - default backfill: `chargeable_from = started_at`.
 
-## Out of scope for this pass
+## 5. Out of scope for this pass
 
-- Multi-driver auto-reassignment suggestions (only flags; doesn't auto-swap).
-- Grouped/chained runs already share a driver — collision math skips within the same `group_id`.
-- Push notification to driver about tight schedule (can follow after coordinator UX lands).
-
-## Files to add / edit
-
-- **New:** `src/lib/scheduling.functions.ts`, `src/hooks/use-driver-conflicts.ts`, `src/components/coordinator/ScheduleConflictBanner.tsx`, `src/components/coordinator/ConflictChip.tsx`
-- **Edit:** `src/components/coordinator/TripDetailsSheet.tsx`, `src/routes/_authenticated/coordinator.calendar.tsx`, and the driver-assign control (located during build)
-- **No migration required** for v1 (buffers hardcoded with sane defaults; can be lifted to `ai_configuration` later without breaking callers).
+- No geofence auto-triggers (arrival stays manual, per your earlier instruction).
+- No change to billing math itself — only the anchor moves.
+- No coordinator-side "revert" button; corrections remain driver-initiated with coordinator visibility.
