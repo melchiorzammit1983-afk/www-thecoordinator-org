@@ -3,47 +3,66 @@ import { createClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
-// In-memory best-effort rate limit per user (defence in depth on top of auth).
+// In-memory best-effort rate limits. Signed-in users get a generous bucket;
+// anonymous visitors are rate-limited by client IP to protect the paid gateway.
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 20;
+const RATE_MAX_AUTH = 20;
+const RATE_MAX_ANON = 8;
 const buckets = new Map<string, { count: number; reset: number }>();
-function rateLimit(key: string) {
+function rateLimit(key: string, max: number) {
   const now = Date.now();
   const b = buckets.get(key);
   if (!b || b.reset < now) {
     buckets.set(key, { count: 1, reset: now + RATE_WINDOW_MS });
     return true;
   }
-  if (b.count >= RATE_MAX) return false;
+  if (b.count >= max) return false;
   b.count += 1;
   return true;
+}
+
+function clientIp(request: Request): string {
+  const h = request.headers;
+  return (
+    h.get("cf-connecting-ip") ||
+    h.get("x-real-ip") ||
+    (h.get("x-forwarded-for") ?? "").split(",")[0].trim() ||
+    "anon"
+  );
 }
 
 export const Route = createFileRoute("/api/help-chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // Require an authenticated Supabase session — this endpoint calls the
-        // paid Lovable AI gateway and must not be an open proxy.
+        // Try to authenticate. Missing/invalid token = anonymous "sales" mode.
         const authHeader = request.headers.get("authorization") ?? "";
         const token = authHeader.toLowerCase().startsWith("bearer ")
           ? authHeader.slice(7).trim()
           : "";
-        if (!token) return new Response("Unauthorized", { status: 401 });
 
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseAnon = process.env.SUPABASE_PUBLISHABLE_KEY;
-        if (!supabaseUrl || !supabaseAnon) {
-          return new Response("Auth not configured", { status: 500 });
+        let userId: string | null = null;
+        if (token) {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseAnon = process.env.SUPABASE_PUBLISHABLE_KEY;
+          if (supabaseUrl && supabaseAnon) {
+            try {
+              const authClient = createClient(supabaseUrl, supabaseAnon, {
+                auth: { persistSession: false, autoRefreshToken: false },
+                global: { headers: { Authorization: `Bearer ${token}` } },
+              });
+              const { data: userRes } = await authClient.auth.getUser();
+              if (userRes?.user) userId = userRes.user.id;
+            } catch {
+              /* fall through as anonymous */
+            }
+          }
         }
-        const authClient = createClient(supabaseUrl, supabaseAnon, {
-          auth: { persistSession: false, autoRefreshToken: false },
-          global: { headers: { Authorization: `Bearer ${token}` } },
-        });
-        const { data: userRes, error: userErr } = await authClient.auth.getUser();
-        if (userErr || !userRes.user) return new Response("Unauthorized", { status: 401 });
 
-        if (!rateLimit(userRes.user.id)) {
+        const mode: "coach" | "sales" = userId ? "coach" : "sales";
+        const rateKey = userId ? `u:${userId}` : `ip:${clientIp(request)}`;
+        const rateMax = userId ? RATE_MAX_AUTH : RATE_MAX_ANON;
+        if (!rateLimit(rateKey, rateMax)) {
           return new Response("Too many requests", { status: 429 });
         }
 
@@ -64,27 +83,27 @@ export const Route = createFileRoute("/api/help-chat")({
         }
 
         const { buildSystemPrompt } = await import("@/lib/help-ai.server");
-        let system = buildSystemPrompt();
-        if (typeof body.context === "string" && body.context.trim()) {
-          system += `\n\n--- CURRENT USER CONTEXT ---\n${body.context.slice(0, 2000)}`;
-        }
+        let system = buildSystemPrompt({ mode });
 
-        // Inject learned lessons (company + opted-in global) relevant to the latest user turn.
-        try {
-          const lastUser = [...(messages as UIMessage[])].reverse().find((m) => m.role === "user");
-          const lastText = lastUser?.parts?.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim() ?? "";
-          if (lastText) {
-            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-            const { data: co } = await supabaseAdmin
-              .from("companies").select("id").eq("owner_user_id", userRes.user.id).maybeSingle();
-            if (co?.id) {
-              const { buildLearnedContext } = await import("@/lib/ai-context.server");
-              system += await buildLearnedContext({ companyId: co.id, kind: "qa", input: lastText, limit: 5 });
-            }
+        // Only inject current-page context and learned lessons for signed-in operators.
+        if (mode === "coach" && userId) {
+          if (typeof body.context === "string" && body.context.trim()) {
+            system += `\n\n--- CURRENT USER CONTEXT ---\n${body.context.slice(0, 2000)}`;
           }
-        } catch { /* non-fatal */ }
-
-        system += "\n\nSAFETY: Never repeat or invent personal data (names, phones, addresses, card numbers). Always remind the user to verify before acting on payments or assignments.";
+          try {
+            const lastUser = [...(messages as UIMessage[])].reverse().find((m) => m.role === "user");
+            const lastText = lastUser?.parts?.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim() ?? "";
+            if (lastText) {
+              const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+              const { data: co } = await supabaseAdmin
+                .from("companies").select("id").eq("owner_user_id", userId).maybeSingle();
+              if (co?.id) {
+                const { buildLearnedContext } = await import("@/lib/ai-context.server");
+                system += await buildLearnedContext({ companyId: co.id, kind: "qa", input: lastText, limit: 5 });
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
 
         const gateway = createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3.5-flash");

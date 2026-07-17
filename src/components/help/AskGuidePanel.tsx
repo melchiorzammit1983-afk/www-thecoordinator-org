@@ -28,19 +28,46 @@ function loadHistory(): UIMessage[] {
   } catch { return []; }
 }
 
-const SUGGESTIONS = [
+const SUGGESTIONS_COACH = [
   "Why is my trip card glowing red?",
-  "How does the AI trip extraction work?",
+  "How do I clone a trip?",
   "What starts the waiting-time meter?",
-  "What happens when I override a driver's status?",
+  "How do I mark a driver payout as paid?",
+];
+const SUGGESTIONS_SALES = [
+  "What does The Coordinator do?",
+  "How much does it cost?",
+  "Is my data safe?",
+  "Can I try it before I buy?",
 ];
 
 export function AskGuidePanel() {
   const { isOpen, ctx, close } = useAskGuide();
   const [initial] = useState<UIMessage[]>(() => loadHistory());
   const [input, setInput] = useState("");
+  const [isAuthed, setIsAuthed] = useState<boolean | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled) setIsAuthed(!!data.session);
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+          if (!cancelled) setIsAuthed(!!sess);
+        });
+        return () => sub.subscription.unsubscribe();
+      } catch {
+        if (!cancelled) setIsAuthed(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const anon = isAuthed === false;
+  const SUGGESTIONS = anon ? SUGGESTIONS_SALES : SUGGESTIONS_COACH;
 
   const transport = useMemo(
     () =>
@@ -109,6 +136,7 @@ export function AskGuidePanel() {
       } catch {}
     })();
 
+    if (anon) return; // analysis + escalation flow is operator-only
     if (analyzedForRef.current === last.id) return;
     analyzedForRef.current = last.id;
     setAnalyzing(true);
@@ -117,7 +145,7 @@ export function AskGuidePanel() {
       .then((meta) => setTurnMeta(meta))
       .catch(() => {})
       .finally(() => setAnalyzing(false));
-  }, [status, messages, logFn, analyzeFn]);
+  }, [status, messages, logFn, analyzeFn, anon]);
 
   // Reset per-turn UI when the user sends a new message
   useEffect(() => {
@@ -192,12 +220,16 @@ export function AskGuidePanel() {
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-foreground">Ask the Guide</div>
-              <div className="text-xs text-muted-foreground">AI-powered · knows your system</div>
+              <div className="text-sm font-semibold text-foreground">
+                {anon ? "Chat with a product expert" : "Ask the Guide"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {anon ? "See if The Coordinator fits your team" : "AI-powered · knows your system"}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {messages.length >= 2 && (
+            {!anon && messages.length >= 2 && (
               <button
                 onClick={() => setShowEscalate(true)}
                 title="Ask a human"
@@ -235,8 +267,9 @@ export function AskGuidePanel() {
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="text-sm font-medium text-foreground">Hi 👋</div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  I'm the built-in guide for The Coordinator. Ask me how a feature
-                  works, or why something on your screen looks the way it does.
+                  {anon
+                    ? "I can walk you through what The Coordinator does, pricing, and how to get started. Ready when you are."
+                    : "I'm the built-in guide for The Coordinator. Ask me how a feature works, or why something on your screen looks the way it does."}
                 </p>
               </div>
               <div>
@@ -272,15 +305,17 @@ export function AskGuidePanel() {
                       <div className="flex items-center justify-between gap-2 pl-1">
                         <AiFeedback surface="guide" question={qText} answer={aText}
                           route={typeof window !== "undefined" ? window.location.pathname : undefined} />
-                        <TeachAiDialog
-                          defaultKind="qa"
-                          defaultExample={qText}
-                          trigger={
-                            <button className="text-[11px] text-primary hover:underline">
-                              Teach the AI
-                            </button>
-                          }
-                        />
+                        {!anon && (
+                          <TeachAiDialog
+                            defaultKind="qa"
+                            defaultExample={qText}
+                            trigger={
+                              <button className="text-[11px] text-primary hover:underline">
+                                Teach the AI
+                              </button>
+                            }
+                          />
+                        )}
                       </div>
                     )}
                   </div>
