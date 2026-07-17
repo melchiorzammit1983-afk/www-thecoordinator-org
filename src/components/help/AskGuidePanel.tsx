@@ -316,7 +316,6 @@ export function AskGuidePanel() {
                             }
                           />
                         )}
-                        />
                       </div>
                     )}
                   </div>
