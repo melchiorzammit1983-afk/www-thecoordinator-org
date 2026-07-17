@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
       { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
       { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
+      { to: "/coordinator/availability", label: "Availability", icon: Clock, exact: false, feature: "availability_autoforward" },
       { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
     ],
   },
