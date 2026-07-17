@@ -14,6 +14,7 @@ import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
 import { BrandLogo } from "@/components/branding/BrandLogo";
 import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
+import { AiWalletBadge } from "@/components/ai/AiWalletBadge";
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
 
