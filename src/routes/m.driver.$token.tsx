@@ -1855,51 +1855,9 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                       <ThumbsDown className="h-4 w-4 mr-2" /> Can't make it — give back
                     </DropdownMenuItem>
                   )}
-                  {!!job.driver_accepted_at && job.status !== "cancelled" && job.status !== "completed" && !job.driver_cancel_requested_at && (
-                    <DropdownMenuItem
-                      className="min-h-11 text-destructive focus:text-destructive"
-                      onSelect={(e) => { e.preventDefault(); setCancelOpen(true); }}
-                    >
-                      <ThumbsDown className="h-4 w-4 mr-2" /> Request cancellation
-                    </DropdownMenuItem>
-                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-
-            {/* Emergency Override — always visible; enlarged in safety mode. */}
-            {job.status !== "completed" && job.status !== "cancelled" && (
-              <Button
-                variant="destructive"
-                className={isSafetyMode ? "w-full h-16 text-base font-bold" : "w-full h-12 font-semibold"}
-                onClick={() => setEmergencyOpen(true)}
-              >
-                <AlertTriangle className="h-5 w-5 mr-2" /> Emergency Override
-              </Button>
-            )}
-
-            {/* Pending cancellation banner stays inline so the driver never loses sight of it. */}
-            {!!job.driver_accepted_at && job.status !== "cancelled" && job.status !== "completed" && job.driver_cancel_requested_at && (
-              <div className="flex flex-col gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                <div className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                  ⏳ Waiting for coordinator to approve your cancellation.
-                </div>
-                {job.driver_cancel_reason && (
-                  <div className="text-[11px] text-muted-foreground">
-                    Reason: {job.driver_cancel_reason}{job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
-                  </div>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="self-start min-h-9 px-2 text-xs"
-                  disabled={withdrawCancelMut.isPending}
-                  onClick={() => withdrawCancelMut.mutate()}
-                >
-                  Withdraw request
-                </Button>
-              </div>
-            )}
           </>
         )}
 
@@ -1916,45 +1874,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         )}
       </div>
 
-      <Dialog open={cancelOpen} onOpenChange={(v) => { setCancelOpen(v); if (!v) { setCancelReason(""); setCancelNote(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Request to cancel this trip?</DialogTitle>
-            <DialogDescription>
-              Cancellation isn't instant — the coordinator has to approve it. Please pick a reason so they can act quickly.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Reason (required)</Label>
-              <div className="grid grid-cols-1 gap-1.5">
-                {CANCEL_REASONS.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setCancelReason(r)}
-                    className={`text-left text-sm rounded-md border px-3 py-2 transition ${cancelReason === r ? "border-destructive bg-destructive/10 font-medium" : "border-border hover:bg-muted"}`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Extra details (optional)</Label>
-              <Textarea rows={2} value={cancelNote} onChange={(e) => setCancelNote(e.target.value)}
-                placeholder="Anything the coordinator should know…" maxLength={300} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelOpen(false)}>Back</Button>
-            <Button variant="destructive" disabled={requestCancelMut.isPending || !cancelReason}
-              onClick={() => requestCancelMut.mutate()}>
-              {requestCancelMut.isPending ? "Sending…" : "Send cancellation request"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
 
 
