@@ -1078,6 +1078,23 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       .update(patch as never).eq("id", data.job_id);
     if (error) throw new Error(error.message);
 
+    // Auto-emit trip map pins for the transitions the DB trigger doesn't
+    // already cover (en_route + back_to_waiting), so a pin lands even if the
+    // driver's client-side logDriverAction call fails.
+    if (data.status === "en_route" || (isCorrection && data.status === "pending")) {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: job.id,
+        companyId,
+        driverId: (job as any).driver_id ?? null,
+        eventType: data.status === "en_route" ? "en_route" : "back_to_waiting",
+        lat: data.lat ?? null,
+        lng: data.lng ?? null,
+        accuracyM: data.accuracy_m ?? null,
+        meta: { from: prevStatus, to: data.status },
+      });
+    }
+
     // ── Correction / arrival-override map event ────────────────────────────
     // Record the walk-back or the "I really am here" override as a distinct
     // pin so the coordinator sees the correction without us destroying the
@@ -1411,6 +1428,37 @@ export const emergencyOverrideJobStatus = createServerFn({ method: "POST" })
       driver_id: driverId,
     } as never);
 
+    // Auto-emit a map pin so the coordinator's TripEventsMap shows exactly
+    // where the driver invoked the override (safety/breakdown/generic).
+    {
+      const pinType: "safety_concern" | "breakdown" | "emergency_override" =
+        data.reason === "safety_concern"
+          ? "safety_concern"
+          : data.reason === "breakdown"
+            ? "breakdown"
+            : "emergency_override";
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId,
+        driverId,
+        eventType: pinType,
+        lat: gpsLat,
+        lng: gpsLng,
+        accuracyM: gpsAccuracy,
+        notes: `${actionLabel} — ${reasonLabel}${data.reason_note?.trim() ? `. ${data.reason_note.trim()}` : ""}`,
+        meta: {
+          from_status: fromStatus,
+          to_status: toStatus,
+          reason: data.reason,
+          action: data.action,
+          backward: backwardOverride,
+          street_address: streetAddress,
+          photo_url: photoUrl,
+        },
+      });
+    }
+
     return { ok: true, to_status: toStatus, photo_url: photoUrl };
   });
 
@@ -1467,6 +1515,17 @@ export const markPaxNoShow = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
       driver_id: link.subject_id ?? null,
     } as never);
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId: (job as any).executor_company_id ?? job.company_id,
+        driverId: link.subject_id ?? (job as any).driver_id ?? null,
+        eventType: "pax_no_show",
+        notes: `No-show: ${(paxRow as any).name}`,
+        meta: { pax_id: data.pax_id, pax_name: (paxRow as any).name },
+      });
+    }
     return { ok: true };
   });
 
@@ -1523,6 +1582,17 @@ export const markPaxCancelled = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
       driver_id: link.subject_id ?? null,
     } as never);
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId: (job as any).executor_company_id ?? (job as any).company_id,
+        driverId: link.subject_id ?? (job as any).driver_id ?? null,
+        eventType: "pax_cancelled",
+        notes: `Cancelled: ${(paxRow as any).name}`,
+        meta: { pax_id: data.pax_id, pax_name: (paxRow as any).name },
+      });
+    }
     return { ok: true };
   });
 
@@ -1597,6 +1667,18 @@ export const requestBoardingApproval = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
       driver_id: link.subject_id ?? null,
     } as never);
+
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId,
+        driverId: link.subject_id ?? null,
+        eventType: "boarding_requested",
+        notes: `${pendingCount} passenger(s) pending`,
+        meta: { approval_id: (approval as any).id, pax_summary: paxSummary, driver_note: data.driver_note ?? null },
+      });
+    }
 
     return { ok: true, approval_id: (approval as any).id, requested_at: (approval as any).requested_at };
   });
@@ -2626,6 +2708,25 @@ async function closeOpenWaitSession(
     wait_session_id: (open as any).id,
   } as never);
 
+  // Auto-emit a wait_ended pin so the coordinator's map reflects any
+  // automatic wait-session close (status transition, emergency override).
+  try {
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId,
+      companyId,
+      driverId,
+      eventType: "wait_ended",
+      notes: driverNote ?? null,
+      meta: {
+        auto: true,
+        elapsed_minutes: elapsedMinutes,
+        chargeable_minutes: chargeableMinutes,
+        calculated_amount: calculatedAmount,
+      },
+    });
+  } catch { /* logging must not block */ }
+
   return { sessionId: (open as any).id, calculatedAmount, elapsedMinutes };
 }
 
@@ -2662,6 +2763,21 @@ export const startWaitSession = createServerFn({ method: "POST" })
       free_ends_at: freeEndsAt,
     } as never).select("id, started_at, free_ends_at").maybeSingle();
     if (error) throw new Error(error.message);
+
+    // Auto-emit wait_started pin.
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId: job.id,
+      companyId,
+      driverId: (job as any).driver_id ?? null,
+      eventType: "wait_started",
+      meta: {
+        source: data.source,
+        started_at: (row as any).started_at,
+        free_ends_at: (row as any).free_ends_at ?? null,
+      },
+    });
+
     return {
       ok: true,
       session_id: (row as any).id,
@@ -2720,6 +2836,22 @@ export const stopWaitSession = createServerFn({ method: "POST" })
       driver_note: data.note ?? null,
     } as never);
     if (adjErr) throw new Error(adjErr.message);
+
+    // Auto-emit wait_ended pin with the confirmed amount.
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId: job.id,
+      companyId: sessionCompanyId,
+      driverId: (job as any).driver_id ?? null,
+      eventType: "wait_ended",
+      notes: data.note ?? null,
+      meta: {
+        elapsed_minutes: elapsedMinutes,
+        chargeable_minutes: chargeableMinutes,
+        calculated_amount: calculatedAmount,
+        agreed_amount: data.agreed_amount,
+      },
+    });
 
     return { ok: true, elapsed_minutes: elapsedMinutes, calculated_amount: calculatedAmount, agreed_amount: data.agreed_amount };
   });

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getTripMap } from "@/lib/trip-map.functions";
 import { loadGoogleMaps } from "@/components/driver/DriverDashboardMap";
 import { formatEta } from "@/lib/trip-display";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Live + historical trip map for the coordinator sheet.
@@ -31,7 +32,8 @@ const EVENT_META: Record<
   wait_started:        { label: "Waiting started",        color: "#f59e0b", icon: "⏱️" },
   wait_ended:          { label: "Waiting ended",          color: "#f59e0b", icon: "▶️" },
   boarding_requested:  { label: "Boarding approval req.", color: "#a855f7", icon: "🙋" },
-  boarding_approved:   { label: "Boarding approved",      color: "#a855f7", icon: "✅" },
+  boarding_approved:   { label: "Boarding approved",      color: "#22c55e", icon: "✅" },
+  boarding_rejected:   { label: "Boarding rejected",      color: "#dc2626", icon: "⛔" },
   pax_no_show:         { label: "Passenger no-show",      color: "#94a3b8", icon: "👤" },
   pax_cancelled:       { label: "Passenger cancelled",    color: "#94a3b8", icon: "🚫" },
   navigate_opened:     { label: "Navigation opened",      color: "#94a3b8", icon: "🧭" },
@@ -41,6 +43,8 @@ const EVENT_META: Record<
   emergency_override:  { label: "Emergency override",     color: "#dc2626", icon: "⚠️" },
   safety_concern:      { label: "Safety concern",         color: "#dc2626", icon: "🛑" },
   breakdown:           { label: "Breakdown",              color: "#dc2626", icon: "🔧" },
+  status_corrected:    { label: "Status corrected",       color: "#64748b", icon: "↺" },
+  arrived_pickup_override: { label: "Arrived (override)", color: "#f97316", icon: "⚠️" },
 };
 
 function fmtTime(iso: string) {
@@ -71,12 +75,28 @@ export function TripEventsMap({
   const [err, setErr] = useState<string | null>(null);
 
   const fn = useServerFn(getTripMap);
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["trip-map", jobId],
     queryFn: () => fn({ data: { job_id: jobId } }) as Promise<any>,
     refetchInterval: isLive ? 30_000 : false,
     staleTime: isLive ? 15_000 : 5 * 60_000,
   });
+
+  // Realtime: refetch immediately whenever a new pin is inserted for this job
+  // so the coordinator sees driver actions the moment they happen.
+  useEffect(() => {
+    if (!isLive) return;
+    const ch = supabase
+      .channel(`trip-map-events:${jobId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "trip_map_events", filter: `job_id=eq.${jobId}` },
+        () => qc.invalidateQueries({ queryKey: ["trip-map", jobId] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [isLive, jobId, qc]);
 
   // Boot map
   useEffect(() => {
@@ -177,12 +197,14 @@ export function TripEventsMap({
           ? `<div style="margin-top:4px;color:#334155;">${escapeHtml(ev.notes)}</div>`
           : "";
         const plannedDelta = deltaFromPlanned(ev, job);
+        const metaHtml = renderMetaHtml(ev);
         infoRef.current?.setContent(
-          `<div style="min-width:180px;font:12px system-ui,sans-serif;">
+          `<div style="min-width:200px;font:12px system-ui,sans-serif;">
              <div style="font-weight:600;">${meta.icon} ${meta.label}</div>
              <div style="color:#64748b;">${fmtTime(ev.occurred_at)}</div>
              ${plannedDelta ? `<div style="color:#b45309;margin-top:2px;">${plannedDelta}</div>` : ""}
              ${noteHtml}
+             ${metaHtml}
            </div>`,
         );
         infoRef.current?.open({ map, anchor: marker });
@@ -250,6 +272,47 @@ function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Render human-friendly `meta` fields on the info window (waiting duration
+// and amount, boarding approval id, pax names, override context, etc).
+function renderMetaHtml(ev: any): string {
+  let meta: Record<string, unknown> | null = null;
+  try {
+    meta = typeof ev.meta === "string" ? JSON.parse(ev.meta) : ev.meta;
+  } catch { meta = null; }
+  if (!meta || typeof meta !== "object") return "";
+  const rows: string[] = [];
+  const push = (label: string, val: unknown) => {
+    if (val == null || val === "") return;
+    rows.push(
+      `<div style="display:flex;justify-content:space-between;gap:8px;color:#475569;">
+         <span>${escapeHtml(label)}</span>
+         <span style="color:#0f172a;font-weight:500;">${escapeHtml(String(val))}</span>
+       </div>`,
+    );
+  };
+  if (meta.elapsed_minutes != null) push("Elapsed", `${meta.elapsed_minutes} min`);
+  if (meta.chargeable_minutes != null) push("Chargeable", `${meta.chargeable_minutes} min`);
+  if (meta.calculated_amount != null) push("Calculated", `€${Number(meta.calculated_amount).toFixed(2)}`);
+  if (meta.agreed_amount != null) push("Agreed", `€${Number(meta.agreed_amount).toFixed(2)}`);
+  if (meta.pax_name) push("Passenger", meta.pax_name as string);
+  if (meta.pax_summary && typeof meta.pax_summary === "object") {
+    const s = meta.pax_summary as Record<string, number>;
+    push("Boarded", s.boarded ?? 0);
+    push("Pending", s.pending ?? 0);
+  }
+  if (meta.reason) push("Reason", String(meta.reason).replace(/_/g, " "));
+  if (meta.action) push("Action", String(meta.action).replace(/_/g, " "));
+  if (meta.from_status && meta.to_status) push("Transition", `${meta.from_status} → ${meta.to_status}`);
+  if (meta.street_address) push("Near", meta.street_address as string);
+  if (meta.photo_url) {
+    rows.push(
+      `<div style="margin-top:6px;"><a href="${escapeHtml(String(meta.photo_url))}" target="_blank" rel="noopener" style="color:#2563eb;">View photo</a></div>`,
+    );
+  }
+  if (!rows.length) return "";
+  return `<div style="margin-top:6px;display:grid;gap:2px;font-size:11px;">${rows.join("")}</div>`;
 }
 
 // Return a human-readable note about how far the actual event drifted from
