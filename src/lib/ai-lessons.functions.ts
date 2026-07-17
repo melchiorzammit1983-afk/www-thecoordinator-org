@@ -239,7 +239,15 @@ export const adminDecideLesson = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     if (!(await isPlatformAdmin(context.userId))) throw new Error("Forbidden");
     const sb = await adminClient();
-    const patch: Record<string, unknown> = { approved_by: context.userId };
+    type LessonPatch = {
+      approved_by: string;
+      rule_text?: string;
+      title?: string;
+      scope?: "company" | "global";
+      status?: "pending" | "approved" | "rejected" | "archived";
+      reject_reason?: string | null;
+    };
+    const patch: LessonPatch = { approved_by: context.userId };
     if (data.edited_rule) patch.rule_text = data.edited_rule;
     if (data.edited_title) patch.title = data.edited_title;
     if (data.action === "approve_global") { patch.scope = "global"; patch.status = "approved"; }
