@@ -1,63 +1,71 @@
-## Problem
 
-When a driver receives a grouped trip and taps Accept / On the way / Arrived / In progress on one leg, the sibling legs in the same `group_id` stay behind. The driver ends up tapping the same button 2–3 times per group, and the coordinator sees inconsistent statuses across siblings that are supposed to move together.
+# Payments on Statements — plan
 
-Root cause: `driverAcceptJob` and `updateJobStatus` in `src/lib/coordinator-public.functions.ts` update only the single `job_id` passed in. Nothing fans out to `group_id` siblings assigned to the same driver.
+Add a lightweight "mark paid" workflow on the existing statement pages (coordinator + driver), so once a statement is exported the same list can be used to reconcile who has been paid.
 
-## Fix
+## 1. Database (migration)
 
-### 1. Cascade helper (server)
+Extend `public.jobs` with payment metadata (kept next to the existing `payment_status` / `payment_method` columns so nothing else breaks):
 
-Add an internal helper in `src/lib/coordinator-public.functions.ts`:
+- `paid_at timestamptz` — when marked paid
+- `paid_amount numeric(10,2)` — actual received (supports partial)
+- `paid_method text` — `cash | bank_transfer | card | other`
+- `paid_reference text` — invoice #, txn id, free note
+- `paid_by_user_id uuid` — who ticked it
+- `paid_by_role text` — `coordinator | driver | admin`
+- `driver_paid_at timestamptz`, `driver_paid_amount`, `driver_paid_method`, `driver_paid_reference`, `driver_paid_by_user_id` — driver-side receipt (separate so client-side payment and driver-payout reconciliation don't overwrite each other)
 
-```
-getGroupSiblingIds(supabaseAdmin, job, { requireSameDriver: true }) → string[]
-```
+`payment_status` on `jobs` continues to drive UI. When `paid_amount >= price_amount` we flip it to `paid`; a partial payment sets it to `partial` (new enum value); clearing resets to `pending`. Same rule for the driver side via a small computed `driver_payout_status` field (`pending | partial | paid`).
 
-Returns `[job.id]` when no `group_id`, otherwise all sibling job ids in the same `group_id` that are assigned to the same `driver_id` and are still actionable (not `completed` / `cancelled`). Same-driver filter avoids touching a leg a coordinator manually re-assigned to someone else.
+RLS: reuse existing job policies. Add a targeted policy so a driver assigned to a job can UPDATE only their own `driver_paid_*` columns (via a `SECURITY DEFINER` fn that whitelists those columns).
 
-### 2. `driverAcceptJob` — accept the whole group
+## 2. Server functions (`src/lib/coordinator.functions.ts`, `coordinator-public.functions.ts`)
 
-- Load siblings via helper.
-- `UPDATE jobs SET driver_accepted_at = coalesce(driver_accepted_at, now()) WHERE id = ANY(ids)`.
-- Post the "✅ Driver accepted this trip" system chat message once per newly-accepted sibling (skip legs already accepted).
-- Recall this driver's open price proposals on every sibling, not just the tapped one.
+- `markJobPayment({ job_id, side: "client" | "driver", amount?, method, reference?, paid_at? })` — coordinator/admin only; upserts the correct set of columns and recomputes status.
+- `unmarkJobPayment({ job_id, side })` — clears fields, resets status to `pending`.
+- `bulkMarkPayment({ job_ids, side, method, paid_at? })` — one-shot "mark all rows on this statement paid in full".
+- `driverMarkPayoutReceived({ job_id, method, reference?, amount? })` — driver-only, only their assigned jobs.
+- Extend `buildStatement` and `getDriverStatement` DTOs to return the new fields plus a derived `payment` block per row (`{ status, paid_amount, method, reference, paid_at, marked_by }`).
 
-### 3. `updateJobStatus` — cascade lifecycle transitions
+All writes log to `admin_activity_log` (already auto-logged) and add a `trip_map_events` entry `payment_marked` / `payment_cleared` for the audit timeline.
 
-For the transitions that logically apply to the whole run — `en_route`, `arrived`, `in_progress`, and the `pending` correction — fan out to sibling ids that are currently in a compatible earlier state. `completed` stays per-leg (each drop-off finishes independently); the existing auto-dissolve already handles the "all siblings done" case.
+## 3. Coordinator statements UI (`src/routes/_authenticated/coordinator.statements.tsx`)
 
-Per cascaded sibling:
-- Apply the same `patch` (status, `driver_started_at` on first `en_route`, timestamps).
-- Run the arrival GPS advisory only against the tapped leg's pickup — siblings share the same pickup in a merged group; if a sibling has a different pickup, skip cascading `arrived`/`in_progress` for that sibling (still cascade `en_route`).
-- Insert matching `trip_map_events` (`en_route`, `back_to_waiting`, arrival override) so the coordinator map shows one pin per leg, tagged with `meta.cascaded_from = tappedJobId`.
-- Start/stop `job_wait_sessions` per sibling using the same `max(now, pickup_at)` anchor already used for the tapped leg.
-- Boarding-gate check for `in_progress` runs per sibling; if any sibling needs partial-boarding approval, throw once and don't apply that sibling's transition (others still proceed).
+- New "Payment" column with a status pill: Paid (green) / Partial (amber) / Unpaid (grey), showing method + date on hover.
+- Row action: "Mark paid" → small popover with **Amount**, **Method** (select), **Date paid** (defaults today), **Reference** (text). "Save" calls `markJobPayment`.
+- If already paid: "Edit payment" / "Mark unpaid".
+- Toolbar: checkbox selection column + **Bulk actions** bar → "Mark selected as paid" (asks method + date, applies full amount to each row).
+- Filter chip: **Payment**: All / Unpaid / Partial / Paid (uses the existing `payment_status` filter, extended to include `partial`).
+- Totals footer split into **Billed / Received / Outstanding**.
 
-### 4. Driver UI — treat a group as one card
+## 4. Driver statements UI (`src/routes/_authenticated/coordinator.my-driving.tsx` and the driver PWA statement view under `m.driver.$token`)
 
-In `src/routes/m.driver.$token.tsx`:
+- Same Payment column, but the mark-paid dialog updates the `driver_paid_*` side (i.e. "I received payout for this trip").
+- Read-only view of the coordinator's client-payment status.
+- Bulk "Mark all shown as received" button.
 
-- The manifest already lists one row per job. Collapse rows sharing `group_id` + same driver into a single card (reuse the existing `GroupedRunRow` visuals) so the driver sees Stop 1 of N with one primary CTA.
-- Primary CTA calls `updateJobStatus` with the current leg's `job_id`; the server cascade above updates the rest. After the tap, invalidate the manifest query so all siblings refresh together (already wired via existing realtime + query invalidation).
-- Hide the per-leg Accept button when the group is already accepted; show a single "Accept run" button that calls `driverAcceptJob` on any one leg (server accepts all).
-- Keep leg-level controls (Boarded / No-show / Complete this stop) inside the expanded leg detail — those stay per-leg.
+## 5. Exports
 
-### 5. No schema changes
+Both PDF and CSV exports include:
+- New column: **Payment** (`Paid — Cash — 2026-07-14 — INV-402`, or `Unpaid`)
+- Footer totals: Billed / Received / Outstanding
+- Optional toggle "Split paid vs outstanding" — renders two tables in the same PDF.
 
-All fields (`group_id`, `driver_id`, `driver_accepted_at`, `driver_started_at`, `status`, `trip_map_events`, `job_wait_sessions`) already exist.
+## 6. Realtime
 
-## Verification
+Reuse existing `broadcastJobUpdate`; when payment is marked, coordinator + driver views refresh through the existing `jobs` invalidation hooks so both sides see the update within a second.
 
-1. Create a group of 3 trips, assign to one driver.
-2. Driver taps **Accept run** → all 3 legs get `driver_accepted_at`, one system message per leg lands in coordinator chat.
-3. Driver taps **On the way** on leg 1 → all 3 flip to `en_route`, `driver_started_at` set, one map pin per leg.
-4. Driver taps **Arrived** at the shared pickup → all 3 flip to `arrived`, wait sessions open per leg anchored to `max(now, pickup_at)`.
-5. Driver taps **Start trip** → all 3 flip to `in_progress`, wait sessions close.
-6. Driver taps **Complete stop** on leg 1 → only leg 1 becomes `completed`; legs 2/3 remain `in_progress`. When the last leg is completed, group auto-dissolves as today.
-7. If the coordinator reassigns leg 2 to a different driver before the tap, the cascade skips it (same-driver filter).
+## Technical notes (for reviewers)
 
-## Out of scope
+- New migration adds columns + `partial` to the `payment_status` enum + a trigger that keeps `payment_status` in sync with `paid_amount` vs `price_amount`.
+- Driver-side column whitelist is enforced by a `SECURITY DEFINER` function `driver_mark_payout(_job, _amount, _method, _ref)` — the RLS UPDATE policy only allows drivers to call that fn, not free-form updates.
+- No changes to trip/dispatch/wait logic. Payment tracking is additive.
 
-- Cross-group cascades, split-flow (`splitPaxToNewJob`), and coordinator-initiated status overrides (they already touch single legs by design).
-- Any change to grouped-run display order — `buildStopChainFromStops` still owns the from/to labeling.
+## Suggestions to make it better (please confirm)
+
+1. **Weekly "Payment run" view** — group unpaid rows by driver/company with one-click "mark whole run paid".
+2. **Auto-reminders** — email/WhatsApp the driver/partner a link to their outstanding statement every N days.
+3. **Attach proof** — allow uploading a receipt/screenshot when marking paid (stored in existing storage bucket).
+4. **Ledger export** — a monthly CSV per driver with running balance for accountant handover.
+
+Say which of 1–4 you want and I'll fold them in before building.

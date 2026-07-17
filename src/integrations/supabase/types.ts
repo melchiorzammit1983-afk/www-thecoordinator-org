@@ -3044,6 +3044,12 @@ export type Database = {
           driver_hidden_at: string | null
           driver_id: string | null
           driver_note: string | null
+          driver_paid_amount: number | null
+          driver_paid_at: string | null
+          driver_paid_by_user_id: string | null
+          driver_paid_method: string | null
+          driver_paid_reference: string | null
+          driver_payout_status: string
           driver_reported_km: number | null
           driver_started_at: string | null
           dropoff_display_name: string | null
@@ -3079,6 +3085,12 @@ export type Database = {
           live_eta_sec: number | null
           live_eta_updated_at: string | null
           origin_company_id: string | null
+          paid_amount: number | null
+          paid_at: string | null
+          paid_by_role: string | null
+          paid_by_user_id: string | null
+          paid_method: string | null
+          paid_reference: string | null
           parent_job_id: string | null
           partner_accepted_at: string | null
           partner_decline_reason: string | null
@@ -3159,6 +3171,12 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           driver_note?: string | null
+          driver_paid_amount?: number | null
+          driver_paid_at?: string | null
+          driver_paid_by_user_id?: string | null
+          driver_paid_method?: string | null
+          driver_paid_reference?: string | null
+          driver_payout_status?: string
           driver_reported_km?: number | null
           driver_started_at?: string | null
           dropoff_display_name?: string | null
@@ -3194,6 +3212,12 @@ export type Database = {
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
           origin_company_id?: string | null
+          paid_amount?: number | null
+          paid_at?: string | null
+          paid_by_role?: string | null
+          paid_by_user_id?: string | null
+          paid_method?: string | null
+          paid_reference?: string | null
           parent_job_id?: string | null
           partner_accepted_at?: string | null
           partner_decline_reason?: string | null
@@ -3274,6 +3298,12 @@ export type Database = {
           driver_hidden_at?: string | null
           driver_id?: string | null
           driver_note?: string | null
+          driver_paid_amount?: number | null
+          driver_paid_at?: string | null
+          driver_paid_by_user_id?: string | null
+          driver_paid_method?: string | null
+          driver_paid_reference?: string | null
+          driver_payout_status?: string
           driver_reported_km?: number | null
           driver_started_at?: string | null
           dropoff_display_name?: string | null
@@ -3309,6 +3339,12 @@ export type Database = {
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
           origin_company_id?: string | null
+          paid_amount?: number | null
+          paid_at?: string | null
+          paid_by_role?: string | null
+          paid_by_user_id?: string | null
+          paid_method?: string | null
+          paid_reference?: string | null
           parent_job_id?: string | null
           partner_accepted_at?: string | null
           partner_decline_reason?: string | null
@@ -4868,12 +4904,22 @@ export type Database = {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
       }
+      driver_clear_payout: { Args: { _job_id: string }; Returns: undefined }
       driver_guide_consume: {
         Args: { _company_id: string; _driver_id: string }
         Returns: {
           remaining_free: number
           used_free: boolean
         }[]
+      }
+      driver_mark_payout: {
+        Args: {
+          _amount: number
+          _job_id: string
+          _method: string
+          _reference: string
+        }
+        Returns: undefined
       }
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
@@ -4997,7 +5043,7 @@ export type Database = {
         | "noshow"
         | "completed"
         | "cancelled"
-      payment_status: "pending" | "paid"
+      payment_status: "pending" | "paid" | "partial"
       topup_request_status: "pending" | "fulfilled" | "rejected"
     }
     CompositeTypes: {
@@ -5171,7 +5217,7 @@ export const Constants = {
         "completed",
         "cancelled",
       ],
-      payment_status: ["pending", "paid"],
+      payment_status: ["pending", "paid", "partial"],
       topup_request_status: ["pending", "fulfilled", "rejected"],
     },
   },

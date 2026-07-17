@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
-import { Download, FileSpreadsheet, Printer, Filter, RefreshCw } from "lucide-react";
+import { Download, FileSpreadsheet, Printer, Filter, RefreshCw, Check, X, Wallet } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
   buildStatement, listDrivers, listLabels,
+  markJobPayment, unmarkJobPayment, bulkMarkPayment,
 } from "@/lib/coordinator.functions";
 import { listConnections } from "@/lib/collab.functions";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +42,10 @@ type Row = {
   price_amount: number | null; price_currency: string; payment_method: string;
   price_display: string; price_set_by: string;
   driver_actual_minutes: number | null; driver_reported_km: number | null;
+  paid_at: string | null; paid_amount: number | null; paid_method: string;
+  paid_reference: string; paid_by_role: string;
+  driver_paid_at: string | null; driver_paid_amount: number | null; driver_paid_method: string;
+  driver_paid_reference: string; driver_payout_status: string;
   hops: { index: number; from: string; to: string; status: string; decided_at: string | null; note: string }[];
   pax_rows: { id: string; name: string; status: string; boarded_at: string | null }[];
 };
@@ -47,14 +54,27 @@ type Statement = {
   generated_at: string;
   company: { id: string; name: string };
   rows: Row[]; total_trips: number; total_pax: number; truncated: boolean;
+  totals?: {
+    billed: number; received_client: number; received_driver: number;
+    outstanding_client: number; outstanding_driver: number;
+  };
 };
 
-const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: string }[] = [
+const ALL_COLUMNS: { key: keyof Row | "chain_detail" | "actions"; label: string; group: string }[] = [
   { key: "date", label: "Date", group: "Trip" },
   { key: "time", label: "Time", group: "Trip" },
   { key: "status", label: "Status", group: "Trip" },
-  { key: "payment_status", label: "Payment status", group: "Trip" },
-  { key: "payment_method", label: "Payment method", group: "Trip" },
+  { key: "payment_status", label: "Client paid?", group: "Payment" },
+  { key: "paid_amount", label: "Received (client)", group: "Payment" },
+  { key: "paid_method", label: "Payment method", group: "Payment" },
+  { key: "paid_at", label: "Received on", group: "Payment" },
+  { key: "paid_reference", label: "Payment ref.", group: "Payment" },
+  { key: "driver_payout_status", label: "Driver paid?", group: "Payment" },
+  { key: "driver_paid_amount", label: "Payout amount", group: "Payment" },
+  { key: "driver_paid_method", label: "Payout method", group: "Payment" },
+  { key: "driver_paid_at", label: "Payout on", group: "Payment" },
+  { key: "actions", label: "Mark paid", group: "Payment" },
+  { key: "payment_method", label: "Agreed method", group: "Trip" },
   { key: "price_display", label: "Amount", group: "Trip" },
   { key: "price_amount", label: "Amount (number)", group: "Trip" },
   { key: "price_currency", label: "Currency", group: "Trip" },
@@ -83,14 +103,13 @@ const ALL_COLUMNS: { key: keyof Row | "chain_detail"; label: string; group: stri
   { key: "dispatch_status", label: "Dispatch status", group: "Chain" },
   { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
   { key: "deletion_requested_at", label: "Deletion requested", group: "Ops" },
-  
 ];
-const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "flight", "driver_name", "pax_count", "status", "payment_method", "price_display", "chain"];
-const STORAGE_KEY = "statement:columns:v3";
+const DEFAULT_COLS = ["date", "time", "from_location", "to_location", "driver_name", "price_display", "payment_status", "paid_amount", "driver_payout_status", "actions"];
+const STORAGE_KEY = "statement:columns:v4";
 
 
 const STATUSES = ["pending", "assigned", "accepted", "en_route", "arrived", "in_progress", "completed", "cancelled"];
-const PAYMENT_STATUSES = ["pending", "paid"];
+const PAYMENT_STATUSES = ["pending", "partial", "paid"];
 const FLIGHT_STATUSES = ["scheduled", "active", "landed", "delayed", "cancelled", "diverted"];
 
 function StatementsPage() {
@@ -126,6 +145,10 @@ function StatementsPage() {
   const driversFn = useServerFn(listDrivers);
   const labelsFn = useServerFn(listLabels);
   const connectionsFn = useServerFn(listConnections);
+  const markFn = useServerFn(markJobPayment);
+  const unmarkFn = useServerFn(unmarkJobPayment);
+  const bulkFn = useServerFn(bulkMarkPayment);
+  const qc = useQueryClient();
 
   const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() as Promise<any[]> });
   const { data: labels } = useQuery({ queryKey: ["trip-labels"], queryFn: () => labelsFn() as Promise<any[]> });
@@ -136,16 +159,71 @@ function StatementsPage() {
     queryFn: () => buildFn({ data: filters }) as Promise<Statement>,
   });
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSide, setBulkSide] = useState<"client" | "driver">("client");
+  const [bulkMethod, setBulkMethod] = useState<string>("cash");
+
+  const bulkMut = useMutation({
+    mutationFn: (ids: string[]) => bulkFn({ data: { job_ids: ids, side: bulkSide, method: bulkMethod as any } }) as Promise<any>,
+    onSuccess: (r) => {
+      toast.success(`Marked ${r.updated}/${r.total} trips as paid`);
+      setSelectedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["statement"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const markMut = useMutation({
+    mutationFn: (v: { job_id: string; side: "client" | "driver"; amount?: number; method?: string; reference?: string }) =>
+      markFn({ data: v as any }) as Promise<any>,
+    onSuccess: () => {
+      toast.success("Marked as paid");
+      qc.invalidateQueries({ queryKey: ["statement"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const unmarkMut = useMutation({
+    mutationFn: (v: { job_id: string; side: "client" | "driver" }) =>
+      unmarkFn({ data: v }) as Promise<any>,
+    onSuccess: () => {
+      toast.success("Payment cleared");
+      qc.invalidateQueries({ queryKey: ["statement"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const cols = useMemo(
     () => ALL_COLUMNS.filter((c) => selectedCols.includes(c.key as string)),
     [selectedCols],
   );
 
   function renderCell(row: Row, key: string) {
+    if (key === "actions") {
+      return (
+        <div className="flex gap-1">
+          <MarkPaidPopover row={row} side="client" onSubmit={(v) => markMut.mutate({ job_id: row.id, side: "client", ...v })}
+            onClear={() => unmarkMut.mutate({ job_id: row.id, side: "client" })} />
+          <MarkPaidPopover row={row} side="driver" onSubmit={(v) => markMut.mutate({ job_id: row.id, side: "driver", ...v })}
+            onClear={() => unmarkMut.mutate({ job_id: row.id, side: "driver" })} />
+        </div>
+      );
+    }
+    if (key === "payment_status" || key === "driver_payout_status") {
+      const v = (row as any)[key] || "pending";
+      const tone = v === "paid" ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+        : v === "partial" ? "bg-amber-100 text-amber-800 border-amber-300"
+        : "bg-muted text-muted-foreground border-border";
+      return <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${tone}`}>{v}</span>;
+    }
     const v = (row as any)[key];
     if (v === null || v === undefined || v === "") return "—";
     if (key.endsWith("_at") || key === "created_at") {
       try { return new Date(v).toLocaleString(); } catch { return String(v); }
+    }
+    if (key === "paid_amount" || key === "driver_paid_amount") {
+      const cur = row.price_currency || "EUR";
+      return `${Number(v).toFixed(2)} ${cur}`;
     }
     return String(v);
   }
@@ -418,15 +496,50 @@ function StatementsPage() {
                 {statement?.truncated && <span className="ml-2 text-amber-600">(truncated — narrow filters)</span>}
               </div>
             </div>
-            <div className="flex gap-3 text-sm">
+            <div className="flex gap-3 text-sm flex-wrap items-center">
               <span><b>{statement?.total_trips ?? 0}</b> trips</span>
               <span><b>{statement?.total_pax ?? 0}</b> pax</span>
-              
+              {statement?.totals && (
+                <>
+                  <span className="text-muted-foreground">|</span>
+                  <span>Billed <b>{statement.totals.billed.toFixed(2)}</b></span>
+                  <span className="text-emerald-700">Received <b>{statement.totals.received_client.toFixed(2)}</b></span>
+                  <span className="text-amber-700">Outstanding <b>{statement.totals.outstanding_client.toFixed(2)}</b></span>
+                </>
+              )}
             </div>
           </div>
           {activeFilterChips.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {activeFilterChips.map((c, i) => <Badge key={i} variant="outline" className="text-[10px]">{c}</Badge>)}
+            </div>
+          )}
+          {selectedIds.size > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 p-2 rounded-md border bg-muted/30">
+              <span className="text-xs font-medium">{selectedIds.size} selected</span>
+              <Select value={bulkSide} onValueChange={(v) => setBulkSide(v as "client" | "driver")}>
+                <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">Client paid us</SelectItem>
+                  <SelectItem value="driver">We paid driver</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={bulkMethod} onValueChange={setBulkMethod}>
+                <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bank_transfer">Bank transfer</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-8" disabled={bulkMut.isPending}
+                onClick={() => bulkMut.mutate(Array.from(selectedIds))}>
+                <Check className="h-3.5 w-3.5 mr-1" /> Mark {selectedIds.size} paid
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelectedIds(new Set())}>
+                <X className="h-3.5 w-3.5 mr-1" /> Clear
+              </Button>
             </div>
           )}
         </CardHeader>
@@ -435,6 +548,15 @@ function StatementsPage() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted/50">
               <tr>
+                <th className="w-8 px-2 py-2 border-b">
+                  <Checkbox
+                    checked={(statement?.rows.length ?? 0) > 0 && selectedIds.size === statement?.rows.length}
+                    onCheckedChange={(v) => {
+                      if (v) setSelectedIds(new Set((statement?.rows ?? []).map((r) => r.id)));
+                      else setSelectedIds(new Set());
+                    }}
+                  />
+                </th>
                 {cols.map((c) => (
                   <th key={c.key as string} className="text-left px-2 py-2 font-medium whitespace-nowrap border-b">
                     {c.label}
@@ -445,13 +567,25 @@ function StatementsPage() {
             </thead>
             <tbody>
               {(statement?.rows ?? []).length === 0 ? (
-                <tr><td colSpan={cols.length + (includeChain ? 1 : 0)} className="text-center py-10 text-muted-foreground">
+                <tr><td colSpan={cols.length + 1 + (includeChain ? 1 : 0)} className="text-center py-10 text-muted-foreground">
                   {isFetching ? "Loading…" : "No trips match these filters."}
                 </td></tr>
               ) : statement!.rows.map((r) => (
                 <tr key={r.id} className="border-b hover:bg-muted/30 align-top">
+                  <td className="px-2 py-1.5">
+                    <Checkbox
+                      checked={selectedIds.has(r.id)}
+                      onCheckedChange={(v) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add(r.id); else next.delete(r.id);
+                          return next;
+                        });
+                      }}
+                    />
+                  </td>
                   {cols.map((c) => (
-                    <td key={c.key as string} className="px-2 py-1.5 whitespace-nowrap max-w-[280px] truncate" title={String((r as any)[c.key] ?? "")}>
+                    <td key={c.key as string} className="px-2 py-1.5 whitespace-nowrap max-w-[280px] truncate" title={c.key === "actions" ? "" : String((r as any)[c.key] ?? "")}>
                       {renderCell(r, c.key as string)}
                     </td>
                   ))}
@@ -467,6 +601,83 @@ function StatementsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function MarkPaidPopover({ row, side, onSubmit, onClear }: {
+  row: Row; side: "client" | "driver";
+  onSubmit: (v: { amount?: number; method?: string; reference?: string }) => void;
+  onClear: () => void;
+}) {
+  const paidAt = side === "client" ? row.paid_at : row.driver_paid_at;
+  const paidAmt = side === "client" ? row.paid_amount : row.driver_paid_amount;
+  const paidMethod = side === "client" ? row.paid_method : row.driver_paid_method;
+  const paidRef = side === "client" ? row.paid_reference : row.driver_paid_reference;
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState<string>(paidAmt != null ? String(paidAmt) : (row.price_amount != null ? String(row.price_amount) : ""));
+  const [method, setMethod] = useState<string>(paidMethod || row.payment_method || "cash");
+  const [reference, setReference] = useState<string>(paidRef || "");
+  const label = side === "client" ? "Client" : "Driver";
+  const done = !!paidAt;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm" variant={done ? "default" : "outline"}
+          className={`h-7 px-2 text-[10px] ${done ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+          title={done ? `${label} paid ${paidAmt ?? ""} on ${new Date(paidAt!).toLocaleDateString()}` : `Mark ${label.toLowerCase()} paid`}
+        >
+          <Wallet className="h-3 w-3 mr-1" /> {label} {done ? "✓" : "?"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3 space-y-2" align="end">
+        <div className="text-xs font-medium">{done ? `Edit ${label.toLowerCase()} payment` : `Mark ${label.toLowerCase()} paid`}</div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Amount ({row.price_currency || "EUR"})</Label>
+          <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="h-8 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Method</Label>
+          <Select value={method} onValueChange={setMethod}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cash">Cash</SelectItem>
+              <SelectItem value="bank_transfer">Bank transfer</SelectItem>
+              <SelectItem value="card">Card</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Reference (optional)</Label>
+          <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Invoice / receipt #" className="h-8 text-xs" />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <Button
+            size="sm" className="h-7 flex-1 text-xs"
+            onClick={() => {
+              const amt = amount.trim() === "" ? undefined : Number(amount);
+              if (amt != null && Number.isNaN(amt)) { toast.error("Invalid amount"); return; }
+              onSubmit({ amount: amt, method, reference: reference.trim() || undefined });
+              setOpen(false);
+            }}
+          >
+            {done ? "Update" : "Mark paid"}
+          </Button>
+          {done && (
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              onClick={() => { onClear(); setOpen(false); }}>
+              Clear
+            </Button>
+          )}
+        </div>
+        {done && paidAt && (
+          <div className="text-[10px] text-muted-foreground pt-1">
+            Recorded {new Date(paidAt).toLocaleString()}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
