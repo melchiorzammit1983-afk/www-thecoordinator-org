@@ -32,7 +32,8 @@ import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
 import { Clock, AlertTriangle } from "lucide-react";
-import { previewAssignmentConflicts } from "@/lib/scheduling.functions";
+import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
+import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -381,7 +382,29 @@ function ManualForm({
           )}
         </div>
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
-        <div className="space-y-1.5"><Label>Time</Label><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></div>
+        <div className="space-y-1.5">
+          <Label>Time</Label>
+          <div className="flex items-center gap-1.5">
+            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
+            <div className="flex items-center gap-0.5">
+              {[-15, -5, 5, 15].map((delta) => (
+                <Button
+                  key={delta}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-1.5 text-[10px] font-mono tabular-nums"
+                  onClick={() => setTime(shiftTime(time, delta))}
+                  disabled={!time}
+                  title={`Shift ${delta > 0 ? "+" : ""}${delta} min`}
+                >
+                  {delta > 0 ? `+${delta}` : delta}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
+        </div>
         <div className="space-y-1.5"><Label>Client company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Phone number</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
         <div className="space-y-1.5 col-span-2">
@@ -396,6 +419,8 @@ function ManualForm({
           <DriverAssignmentConflictHint
             driverId={driverId === "__none__" ? null : driverId}
             jobId={job?.id ?? null}
+            drivers={drivers}
+            onPickDriver={(id) => setDriverId(id)}
             candidate={
               job
                 ? null
@@ -1298,15 +1323,29 @@ function makeIsoOrNull(date: string, time: string): string | null {
   }
 }
 
+/** Add/subtract minutes from an HH:MM string, wrapping across day boundary. */
+function shiftTime(hhmm: string, deltaMin: number): string {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+  const [h, m] = hhmm.split(":").map(Number);
+  let total = h * 60 + m + deltaMin;
+  total = ((total % 1440) + 1440) % 1440;
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
 /**
  * Shows a preview of schedule conflicts if the currently selected driver is
  * assigned to this trip. Runs `previewAssignmentConflicts` server-side.
- * For a saved trip we pass job_id; for a new trip we send a candidate payload.
+ * On conflict, offers a "View timeline" breakdown modal and a "Suggest
+ * alternative driver" one-click ranking across the provided drivers list.
  */
 function DriverAssignmentConflictHint({
   driverId,
   jobId,
   candidate,
+  drivers,
+  onPickDriver,
 }: {
   driverId: string | null;
   jobId: string | null;
@@ -1320,8 +1359,15 @@ function DriverAssignmentConflictHint({
         route_duration_sec: number | null;
       }
     | null;
+  drivers: Driver[];
+  onPickDriver: (id: string) => void;
 }) {
   const fn = useServerFn(previewAssignmentConflicts);
+  const suggestFn = useServerFn(suggestAlternativeDrivers);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [suggestPairs, setSuggestPairs] = useState<Array<{ driver_id: string; severity: "free" | "tight" | "conflict"; min_slack_min: number; pairs: ConflictPair[] }> | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+
   const enabled = !!driverId && (!!jobId || (!!candidate && !!candidate.pickup_at));
   const q = useQuery({
     queryKey: [
@@ -1352,6 +1398,38 @@ function DriverAssignmentConflictHint({
       }),
   });
 
+  // Reset suggestions whenever the inputs change so stale rankings don't linger.
+  useEffect(() => {
+    setSuggestPairs(null);
+  }, [driverId, jobId, candidate?.pickup_at, candidate?.from_location, candidate?.to_location]);
+
+  const runSuggest = async () => {
+    if (!drivers.length) return;
+    setSuggesting(true);
+    try {
+      const payload = jobId
+        ? { driver_ids: drivers.map((d) => d.id), exclude_driver_id: driverId ?? null, job_id: jobId }
+        : {
+            driver_ids: drivers.map((d) => d.id),
+            exclude_driver_id: driverId ?? null,
+            candidate: {
+              pickup_at: candidate!.pickup_at!,
+              from_location: candidate!.from_location,
+              to_location: candidate!.to_location,
+              pickup_display_name: candidate!.pickup_display_name,
+              dropoff_display_name: candidate!.dropoff_display_name,
+              route_duration_sec: candidate!.route_duration_sec,
+            },
+          };
+      const res = await suggestFn({ data: payload });
+      setSuggestPairs(res.suggestions);
+    } catch (e) {
+      toast.error((e as Error).message || "Could not suggest alternatives");
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   if (!enabled) return null;
   if (q.isLoading) {
     return (
@@ -1374,22 +1452,87 @@ function DriverAssignmentConflictHint({
   const cls = isHard
     ? "border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-200"
     : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200";
+  const currentDriverName = drivers.find((d) => d.id === driverId)?.name ?? null;
+  const topFree = (suggestPairs ?? []).filter((s) => s.severity === "free").slice(0, 3);
+  const topAny = (suggestPairs ?? []).slice(0, 3);
+  const bestList = topFree.length ? topFree : topAny;
+
   return (
     <div className={`rounded-md border px-2.5 py-1.5 text-[11px] leading-snug ${cls}`}>
       <div className="flex items-start gap-1.5">
         <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-        <div className="flex-1 min-w-0 space-y-0.5">
+        <div className="flex-1 min-w-0 space-y-1">
           <div className="font-semibold">
             {isHard ? "Schedule conflict" : "Tight schedule"}
           </div>
           {data.pairs.map((p, i) => (
             <div key={i} className="opacity-90">{p.reason}</div>
           ))}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setTimelineOpen(true)}
+            >
+              View timeline
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={runSuggest}
+              disabled={suggesting || drivers.length === 0}
+            >
+              {suggesting ? "Searching…" : "Suggest alternative driver"}
+            </Button>
+          </div>
+          {suggestPairs !== null && (
+            <div className="mt-1 space-y-0.5">
+              {bestList.length === 0 ? (
+                <div className="opacity-80">No other drivers available around this time.</div>
+              ) : (
+                <>
+                  <div className="opacity-80">Best matches:</div>
+                  {bestList.map((s) => {
+                    const drv = drivers.find((d) => d.id === s.driver_id);
+                    if (!drv) return null;
+                    const tag =
+                      s.severity === "free"
+                        ? `free · +${s.min_slack_min} min slack`
+                        : s.severity === "tight"
+                          ? `tight · ${s.min_slack_min} min slack`
+                          : `conflict · ${s.min_slack_min} min short`;
+                    return (
+                      <button
+                        key={s.driver_id}
+                        type="button"
+                        onClick={() => onPickDriver(s.driver_id)}
+                        className="w-full flex items-center justify-between gap-2 rounded border border-current/20 bg-background/40 px-2 py-1 text-left hover:bg-background/70"
+                      >
+                        <span className="font-medium truncate">{drv.name}</span>
+                        <span className="text-[10px] tabular-nums opacity-80">{tag}</span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
+      <ConflictTimelineDialog
+        open={timelineOpen}
+        onOpenChange={setTimelineOpen}
+        pairs={data.pairs}
+        driverName={currentDriverName}
+      />
     </div>
   );
 }
+
 
 
 
