@@ -12,15 +12,19 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RequestAccessRouteImport } from './routes/request-access'
 import { Route as InstallRouteImport } from './routes/install'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HelpIndexRouteImport } from './routes/help.index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
+import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
@@ -82,6 +86,11 @@ const InstallRoute = InstallRouteImport.update({
   path: '/install',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -101,6 +110,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpIndexRoute = HelpIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HelpRoute,
+} as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
   id: '/track/$token',
   path: '/track/$token',
@@ -116,6 +130,11 @@ const PortalTokenRoute = PortalTokenRouteImport.update({
   path: '/portal/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpTopicRoute = HelpTopicRouteImport.update({
+  id: '/$topic',
+  path: '/$topic',
+  getParentRoute: () => HelpRoute,
+} as any)
 const HSlugRoute = HSlugRouteImport.update({
   id: '/h/$slug',
   path: '/h/$slug',
@@ -124,6 +143,11 @@ const HSlugRoute = HSlugRouteImport.update({
 const CTokenRoute = CTokenRouteImport.update({
   id: '/c/$token',
   path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
+  id: '/api/help-chat',
+  path: '/api/help-chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedCoordinatorRoute =
@@ -396,16 +420,20 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
+  '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/help/': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -457,11 +485,14 @@ export interface FileRoutesByTo {
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
+  '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/help': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -512,16 +543,20 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
+  '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
+  '/help/': typeof HelpIndexRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -572,16 +607,20 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/help'
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
     | '/admin'
     | '/coordinator'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
+    | '/help/$topic'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/help/'
     | '/admin/activity'
     | '/admin/password-resets'
     | '/admin/portal-settings'
@@ -633,11 +672,14 @@ export interface FileRouteTypes {
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
+    | '/help/$topic'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/help'
     | '/admin/activity'
     | '/admin/password-resets'
     | '/admin/portal-settings'
@@ -687,16 +729,20 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/admin-auth'
     | '/auth'
+    | '/help'
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
+    | '/help/$topic'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
+    | '/help/'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
@@ -747,9 +793,11 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminAuthRoute: typeof AdminAuthRoute
   AuthRoute: typeof AuthRoute
+  HelpRoute: typeof HelpRouteWithChildren
   InstallRoute: typeof InstallRoute
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiHelpChatRoute: typeof ApiHelpChatRoute
   CTokenRoute: typeof CTokenRoute
   HSlugRoute: typeof HSlugRoute
   PortalTokenRoute: typeof PortalTokenRoute
@@ -796,6 +844,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InstallRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -824,6 +879,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help/': {
+      id: '/help/'
+      path: '/'
+      fullPath: '/help/'
+      preLoaderRoute: typeof HelpIndexRouteImport
+      parentRoute: typeof HelpRoute
+    }
     '/track/$token': {
       id: '/track/$token'
       path: '/track/$token'
@@ -845,6 +907,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help/$topic': {
+      id: '/help/$topic'
+      path: '/$topic'
+      fullPath: '/help/$topic'
+      preLoaderRoute: typeof HelpTopicRouteImport
+      parentRoute: typeof HelpRoute
+    }
     '/h/$slug': {
       id: '/h/$slug'
       path: '/h/$slug'
@@ -857,6 +926,13 @@ declare module '@tanstack/react-router' {
       path: '/c/$token'
       fullPath: '/c/$token'
       preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/help-chat': {
+      id: '/api/help-chat'
+      path: '/api/help-chat'
+      fullPath: '/api/help-chat'
+      preLoaderRoute: typeof ApiHelpChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/coordinator': {
@@ -1287,6 +1363,18 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface HelpRouteChildren {
+  HelpTopicRoute: typeof HelpTopicRoute
+  HelpIndexRoute: typeof HelpIndexRoute
+}
+
+const HelpRouteChildren: HelpRouteChildren = {
+  HelpTopicRoute: HelpTopicRoute,
+  HelpIndexRoute: HelpIndexRoute,
+}
+
+const HelpRouteWithChildren = HelpRoute._addFileChildren(HelpRouteChildren)
+
 interface MDriverTokenRouteChildren {
   MDriverTokenSignJobIdRoute: typeof MDriverTokenSignJobIdRoute
 }
@@ -1304,9 +1392,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminAuthRoute: AdminAuthRoute,
   AuthRoute: AuthRoute,
+  HelpRoute: HelpRouteWithChildren,
   InstallRoute: InstallRoute,
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiHelpChatRoute: ApiHelpChatRoute,
   CTokenRoute: CTokenRoute,
   HSlugRoute: HSlugRoute,
   PortalTokenRoute: PortalTokenRoute,
