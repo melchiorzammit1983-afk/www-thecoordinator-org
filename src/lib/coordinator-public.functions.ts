@@ -680,7 +680,16 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         .eq("from_driver_id", link.subject_id)
         .in("status", ["proposed", "countered"]);
     }
-    return { ok: true, cascaded_ids: targetJobs.map((t) => t.id) };
+    const cascadedIds = targetJobs.map((t) => t.id);
+    await broadcastJobUpdate(
+      [
+        driverId ? `driver:${driverId}` : "",
+        gid ? `group:${gid}` : "",
+        ...cascadedIds.map((id) => `job:${id}`),
+      ],
+      { job_ids: cascadedIds, group_id: gid ?? null, kind: "accepted" },
+    );
+    return { ok: true, cascaded_ids: cascadedIds };
   });
 
 export const driverRejectJob = createServerFn({ method: "POST" })
@@ -1017,6 +1026,43 @@ function haversineMetersLL(lat1: number, lng1: number, lat2: number, lng2: numbe
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
+
+/**
+ * Broadcast a job/group update to the Supabase Realtime broadcast topic.
+ * Bypasses RLS (broadcasts are unauthenticated by design) so magic-link
+ * viewers (driver / client tracking page) receive push updates without
+ * needing SELECT on `jobs`. Best-effort — never throws to the caller.
+ */
+async function broadcastJobUpdate(
+  topics: string[],
+  payload: { job_ids: string[]; group_id?: string | null; kind: string },
+) {
+  try {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return;
+    const uniqueTopics = Array.from(new Set(topics.filter(Boolean)));
+    if (!uniqueTopics.length) return;
+    await fetch(`${url}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: uniqueTopics.map((topic) => ({
+          topic,
+          event: "jobs_updated",
+          payload,
+          private: false,
+        })),
+      }),
+    });
+  } catch { /* never block */ }
+}
+
+
 
 export const updateJobStatus = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
@@ -1355,6 +1401,28 @@ export const updateJobStatus = createServerFn({ method: "POST" })
             .eq("group_id" as any, gid);
         }
       }
+    }
+
+    // Push a realtime broadcast so magic-link viewers (driver manifest,
+    // client tracking) refetch without waiting for their next poll.
+    {
+      const driverId = (job as any).driver_id as string | null;
+      const gid = (job as any).group_id as string | null | undefined;
+      const jobIds = new Set<string>([job.id]);
+      if (gid && driverId) {
+        const { data: sibs } = await supabaseAdmin.from("jobs")
+          .select("id").eq("group_id" as any, gid).eq("driver_id", driverId);
+        for (const s of (sibs ?? []) as any[]) jobIds.add(s.id);
+      }
+      const ids = Array.from(jobIds);
+      await broadcastJobUpdate(
+        [
+          driverId ? `driver:${driverId}` : "",
+          gid ? `group:${gid}` : "",
+          ...ids.map((id) => `job:${id}`),
+        ],
+        { job_ids: ids, group_id: gid ?? null, kind: `status:${data.status}` },
+      );
     }
     return { ok: true };
   });
