@@ -267,8 +267,9 @@ export function AskGuidePanel() {
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="text-sm font-medium text-foreground">Hi 👋</div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  I'm the built-in guide for The Coordinator. Ask me how a feature
-                  works, or why something on your screen looks the way it does.
+                  {anon
+                    ? "I can walk you through what The Coordinator does, pricing, and how to get started. Ready when you are."
+                    : "I'm the built-in guide for The Coordinator. Ask me how a feature works, or why something on your screen looks the way it does."}
                 </p>
               </div>
               <div>
