@@ -2643,6 +2643,25 @@ async function closeOpenWaitSession(
     wait_session_id: (open as any).id,
   } as never);
 
+  // Auto-emit a wait_ended pin so the coordinator's map reflects any
+  // automatic wait-session close (status transition, emergency override).
+  try {
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId,
+      companyId,
+      driverId,
+      eventType: "wait_ended",
+      notes: driverNote ?? null,
+      meta: {
+        auto: true,
+        elapsed_minutes: elapsedMinutes,
+        chargeable_minutes: chargeableMinutes,
+        calculated_amount: calculatedAmount,
+      },
+    });
+  } catch { /* logging must not block */ }
+
   return { sessionId: (open as any).id, calculatedAmount, elapsedMinutes };
 }
 
