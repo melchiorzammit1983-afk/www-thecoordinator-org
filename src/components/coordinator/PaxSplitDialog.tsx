@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { NewTripsPreviewDialog, type NewTripRow } from "@/components/coordinator/NewTripsPreviewDialog";
+
 
 type Driver = { id: string; name: string; vehicle: string | null };
 type Pax = { id: string; name: string; status: string };
