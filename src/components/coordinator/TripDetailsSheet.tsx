@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, decideDriverCancelRequest, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
+import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
