@@ -544,6 +544,8 @@ export const getDriverStatement = createServerFn({ method: "POST" })
         flight_status, flight_status_note,
         clientcompanyname, vehicle,
         price_amount, price_currency, payment_method, price_set_by,
+        paid_at, paid_amount, paid_method, paid_reference, paid_by_role,
+        driver_paid_at, driver_paid_amount, driver_paid_method, driver_paid_reference, driver_payout_status,
         driver_actual_minutes, driver_reported_km,
         driver_accepted_at, deletion_requested_at, created_at,
         drivers(id,name,phone,vehicle),
@@ -618,8 +620,67 @@ export const getDriverStatement = createServerFn({ method: "POST" })
         driver_accepted_at: j.driver_accepted_at,
         deletion_requested_at: j.deletion_requested_at,
         created_at: j.created_at,
+        paid_at: j.paid_at ?? null,
+        paid_amount: j.paid_amount != null ? Number(j.paid_amount) : null,
+        paid_method: j.paid_method ?? "",
+        paid_reference: j.paid_reference ?? "",
+        paid_by_role: j.paid_by_role ?? "",
+        driver_paid_at: j.driver_paid_at ?? null,
+        driver_paid_amount: j.driver_paid_amount != null ? Number(j.driver_paid_amount) : null,
+        driver_paid_method: j.driver_paid_method ?? "",
+        driver_paid_reference: j.driver_paid_reference ?? "",
+        driver_payout_status: j.driver_payout_status ?? "pending",
       };
     });
+  });
+
+// Driver marks their own payout received via magic-link token.
+export const driverMarkPayoutReceived = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      amount: z.number().nonnegative().max(1_000_000).optional(),
+      method: z.enum(["cash", "bank_transfer", "card", "other"]).optional(),
+      reference: z.string().trim().max(200).optional(),
+      clear: z.boolean().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link || !link.subject_id) throw new Error("invalid_or_expired_link");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select("id, driver_id, price_amount")
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (!job || (job as any).driver_id !== link.subject_id) throw new Error("forbidden");
+    if (data.clear) {
+      const { error } = await supabaseAdmin
+        .from("jobs")
+        .update({
+          driver_paid_at: null,
+          driver_paid_amount: null,
+          driver_paid_method: null,
+          driver_paid_reference: null,
+        } as never)
+        .eq("id", data.job_id);
+      if (error) throw new Error(error.message);
+      return { ok: true, cleared: true };
+    }
+    const amt = data.amount != null ? Number(data.amount) : Number((job as any).price_amount ?? 0);
+    const { error } = await supabaseAdmin
+      .from("jobs")
+      .update({
+        driver_paid_at: new Date().toISOString(),
+        driver_paid_amount: amt,
+        driver_paid_method: data.method ?? null,
+        driver_paid_reference: data.reference ?? null,
+      } as never)
+      .eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true, amount: amt };
   });
 
 

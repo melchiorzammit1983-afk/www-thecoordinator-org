@@ -11,7 +11,7 @@ import {
   updateJobStatus, listJobPaxDriver, markPaxOnboard, markPaxNoShow, markPaxPending,
   driverReportLate, markPaxCancelled, requestBoardingApproval, driverOverrideBoardingApproval,
   getBoardingApprovalStatusDriver,
-  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement,
+  updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement, driverMarkPayoutReceived,
   getClientLiveLocationDriver,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
@@ -53,7 +53,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useSafetyMode } from "@/hooks/use-safety-mode";
 
 import {
-  CheckCircle2, Clock, Download, X, FileText, MessageCircle, MoreVertical,
+  CheckCircle2, Check, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
   Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
   ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
@@ -2689,8 +2689,15 @@ const STMT_COLUMNS: { key: string; label: string; group: string }[] = [
   { key: "date", label: "Date", group: "Trip" },
   { key: "time", label: "Time", group: "Trip" },
   { key: "status", label: "Status", group: "Trip" },
-  { key: "payment_status", label: "Payment", group: "Trip" },
-  { key: "payment_method", label: "Payment method", group: "Trip" },
+  { key: "payment_status", label: "Client paid?", group: "Payment" },
+  { key: "paid_amount", label: "Received (client)", group: "Payment" },
+  { key: "paid_at", label: "Received on", group: "Payment" },
+  { key: "driver_payout_status", label: "My payout?", group: "Payment" },
+  { key: "driver_paid_amount", label: "My payout amount", group: "Payment" },
+  { key: "driver_paid_method", label: "My payout method", group: "Payment" },
+  { key: "driver_paid_at", label: "My payout on", group: "Payment" },
+  { key: "driver_paid_reference", label: "My payout ref.", group: "Payment" },
+  { key: "payment_method", label: "Agreed method", group: "Trip" },
   { key: "price_display", label: "Amount", group: "Trip" },
   { key: "price_currency", label: "Currency", group: "Trip" },
   { key: "price_set_by", label: "Price set by", group: "Trip" },
@@ -2713,8 +2720,8 @@ const STMT_COLUMNS: { key: string; label: string; group: string }[] = [
   { key: "driver_accepted_at", label: "Accepted at", group: "Ops" },
 ];
 const DRIVER_DEFAULT_COLS = [
-  "date","time","from_location","to_location","flight","clientcompanyname",
-  "pax_names","pax_count","status","payment_status","price_display",
+  "date","time","from_location","to_location","clientcompanyname",
+  "pax_count","status","price_display","driver_payout_status","driver_paid_amount",
 ];
 const STMT_STATUSES = ["pending","assigned","accepted","en_route","arrived","in_progress","completed","cancelled"];
 const STMT_FLIGHT_STATUSES = ["scheduled","active","landed","delayed","cancelled","diverted"];
@@ -2764,6 +2771,22 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
     pax_contains: paxContains || undefined,
     search: search || undefined,
   } }) as Promise<Array<Record<string, unknown>>>;
+
+  const previewQuery = useQuery({
+    queryKey: ["driver-statement-preview", token, from, to, payment],
+    queryFn: build,
+    enabled: open,
+    staleTime: 15_000,
+  });
+  const previewRows = (previewQuery.data ?? []) as Array<Record<string, unknown>>;
+  const payoutTotals = previewRows.reduce<{ billed: number; received: number }>(
+    (acc, r) => {
+      acc.billed += Number((r as any).price_amount ?? 0);
+      acc.received += Number((r as any).driver_paid_amount ?? 0);
+      return acc;
+    },
+    { billed: 0, received: 0 },
+  );
 
   function fileBase() {
     const slug = driverName.replace(/\s+/g, "_") || "driver";
@@ -2906,7 +2929,7 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
                 <Button size="sm" variant="outline" onClick={() => saveCols(DRIVER_DEFAULT_COLS)}>Defaults</Button>
                 <Button size="sm" variant="outline" onClick={() => saveCols([])}>None</Button>
               </div>
-              {["Trip","Route","People","Ops"].map((g) => (
+              {["Trip","Payment","Route","People","Ops"].map((g) => (
                 <div key={g}>
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{g}</div>
                   <div className="flex flex-wrap gap-1.5">
@@ -2924,6 +2947,16 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
           )}
         </div>
 
+        <DriverPayoutList
+          token={token}
+          rows={previewRows}
+          loading={previewQuery.isFetching}
+          totals={payoutTotals}
+          onChanged={() => previewQuery.refetch()}
+        />
+
+
+
         <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
           <Button variant="outline" disabled={busy || !selectedCols.length} onClick={() => csvMut.mutate()}>
             <Download className="h-4 w-4 mr-1" /> {csvMut.isPending ? "Preparing…" : "Download CSV"}
@@ -2937,6 +2970,90 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
   );
 }
 
+
+function DriverPayoutList({ token, rows, loading, totals, onChanged }: {
+  token: string;
+  rows: Array<Record<string, unknown>>;
+  loading: boolean;
+  totals: { billed: number; received: number };
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const markFn = useServerFn(driverMarkPayoutReceived);
+  const mut = useMutation({
+    mutationFn: (v: { job_id: string; amount?: number; method?: string; reference?: string; clear?: boolean }) =>
+      markFn({ data: { token, ...v } }) as Promise<{ ok: true }>,
+    onSuccess: (_r, v) => {
+      toast.success(v.clear ? "Marked unpaid" : "Marked received");
+      onChanged();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const unpaid = rows.filter((r) => Number((r as any).driver_paid_amount ?? 0) <= 0);
+  const outstanding = totals.billed - totals.received;
+
+  return (
+    <div className="border rounded-lg">
+      <button type="button" onClick={() => setOpen((s) => !s)}
+        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+        <span>Payments I received ({unpaid.length} unpaid)</span>
+        <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 border-t pt-3 space-y-2">
+          <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+            <span>Billed <b className="text-foreground">{totals.billed.toFixed(2)}</b></span>
+            <span className="text-emerald-700">Received <b>{totals.received.toFixed(2)}</b></span>
+            <span className="text-amber-700">Outstanding <b>{outstanding.toFixed(2)}</b></span>
+          </div>
+          {loading && rows.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-3">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-3">No trips in this range.</div>
+          ) : (
+            <div className="max-h-72 overflow-auto divide-y">
+              {rows.map((r) => {
+                const paid = Number((r as any).driver_paid_amount ?? 0) > 0;
+                const price = Number((r as any).price_amount ?? 0);
+                const cur = String((r as any).price_currency ?? "EUR");
+                const label = `${(r as any).date ?? ""} ${String((r as any).time ?? "").slice(0, 5)}`.trim();
+                return (
+                  <div key={String((r as any).id)} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{label} · {String((r as any).from_location ?? "")} → {String((r as any).to_location ?? "")}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {price ? `${price.toFixed(2)} ${cur}` : "—"}
+                        {paid && (
+                          <> · received {Number((r as any).driver_paid_amount).toFixed(2)} {cur}
+                            {" "}on {(r as any).driver_paid_at ? new Date(String((r as any).driver_paid_at)).toLocaleDateString() : ""}</>
+                        )}
+                      </div>
+                    </div>
+                    {paid ? (
+                      <Button size="sm" variant="ghost" className="h-7 text-[10px]"
+                        onClick={() => mut.mutate({ job_id: String((r as any).id), clear: true })}>
+                        Undo
+                      </Button>
+                    ) : (
+                      <Button size="sm" className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => mut.mutate({ job_id: String((r as any).id), amount: price || undefined, method: "cash" })}>
+                        <Check className="h-3 w-3 mr-1" /> Mark received
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground">
+            Tap "Mark received" when you've been paid. The default is Cash for the trip amount — use the coordinator dashboard to edit method or partial amounts.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function csvCell(v: unknown): string {
   if (v == null) return "";

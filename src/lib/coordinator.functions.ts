@@ -3381,6 +3381,8 @@ export const buildStatement = createServerFn({ method: "POST" })
         clientcompanyname, vehicle, driver_id, driver_accepted_at, deletion_requested_at,
         created_at, updated_at, dispatch_status,
         price_amount, price_currency, payment_method, price_set_by, price_set_at,
+        paid_at, paid_amount, paid_method, paid_reference, paid_by_user_id, paid_by_role,
+        driver_paid_at, driver_paid_amount, driver_paid_method, driver_paid_reference, driver_payout_status,
         driver_actual_minutes, driver_reported_km, driver_started_at, driver_completed_at,
         drivers(id,name,phone,vehicle),
         pax(id,name,status,boarded_at),
@@ -3522,6 +3524,16 @@ export const buildStatement = createServerFn({ method: "POST" })
         price_set_by: j.price_set_by ?? "",
         driver_actual_minutes: j.driver_actual_minutes ?? null,
         driver_reported_km: j.driver_reported_km != null ? Number(j.driver_reported_km) : null,
+        paid_at: j.paid_at ?? null,
+        paid_amount: j.paid_amount != null ? Number(j.paid_amount) : null,
+        paid_method: j.paid_method ?? "",
+        paid_reference: j.paid_reference ?? "",
+        paid_by_role: j.paid_by_role ?? "",
+        driver_paid_at: j.driver_paid_at ?? null,
+        driver_paid_amount: j.driver_paid_amount != null ? Number(j.driver_paid_amount) : null,
+        driver_paid_method: j.driver_paid_method ?? "",
+        driver_paid_reference: j.driver_paid_reference ?? "",
+        driver_payout_status: j.driver_payout_status ?? "pending",
 
         hops: hops.map((h: any) => ({
           index: h.hop_index,
@@ -3540,18 +3552,209 @@ export const buildStatement = createServerFn({ method: "POST" })
       };
     });
 
+    const totals = shaped.reduce(
+      (acc, r) => {
+        acc.billed += Number(r.price_amount ?? 0);
+        acc.received_client += Number(r.paid_amount ?? 0);
+        acc.received_driver += Number(r.driver_paid_amount ?? 0);
+        return acc;
+      },
+      { billed: 0, received_client: 0, received_driver: 0 },
+    );
+
     return {
       generated_at: new Date().toISOString(),
       company: { id: c.id, name: c.name },
       rows: shaped,
       total_trips: shaped.length,
       total_pax: shaped.reduce((s, r) => s + r.pax_count, 0),
-
+      totals: {
+        billed: Number(totals.billed.toFixed(2)),
+        received_client: Number(totals.received_client.toFixed(2)),
+        received_driver: Number(totals.received_driver.toFixed(2)),
+        outstanding_client: Number((totals.billed - totals.received_client).toFixed(2)),
+        outstanding_driver: Number((totals.billed - totals.received_driver).toFixed(2)),
+      },
       truncated,
     };
   });
 
-// ---------- Live driver locations (coordinator) ----------
+// ---------- Mark payment received (coordinator/admin) ----------
+
+const PAY_METHODS = ["cash", "bank_transfer", "card", "other"] as const;
+
+const markPaymentInput = z.object({
+  job_id: z.string().uuid(),
+  side: z.enum(["client", "driver"]).default("client"),
+  amount: z.number().nonnegative().max(1_000_000).optional(),
+  method: z.enum(PAY_METHODS).optional(),
+  reference: z.string().trim().max(200).optional(),
+  paid_at: z.string().datetime().optional(),
+});
+
+async function jobCompanyScope(jobId: string) {
+  const sb = await getAdminClient();
+  const { data } = await sb
+    .from("jobs")
+    .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id")
+    .eq("id", jobId)
+    .maybeSingle();
+  return data as any;
+}
+
+function assertCompanyMayEdit(job: any, companyId: string, isAdmin: boolean) {
+  if (isAdmin) return;
+  const chain = (job?.dispatch_chain_company_ids ?? []) as string[];
+  const ok =
+    job?.company_id === companyId ||
+    job?.executor_company_id === companyId ||
+    job?.origin_company_id === companyId ||
+    chain.includes(companyId);
+  if (!ok) throw new Error("forbidden");
+}
+
+export const markJobPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => markPaymentInput.parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const job = await jobCompanyScope(data.job_id);
+    if (!job) throw new Error("job_not_found");
+    assertCompanyMayEdit(job, c.id, c.isAdmin);
+
+    const price = Number(job.price_amount ?? 0);
+    const amt = data.amount != null ? Number(data.amount) : price;
+    const paidAt = data.paid_at ?? new Date().toISOString();
+    const method = data.method ?? null;
+    const ref = data.reference ?? null;
+
+    const patch: Record<string, unknown> =
+      data.side === "driver"
+        ? {
+            driver_paid_at: paidAt,
+            driver_paid_amount: amt,
+            driver_paid_method: method,
+            driver_paid_reference: ref,
+            driver_paid_by_user_id: context.userId,
+          }
+        : {
+            paid_at: paidAt,
+            paid_amount: amt,
+            paid_method: method,
+            paid_reference: ref,
+            paid_by_user_id: context.userId,
+            paid_by_role: c.isAdmin ? "admin" : "coordinator",
+          };
+
+    const { error } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+
+    // Log a map event so the audit trail reflects the payment mark.
+    try {
+      await sb.from("trip_map_events").insert({
+        job_id: data.job_id,
+        company_id: c.id,
+        driver_id: job.driver_id ?? null,
+        event_type: data.side === "driver" ? "driver_payout_marked" : "payment_marked",
+        meta: { amount: amt, method, reference: ref, marked_by: context.userId },
+      } as never);
+    } catch { /* best-effort */ }
+
+    return { ok: true, amount: amt, side: data.side };
+  });
+
+export const unmarkJobPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ job_id: z.string().uuid(), side: z.enum(["client", "driver"]).default("client") }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const job = await jobCompanyScope(data.job_id);
+    if (!job) throw new Error("job_not_found");
+    assertCompanyMayEdit(job, c.id, c.isAdmin);
+
+    const patch: Record<string, unknown> =
+      data.side === "driver"
+        ? {
+            driver_paid_at: null,
+            driver_paid_amount: null,
+            driver_paid_method: null,
+            driver_paid_reference: null,
+            driver_paid_by_user_id: null,
+          }
+        : {
+            paid_at: null,
+            paid_amount: null,
+            paid_method: null,
+            paid_reference: null,
+            paid_by_user_id: null,
+            paid_by_role: null,
+          };
+    const { error } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    try {
+      await sb.from("trip_map_events").insert({
+        job_id: data.job_id,
+        company_id: c.id,
+        driver_id: job.driver_id ?? null,
+        event_type: data.side === "driver" ? "driver_payout_cleared" : "payment_cleared",
+        meta: { by: context.userId },
+      } as never);
+    } catch { /* best-effort */ }
+    return { ok: true };
+  });
+
+export const bulkMarkPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      job_ids: z.array(z.string().uuid()).min(1).max(500),
+      side: z.enum(["client", "driver"]).default("client"),
+      method: z.enum(PAY_METHODS).optional(),
+      paid_at: z.string().datetime().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const { data: jobs, error } = await sb
+      .from("jobs")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id")
+      .in("id", data.job_ids);
+    if (error) throw new Error(error.message);
+    const paidAt = data.paid_at ?? new Date().toISOString();
+    const method = data.method ?? null;
+    let ok = 0;
+    for (const job of jobs ?? []) {
+      try {
+        assertCompanyMayEdit(job as any, c.id, c.isAdmin);
+      } catch { continue; }
+      const amt = Number((job as any).price_amount ?? 0);
+      const patch =
+        data.side === "driver"
+          ? {
+              driver_paid_at: paidAt,
+              driver_paid_amount: amt,
+              driver_paid_method: method,
+              driver_paid_by_user_id: context.userId,
+            }
+          : {
+              paid_at: paidAt,
+              paid_amount: amt,
+              paid_method: method,
+              paid_by_user_id: context.userId,
+              paid_by_role: c.isAdmin ? "admin" : "coordinator",
+            };
+      const { error: uerr } = await sb.from("jobs").update(patch as never).eq("id", (job as any).id);
+      if (!uerr) ok += 1;
+    }
+    return { ok: true, updated: ok, total: (jobs ?? []).length };
+  });
+
+
 
 export const listActiveDriverLocations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
