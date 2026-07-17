@@ -41,7 +41,18 @@ export type ConflictPair = {
   severity: ConflictSeverity;
   reason: string;
   transit_sec: number | null;
+  buffer_min: number;
+  prev_duration_sec: number | null;
+  prev_from_label: string | null;
+  prev_to_label: string | null;
+  next_from_label: string | null;
+  next_to_label: string | null;
 };
+
+export const SCHEDULING_CONSTANTS = {
+  PAX_DROPOFF_BUFFER_MIN: 10,
+  TIGHT_THRESHOLD_MIN: 5,
+} as const;
 
 type MinJob = {
   id: string;
