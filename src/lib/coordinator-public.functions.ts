@@ -626,14 +626,41 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
     const link = await resolveToken(data.token, "driver");
     if (!link) throw new Error("invalid_or_expired_link");
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
-    const { error } = await supabaseAdmin.from("jobs").update({
-      driver_accepted_at: job.driver_accepted_at ?? new Date().toISOString(),
-    } as never).eq("id", data.job_id);
-    if (error) throw new Error(error.message);
-    // Only announce on the first acceptance, not on idempotent re-taps.
-    if (!job.driver_accepted_at) {
+
+    // Cascade acceptance to every sibling in the same group_id that's still
+    // assigned to this same driver and hasn't already been closed out. This
+    // makes a grouped run a single "Accept" for the driver.
+    const gid = (job as any).group_id as string | null | undefined;
+    const driverId = (job as any).driver_id as string | null;
+    let targetJobs: Array<{ id: string; driver_accepted_at: string | null }> = [
+      { id: data.job_id, driver_accepted_at: (job as any).driver_accepted_at ?? null },
+    ];
+    if (gid && driverId) {
+      const { data: sibs } = await supabaseAdmin.from("jobs")
+        .select("id, driver_accepted_at, status")
+        .eq("group_id" as any, gid)
+        .eq("driver_id", driverId);
+      const active = (sibs ?? []).filter((s: any) => s.status !== "completed" && s.status !== "cancelled");
+      if (active.length) {
+        targetJobs = active.map((s: any) => ({ id: s.id, driver_accepted_at: s.driver_accepted_at ?? null }));
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const idsToStamp = targetJobs.filter((t) => !t.driver_accepted_at).map((t) => t.id);
+    if (idsToStamp.length) {
+      const { error } = await supabaseAdmin.from("jobs")
+        .update({ driver_accepted_at: nowIso } as never)
+        .in("id", idsToStamp);
+      if (error) throw new Error(error.message);
+    }
+
+    // Announce once per newly-accepted leg so the coordinator chat reflects
+    // each trip, not just the tapped one.
+    for (const t of targetJobs) {
+      if (t.driver_accepted_at) continue;
       await supabaseAdmin.from("trip_messages").insert({
-        job_id: data.job_id,
+        job_id: t.id,
         company_id: job.company_id,
         sender_kind: "system",
         sender_label: "System",
@@ -642,16 +669,18 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         driver_id: link.subject_id ?? null,
       } as never);
     }
-    // Withdraw any still-open price proposals from this driver on this job.
+
+    // Withdraw any still-open price proposals from this driver on every
+    // sibling — accepting one leg accepts the run.
     if (link.subject_id) {
       await supabaseAdmin.from("job_price_proposals").update({
         status: "recalled", responded_at: new Date().toISOString(),
       } as never)
-        .eq("job_id", data.job_id)
+        .in("job_id", targetJobs.map((t) => t.id))
         .eq("from_driver_id", link.subject_id)
         .in("status", ["proposed", "countered"]);
     }
-    return { ok: true };
+    return { ok: true, cascaded_ids: targetJobs.map((t) => t.id) };
   });
 
 export const driverRejectJob = createServerFn({ method: "POST" })
