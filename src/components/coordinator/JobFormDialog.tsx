@@ -1042,12 +1042,27 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                 </div>
               )}
             </div>
+            {pendingQuestions.length > 0 && !aiMut.isPending && (
+              <div className="flex flex-wrap gap-1.5">
+                {pendingQuestions.map((q, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] text-primary hover:bg-primary/10 text-left"
+                    title="Click to prefill your answer"
+                    onClick={() => setReply((prev) => (prev.trim() ? `${prev.trim()}\n${q} — ` : `${q} — `))}
+                  >
+                    ❓ {q}
+                  </button>
+                ))}
+              </div>
+            )}
             {pendingQuestion && !aiMut.isPending && (
               <div className="flex gap-2">
                 <Input
                   autoFocus value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="Type your answer…"
+                  placeholder={pendingQuestions.length > 0 ? "Answer the question(s) above…" : "Type your answer…"}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendReply(); } }}
                 />
                 <Button type="button" size="sm" onClick={sendReply} disabled={!reply.trim()}>
@@ -1058,6 +1073,135 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
             <div className="flex justify-end">
               <Button type="button" size="sm" variant="ghost" className="h-7" onClick={cancelChat}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        ) : pendingDraft ? (
+          <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                AI proposed {pendingDraft.rows.length} trip{pendingDraft.rows.length === 1 ? "" : "s"} — review before applying
+              </div>
+              <span className={`text-[10px] rounded-full px-2 py-0.5 ${pendingDraft.is_low_confidence ? "bg-amber-500/20 text-amber-900 dark:text-amber-200" : "bg-emerald-500/20 text-emerald-900 dark:text-emerald-200"}`}>
+                {Math.round(pendingDraft.accuracy_score * 100)}% confidence
+              </span>
+            </div>
+            {pendingDraft.follow_up_questions.length > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
+                <div className="text-[11px] font-medium text-amber-900 dark:text-amber-200">
+                  A few clarifying questions would improve accuracy:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {pendingDraft.follow_up_questions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="rounded-full border border-amber-500/50 bg-background px-2.5 py-1 text-[11px] hover:bg-amber-500/10 text-left"
+                      onClick={() => {
+                        // Reopen the chat and send the clarification back to the AI.
+                        setChatOpen(true);
+                        setPendingDraft(null);
+                        const next: ChatMsg[] = [...chat, { role: "user", text: `Answer: ${q}` }];
+                        setChat(next);
+                        const urls = Array.from(new Set((raw.match(URL_RE) ?? []))).slice(0, 3);
+                        aiMut.mutate({
+                          messages: next,
+                          attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
+                          urls,
+                        });
+                      }}
+                    >
+                      ❓ {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="max-h-64 overflow-auto rounded border bg-background">
+              <table className="w-full text-[11px]">
+                <thead className="bg-muted/60 text-muted-foreground">
+                  <tr>
+                    <th className="w-8 px-2 py-1"></th>
+                    <th className="px-2 py-1 text-left">#</th>
+                    <th className="px-2 py-1 text-left">Date · Time</th>
+                    <th className="px-2 py-1 text-left">Pickup → Delivery</th>
+                    <th className="px-2 py-1 text-left">Customer</th>
+                    <th className="px-2 py-1 text-left">Pax</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingDraft.rows.map((r, i) => {
+                    const missing: string[] = [];
+                    if (!r.pickupDate?.trim()) missing.push("date");
+                    if (!r.pickupTime?.trim()) missing.push("time");
+                    if (!r.pickupAddress?.trim()) missing.push("pickup");
+                    if (!r.deliveryAddress?.trim()) missing.push("delivery");
+                    return (
+                      <tr key={i} className={`border-t ${pendingDraft.keep[i] ? "" : "opacity-40 line-through"}`}>
+                        <td className="px-2 py-1 align-top">
+                          <input
+                            type="checkbox"
+                            checked={pendingDraft.keep[i]}
+                            onChange={(e) =>
+                              setPendingDraft((prev) =>
+                                prev
+                                  ? { ...prev, keep: prev.keep.map((k, j) => (j === i ? e.target.checked : k)) }
+                                  : prev,
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-2 py-1 align-top text-muted-foreground">{i + 1}</td>
+                        <td className="px-2 py-1 align-top whitespace-nowrap">
+                          {(r.pickupDate || "—") + " · " + (r.pickupTime || "—")}
+                        </td>
+                        <td className="px-2 py-1 align-top">
+                          <div className="truncate max-w-[240px]">{r.pickupAddress || <em className="text-destructive">missing</em>}</div>
+                          <div className="truncate max-w-[240px] text-muted-foreground">↓ {r.deliveryAddress || <em className="text-destructive">missing</em>}</div>
+                          {missing.length > 0 && (
+                            <div className="text-[10px] text-destructive">Missing: {missing.join(", ")}</div>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 align-top">
+                          <div className="truncate max-w-[120px]">{r.customerName || "—"}</div>
+                          <div className="truncate max-w-[120px] text-muted-foreground">{r.contactNumber || ""}</div>
+                        </td>
+                        <td className="px-2 py-1 align-top">{r.quantity || "1"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {pendingDraft.is_half_price
+                ? "⚠ Accuracy under 75% — a 50% AI-processing discount will apply on save."
+                : "Unchecked rows are skipped. You can still edit every field after applying."}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button" size="sm" variant="ghost"
+                onClick={() => setPendingDraft((p) => (p ? { ...p, keep: p.keep.map(() => true) } : p))}
+              >
+                Keep all
+              </Button>
+              <Button
+                type="button" size="sm" variant="ghost"
+                onClick={() => setPendingDraft((p) => (p ? { ...p, keep: p.keep.map(() => false) } : p))}
+              >
+                Clear all
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={discardPendingDraft}>
+                Discard
+              </Button>
+              <Button
+                type="button" size="sm"
+                onClick={applyPendingDraft}
+                disabled={pendingDraft.keep.every((k) => !k)}
+              >
+                Apply {pendingDraft.keep.filter(Boolean).length} trip
+                {pendingDraft.keep.filter(Boolean).length === 1 ? "" : "s"}
               </Button>
             </div>
           </div>
