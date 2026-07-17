@@ -37,7 +37,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["everyone"],
     summary: "What this platform does and who it's for.",
     keywords: ["intro", "overview", "start"],
-    component: A("welcome"),
+    component: load("welcome"),
   },
   {
     slug: "install-apps",
@@ -46,7 +46,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["everyone"],
     summary: "Driver Android APK, and PWA install for coordinators and clients.",
     keywords: ["install", "apk", "pwa", "download"],
-    component: A("install-apps"),
+    component: load("install-apps"),
   },
   {
     slug: "coordinator-dashboard",
@@ -55,7 +55,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["coordinator"],
     summary: "Quick actions, activity feed, and live ETAs.",
     keywords: ["dashboard", "home", "activity"],
-    component: A("coordinator-dashboard"),
+    component: load("coordinator-dashboard"),
   },
   {
     slug: "coordinator-dispatch",
@@ -64,7 +64,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["coordinator"],
     summary: "How the dense dispatch view works: chain reflow, ETA chips, red-glow conflict detection, and alternative driver suggestions.",
     keywords: ["dispatch", "calendar", "conflict", "red", "assign", "buffer"],
-    component: A("coordinator-dispatch"),
+    component: load("coordinator-dispatch"),
   },
   {
     slug: "coordinator-ai-extraction",
@@ -73,7 +73,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["coordinator"],
     summary: "Paste an email or booking, let AI turn it into structured trips. Includes retries, cost, and error handling.",
     keywords: ["ai", "extraction", "paste", "email", "bulk", "gemini"],
-    component: A("coordinator-ai-extraction"),
+    component: load("coordinator-ai-extraction"),
   },
   {
     slug: "driver-guide",
@@ -82,7 +82,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["driver"],
     summary: "First-time setup, the trip screen, status buttons, waiting time, and how each action affects your trust score and payout.",
     keywords: ["driver", "status", "waiting", "trust", "payout"],
-    component: A("driver-guide"),
+    component: load("driver-guide"),
   },
   {
     slug: "event-catalog",
@@ -91,7 +91,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["everyone"],
     summary: "Every event the system logs — and its exact effect on driver trust and trip payout.",
     keywords: ["events", "map", "audit", "trust", "payout"],
-    component: A("event-catalog"),
+    component: load("event-catalog"),
   },
   {
     slug: "faq",
@@ -100,7 +100,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["everyone"],
     summary: "Common questions: why is the card red, why isn't ETA updating, GPS off, wrong status.",
     keywords: ["faq", "troubleshoot", "help", "red", "eta", "gps"],
-    component: A("faq"),
+    component: load("faq"),
   },
 ];
 
