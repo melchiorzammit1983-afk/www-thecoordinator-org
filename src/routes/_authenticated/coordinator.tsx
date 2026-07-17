@@ -182,8 +182,10 @@ function CoordinatorLayout() {
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
           </div>
+          <AiWalletBadge />
           <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
         </div>
+
         <nav className="flex flex-col p-3 overflow-y-auto">
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter((item) => {
