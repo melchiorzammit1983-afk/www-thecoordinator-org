@@ -236,11 +236,11 @@ export const adminHelpInsights = createServerFn({ method: "GET" })
  * escalating to a human admin. Uses a small structured JSON call.
  */
 export const analyzeHelpTurn = createServerFn({ method: "POST" })
-
+  .middleware([requireSupabaseAuth])
   .inputValidator((raw) => z.object({
-    question: z.string().min(1),
-    answer: z.string().min(1),
-    thread: z.array(z.object({ role: z.string(), text: z.string() })).max(20).optional(),
+    question: z.string().min(1).max(2000),
+    answer: z.string().min(1).max(4000),
+    thread: z.array(z.object({ role: z.string().max(32), text: z.string().max(2000) })).max(20).optional(),
   }).parse(raw))
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY;

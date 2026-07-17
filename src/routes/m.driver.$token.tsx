@@ -660,7 +660,9 @@ function DriverManifest() {
 
   const live = useLiveRoute({
     origin: driverPos,
-    destination: routeDestination,
+    jobId: activeJob?.id ?? null,
+    leg: activeJob?.status === "in_progress" ? "to_dropoff" : "to_pickup",
+    token,
     enabled: !!activeJob && !!driverPos && !!routeDestination,
   });
 
@@ -1258,8 +1260,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     staleTime: 45_000,
     queryFn: () => routeFn({
       data: {
-        origin: { address: job.from_location! },
-        destination_address: job.to_location!,
+        job_id: job.id,
+        driver_token: token,
+        leg: "to_dropoff",
+        origin: { from_pickup: true },
       },
     }) as Promise<{
       primary: null | {
@@ -2108,11 +2112,15 @@ type LiveRouteInfo = {
  */
 function useLiveRoute({
   origin,
-  destination,
+  jobId,
+  leg,
+  token,
   enabled,
 }: {
   origin: { lat: number; lng: number } | null;
-  destination: string | null;
+  jobId: string | null;
+  leg: "to_pickup" | "to_dropoff";
+  token: string;
   enabled: boolean;
 }): LiveRouteInfo {
   const fn = useServerFn(computeDriverRoute);
@@ -2127,19 +2135,20 @@ function useLiveRoute({
   const [offRouteM, setOffRouteM] = useState(0);
 
   // Coarser origin key (~110m) — we recompute on real movement, not GPS jitter.
-  // Fine-grained refetches now happen on-demand via the deviation detector.
   const originKey = origin ? `${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : null;
-  const queryKey = ["driver-live-route", destination, originKey];
+  const queryKey = ["driver-live-route", jobId, leg, originKey];
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey,
-    enabled: enabled && !!origin && !!destination,
+    enabled: enabled && !!origin && !!jobId,
     refetchInterval: 30_000,
     staleTime: 20_000,
     queryFn: () => fn({
       data: {
+        job_id: jobId!,
+        driver_token: token,
+        leg,
         origin: { latitude: origin!.lat, longitude: origin!.lng },
-        destination_address: destination!,
       },
     }) as Promise<{
       primary: null | {
@@ -2170,7 +2179,7 @@ function useLiveRoute({
     setAcceptedAltIdx(null);
     consecutiveOffRef.current = 0;
     setOffRouteM(0);
-  }, [destination]);
+  }, [jobId, leg]);
 
   const primary = data?.primary ?? null;
   const alternatives = data?.alternatives ?? [];
@@ -2222,9 +2231,9 @@ function useLiveRoute({
       // Alternatives were computed for the old position — clear the choice
       // so we don't stay on a stale "faster route" that no longer applies.
       setAcceptedAltIdx(null);
-      qc.invalidateQueries({ queryKey: ["driver-live-route", destination] });
+      qc.invalidateQueries({ queryKey: ["driver-live-route", jobId, leg] });
     }
-  }, [origin, decodedPath, enabled, destination, qc, isFetching]);
+  }, [origin, decodedPath, enabled, jobId, leg, qc, isFetching]);
 
   const delay_sec = primary?.duration_sec != null && primary?.static_duration_sec != null
     ? Math.max(0, primary.duration_sec - primary.static_duration_sec) : 0;
