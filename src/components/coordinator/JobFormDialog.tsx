@@ -1379,7 +1379,9 @@ function DriverAssignmentConflictHint({
       candidate?.to_location,
     ],
     enabled,
-    staleTime: 30_000,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: () =>
       fn({
         data: jobId
