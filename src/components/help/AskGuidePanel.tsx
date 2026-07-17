@@ -243,6 +243,56 @@ export function AskGuidePanel() {
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
                 </div>
               )}
+              {status === "ready" && analyzing && (
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Checking if I fully answered you…
+                </div>
+              )}
+              {status === "ready" && turnMeta && turnMeta.clarifying.length > 0 && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                    Help me help you — pick one
+                  </div>
+                  <div className="grid gap-1.5">
+                    {turnMeta.clarifying.map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => { setInput(q); setTimeout(submit, 0); }}
+                        className="rounded-md border border-primary/30 bg-background px-3 py-2 text-left text-sm text-foreground hover:border-primary hover:bg-primary/10"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {status === "ready" && turnMeta?.escalate && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                  <div className="flex items-start gap-2">
+                    <LifeBuoy className="mt-0.5 h-4 w-4 text-amber-600" />
+                    <div className="flex-1 text-xs text-foreground">
+                      <div className="font-semibold">I'm not fully confident I solved this.</div>
+                      <p className="mt-0.5 text-muted-foreground">
+                        Want me to send this conversation to an admin so a human can take over?
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (turnMeta.suggested_subject) setEscSubject(turnMeta.suggested_subject);
+                            setShowEscalate(true);
+                          }}
+                        >
+                          Escalate to admin
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setTurnMeta({ ...turnMeta, escalate: false })}>
+                          Not now
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {error && (
