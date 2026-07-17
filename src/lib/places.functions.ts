@@ -62,6 +62,7 @@ const BiasSchema = z
   .optional();
 
 export const placesAutocomplete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z
       .object({
