@@ -32,7 +32,8 @@ import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
 import { Clock, AlertTriangle } from "lucide-react";
-import { previewAssignmentConflicts } from "@/lib/scheduling.functions";
+import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
+import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
