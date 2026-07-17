@@ -1274,6 +1274,8 @@ export type Database = {
           profile_updated_at: string | null
           seats_available: number | null
           status: Database["public"]["Enums"]["driver_status"]
+          trust_score: number
+          trust_updated_at: string | null
           updated_at: string
           vehicle: string | null
         }
@@ -1294,6 +1296,8 @@ export type Database = {
           profile_updated_at?: string | null
           seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
+          trust_score?: number
+          trust_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
         }
@@ -1314,6 +1318,8 @@ export type Database = {
           profile_updated_at?: string | null
           seats_available?: number | null
           status?: Database["public"]["Enums"]["driver_status"]
+          trust_score?: number
+          trust_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
         }
@@ -3999,6 +4005,7 @@ export type Database = {
       trip_map_events: {
         Row: {
           accuracy_m: number | null
+          adjustment_id: string | null
           company_id: string
           created_at: string
           driver_id: string | null
@@ -4010,9 +4017,12 @@ export type Database = {
           meta: Json
           notes: string | null
           occurred_at: string
+          payout_delta_eur: number
+          trust_delta: number
         }
         Insert: {
           accuracy_m?: number | null
+          adjustment_id?: string | null
           company_id: string
           created_at?: string
           driver_id?: string | null
@@ -4024,9 +4034,12 @@ export type Database = {
           meta?: Json
           notes?: string | null
           occurred_at?: string
+          payout_delta_eur?: number
+          trust_delta?: number
         }
         Update: {
           accuracy_m?: number | null
+          adjustment_id?: string | null
           company_id?: string
           created_at?: string
           driver_id?: string | null
@@ -4038,8 +4051,17 @@ export type Database = {
           meta?: Json
           notes?: string | null
           occurred_at?: string
+          payout_delta_eur?: number
+          trust_delta?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "trip_map_events_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "job_adjustments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "trip_map_events_job_id_fkey"
             columns: ["job_id"]
