@@ -5940,6 +5940,18 @@ export const respondBoardingApproval = createServerFn({ method: "POST" })
       thread_kind: "driver_coord",
     } as never);
 
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: (approval as any).job_id,
+        companyId: (approval as any).company_id,
+        driverId: null,
+        eventType: data.action === "approve" ? "boarding_approved" : "boarding_rejected",
+        notes: data.coordinator_note ?? null,
+        meta: { approval_id: (approval as any).id, actor: "coordinator" },
+      });
+    }
+
     return { ok: true, status: newStatus };
   });
 
