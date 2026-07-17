@@ -21,6 +21,7 @@ import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
@@ -124,6 +125,11 @@ const HSlugRoute = HSlugRouteImport.update({
 const CTokenRoute = CTokenRouteImport.update({
   id: '/c/$token',
   path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
+  id: '/api/help-chat',
+  path: '/api/help-chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedCoordinatorRoute =
@@ -401,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
@@ -457,6 +464,7 @@ export interface FileRoutesByTo {
   '/install': typeof InstallRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
@@ -517,6 +525,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/h/$slug': typeof HSlugRoute
   '/portal/$token': typeof PortalTokenRoute
@@ -577,6 +586,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin'
     | '/coordinator'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
     | '/portal/$token'
@@ -633,6 +643,7 @@ export interface FileRouteTypes {
     | '/install'
     | '/request-access'
     | '/sitemap.xml'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
     | '/portal/$token'
@@ -692,6 +703,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
+    | '/api/help-chat'
     | '/c/$token'
     | '/h/$slug'
     | '/portal/$token'
@@ -750,6 +762,7 @@ export interface RootRouteChildren {
   InstallRoute: typeof InstallRoute
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiHelpChatRoute: typeof ApiHelpChatRoute
   CTokenRoute: typeof CTokenRoute
   HSlugRoute: typeof HSlugRoute
   PortalTokenRoute: typeof PortalTokenRoute
@@ -857,6 +870,13 @@ declare module '@tanstack/react-router' {
       path: '/c/$token'
       fullPath: '/c/$token'
       preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/help-chat': {
+      id: '/api/help-chat'
+      path: '/api/help-chat'
+      fullPath: '/api/help-chat'
+      preLoaderRoute: typeof ApiHelpChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/coordinator': {
@@ -1307,6 +1327,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstallRoute: InstallRoute,
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiHelpChatRoute: ApiHelpChatRoute,
   CTokenRoute: CTokenRoute,
   HSlugRoute: HSlugRoute,
   PortalTokenRoute: PortalTokenRoute,
