@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Coins, Sparkles, TrendingDown } from "lucide-react";
 import { RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AiWalletCard } from "@/components/ai/AiWalletCard";
 
 export const Route = createFileRoute("/_authenticated/coordinator/billing")({
   component: BillingPage,
@@ -34,7 +35,10 @@ function BillingPage() {
         <RequestTopupDialog />
       </div>
 
+      <AiWalletCard />
+
       <div className="grid gap-4 md:grid-cols-3">
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground font-medium">Current plan</CardTitle>

@@ -1,65 +1,130 @@
-## Availability Hours + Auto-Forward
+# Smart AI Upgrades — Final Plan
 
-Let coordinators and drivers publish opening hours. Off-hours (or unanswered) trips auto-jump to the next available party in the network, with configurable behavior and admin-controlled pricing.
+## 0. AI Points Wallet
 
-### 1. Data model (new migration)
+### Spend cascade
+`spend_points(company_id, feature_key)` — when `feature_key LIKE 'ai_%'`:
+1. Subscription AI allowance (`company_subscriptions.ai_points_remaining_this_period`, monthly reset)
+2. Admin-granted AI points (`companies.ai_points_balance`, no expiry)
+3. General fallback (`companies.points_balance`) — only if `ai_fallback_to_general = true`
 
-- `availability_schedules` — one row per owner (`owner_type` = `company` | `driver`, `owner_id`, `company_id`, `timezone`)
-- `availability_windows` — weekly recurring windows (`schedule_id`, `weekday 0-6`, `start_time`, `end_time`)
-- `availability_exceptions` — one-off closed/open days (holidays, extra shifts)
-- `availability_policies` — per-coordinator settings:
-  - `off_hours_mode`: `auto_forward` | `notify_then_forward` | `manual_pick`
-  - `notify_timeout_min` (default 15, used by mode 2)
-  - `unanswered_timeout_min` (default 15) — even during open hours, jump if no accept
-  - `forwarding_enabled` boolean
-  - `preferred_partner_ids uuid[]` (ordered list; empty = any connected partner)
-- `dispatch_forward_events` — audit trail: `job_id`, `from_company_id`, `to_company_id`, `reason` (`off_hours` | `no_response` | `manual`), `points_charged`, `created_at`
+Enforces `companies.ai_monthly_cap` and increments `ai_points_used_this_period`. Blocks when all sources dry and `block_on_empty = true`.
 
-All tables: GRANT to authenticated + service_role, RLS scoped to `company_id` via `has_role`/`company_of`.
+### Rollout day 1 (chosen)
+Migration copies each company's current `points_balance` → `ai_points_balance`, then zeroes `points_balance`. One-time `points_ledger` entry `feature_key='ai_wallet_migration'`. Coordinators see full balance on the new AI card immediately; general points start fresh (used only for non-AI features going forward).
 
-### 2. Server functions (`src/lib/availability.functions.ts`)
+### Coordinator controls (`/coordinator/billing`)
+- AI wallet card: balance, monthly usage bar, cap slider (`ai_monthly_cap`), fallback toggle (`ai_fallback_to_general`).
+- "Allocate general → AI" button (moves points, writes ledger).
+- Usage table from `points_ledger` filtered to `ai_*` keys with feature breakdown.
+- Top bar: `AiWalletBadge` (remaining pts, click → billing).
 
-- `getMySchedule({ owner_type })` / `saveMySchedule(...)` — for the settings UI
-- `saveAvailabilityPolicy(...)` — coordinator picks mode + timeout + preferred partners
-- `isOpenNow(owner_type, owner_id, at?)` — checks weekly windows + exceptions in owner's TZ
-- `findNextAvailable({ job_id })` — returns ordered candidates: preferred partners first, then any connected partner currently `isOpenNow`, excluding already-tried companies
-- `autoForwardJob({ job_id, reason })` — validates policy, spends points via `spend_points('trip_auto_forward', ...)`, updates `jobs.executor_company_id` + `job_dispatch_hops`, inserts `dispatch_forward_events`, notifies both parties
-- Cron endpoint `src/routes/api/public/cron/auto-forward.ts` (already-authed via CRON_SECRET) — every 60s scans pending incoming dispatches whose `created_at + timeout` has passed unanswered and off-hours arrivals, calls `autoForwardJob`
+### Admin controls
+- `/admin/companies/[id]`: **Grant AI points**, set per-company cap, view usage.
+- `/admin/pricing`: new `plans.included_ai_points` column, editable AI-features table.
 
-### 3. Wire into existing dispatch flow
+## 1. Per-feature AI point pricing
 
-- On incoming dispatch (`respondToDispatch` / new dispatch creation):
-  - If receiver is `off_hours_mode = auto_forward` and closed → forward immediately
-  - If `notify_then_forward` and closed → send push, mark `forward_after = now + notify_timeout`, cron picks up
-  - If `manual_pick` → show new "Forward to…" button in `coordinator.incoming.tsx` (partner picker)
-- Same fallback runs when a trip is assigned to a driver who doesn't accept within `unanswered_timeout_min` — driver push includes an "Accept" action; timeout → forward to next available driver in same company, then to network.
+Reuse 13 existing `ai_*` keys already in `ai_feature_costs`. **Add** only the new ones:
 
-### 4. UI
+| New key | Default |
+|---|---|
+| `ai_guide_chat` | 1 |
+| `ai_guide_escalate` | 0 |
+| `ai_bulk_clarify` | 1 |
+| `ai_prompt_improve` | 1 |
+| `ai_explain_answer` | 1 |
+| `ai_dispatch_coach` | 2 |
+| `ai_self_heal` | 2 |
+| `ai_anomaly_scan` | 1 per firing alert |
+| `ai_ops_digest` | 3 |
+| `ai_prompt_suggest` | 0 (cached 5min) |
+| `admin_ai_grant` | ledger tag only |
+| `ai_wallet_migration` | ledger tag only |
 
-- **New route** `src/routes/_authenticated/coordinator.availability.tsx` — weekly grid editor (Mon–Sun rows, drag to set windows), exceptions list, policy card (radio: off-hours mode, sliders for timeouts, sortable preferred-partners list). Gated by `IfFeature feature="availability_autoforward"`.
-- **Driver settings** — reuse the same editor inside `coordinator.drivers.tsx` (per-driver row action) and inside the driver mobile app (`m.driver.$token.tsx` → new "My hours" sheet).
-- **Incoming card** (`coordinator.incoming.tsx`) — show "Forwarded from X (off-hours)" badge; add "Forward to…" button when mode is `manual_pick`.
-- **Trip details** — new "Forwarding history" section rendering `dispatch_forward_events`.
+All editable inline at `/admin/pricing → AI features`; per-company overrides via existing `company_feature_price_overrides`.
 
-### 5. Admin pricing (per your choice: base + per-forward)
+## 2. Driver Guide quota (chosen)
 
-- Register feature in `src/lib/features.ts`: `availability_autoforward`
-- `ai_feature_costs` row: `feature_key='trip_auto_forward'`, default 2 points, editable in `admin.pricing.tsx`
-- `company_feature_entitlements` gates the whole feature (monthly base fee handled by existing entitlements flow — admin sets base points/month in `admin.pricing.tsx` alongside the per-forward cost)
-- `spend_points` is already wired to honor overrides and caps — no changes needed
-- Admin panel gets a new row in `admin.pricing.tsx` for `trip_auto_forward` and a base-subscription editor in `FeatureEntitlementsDialog.tsx`
+- New table `driver_ai_usage(driver_id, period_start, questions_used int, monthly_quota int default 30)`.
+- Driver Guide chat: if within quota → free (increment counter); otherwise → charge `ai_guide_chat` to executor company wallet.
+- Coordinator can raise/lower per-driver quota from `/coordinator/drivers`.
+- Quota resets on `rollover_subscriptions`.
 
-### 6. Help & signals
+## 3. Low-balance alerts (chosen)
 
-- New help article `coordinator-availability.tsx` in `src/content/help/` explaining hours, modes, pricing, and the forwarding audit trail
-- Signal registry entry so "Ask the Guide" can explain the "Forwarded" badge
+- **25% warning**: in-app banner + push to coordinator.
+- **0% depletion**: banner + push to coordinator, push to admin, entry in admin "Companies out of AI" list at `/admin/ai-insights`.
+- Cron `ai-balance-watch` every 30min compares balance vs cap.
 
-### Recommendations / things worth changing
+## 4. Guide → Admin escalation
 
-1. **Timezone per schedule, not per company** — drivers travel; store TZ on `availability_schedules` so a driver's hours mean their local time.
-2. **Forward cap per trip** — hard limit (e.g. 5 hops) to prevent infinite chains if everyone's closed; after the cap the trip returns to origin with a "no coverage" alert.
-3. **Point refund on rejection** — if an auto-forward is rejected within 2 min, refund the forward points (protects coordinators from paying for dead-end forwards).
-4. **Suggested default mode** = `notify_then_forward` with 15 min — safest for new users; they get a chance to grab the trip before losing it.
-5. **Emergency override** — coordinators can always manually take a trip back from an auto-forward before the new owner accepts.
+Guide asks 2-3 clarifying questions on low confidence, then offers **Escalate** (`ai_guide_escalate`, free). New `support_tickets` + `support_ticket_messages`. All tickets created at **priority='medium'**; admin re-prioritises in inbox. Push + email both ways. Routes: `/my-tickets`, `/admin/support`.
 
-Reply with anything you want changed (data model, default mode, forward cap, pricing model) and I'll revise before implementation.
+## 5. Admin AI Insights (`/admin/ai-insights`)
+
+`help_ai_log` (retention 90 days) with route, confidence, thumbs, escalated_ticket_id. Weekly cluster cron → `ai_insight_clusters`. Buttons: **Draft Lovable prompt**, **Add to Help Center**. Also hosts "Companies out of AI" list from §3.
+
+## 6. Prompt coaching (every AI surface)
+
+- **"How does the AI understand this?"** popover
+- **Suggested prompt chips** (context-aware, 5min cache, free)
+- **✨ Improve prompt** button (1 pt)
+- **Explain this answer** on every reply (1 pt)
+- Send button shows `AiFeatureCostBadge` ("1 pt") before click
+- 3-slide first-time onboarding per AI feature
+- `/help/ai-prompting` role-specific prompt library with copy buttons
+
+## 7. Smart bulk paste
+
+`parse-trips.ts` returns `{trips, questions, shortcuts, columnMap, confidencePerRow}`:
+- Per-row confidence chips (<0.7 requires confirm)
+- Inline clarifying questions (`ai_bulk_clarify`)
+- Free-text filter ("Only landings", "Skip cancelled")
+- `company_ai_shortcuts` learns per-company mappings, auto-injected next run
+- Column mapping for tabular pastes
+
+## 8. Proactive / bulletproof
+
+- **Anomaly watcher** cron 10min → `ai_alerts` + banner + push (charges only on firing alert)
+- **Nightly ops digest** cron 6am (3 pts)
+- **AI dispatch coach** on trip create/reassign with driver reasoning (2 pts)
+- **Self-healing**: conflict/arrival/ETA banners → **Fix with AI** one-click apply via `applyAiCommandActions` (2 pts)
+
+## Technical section
+
+**Migration (single)**:
+- Columns: `companies.ai_points_balance/ai_monthly_cap/ai_fallback_to_general/ai_points_used_this_period`; `company_subscriptions.ai_points_remaining_this_period`; `plans.included_ai_points`
+- New tables: `support_tickets`, `support_ticket_messages`, `help_ai_log`, `ai_insight_clusters`, `company_ai_shortcuts`, `ai_alerts`, `driver_ai_usage` — all with GRANTs + RLS
+- Rewrite `spend_points` for AI cascade + cap enforcement
+- Update `rollover_subscriptions` to reset AI allowance + driver quota
+- New RPCs: `allocate_to_ai_wallet`, `admin_grant_ai_points`, `driver_ai_charge_or_quota`
+- Seed 9 new `ai_feature_costs` rows (`ON CONFLICT DO NOTHING`)
+- One-time balance migration copy for all companies
+
+**Server fns**:
+`src/lib/ai-wallet.functions.ts`, `support.functions.ts`, `ai-insights.functions.ts`, `ai-shortcuts.functions.ts`, `ai-alerts.functions.ts`, `ai-coach.functions.ts`. Extend `runAiCommand` with `{signal_type, job_id}`. `src/routes/api/help-chat.ts` returns `{answer, confidence, followups, sources_used}` and charges `ai_guide_chat` (with driver-quota short-circuit).
+
+**Client**:
+- `src/components/ai/`: `AiWalletBadge`, `AiFeatureCostBadge`, `AiHowItWorksPopover`, `AiSuggestedPrompts`, `AiImproveButton`, `AiExplainButton`, `AiOutOfPointsCard`
+- Routes: `/coordinator/billing` (extended), `/my-tickets`, `/admin/support`, `/admin/ai-insights`, `/help/ai-prompting`
+
+**Cron** (`/api/public/cron/`, apikey-authed):
+- `ai-anomaly-scan.ts` (10min)
+- `ai-balance-watch.ts` (30min)
+- `ai-ops-digest.ts` (daily 6am)
+- `ai-cluster-insights.ts` (weekly Sunday)
+
+## Build order
+
+1. **Migration** — wallet columns, tables, RLS+GRANTs, rewrite `spend_points`, seed costs, one-time balance copy
+2. **AI wallet UI** — coordinator billing card + admin grant/cap + top-bar badge. *(Ships first so everything after is metered.)*
+3. **Admin pricing panel** for AI feature costs
+4. Escalation (tickets + inbox + thread + push/email)
+5. Admin AI Insights (log → clustering → drafts + "out of AI" list)
+6. Prompt coaching layer + `/help/ai-prompting`
+7. Smart bulk paste upgrades
+8. Proactive layer (anomaly → dispatch coach → self-heal → nightly digest)
+9. Driver Guide quota + coordinator quota editor
+
+Each step ships independently. All defaults editable from `/admin/pricing` with no code change.
