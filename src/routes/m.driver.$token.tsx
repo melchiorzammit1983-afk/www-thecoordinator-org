@@ -18,6 +18,7 @@ import {
   driverSnapDropoffToHere,
   logDriverAction,
 } from "@/lib/coordinator-public.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 
