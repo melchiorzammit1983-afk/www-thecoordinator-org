@@ -57,6 +57,7 @@ import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
 import { Route as AuthenticatedAdminAiSettingsRouteImport } from './routes/_authenticated/admin.ai-settings'
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
+import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
@@ -342,6 +343,12 @@ const AuthenticatedAdminAiInsightsRoute =
     path: '/ai-insights',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminAiActivityRoute =
+  AuthenticatedAdminAiActivityRouteImport.update({
+    id: '/ai-activity',
+    path: '/ai-activity',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminActivityRoute =
   AuthenticatedAdminActivityRouteImport.update({
     id: '/activity',
@@ -470,6 +477,7 @@ export interface FileRoutesByFullPath {
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
@@ -534,6 +542,7 @@ export interface FileRoutesByTo {
   '/track/$token': typeof TrackTokenRoute
   '/help': typeof HelpIndexRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
@@ -603,6 +612,7 @@ export interface FileRoutesById {
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
+  '/_authenticated/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/_authenticated/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
@@ -672,6 +682,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help/'
     | '/admin/activity'
+    | '/admin/ai-activity'
     | '/admin/ai-insights'
     | '/admin/ai-settings'
     | '/admin/password-resets'
@@ -736,6 +747,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help'
     | '/admin/activity'
+    | '/admin/ai-activity'
     | '/admin/ai-insights'
     | '/admin/ai-settings'
     | '/admin/password-resets'
@@ -804,6 +816,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/help/'
     | '/_authenticated/admin/activity'
+    | '/_authenticated/admin/ai-activity'
     | '/_authenticated/admin/ai-insights'
     | '/_authenticated/admin/ai-settings'
     | '/_authenticated/admin/password-resets'
@@ -1224,6 +1237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/ai-activity': {
+      id: '/_authenticated/admin/ai-activity'
+      path: '/ai-activity'
+      fullPath: '/admin/ai-activity'
+      preLoaderRoute: typeof AuthenticatedAdminAiActivityRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/activity': {
       id: '/_authenticated/admin/activity'
       path: '/activity'
@@ -1355,6 +1375,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
+  AuthenticatedAdminAiActivityRoute: typeof AuthenticatedAdminAiActivityRoute
   AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
   AuthenticatedAdminAiSettingsRoute: typeof AuthenticatedAdminAiSettingsRoute
   AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
@@ -1368,6 +1389,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
+  AuthenticatedAdminAiActivityRoute: AuthenticatedAdminAiActivityRoute,
   AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
   AuthenticatedAdminAiSettingsRoute: AuthenticatedAdminAiSettingsRoute,
   AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,

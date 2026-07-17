@@ -285,3 +285,164 @@ JSON:`;
       return { confidence: 0.5, clarifying: [], escalate: false, suggested_subject: null };
     }
   });
+
+/**
+ * Admin: full AI activity feed — every Guide question/answer, escalation,
+ * and AI-related points charge across the platform, with user emails, timestamps,
+ * points, model action metadata, and links to the resulting ticket (if any).
+ */
+export const adminAiActivity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw) =>
+    z.object({
+      search: z.string().trim().max(200).optional(),
+      user_id: z.string().uuid().optional(),
+      company_id: z.string().uuid().optional(),
+      kind: z.enum(["all", "guide", "escalation", "charge", "command"]).default("all"),
+      from: z.string().datetime().optional(),
+      to: z.string().datetime().optional(),
+      limit: z.number().int().min(1).max(500).default(200),
+    }).parse(raw ?? {})
+  )
+  .handler(async ({ data, context }) => {
+    if (!(await isAdmin(context.userId))) throw new Error("Forbidden");
+    const sb = await admin();
+    const from = data.from ?? new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const to = data.to ?? new Date().toISOString();
+
+    // Fetch each source in parallel.
+    const [guide, tickets, ledger, commands] = await Promise.all([
+      (data.kind === "all" || data.kind === "guide" || data.kind === "escalation")
+        ? sb.from("help_ai_log")
+            .select("id, user_id, company_id, route, question, answer, confidence, thumbs, escalated_ticket_id, sources_used, created_at")
+            .gte("created_at", from).lte("created_at", to)
+            .order("created_at", { ascending: false }).limit(data.limit)
+        : Promise.resolve({ data: [] as any[] }),
+      (data.kind === "all" || data.kind === "escalation")
+        ? sb.from("support_tickets")
+            .select("id, user_id, company_id, subject, status, priority, route, created_at, resolved_at, ai_thread")
+            .gte("created_at", from).lte("created_at", to)
+            .order("created_at", { ascending: false }).limit(data.limit)
+        : Promise.resolve({ data: [] as any[] }),
+      (data.kind === "all" || data.kind === "charge")
+        ? sb.from("points_ledger")
+            .select("id, company_id, feature_key, points_deducted, note, created_at")
+            .like("feature_key", "ai\\_%")
+            .gte("created_at", from).lte("created_at", to)
+            .order("created_at", { ascending: false }).limit(data.limit)
+        : Promise.resolve({ data: [] as any[] }),
+      (data.kind === "all" || data.kind === "command")
+        ? sb.from("ai_command_log")
+            .select("id, company_id, actor_user_id, mode, prompt, response, actions, executed_actions, status, error, affected_count, applied_at, created_at")
+            .gte("created_at", from).lte("created_at", to)
+            .order("created_at", { ascending: false }).limit(data.limit)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    // Resolve user emails + company names for display.
+    const userIds = new Set<string>();
+    const companyIds = new Set<string>();
+    for (const r of guide.data ?? []) { if (r.user_id) userIds.add(r.user_id); if (r.company_id) companyIds.add(r.company_id); }
+    for (const r of tickets.data ?? []) { if (r.user_id) userIds.add(r.user_id); if (r.company_id) companyIds.add(r.company_id); }
+    for (const r of ledger.data ?? []) { if (r.company_id) companyIds.add(r.company_id); }
+    for (const r of commands.data ?? []) { if (r.actor_user_id) userIds.add(r.actor_user_id); if (r.company_id) companyIds.add(r.company_id); }
+
+    const emailMap = new Map<string, string>();
+    await Promise.all(Array.from(userIds).map(async (id) => {
+      try {
+        const { data: u } = await sb.auth.admin.getUserById(id);
+        if (u?.user?.email) emailMap.set(id, u.user.email);
+      } catch {}
+    }));
+
+    const companyMap = new Map<string, string>();
+    if (companyIds.size) {
+      const { data: cs } = await sb.from("companies").select("id, name").in("id", Array.from(companyIds));
+      for (const c of cs ?? []) companyMap.set(c.id, c.name);
+    }
+
+    type Event = {
+      id: string;
+      kind: "guide" | "escalation" | "charge" | "command";
+      created_at: string;
+      user_id?: string | null;
+      user_email?: string | null;
+      company_id?: string | null;
+      company_name?: string | null;
+      title: string;
+      body?: string | null;
+      route?: string | null;
+      points?: number | null;
+      feature_key?: string | null;
+      confidence?: number | null;
+      thumbs?: number | null;
+      escalated_ticket_id?: string | null;
+      ticket_status?: string | null;
+      ticket_priority?: string | null;
+      resolved_at?: string | null;
+      actions?: any;
+      executed_actions?: any;
+      affected_count?: number | null;
+      status?: string | null;
+      error?: string | null;
+      mode?: string | null;
+      sources_used?: any;
+      ai_thread?: any;
+    };
+
+    const events: Event[] = [];
+    for (const r of guide.data ?? []) {
+      events.push({
+        id: `g:${r.id}`, kind: "guide", created_at: r.created_at,
+        user_id: r.user_id, user_email: r.user_id ? emailMap.get(r.user_id) ?? null : null,
+        company_id: r.company_id, company_name: r.company_id ? companyMap.get(r.company_id) ?? null : null,
+        title: r.question, body: r.answer, route: r.route,
+        confidence: r.confidence, thumbs: r.thumbs, escalated_ticket_id: r.escalated_ticket_id,
+        sources_used: r.sources_used,
+      });
+    }
+    for (const r of tickets.data ?? []) {
+      events.push({
+        id: `t:${r.id}`, kind: "escalation", created_at: r.created_at,
+        user_id: r.user_id, user_email: r.user_id ? emailMap.get(r.user_id) ?? null : null,
+        company_id: r.company_id, company_name: r.company_id ? companyMap.get(r.company_id) ?? null : null,
+        title: `Escalation: ${r.subject}`, route: r.route,
+        ticket_status: r.status, ticket_priority: r.priority, resolved_at: r.resolved_at,
+        escalated_ticket_id: r.id, ai_thread: r.ai_thread,
+      });
+    }
+    for (const r of ledger.data ?? []) {
+      events.push({
+        id: `p:${r.id}`, kind: "charge", created_at: r.created_at,
+        company_id: r.company_id, company_name: r.company_id ? companyMap.get(r.company_id) ?? null : null,
+        title: `Points charged: ${r.feature_key}`, body: r.note ?? null,
+        points: Number(r.points_deducted), feature_key: r.feature_key,
+      });
+    }
+    for (const r of commands.data ?? []) {
+      events.push({
+        id: `c:${r.id}`, kind: "command", created_at: r.created_at,
+        user_id: r.actor_user_id, user_email: r.actor_user_id ? emailMap.get(r.actor_user_id) ?? null : null,
+        company_id: r.company_id, company_name: r.company_id ? companyMap.get(r.company_id) ?? null : null,
+        title: `AI command (${r.mode})`, body: r.prompt,
+        mode: r.mode, status: r.status, error: r.error,
+        actions: r.actions, executed_actions: r.executed_actions,
+        affected_count: r.affected_count,
+      });
+    }
+
+    events.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+    // Optional filters.
+    let filtered = events;
+    if (data.user_id) filtered = filtered.filter((e) => e.user_id === data.user_id);
+    if (data.company_id) filtered = filtered.filter((e) => e.company_id === data.company_id);
+    if (data.search) {
+      const q = data.search.toLowerCase();
+      filtered = filtered.filter((e) =>
+        [e.title, e.body ?? "", e.user_email ?? "", e.company_name ?? "", e.feature_key ?? ""]
+          .join(" ").toLowerCase().includes(q));
+    }
+
+    return { events: filtered.slice(0, data.limit) };
+  });

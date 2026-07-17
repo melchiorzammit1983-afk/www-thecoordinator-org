@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Building2, LogOut, Inbox, Activity, DollarSign, Coins, LineChart, KeyRound, Sparkles } from "lucide-react";
+import { Building2, LogOut, Inbox, Activity, DollarSign, Coins, LineChart, KeyRound, Sparkles, MessageSquare } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { whoAmI, countNewAccessRequests } from "@/lib/admin.functions";
@@ -17,6 +17,7 @@ const NAV = [
   { to: "/admin/requests", label: "Requests", icon: Inbox, exact: false },
   { to: "/admin/ai-insights", label: "AI insights", icon: Sparkles, exact: false },
   { to: "/admin/ai-settings", label: "AI settings", icon: Sparkles, exact: false },
+  { to: "/admin/ai-activity", label: "AI activity", icon: MessageSquare, exact: false },
   { to: "/admin/password-resets", label: "Password Resets", icon: KeyRound, exact: false },
   { to: "/admin/topups", label: "Top-ups", icon: Coins, exact: false },
   { to: "/admin/revenue", label: "Revenue", icon: LineChart, exact: false },
