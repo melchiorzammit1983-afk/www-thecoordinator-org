@@ -3174,10 +3174,14 @@ export const buildStatement = createServerFn({ method: "POST" })
     if (data.payment_status?.length) q = q.in("payment_status", data.payment_status as any);
     if (data.flight_status?.length) q = q.in("flight_status", data.flight_status as any);
 
-    if (data.flight_contains)
-      q = q.or(
-        `from_flight.ilike.%${data.flight_contains}%,to_flight.ilike.%${data.flight_contains}%,flightorship.ilike.%${data.flight_contains}%`,
-      );
+    if (data.flight_contains) {
+      const fc = data.flight_contains.replace(/[%,()]/g, "");
+      if (fc)
+        q = q.or(
+          `from_flight.ilike.%${fc}%,to_flight.ilike.%${fc}%,flightorship.ilike.%${fc}%`,
+        );
+    }
+
     if (data.from_contains) q = q.ilike("from_location", `%${data.from_contains}%`);
     if (data.to_contains) q = q.ilike("to_location", `%${data.to_contains}%`);
     if (data.deletion_only) q = q.not("deletion_requested_at", "is", null);

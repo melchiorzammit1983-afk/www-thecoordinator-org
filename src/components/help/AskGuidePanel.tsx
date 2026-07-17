@@ -44,9 +44,19 @@ export function AskGuidePanel() {
       new DefaultChatTransport({
         api: "/api/help-chat",
         body: () => ({ context: ctx?.systemContext ?? undefined }),
+        fetch: async (url, init) => {
+          const { supabase } = await import("@/integrations/supabase/client");
+          const { data } = await supabase.auth.getSession();
+          const token = data.session?.access_token;
+          const headers = new Headers(init?.headers);
+          if (token) headers.set("Authorization", `Bearer ${token}`);
+          return fetch(url, { ...init, headers });
+        },
       }),
     [ctx?.systemContext],
   );
+
+
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: "help-guide",
