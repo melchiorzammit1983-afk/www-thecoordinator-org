@@ -133,6 +133,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
+import { NewTripsPreviewDialog, type NewTripRow } from "@/components/coordinator/NewTripsPreviewDialog";
+
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { LabelChip, LabelStripe, type Label as TLabel } from "@/components/coordinator/LabelChip";
 import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
@@ -2953,18 +2955,21 @@ function TripMenu({
 
 function CloneDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
   const [target, setTarget] = useState(job.date);
+  const [preview, setPreview] = useState<NewTripRow[]>([]);
   const qc = useQueryClient();
   const fn = useServerFn(cloneJob);
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, target_date: target } }),
-    onSuccess: () => {
+    onSuccess: (row: any) => {
       toast.success("Cloned");
       onOpenChange(false);
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      if (row) setPreview([row as NewTripRow]);
     },
     onError: (e: Error) => toast.error(e.message),
   });
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -2982,23 +2987,35 @@ function CloneDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <NewTripsPreviewDialog
+      open={preview.length > 0}
+      onOpenChange={(v) => { if (!v) setPreview([]); }}
+      title="Cloned trip created"
+      description="Verify the cloned trip details and its client tracking link."
+      trips={preview}
+    />
+    </>
   );
 }
 
+
 function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange: (v: boolean) => void; job: Job }) {
   const [labels, setLabels] = useState<string[]>(["Vehicle A", "Vehicle B"]);
+  const [preview, setPreview] = useState<NewTripRow[]>([]);
   const qc = useQueryClient();
   const fn = useServerFn(splitJob);
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, splits: labels.filter(Boolean).map((l) => ({ label: l })) } }),
-    onSuccess: () => {
+    onSuccess: (rows: any) => {
       toast.success("Split into new jobs");
       onOpenChange(false);
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      if (Array.isArray(rows) && rows.length) setPreview(rows as NewTripRow[]);
     },
     onError: (e: Error) => toast.error(e.message),
   });
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -3035,8 +3052,17 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <NewTripsPreviewDialog
+      open={preview.length > 0}
+      onOpenChange={(v) => { if (!v) setPreview([]); }}
+      title="Split trips created"
+      description="Verify each new vehicle card and its client tracking link."
+      trips={preview}
+    />
+    </>
   );
 }
+
 
 function DispatchDialog({
   open,

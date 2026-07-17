@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { NewTripsPreviewDialog, type NewTripRow } from "@/components/coordinator/NewTripsPreviewDialog";
+
 
 type Driver = { id: string; name: string; vehicle: string | null };
 type Pax = { id: string; name: string; status: string };
@@ -27,6 +29,8 @@ export function PaxSplitDialog({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [driverId, setDriverId] = useState<string>("__none__");
+  const [preview, setPreview] = useState<NewTripRow[]>([]);
+
 
   useEffect(() => { if (open) { setSelected(new Set()); setDriverId("__none__"); } }, [open, jobId]);
 
@@ -45,12 +49,14 @@ export function PaxSplitDialog({
       pax_ids: Array.from(selected),
       driver_id: driverId === "__none__" ? null : driverId,
     } }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       toast.success("Passengers moved to new trip");
       qc.invalidateQueries({ queryKey: ["jobs"] });
       refetch();
       onOpenChange(false);
+      if (res?.job) setPreview([res.job as NewTripRow]);
     },
+
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -63,8 +69,10 @@ export function PaxSplitDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
+
         <DialogHeader>
           <DialogTitle>Passengers</DialogTitle>
           <DialogDescription>{jobLabel}</DialogDescription>
@@ -97,5 +105,14 @@ export function PaxSplitDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <NewTripsPreviewDialog
+      open={preview.length > 0}
+      onOpenChange={(v) => { if (!v) setPreview([]); }}
+      title="New split trip created"
+      description="Verify the passengers, addresses, and client tracking link."
+      trips={preview}
+    />
+    </>
   );
 }
+
