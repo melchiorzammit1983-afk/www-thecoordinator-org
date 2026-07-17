@@ -8,7 +8,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAskGuide } from "./AskGuideProvider";
-import { logHelpQuestion, createSupportTicket } from "@/lib/support.functions";
+import { logHelpQuestion, createSupportTicket, analyzeHelpTurn } from "@/lib/support.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
