@@ -680,7 +680,16 @@ export const driverAcceptJob = createServerFn({ method: "POST" })
         .eq("from_driver_id", link.subject_id)
         .in("status", ["proposed", "countered"]);
     }
-    return { ok: true, cascaded_ids: targetJobs.map((t) => t.id) };
+    const cascadedIds = targetJobs.map((t) => t.id);
+    await broadcastJobUpdate(
+      [
+        driverId ? `driver:${driverId}` : "",
+        gid ? `group:${gid}` : "",
+        ...cascadedIds.map((id) => `job:${id}`),
+      ],
+      { job_ids: cascadedIds, group_id: gid ?? null, kind: "accepted" },
+    );
+    return { ok: true, cascaded_ids: cascadedIds };
   });
 
 export const driverRejectJob = createServerFn({ method: "POST" })
