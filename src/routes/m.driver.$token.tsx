@@ -2971,6 +2971,90 @@ function StatementDialog({ open, onOpenChange, token, driverName }: {
 }
 
 
+function DriverPayoutList({ token, rows, loading, totals, onChanged }: {
+  token: string;
+  rows: Array<Record<string, unknown>>;
+  loading: boolean;
+  totals: { billed: number; received: number };
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const markFn = useServerFn(driverMarkPayoutReceived);
+  const mut = useMutation({
+    mutationFn: (v: { job_id: string; amount?: number; method?: string; reference?: string; clear?: boolean }) =>
+      markFn({ data: { token, ...v } }) as Promise<{ ok: true }>,
+    onSuccess: (_r, v) => {
+      toast.success(v.clear ? "Marked unpaid" : "Marked received");
+      onChanged();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const unpaid = rows.filter((r) => Number((r as any).driver_paid_amount ?? 0) <= 0);
+  const outstanding = totals.billed - totals.received;
+
+  return (
+    <div className="border rounded-lg">
+      <button type="button" onClick={() => setOpen((s) => !s)}
+        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+        <span>Payments I received ({unpaid.length} unpaid)</span>
+        <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 border-t pt-3 space-y-2">
+          <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+            <span>Billed <b className="text-foreground">{totals.billed.toFixed(2)}</b></span>
+            <span className="text-emerald-700">Received <b>{totals.received.toFixed(2)}</b></span>
+            <span className="text-amber-700">Outstanding <b>{outstanding.toFixed(2)}</b></span>
+          </div>
+          {loading && rows.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-3">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="text-xs text-muted-foreground py-3">No trips in this range.</div>
+          ) : (
+            <div className="max-h-72 overflow-auto divide-y">
+              {rows.map((r) => {
+                const paid = Number((r as any).driver_paid_amount ?? 0) > 0;
+                const price = Number((r as any).price_amount ?? 0);
+                const cur = String((r as any).price_currency ?? "EUR");
+                const label = `${(r as any).date ?? ""} ${String((r as any).time ?? "").slice(0, 5)}`.trim();
+                return (
+                  <div key={String((r as any).id)} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{label} · {String((r as any).from_location ?? "")} → {String((r as any).to_location ?? "")}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {price ? `${price.toFixed(2)} ${cur}` : "—"}
+                        {paid && (
+                          <> · received {Number((r as any).driver_paid_amount).toFixed(2)} {cur}
+                            {" "}on {(r as any).driver_paid_at ? new Date(String((r as any).driver_paid_at)).toLocaleDateString() : ""}</>
+                        )}
+                      </div>
+                    </div>
+                    {paid ? (
+                      <Button size="sm" variant="ghost" className="h-7 text-[10px]"
+                        onClick={() => mut.mutate({ job_id: String((r as any).id), clear: true })}>
+                        Undo
+                      </Button>
+                    ) : (
+                      <Button size="sm" className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => mut.mutate({ job_id: String((r as any).id), amount: price || undefined, method: "cash" })}>
+                        <Check className="h-3 w-3 mr-1" /> Mark received
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground">
+            Tap "Mark received" when you've been paid. The default is Cash for the trip amount — use the coordinator dashboard to edit method or partial amounts.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function csvCell(v: unknown): string {
   if (v == null) return "";
   const s = String(v);
