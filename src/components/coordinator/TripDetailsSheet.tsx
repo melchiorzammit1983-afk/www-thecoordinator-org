@@ -521,32 +521,6 @@ export function TripDetailsSheet({
             </div>
           )}
 
-          {job.driver_cancel_requested_at && (
-            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-2">
-              <div className="flex items-start gap-2">
-                <CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
-                <div className="flex-1">
-                  <div className="font-medium">Driver requested to cancel this trip</div>
-                  <div className="mt-0.5 opacity-90">
-                    Reason: {job.driver_cancel_reason || "—"}
-                    {job.driver_cancel_note ? ` — ${job.driver_cancel_note}` : ""}
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive"
-                  disabled={decideDriverCancelMut.isPending}
-                  onClick={() => decideDriverCancelMut.mutate("approve")}>
-                  Approve cancel
-                </Button>
-                <Button size="sm" variant="outline"
-                  disabled={decideDriverCancelMut.isPending}
-                  onClick={() => decideDriverCancelMut.mutate("reject")}>
-                  Keep driver on trip
-                </Button>
-              </div>
-            </div>
-          )}
 
 
           {/* Early flight (green — good news, but coordinator should confirm) */}
