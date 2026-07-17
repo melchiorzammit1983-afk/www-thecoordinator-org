@@ -2551,6 +2551,7 @@ export type Database = {
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_place_id: string | null
+          event_payout_total_eur: number
           executor_company_id: string | null
           flight_baggage_belt: string | null
           flight_delay_minutes: number | null
@@ -2662,6 +2663,7 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_place_id?: string | null
+          event_payout_total_eur?: number
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
           flight_delay_minutes?: number | null
@@ -2773,6 +2775,7 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_place_id?: string | null
+          event_payout_total_eur?: number
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
           flight_delay_minutes?: number | null
@@ -4273,6 +4276,10 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      recalc_trip_event_totals: {
+        Args: { _driver_id: string; _job_id: string }
+        Returns: undefined
       }
       record_trip_audit: {
         Args: {
