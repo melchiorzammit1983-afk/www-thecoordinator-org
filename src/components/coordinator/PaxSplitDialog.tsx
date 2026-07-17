@@ -105,5 +105,14 @@ export function PaxSplitDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <NewTripsPreviewDialog
+      open={preview.length > 0}
+      onOpenChange={(v) => { if (!v) setPreview([]); }}
+      title="New split trip created"
+      description="Verify the passengers, addresses, and client tracking link."
+      trips={preview}
+    />
+    </>
   );
 }
+
