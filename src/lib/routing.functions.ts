@@ -62,14 +62,19 @@ export const computeDriverRoute = createServerFn({ method: "POST" })
 
     if (data.driver_token) {
       // Token path — validate the driver link and confirm it covers this job.
-      const { resolveToken } = await import("@/lib/portal-token.server");
-      const link = await resolveToken(data.driver_token, "driver");
-      if (link) {
-        if (link.subject_id) {
-          if ((job as any).driver_id === link.subject_id) authorized = true;
+      const { data: link } = await supabaseAdmin
+        .from("magic_links")
+        .select("company_id, kind, subject_id, expires_at, revoked_at")
+        .eq("token", data.driver_token)
+        .is("revoked_at", null)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+        .maybeSingle();
+      if (link && (link as any).kind === "driver") {
+        if ((link as any).subject_id) {
+          if ((job as any).driver_id === (link as any).subject_id) authorized = true;
         } else {
           const owners = [(job as any).company_id, (job as any).executor_company_id].filter(Boolean);
-          if (owners.includes(link.company_id)) authorized = true;
+          if (owners.includes((link as any).company_id)) authorized = true;
         }
       }
     }
