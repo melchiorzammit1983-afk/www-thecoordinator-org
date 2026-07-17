@@ -280,6 +280,31 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// Render the payout / trust impact chip inside the info window when the
+// event has a recorded impact (e.g. wait charge, no-show fee, trust penalty).
+function renderImpactHtml(ev: any): string {
+  const payout = Number(ev.payout_delta_eur ?? 0);
+  const trust = Number(ev.trust_delta ?? 0);
+  if (!payout && !trust) return "";
+  const chips: string[] = [];
+  if (payout) {
+    chips.push(
+      `<span style="display:inline-block;padding:1px 6px;border-radius:9999px;background:#ecfdf5;color:#047857;font-weight:600;">Payout +€${payout.toFixed(2)}</span>`,
+    );
+  }
+  if (trust) {
+    const positive = trust > 0;
+    chips.push(
+      `<span style="display:inline-block;padding:1px 6px;border-radius:9999px;background:${
+        positive ? "#eff6ff" : "#fef2f2"
+      };color:${positive ? "#1d4ed8" : "#b91c1c"};font-weight:600;">Trust ${
+        positive ? "+" : ""
+      }${trust}</span>`,
+    );
+  }
+  return `<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">${chips.join("")}</div>`;
+}
+
 // Render human-friendly `meta` fields on the info window (waiting duration
 // and amount, boarding approval id, pax names, override context, etc).
 function renderMetaHtml(ev: any): string {
