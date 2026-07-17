@@ -1258,8 +1258,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     staleTime: 45_000,
     queryFn: () => routeFn({
       data: {
-        origin: { address: job.from_location! },
-        destination_address: job.to_location!,
+        job_id: job.id,
+        driver_token: token,
+        leg: "to_dropoff",
+        origin: { from_pickup: true },
       },
     }) as Promise<{
       primary: null | {
