@@ -1,0 +1,1 @@
+UPDATE public.ai_feature_costs SET block_on_empty = false WHERE category = 'ai' OR feature_key LIKE 'ai_%' OR feature_key = 'flight_vessel_tracking';
