@@ -1215,7 +1215,7 @@ function CalendarPage() {
       {flightFix && (
         <FlightCodeFixDialog
           open={!!flightFix}
-          onOpenChange={(v) => !v && setFlightFix(null)}
+          onOpenChange={(v: boolean) => !v && setFlightFix(null)}
           jobId={flightFix.jobId}
           currentCode={flightFix.code}
           currentSide={flightFix.side}
