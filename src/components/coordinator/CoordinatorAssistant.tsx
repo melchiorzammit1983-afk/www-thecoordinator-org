@@ -198,14 +198,15 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
     onSuccess: (result) => {
       const id = crypto.randomUUID();
+      const rawMessage = lastUserMsgRef.current;
       if (result.kind === "draft") {
-        setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", draft: result, rawMessage }]);
       } else if (result.kind === "batch") {
-        setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", batch: result, rawMessage }]);
       } else if (result.kind === "data_fix") {
-        setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", fix: result, rawMessage }]);
       } else if (result.kind === "partner_suggest") {
-        setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
