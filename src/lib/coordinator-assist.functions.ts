@@ -200,6 +200,20 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
       : "(empty — nothing taught yet)";
 
+    // Silent-learning: short soft-preference notes summarized daily from
+    // this coordinator's recent assistant_action_log. SOFT BIAS ONLY — the
+    // model must still draft/confirm normally; never skip confirmation
+    // because of a learned note. See src/routes/api/public/hooks/summarize-learning.ts.
+    const { data: learnedRow } = await supabaseAdmin
+      .from("assistant_learned_preferences")
+      .select("notes, updated_at")
+      .eq("company_id", company.id)
+      .maybeSingle();
+    const learnedBlock =
+      learnedRow && typeof learnedRow.notes === "string" && learnedRow.notes.trim()
+        ? learnedRow.notes.trim()
+        : "(no learned preferences yet)";
+
     // Active Collaborate partners (same source the Collaborate UI reads via
     // listConnections). We only surface {company_id, company_name} to the
     // model — the exact information the coordinator already sees when
