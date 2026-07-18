@@ -2075,6 +2075,10 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
       }
     }
+    if (created.length) {
+      const { autoPriceJobBg } = await import("./auto-price.server");
+      created.forEach(autoPriceJobBg);
+    }
     return {
       created,
       billing: { is_half_price: isHalfPrice, accuracy_score: data.billing_flags?.accuracy_score ?? null },
