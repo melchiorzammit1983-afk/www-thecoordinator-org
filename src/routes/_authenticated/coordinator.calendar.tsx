@@ -153,6 +153,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
 import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
+import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
+import { Sparkles } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
 import { IfFeature } from "@/components/billing/IfFeature";
 
