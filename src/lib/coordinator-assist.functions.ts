@@ -226,11 +226,16 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
     }
     const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = json.choices?.[0]?.message?.content ?? "";
+    const answer = async (text: string): Promise<AssistantAnswer> => {
+      await meter("assistant_qa", "assistant Q&A turn");
+      return { kind: "answer", text };
+    };
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(content);
     } catch {
-      return { kind: "answer", text: content || "Sorry, I couldn't parse that." };
+      return answer(content || "Sorry, I couldn't parse that.");
     }
     const p = parsed as Record<string, unknown>;
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
@@ -245,6 +250,8 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
     };
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
       const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
+      // Drafts/batches are NOT metered here — assistant_trip_action is charged
+      // on Confirm (once per trip) via meterAssistantConfirm.
       if (drafts.length >= 2) {
         return {
           kind: "batch",
@@ -255,10 +262,7 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
       if (drafts.length === 1) return drafts[0];
     }
     if (p.kind === "draft") return toDraft(p);
-    return {
-      kind: "answer",
-      text: typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.",
-    };
+    return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
 
 /**
