@@ -546,21 +546,30 @@ function ManualForm({
             {preview.flight ? (
               preview.flight.ok ? (
                 <div className="flex items-start gap-2">
-                  <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                  {trackingKind === "vessel"
+                    ? <Ship className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                    : <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />}
                   <div>
-                    <div className="font-medium">{preview.flight.code} · {preview.flight.status}</div>
+                    <div className="font-medium">
+                      {preview.flight.code} · {preview.flight.status}
+                      {preview.flight.confidence === "low" && (
+                        <span className="ml-1 text-[10px] text-amber-600">(unconfirmed)</span>
+                      )}
+                    </div>
                     <div className="text-[11px] text-muted-foreground">{preview.flight.note}</div>
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Plane className="h-3.5 w-3.5" />
-                  Flight {preview.flight.code}: {preview.flight.reason === "not_found" ? "not on Malta board" : preview.flight.reason === "not_configured" ? "flight lookup not configured" : "check failed"}
+                  {trackingKind === "vessel"
+                    ? <Ship className="h-3.5 w-3.5" />
+                    : <Plane className="h-3.5 w-3.5" />}
+                  {trackingKind === "vessel" ? "Vessel" : "Flight"} {preview.flight.code}: {preview.flight.reason === "not_configured" ? "live lookup not configured" : preview.flight.reason === "no_result" ? "no confident match found" : "check failed"}
                 </div>
               )
             ) : (
               (fromFlight || toFlight) ? null : (
-                <div className="text-[11px] text-muted-foreground">Add a flight code to see arrival/departure status.</div>
+                <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
               )
             )}
           </div>
