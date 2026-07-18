@@ -1013,6 +1013,65 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                     </div>
                   );
                 }
+                if ("actions" in m) {
+                  const busy = confirmActions.isPending && confirmActions.variables === m.id;
+                  const chosenCount = m.selected.filter(Boolean).length;
+                  const resultByIdx = new Map((m.results ?? []).map((r) => [r.index, r]));
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {m.applied ? "Actions applied" : "Proposed actions — needs your approval"}
+                        </div>
+                        {m.actions.summary && (
+                          <div className="mb-2 text-sm">{m.actions.summary}</div>
+                        )}
+                        <div className="mb-3 space-y-1.5 rounded border bg-background p-2">
+                          {m.actions.actions.map((a, i) => {
+                            const r = resultByIdx.get(i);
+                            return (
+                              <label key={i} className="flex items-start gap-2 text-xs">
+                                {!m.applied && (
+                                  <input
+                                    type="checkbox"
+                                    checked={m.selected[i]}
+                                    onChange={() => toggleActionRow(m.id, i)}
+                                    disabled={busy}
+                                    className="mt-0.5"
+                                  />
+                                )}
+                                <span className={`flex-1 ${r && !r.ok ? "text-destructive" : ""}`}>{a.label}</span>
+                                {r && (
+                                  <span className={r.ok ? "text-emerald-600" : "text-destructive"}>
+                                    {r.ok ? "✓" : "✗"} {r.message}
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {!m.applied && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              disabled={busy || chosenCount === 0}
+                              onClick={() => confirmActions.mutate(m.id)}
+                            >
+                              {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                              Confirm selected ({chosenCount})
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
