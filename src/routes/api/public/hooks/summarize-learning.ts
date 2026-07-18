@@ -18,7 +18,7 @@ const MAX_BULLETS = 10;
 const LOOKBACK_DAYS = 30;
 
 async function summarizeCompany(
-  admin: ReturnType<typeof createClient>,
+  admin: ReturnType<typeof createClient<any>>,
   apiKey: string,
   companyId: string,
 ): Promise<{ notes: string; sampleSize: number } | null> {
