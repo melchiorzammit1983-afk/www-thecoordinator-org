@@ -666,6 +666,15 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const dispatchPartnerFn = useServerFn(dispatchJobToPartner);
   const confirmSuggest = useMutation({
     mutationFn: async (item: AssistantPartnerSuggest["items"][number]) => {
+      // Snapshot executor state BEFORE dispatch so undo can restore it.
+      let before: Record<string, unknown> | null = null;
+      try {
+        const j = (await getJobFn({ data: { id: item.job_id } })) as Record<string, unknown>;
+        before = {
+          id: item.job_id,
+          executor_company_id: j.executor_company_id ?? null,
+        };
+      } catch { /* soft — audit will simply record null before */ }
       await dispatchPartnerFn({
         data: {
           job_id: item.job_id,
@@ -673,13 +682,21 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           note: "Suggested by AI assistant",
         },
       });
-      return item;
+      return { item, before };
     },
-    onSuccess: (item) => {
+    onSuccess: ({ item, before }) => {
       const msg = `Sent to ${item.partner_name}.`;
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "partner_suggest", outcome: "confirmed", proposed: item });
+      logAudit({
+        action_kind: "partner_suggest",
+        target_table: "jobs",
+        target_id: item.job_id,
+        before_state: before,
+        after_state: { id: item.job_id, executor_company_id: item.partner_company_id },
+        summary: `Forwarded to ${item.partner_name}`,
+      });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
