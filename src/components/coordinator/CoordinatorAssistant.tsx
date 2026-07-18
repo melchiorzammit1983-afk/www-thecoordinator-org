@@ -287,7 +287,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return createDraft(draft);
     },
     onSuccess: (_res, draft) => {
-      toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
+      const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
+      toast.success(msg);
+      maybeSpeak(msg);
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
