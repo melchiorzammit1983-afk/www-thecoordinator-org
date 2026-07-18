@@ -24,7 +24,8 @@ export type FeatureKey =
   | "branding_advert"
   | "address_name_resolve"
   | "route_eta"
-  | "availability_autoforward";
+  | "availability_autoforward"
+  | "ai_coordinator_assist";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
