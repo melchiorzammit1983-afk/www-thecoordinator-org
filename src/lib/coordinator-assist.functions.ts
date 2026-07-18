@@ -148,10 +148,21 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .map((m) => `${m.role.toUpperCase()}: ${m.text}`)
       .join("\n");
 
-    const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta.
+    // Fold the retired "Ask the Guide" coach knowledge (live facts, event
+    // catalog, visual signals, help article index) into this unified
+    // assistant so nothing is lost when kind:"answer" is returned.
+    let guideKnowledge = "";
+    try {
+      const { buildSystemPrompt } = await import("@/lib/help-ai.server");
+      guideKnowledge = buildSystemPrompt({ mode: "coach" });
+    } catch {
+      /* non-fatal — assistant still works without the folded guide */
+    }
+
+    const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
 You do THREE things:
-1) ANSWER short, on-topic questions about the current screen or workflow.
+1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) When the coordinator's message describes MULTIPLE trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
 
@@ -173,8 +184,8 @@ Rules:
 - If any trip in a batch is missing pickup time, passenger count, exact pickup/drop-off location, or is ambiguous about which driver, STILL include it in "drafts" with the fields you do know, and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
 - Only use "batch" when there are 2+ trips. For 1 trip use "draft".
 - For "update" requests that touch multiple existing trips (e.g. "move all Smith trips to 7pm"), DO NOT batch — answer that this is not supported yet and to edit them individually.
-- If the request is not about trips, use kind:"answer".
-- Never mention how the system is built, database names, or model names.
+- If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
+- Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
 
 Today's date (Malta): ${today}
 Company: ${company.name}
@@ -187,6 +198,9 @@ Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
 Recent conversation:
 ${historyLines || "(none)"}
+
+===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
+${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
 `;
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
