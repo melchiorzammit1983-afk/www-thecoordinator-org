@@ -319,7 +319,7 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
     const { data: jobs } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, status, pickup_at, driver_id, from_location, to_location, pickup_display_name, dropoff_display_name, from_flight, to_flight, flight_status, flight_status_note, flight_estimated_at, live_eta_sec, live_eta_updated_at",
+        "id, status, pickup_at, driver_id, from_location, to_location, pickup_display_name, dropoff_display_name, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at, live_eta_sec, live_eta_updated_at",
       )
       .eq("company_id", companyId)
       .gte("pickup_at", fromIso)
