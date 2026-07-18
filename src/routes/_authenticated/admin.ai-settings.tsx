@@ -41,11 +41,10 @@ function AiSettingsAdmin() {
           <Sparkles className="h-5 w-5 text-primary" /> AI settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Set the point cost for each AI action, and the default wallet cap behavior applied to companies.
+          Set the point cost for each AI action. AI actions deduct from the general points balance.
         </p>
       </div>
       <ActionCostsCard />
-      <WalletDefaultsCard />
     </div>
   );
 }
