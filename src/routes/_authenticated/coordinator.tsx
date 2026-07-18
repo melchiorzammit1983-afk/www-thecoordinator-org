@@ -17,6 +17,7 @@ import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTop
 
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
+import { CoordinatorAssistant } from "@/components/coordinator/CoordinatorAssistant";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
