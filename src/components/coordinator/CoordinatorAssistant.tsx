@@ -542,6 +542,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const msg = `Sent to ${item.partner_name}.`;
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "partner_suggest", outcome: "confirmed", proposed: item });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
