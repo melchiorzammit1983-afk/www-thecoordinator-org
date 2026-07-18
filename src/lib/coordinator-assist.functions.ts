@@ -332,7 +332,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const soonIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
     const { data: upcomingRows } = await supabaseAdmin
       .from("jobs")
-      .select("id, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
+      .select("id, trip_no, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
       .eq("executor_company_id", company.id)
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", nowIso)
@@ -342,9 +342,34 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const upcoming = (upcomingRows ?? []) as any[];
     const upcomingBlock = upcoming.length
       ? upcoming
-          .map((r) => `${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
+          .map((r) => `#${r.trip_no ?? "?"} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
           .join("\n")
       : "(none in the next 48h)";
+
+    // Serial-number resolver: parse the coordinator's message for references
+    // like "#123", "card 45", "trip 7" and look up the matching trips in this
+    // company. Surface them to the model so a bare number reliably resolves
+    // to the right trip even when it isn't in the 48h window.
+    const serialMatches = Array.from(
+      new Set(
+        (data.message.match(/(?:#|\bcard\s*#?|\btrip\s*#?)\s*(\d{1,7})/gi) ?? [])
+          .map((m) => Number((m.match(/(\d{1,7})/) ?? [])[1]))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ).slice(0, 10);
+    let referencedBlock = "(none)";
+    if (serialMatches.length) {
+      const { data: refRows } = await supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, date, time, from_location, to_location, driver_id, status, clientcompanyname")
+        .eq("company_id", company.id)
+        .in("trip_no", serialMatches);
+      if (refRows && refRows.length) {
+        referencedBlock = refRows
+          .map((r: any) => `#${r.trip_no} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"} · status:${r.status}${r.driver_id ? " · (driver assigned)" : ""}`)
+          .join("\n");
+      }
+    }
 
 
     const today = new Date().toISOString().slice(0, 10);
