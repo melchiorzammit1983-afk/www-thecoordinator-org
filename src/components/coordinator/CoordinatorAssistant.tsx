@@ -196,13 +196,22 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
   });
 
-  const send = () => {
-    const text = input.trim();
-    if (!text || ask.isPending) return;
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text }]);
+  const sendText = useCallback((text: string) => {
+    const t = text.trim();
+    if (!t || ask.isPending) return;
+    cancelSpeak();
+    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text: t }]);
     setInput("");
-    ask.mutate(text);
-  };
+    ask.mutate(t);
+  }, [ask]);
+
+  const send = () => sendText(input);
+
+  const voice = useSpeechRecognition({
+    onFinal: (t) => sendText(t),
+    onError: (msg) => toast.error(msg),
+  });
+
 
   const missingCreateFields = useCallback((f: AssistantDraft["fields"]): string[] => {
     const missing: string[] = [];
