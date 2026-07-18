@@ -474,8 +474,11 @@ ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no 
 ACTIVE PARTNERS in your Collaborate network (id — name). ONLY companies you can suggest handing trips to.
 ${partnersBlock}
 
-UPCOMING TRIPS your company is currently the executor for (next 48h):
+UPCOMING TRIPS your company is currently the executor for (next 48h). Each line starts with the per-company SERIAL NUMBER (e.g. #123), followed by the UUID:
 ${upcomingBlock}
+
+TRIPS REFERENCED BY SERIAL NUMBER in the current message (resolve any bare "#N" / "card N" / "trip N" to these UUIDs before choosing an action):
+${referencedBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
