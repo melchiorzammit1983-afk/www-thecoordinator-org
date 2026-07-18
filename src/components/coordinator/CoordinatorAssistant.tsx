@@ -449,7 +449,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return updateDriverFn({ data: patch });
     },
     onSuccess: (_res, fix) => {
-      toast.success(`Fixed ${fix.field_label.toLowerCase()}.`);
+      const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
