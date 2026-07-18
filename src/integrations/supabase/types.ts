@@ -1319,6 +1319,9 @@ export type Database = {
           phone: string | null
           points_balance: number
           referral_code: string
+          referral_credit_until: string | null
+          referral_percent: number
+          referred_by_company_id: string | null
           require_client_company: boolean
           safety_mode_allow_override: boolean
           safety_mode_enabled: boolean
@@ -1352,6 +1355,9 @@ export type Database = {
           phone?: string | null
           points_balance?: number
           referral_code?: string
+          referral_credit_until?: string | null
+          referral_percent?: number
+          referred_by_company_id?: string | null
           require_client_company?: boolean
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
@@ -1385,6 +1391,9 @@ export type Database = {
           phone?: string | null
           points_balance?: number
           referral_code?: string
+          referral_credit_until?: string | null
+          referral_percent?: number
+          referred_by_company_id?: string | null
           require_client_company?: boolean
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
@@ -1393,7 +1402,15 @@ export type Database = {
           updated_at?: string
           waiting_rate_per_minute?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "companies_referred_by_company_id_fkey"
+            columns: ["referred_by_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_ai_rules: {
         Row: {
@@ -5428,6 +5445,7 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      ensure_referral_code: { Args: { _company_id: string }; Returns: string }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       match_ai_lessons: {
         Args: {
