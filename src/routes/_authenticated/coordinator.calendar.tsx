@@ -2318,6 +2318,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const [openClone, setOpenClone] = useState(false);
   const [openSplit, setOpenSplit] = useState(false);
   const [openDispatch, setOpenDispatch] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const paxCount = job.pax?.length ?? 0;
   const unreadCounts = ctx.unread[job.id] ?? { driver: 0, client: 0, total: 0 };
