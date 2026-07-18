@@ -58,7 +58,7 @@ export const askSalesBot = createServerFn({ method: "POST" })
     try {
       const gateway = createLovableAiGatewayProvider(key);
       const { text } = await generateText({
-        model: gateway("google/gemini-2.5-flash"),
+        model: gateway("google/gemini-3.5-flash"),
         system: SYSTEM_PROMPT,
         messages: data.messages.map((m) => ({ role: m.role, content: m.content })),
       });
