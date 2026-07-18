@@ -200,6 +200,20 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
       : "(empty — nothing taught yet)";
 
+    // Silent-learning: short soft-preference notes summarized daily from
+    // this coordinator's recent assistant_action_log. SOFT BIAS ONLY — the
+    // model must still draft/confirm normally; never skip confirmation
+    // because of a learned note. See src/routes/api/public/hooks/summarize-learning.ts.
+    const { data: learnedRow } = await supabaseAdmin
+      .from("assistant_learned_preferences")
+      .select("notes, updated_at")
+      .eq("company_id", company.id)
+      .maybeSingle();
+    const learnedBlock =
+      learnedRow && typeof learnedRow.notes === "string" && learnedRow.notes.trim()
+        ? learnedRow.notes.trim()
+        : "(no learned preferences yet)";
+
     // Active Collaborate partners (same source the Collaborate UI reads via
     // listConnections). We only surface {company_id, company_name} to the
     // model — the exact information the coordinator already sees when
@@ -332,6 +346,9 @@ Company: ${company.name}
 
 COMPANY GLOSSARY (per-company shorthand — apply these to the user's message BEFORE deciding the action):
 ${glossaryBlock}
+
+LEARNED PREFERENCES for this coordinator (SOFT BIASES, NOT RULES — summarized from their recent history). Treat these as gentle nudges only. NEVER apply them silently to a real action, NEVER skip the draft/confirm step because of them, and if a request is ambiguous ask a short clarifying question instead of assuming a learned preference applies:
+${learnedBlock}
 
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}

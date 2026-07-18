@@ -64,6 +64,7 @@ import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
+import { Route as ApiPublicHooksSummarizeLearningRouteImport } from './routes/api/public/hooks/summarize-learning'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
 import { Route as ApiPublicCronAutoForwardRouteImport } from './routes/api/public/cron/auto-forward'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
@@ -387,6 +388,12 @@ const ApiPublicHooksWaitThresholdsRoute =
     path: '/api/public/hooks/wait-thresholds',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksSummarizeLearningRoute =
+  ApiPublicHooksSummarizeLearningRouteImport.update({
+    id: '/api/public/hooks/summarize-learning',
+    path: '/api/public/hooks/summarize-learning',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronRolloverSubscriptionsRoute =
   ApiPublicCronRolloverSubscriptionsRouteImport.update({
     id: '/api/public/cron/rollover-subscriptions',
@@ -534,6 +541,7 @@ export interface FileRoutesByFullPath {
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -602,6 +610,7 @@ export interface FileRoutesByTo {
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -675,6 +684,7 @@ export interface FileRoutesById {
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
+  '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -748,6 +758,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/bookings'
@@ -816,6 +827,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/bookings'
@@ -888,6 +900,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
     | '/api/public/cron/rollover-subscriptions'
+    | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/bookings'
@@ -924,6 +937,7 @@ export interface RootRouteChildren {
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronAutoForwardRoute: typeof ApiPublicCronAutoForwardRoute
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
+  ApiPublicHooksSummarizeLearningRoute: typeof ApiPublicHooksSummarizeLearningRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
@@ -1325,6 +1339,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksWaitThresholdsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/summarize-learning': {
+      id: '/api/public/hooks/summarize-learning'
+      path: '/api/public/hooks/summarize-learning'
+      fullPath: '/api/public/hooks/summarize-learning'
+      preLoaderRoute: typeof ApiPublicHooksSummarizeLearningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/rollover-subscriptions': {
       id: '/api/public/cron/rollover-subscriptions'
       path: '/api/public/cron/rollover-subscriptions'
@@ -1605,6 +1626,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCronAutoForwardRoute: ApiPublicCronAutoForwardRoute,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
+  ApiPublicHooksSummarizeLearningRoute: ApiPublicHooksSummarizeLearningRoute,
   ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,

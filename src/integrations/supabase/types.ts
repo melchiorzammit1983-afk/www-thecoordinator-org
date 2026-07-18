@@ -644,6 +644,50 @@ export type Database = {
           },
         ]
       }
+      assistant_action_log: {
+        Row: {
+          action_kind: string
+          actor_user_id: string | null
+          company_id: string
+          created_at: string
+          final_payload: Json
+          id: string
+          outcome: string
+          proposed_payload: Json
+          raw_message: string | null
+        }
+        Insert: {
+          action_kind: string
+          actor_user_id?: string | null
+          company_id: string
+          created_at?: string
+          final_payload?: Json
+          id?: string
+          outcome: string
+          proposed_payload?: Json
+          raw_message?: string | null
+        }
+        Update: {
+          action_kind?: string
+          actor_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          final_payload?: Json
+          id?: string
+          outcome?: string
+          proposed_payload?: Json
+          raw_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_action_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assistant_glossary: {
         Row: {
           company_id: string
@@ -674,6 +718,35 @@ export type Database = {
             foreignKeyName: "assistant_glossary_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_learned_preferences: {
+        Row: {
+          company_id: string
+          notes: string
+          sample_size: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          notes?: string
+          sample_size?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          notes?: string
+          sample_size?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_learned_preferences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },

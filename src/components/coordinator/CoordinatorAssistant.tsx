@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest } from "@/lib/coordinator-assist.functions";
+import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
@@ -72,10 +73,10 @@ export function useSetAssistantScreen(screen: AssistantScreen | null) {
 type ChatMsg =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
-  | { id: string; role: "assistant"; draft: AssistantDraft }
-  | { id: string; role: "assistant"; batch: AssistantBatch }
-  | { id: string; role: "assistant"; fix: AssistantDataFix }
-  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest };
+  | { id: string; role: "assistant"; draft: AssistantDraft; rawMessage?: string }
+  | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
+  | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -128,7 +129,29 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
+  const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
+  const lastUserMsgRef = useRef<string>("");
+  const logLearning = useCallback(
+    (args: {
+      action_kind: "draft" | "batch" | "search_update" | "data_fix" | "partner_suggest";
+      outcome: "confirmed" | "edited_then_confirmed" | "cancelled" | "skipped";
+      proposed: unknown;
+      final?: unknown;
+      raw_message?: string | null;
+    }) => {
+      void logFn({
+        data: {
+          action_kind: args.action_kind,
+          outcome: args.outcome,
+          proposed_payload: args.proposed,
+          final_payload: args.final ?? args.proposed,
+          raw_message: args.raw_message ?? null,
+        },
+      }).catch(() => { /* silent — never break the primary flow */ });
+    },
+    [logFn],
+  );
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
   useEffect(() => { mutedRef.current = muted; if (muted) cancelSpeak(); }, [muted]);
@@ -175,14 +198,15 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
     onSuccess: (result) => {
       const id = crypto.randomUUID();
+      const rawMessage = lastUserMsgRef.current;
       if (result.kind === "draft") {
-        setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", draft: result, rawMessage }]);
       } else if (result.kind === "batch") {
-        setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", batch: result, rawMessage }]);
       } else if (result.kind === "data_fix") {
-        setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", fix: result, rawMessage }]);
       } else if (result.kind === "partner_suggest") {
-        setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
+        setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
@@ -200,6 +224,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     const t = text.trim();
     if (!t || ask.isPending) return;
     cancelSpeak();
+    lastUserMsgRef.current = t;
     setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text: t }]);
     setInput("");
     ask.mutate(t);
@@ -255,7 +280,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   );
 
   const confirm = useMutation({
-    mutationFn: async (draft: AssistantDraft) => {
+    mutationFn: async ({ draft }: { draft: AssistantDraft; rawMessage?: string }) => {
       if (draft.action === "update") {
         const id = draft.target_trip_id ?? screen?.trip?.id;
         if (!id) throw new Error("No trip selected to update.");
@@ -286,10 +311,12 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       }
       return createDraft(draft);
     },
-    onSuccess: (_res, draft) => {
+    onSuccess: (_res, vars) => {
+      const { draft, rawMessage } = vars;
       const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "draft", outcome: "confirmed", proposed: draft, raw_message: rawMessage });
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
@@ -371,6 +398,21 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["my-billing"] });
+      // Silent learning: log the batch outcome (edited_then_confirmed if the
+      // coordinator removed items before Confirm all, else confirmed).
+      const batchMsg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
+        | (ChatMsg & { batch: AssistantBatch; rawMessage?: string })
+        | undefined;
+      if (batchMsg) {
+        const proposedKind = batchMsg.batch.drafts.some((d) => d.target_trip_id) ? "search_update" : "batch";
+        logLearning({
+          action_kind: proposedKind,
+          outcome: "confirmed",
+          proposed: batchMsg.batch,
+          final: { drafts: batchMsg.batch.drafts, ok: res.ok, failed: res.failed },
+          raw_message: batchMsg.rawMessage,
+        });
+      }
       // Per-action pricing: charge assistant_trip_action ONCE PER confirmed
       // trip in the batch (create OR update).
       if (res.ok.length > 0) {
@@ -405,6 +447,10 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       m
         .map((x) => {
           if (x.id !== batchId || !("batch" in x)) return x;
+          const skipped = x.batch.drafts[idx];
+          if (skipped) {
+            logLearning({ action_kind: "batch", outcome: "skipped", proposed: skipped, raw_message: x.rawMessage });
+          }
           const drafts = x.batch.drafts.filter((_, i) => i !== idx);
           return { ...x, batch: { ...x.batch, drafts } };
         })
@@ -452,6 +498,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "data_fix", outcome: "confirmed", proposed: fix });
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
@@ -499,6 +546,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const msg = `Sent to ${item.partner_name}.`;
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "partner_suggest", outcome: "confirmed", proposed: item });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
@@ -519,6 +567,10 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       m
         .map((x) => {
           if (x.id !== msgId || !("suggest" in x)) return x;
+          const skipped = x.suggest.items[idx];
+          if (skipped) {
+            logLearning({ action_kind: "partner_suggest", outcome: "skipped", proposed: skipped, raw_message: x.rawMessage });
+          }
           const items = x.suggest.items.filter((_, i) => i !== idx);
           return { ...x, suggest: { ...x.suggest, items } };
         })
@@ -527,7 +579,21 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   };
 
   const dismissDraft = (id: string) => {
-    setMessages((m) => m.filter((x) => x.id !== id));
+    setMessages((m) => {
+      const target = m.find((x) => x.id === id);
+      if (target) {
+        if ("draft" in target) {
+          logLearning({ action_kind: "draft", outcome: "cancelled", proposed: target.draft, raw_message: target.rawMessage });
+        } else if ("batch" in target) {
+          logLearning({ action_kind: "batch", outcome: "cancelled", proposed: target.batch, raw_message: target.rawMessage });
+        } else if ("fix" in target) {
+          logLearning({ action_kind: "data_fix", outcome: "cancelled", proposed: target.fix, raw_message: target.rawMessage });
+        } else if ("suggest" in target) {
+          logLearning({ action_kind: "partner_suggest", outcome: "cancelled", proposed: target.suggest, raw_message: target.rawMessage });
+        }
+      }
+      return m.filter((x) => x.id !== id);
+    });
   };
 
   return (
@@ -608,7 +674,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                           </dl>
                         )}
                         <div className="flex gap-2">
-                          <Button size="sm" disabled={busy} onClick={() => confirm.mutate(m.draft)}>
+                          <Button size="sm" disabled={busy} onClick={() => confirm.mutate({ draft: m.draft, rawMessage: m.rawMessage })}>
                             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                             Confirm
                           </Button>
