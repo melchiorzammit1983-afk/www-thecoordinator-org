@@ -355,9 +355,74 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         clarify: `${summaryOf}. Uncheck any you don't want changed, then Confirm all.`,
       };
     }
+    if (p.kind === "data_fix") {
+      const target = p.target === "driver" ? "driver" : "trip";
+      const target_id = typeof p.target_id === "string" ? p.target_id : "";
+      const field = typeof p.field === "string" ? p.field : "";
+      const new_value = typeof p.new_value === "string" ? p.new_value.trim() : "";
+      const TRIP_FIELDS: Record<string, string> = {
+        from_location: "From location",
+        to_location: "To location",
+        contact_phone: "Passenger phone",
+        clientcompanyname: "Client / company",
+        from_flight: "From flight",
+        to_flight: "To flight",
+        vehicle: "Vehicle",
+      };
+      const DRIVER_FIELDS: Record<string, string> = { name: "Driver name", phone: "Driver phone" };
+      const allowed = target === "trip" ? TRIP_FIELDS : DRIVER_FIELDS;
+      if (!target_id || !allowed[field] || !new_value) {
+        return answer(
+          "Which record and which field should I fix, and what's the correct value? (e.g. 'fix spelling of Cervignano on this trip')",
+        );
+      }
+      // Verify the record exists and belongs to this company; capture old value.
+      if (target === "trip") {
+        const { data: row } = await supabaseAdmin
+          .from("jobs")
+          .select(`id, from_location, to_location, contact_phone, clientcompanyname, from_flight, to_flight, vehicle, date, time`)
+          .eq("id", target_id)
+          .eq("company_id", company.id)
+          .maybeSingle();
+        if (!row) return answer("I couldn't find that trip on your company's roster. Open the trip you want to fix and try again.");
+        const old_value = (row as Record<string, unknown>)[field];
+        const label = `Trip · ${row.from_location ?? "?"} → ${row.to_location ?? "?"}${row.date ? ` · ${row.date}${row.time ? " " + row.time.slice(0, 5) : ""}` : ""}`;
+        return {
+          kind: "data_fix",
+          target,
+          target_id,
+          target_label: label,
+          field,
+          field_label: allowed[field],
+          old_value: old_value == null ? null : String(old_value),
+          new_value,
+          summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
+        };
+      }
+      const { data: drv } = await supabaseAdmin
+        .from("drivers")
+        .select("id, name, phone")
+        .eq("id", target_id)
+        .eq("company_id", company.id)
+        .maybeSingle();
+      if (!drv) return answer("I couldn't find that driver on your roster.");
+      const old_value = (drv as Record<string, unknown>)[field];
+      return {
+        kind: "data_fix",
+        target,
+        target_id,
+        target_label: `Driver · ${drv.name ?? "(no name)"}`,
+        field,
+        field_label: allowed[field],
+        old_value: old_value == null ? null : String(old_value),
+        new_value,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
+      };
+    }
     if (p.kind === "draft") return toDraft(p);
     return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
+
 
 /**
  * Load the minimum fields required by `jobInput` so the client can merge an
