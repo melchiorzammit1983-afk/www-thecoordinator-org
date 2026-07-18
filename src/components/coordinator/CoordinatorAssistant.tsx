@@ -122,6 +122,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
+  const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
 
   useEffect(() => {
