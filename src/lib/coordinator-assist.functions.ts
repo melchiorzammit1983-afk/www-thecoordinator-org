@@ -910,4 +910,102 @@ export const meterAssistantConfirm = createServerFn({ method: "POST" })
     return { charged };
   });
 
+/**
+ * Stage a validated `command_actions` proposal into `ai_command_log` so the
+ * client can then apply confirmed items via the EXISTING
+ * `applyAiCommandActions` server function (same audit trail, same execution
+ * layer, no reimplementation).
+ *
+ * We do not run the actions here — the client will call applyAiCommandActions
+ * with the returned log id and the indices the coordinator approved. Returns
+ * `{ id, actions }` where `actions` mirrors the persisted array so the client
+ * can render describeAction-style cards from the authoritative payload.
+ */
+export const stageAssistantActions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        raw_message: z.string().max(2000).default(""),
+        summary: z.string().max(500).default(""),
+        actions: z
+          .array(
+            z.discriminatedUnion("type", [
+              z.object({
+                type: z.literal("group"),
+                job_ids: z.array(z.string().uuid()).min(2).max(20),
+                group_name: z.string().max(80).nullable().optional(),
+              }),
+              z.object({ type: z.literal("ungroup"), job_id: z.string().uuid() }),
+              z.object({
+                type: z.literal("message"),
+                job_id: z.string().uuid(),
+                thread: z.enum(["driver", "client", "group"]),
+                body: z.string().min(1).max(2000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(20),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) throw new Error("No company assigned to this account.");
+    // Normalize into the exact shape ai_command_log stores (same keys the old
+    // Command Bar produces, so applyAiCommandActions consumes them as-is).
+    const stored = data.actions.map((a) => {
+      const base: Record<string, unknown> = {
+        type: a.type,
+        job_id: null,
+        job_ids: null,
+        driver_id: null,
+        date: null,
+        time: null,
+        pickup_at: null,
+        new_status: null,
+        group_name: null,
+        partner_company_id: null,
+        thread: null,
+        body: null,
+        note: null,
+      };
+      if (a.type === "group") {
+        base.job_ids = a.job_ids;
+        base.group_name = a.group_name ?? null;
+      } else if (a.type === "ungroup") {
+        base.job_id = a.job_id;
+      } else if (a.type === "message") {
+        base.job_id = a.job_id;
+        base.thread = a.thread;
+        base.body = a.body;
+      }
+      return base;
+    });
+    const { data: row, error } = await supabaseAdmin
+      .from("ai_command_log")
+      .insert({
+        company_id: company.id,
+        actor_user_id: context.userId,
+        mode: "execute",
+        prompt: data.raw_message.slice(0, 2000) || "(via AI dispatch assistant)",
+        response: data.summary || "Proposed by AI dispatch assistant",
+        actions: stored as never,
+        status: "awaiting_confirm",
+        requires_confirmation: true,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Failed to stage actions.");
+    return { id: (row as { id: string }).id, actions: stored };
+  });
+
+
 
