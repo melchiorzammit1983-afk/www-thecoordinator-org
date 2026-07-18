@@ -598,6 +598,10 @@ export const adminUpsertPlan = createServerFn({ method: "POST" })
       included_points: z.number().int().min(0),
       feature_keys: z.array(z.string()).max(50),
       sort_order: z.number().int().min(0).max(999).default(0),
+      description: z.string().trim().max(500).optional().nullable(),
+      driver_cap: z.number().int().min(0).max(10000).optional().nullable(),
+      trial_days: z.number().int().min(0).max(365).optional(),
+      is_public: z.boolean().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -607,6 +611,7 @@ export const adminUpsertPlan = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const adminDeletePlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -671,9 +676,12 @@ export const adminSetFeatureCost = createServerFn({ method: "POST" })
       feature_key: z.string().trim().min(1).max(80),
       points_cost: z.number().min(0).max(10000),
       label: z.string().trim().max(120).optional(),
-      category: z.enum(["core", "ai", "comms", "data"]).optional(),
+      category: z.enum(["core", "ai", "comms", "data", "dispatch", "portal"]).optional(),
       enabled: z.boolean().optional(),
       block_on_empty: z.boolean().optional(),
+      min_plan_code: z.enum(["starter", "pro", "business"]).nullable().optional(),
+      is_addon: z.boolean().optional(),
+      sort_order: z.number().int().min(0).max(9999).optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
@@ -683,6 +691,7 @@ export const adminSetFeatureCost = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 export const adminListCompanyPriceOverrides = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

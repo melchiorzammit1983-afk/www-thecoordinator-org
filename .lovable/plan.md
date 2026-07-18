@@ -1,94 +1,67 @@
-# Hotel Room QR + Portal Upgrade
 
-Turn the existing hotel portal into a self-service room-QR experience: guests scan a QR at their door or the reception desk, land on a mini-portal keyed to their room, and can book trips at hotel-set prices, redeem promos, and browse hotel offers. The hotel gets a small dashboard to run all of it.
+# Pricing & Packages Rewrite
 
-## What's already there (reuse, don't rebuild)
+Goal: one predictable revenue model, one place to configure it, and no dead switches.
 
-- `portal_companies` (kind=`hotel`) — logo, slug, magic token, brand colour
-- `portal_bookings` → auto-forwarded into `jobs` for coordinator dispatch
-- `portal_statements`, `portal_threads`, `portal_payment_*` — statements + chat already work
-- `/h/{slug}` public page + `/portal.{token}` hotel dashboard
-- Coordinator settings page at `coordinator.portals.$id.tsx` for editing a portal
+## The model (what customers see)
 
-The plan below only adds what's missing.
+- **One wallet.** Every action that costs money — AI, SMS, flight lookups, route calls, portal bookings — spends from the same monthly point balance. No separate "AI points" bucket.
+- **14-day free trial** with full access to everything. No card required. After trial: pick a plan or read-only.
+- **Three tiers:**
 
-## 1. Room QR + guest mini-portal
+  |            | Starter          | Pro              | Business         |
+  |------------|------------------|------------------|------------------|
+  | Included points / month | small | medium | large |
+  | Drivers    | up to N          | up to N          | unlimited        |
+  | AI assistant | ✓              | ✓ + Watchtower   | ✓ + Watchtower + priority |
+  | Hotel & Client portals | — | ✓ | ✓ |
+  | Collaborate network | — | ✓ | ✓ |
+  | Support    | email            | email + chat     | dedicated        |
 
-New table `portal_rooms` per hotel — `{portal_company_id, room_number, label, qr_token, active}`. Hotel bulk-generates rooms in the dashboard; each row has a printable QR sheet (PDF).
+  Exact numbers (points, driver caps, prices) get set from the admin UI, not hard-coded.
 
-QR resolves to `/h/{slug}/r/{room_qr_token}` (public route). First visit asks name + optional email; the room and hotel are already known from the token. On submit we issue a **guest session** (new table `portal_guest_sessions`: `{id, portal_company_id, room_id, guest_name, email?, phone?, session_token, expires_at}`), store the token in `localStorage`, and drop them into a mini-portal at `/g/{session_token}`.
+- **Soft block with grace.** When the monthly bag is empty, the next ~10 metered actions still run and go on the next invoice as overage, then it hard-blocks until top-up. Trip creation, driver status, and other non-metered essentials are never blocked.
+- **Top-up packs** stay for one-off boosts; they add to the same wallet.
 
-The mini-portal shows: **Book a ride** (zones + promos), **My trips** (live status, driver ETA, chat — reuse existing `pax_tracking_tokens` per booking), **Hotel offers**, and **Help**. Reception can also open the QR themselves and start a booking for a walk-in.
+## The system underneath (what changes)
 
-Rate-limit: 5 booking submissions/room/day (reuse `portal_rate_limits` shape). Sessions expire after configurable N days (default 7, matches typical stay).
+### Database
+- Drop the `ai_points_remaining_this_period` column on `company_subscriptions` and `included_ai_points` on `plans` (unused after merge; `spend_points` already ignores them).
+- Fold `ai_feature_costs` into a single `feature_catalog` table:
+  `feature_key, label, category (ai|dispatch|comms|portal|maps|admin), points_cost, enabled, block_on_empty, metering_mode, min_plan_code, is_addon, sort_order`.
+  Migrate rows from both `feature_costs` and `ai_feature_costs`; keep old table names as views for one release so existing code keeps building.
+- Add `plans.driver_cap INT NULL`, `plans.trial_days INT NOT NULL DEFAULT 14`, `plans.description TEXT`, `plans.is_public BOOLEAN` (so we can hide legacy plans without deleting).
+- Add `companies.trial_ends_at TIMESTAMPTZ`, `companies.grace_actions_remaining INT NOT NULL DEFAULT 10`, `companies.grace_reset_at TIMESTAMPTZ`.
+- Rewrite `spend_points()` to: (1) check the plan gate (`feature_catalog.min_plan_code` vs the company's plan), (2) spend from `subscriptions.points_remaining_this_period`, then from `companies.points_balance`, then from grace, (3) raise `feature_not_in_plan` / `insufficient_points` cleanly. All in one place, no scattered checks.
 
-## 2. Pricing — per-hotel mode + zones
+### Admin console (one page, four tabs)
+Route: `/admin/pricing` (rewrite the current mixed page).
+1. **Plans** — list, edit, publish/unpublish. Fields: name, monthly price, included points, driver cap, trial days, description, feature keys.
+2. **Features & costs** — one table of every metered action with its label, category, points, enabled toggle, min plan, and "block on empty" flag. Search + category filter.
+3. **Point packs** — top-up SKUs (name, points, price, active).
+4. **Company overrides** — search a company → edit `company_feature_price_overrides`, add/remove `company_feature_entitlements`, grant free points, extend trial, change plan.
 
-Add to `portal_companies`:
-- `pricing_mode` — `coordinator` | `hotel` | `hotel_markup` (default `coordinator` = today's behaviour)
-- `currency` inherited or overridden
+Also on `/admin/revenue`: MRR by plan, active vs trialing vs past-due counts, top spenders, expiring trials this week.
 
-New table `portal_zones` — `{portal_company_id, name, sort_order, active}` (e.g. "Airport", "Valletta", "South ports").
-New table `portal_zone_fares` — `{zone_id, pax_tier, price, coordinator_base_price?, markup?}` where `pax_tier` is `1-3`, `4-6`, `7+` etc.
+### Coordinator side
+- `/coordinator/billing` becomes the customer view: current plan, days left in trial, wallet balance, this-month usage by feature category, top-up buttons, plan switcher, invoices list.
+- One small "wallet" chip in the header everywhere (points left · days in trial). Clicking opens the billing page. Removes the confusing double indicators today.
+- Feature-gated UI (Portals, Watchtower, Collaborate) reads a single `useEntitlements()` hook. Locked features show a "Included in Pro" upsell instead of a broken button.
 
-Guest booking flow: pick destination zone → sees final price. Server records the fare snapshot on the `portal_booking` (`agreed_price`, plus a new `fare_breakdown jsonb` — zone id, base, markup, promo). Coordinator sees the hotel's chosen price on the job card.
+### Cleanup
+- Delete unreachable toggles on `/admin/ai-settings` that duplicate the new features table.
+- Deprecate `admin.pricing.tsx` old sections after the new page ships; keep a redirect for a release.
+- Remove ai-wallet references from `AssistantBatch`, `use-billing.ts`, and the dashboard chip.
 
-Billing:
-- `coordinator` mode → statement is coordinator→guest (today's behaviour)
-- `hotel` mode → statement is coordinator→hotel at coordinator's rate; hotel collects from guest
-- `hotel_markup` mode → statement shows base + markup lines; hotel pays coordinator the base
-
-Coordinator's portal-edit page gets a new "Pricing" tab to set the mode + optional per-zone base for markup mode. Hotel dashboard gets a "Prices" tab to manage zones and fares (or the markup value).
-
-## 3. Promos & packages
-
-New tables:
-- `portal_promos` — `{portal_company_id, code, kind: 'percent'|'amount', value, min_price?, applies_to: 'transport'|'offers'|'both', starts_at?, ends_at?, max_uses?, uses_count, active}`
-- `portal_addons` — bundled add-ons offered at booking `{portal_company_id, title, description, price?, category, image_url?, active}` (e.g. "Restaurant voucher €25", "Spa hour €40"). Info-only; selection is stored as a note on the booking and shown to coordinator/driver.
-- `portal_offers` — standalone offer cards for the "Hotel offers" page `{portal_company_id, title, description, image_url?, price?, cta_label?, cta_url?, sort_order, active}`. No trip needed — pure upsell surface.
-
-Guest applies a promo code at booking → server validates, decrements `uses_count`, records `promo_code` + discount in `fare_breakdown`. Add-ons show as checkboxes below the fare with a total.
-
-## 4. Hotel dashboard upgrades
-
-Extend `/portal.{token}` with tabs:
-- **Overview** (today's + this-week's bookings, revenue, top zones)
-- **Rooms & QR** — generate rooms, print QR sheet PDF, deactivate/rotate a room's QR
-- **Prices** — zones + fares (or markup)
-- **Promos** — CRUD, usage counts
-- **Add-ons & Offers** — CRUD with image upload
-- **Bookings** (existing list, filtered by status)
-- **Statements** (existing)
-- **Branding** — logo upload + brand colour (already have `logo_url`; add proper upload UI)
-
-Logo/image uploads use a new public `portal-media` storage bucket (owner check via signed server fn — hotel token in header).
-
-## 5. Coordinator side
-
-- Portal edit page (`coordinator.portals.$id.tsx`) gets Pricing + Promos tabs mirroring the hotel view, so coordinator can seed prices when onboarding a hotel.
-- New job labels auto-added on portal bookings: `hotel:{slug}`, `zone:{zone}`, plus `promo:{code}` when used.
-- Statements generator honours `pricing_mode` when building the monthly invoice.
+## Order of work
+1. Migration: add columns, create `feature_catalog`, backfill from both cost tables, rewrite `spend_points`.
+2. Admin console rewrite (Plans / Features / Packs / Overrides + Revenue widgets).
+3. Coordinator `/billing` refresh + header wallet chip + `useEntitlements()` hook wired into feature-gated UI.
+4. Trial + grace logic: nightly cron sets `status='past_due'` when trial expires; `spend_points` consumes and resets grace monthly.
+5. Sweep the codebase: delete AI-wallet columns, retire duplicate switches, update seeds so the demo tier configuration is one canonical block.
 
 ## Technical notes
-
-- All new tables in `public` schema, follow the `CREATE TABLE → GRANT → RLS → POLICY` structure. RLS: hotel dashboard reads via magic token in header (existing pattern in `portal.functions.ts`); guest mini-portal reads via session token; coordinator reads via `resolveCompany`.
-- New server routes under `src/routes/api/public/portal/$token/` for QR-token booking so no auth is required from a scanned QR.
-- Storage bucket `portal-media` — public read, upload gated by hotel-token server fn (no direct client upload from guest).
-- QR sheet PDF generated client-side with `jspdf` + `qrcode` (already installed for trip-timeline PDFs).
-- No changes to `jobs`, `client_bookings`, coordinator dispatch flow, or the AI assistant.
-
-## Out of scope for this batch
-
-- Payments (guests still pay hotel/coordinator out of band; billing lives in statements)
-- Multi-language guest UI (English only in v1)
-- Package/loyalty logic beyond promo codes + add-ons
-- Native app for hotels (dashboard stays web-only)
-
-## Rollout order
-
-1. Migration: rooms, guest sessions, zones, fares, promos, addons, offers, `pricing_mode` on `portal_companies`, storage bucket + policies
-2. Server fns: room CRUD, QR issue/rotate, guest session start, zone/fare/promo/addon/offer CRUD, guest booking with fare snapshot
-3. Hotel dashboard tabs (Rooms/QR, Prices, Promos, Add-ons & Offers, Branding upload)
-4. Guest QR landing + mini-portal (`/h/{slug}/r/{qr}` and `/g/{session}`)
-5. Coordinator portal-edit Pricing/Promos tabs + statement generator update
-6. QR sheet PDF export
+- All server fns live in `src/lib/pricing-admin.functions.ts` (admin) and existing `src/lib/pricing.functions.ts` gets `getEntitlements`, `getWalletStatus`, `listInvoices` for the coordinator side.
+- No client-side price checks; every gate is enforced in `spend_points` and in the admin-managed feature catalog. The UI only reads.
+- Payments stay on the current Stripe hookup; only the SKU list (plans + packs) is what changes.
+- Backwards compatibility: existing `points_ledger` rows keep working; `feature_costs` and `ai_feature_costs` are turned into SQL views over `feature_catalog` so nothing that reads them breaks during the release.

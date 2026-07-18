@@ -85,6 +85,10 @@ function PlanEditor({ plan, onSave, onDelete }: { plan: any; onSave: (row: any) 
   const [price, setPrice] = useState(String(plan.price_monthly));
   const [points, setPoints] = useState(String(plan.included_points));
   const [features, setFeatures] = useState<string[]>(plan.feature_keys ?? []);
+  const [description, setDescription] = useState<string>(plan.description ?? "");
+  const [driverCap, setDriverCap] = useState<string>(plan.driver_cap == null ? "" : String(plan.driver_cap));
+  const [trialDays, setTrialDays] = useState<string>(String(plan.trial_days ?? 14));
+  const [isPublic, setIsPublic] = useState<boolean>(plan.is_public !== false);
 
   const toggle = (k: string) => setFeatures((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
 
@@ -95,6 +99,9 @@ function PlanEditor({ plan, onSave, onDelete }: { plan: any; onSave: (row: any) 
         <div><Label>Code</Label><Input value={code} onChange={(e) => setCode(e.target.value)} /></div>
         <div><Label>Price (€/mo)</Label><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
         <div><Label>Included points</Label><Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} /></div>
+        <div><Label>Driver cap (blank = ∞)</Label><Input type="number" value={driverCap} onChange={(e) => setDriverCap(e.target.value)} /></div>
+        <div><Label>Trial days</Label><Input type="number" value={trialDays} onChange={(e) => setTrialDays(e.target.value)} /></div>
+        <div className="md:col-span-2"><Label>Description</Label><Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Shown on pricing page" /></div>
       </div>
       <div>
         <Label className="text-xs">Features included</Label>
@@ -107,15 +114,29 @@ function PlanEditor({ plan, onSave, onDelete }: { plan: any; onSave: (row: any) 
           ))}
         </div>
       </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onDelete}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
-        <Button size="sm" onClick={() => onSave({ id: plan.id, code, name, price_monthly: Number(price), included_points: Number(points), feature_keys: features, sort_order: plan.sort_order ?? 0 })}>
-          <Save className="h-4 w-4 mr-1" /> Save
-        </Button>
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={() => setIsPublic(!isPublic)}>
+          <Badge variant={isPublic ? "default" : "outline"}>{isPublic ? "Listed publicly" : "Hidden"}</Badge>
+        </button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={onDelete}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
+          <Button size="sm" onClick={() => onSave({
+            id: plan.id, code, name,
+            price_monthly: Number(price), included_points: Number(points),
+            feature_keys: features, sort_order: plan.sort_order ?? 0,
+            description: description || null,
+            driver_cap: driverCap === "" ? null : Number(driverCap),
+            trial_days: Number(trialDays) || 14,
+            is_public: isPublic,
+          })}>
+            <Save className="h-4 w-4 mr-1" /> Save
+          </Button>
+        </div>
       </div>
     </div>
   );
 }
+
 
 // ---------- Point Packs ----------
 function PointPacksCard() {
@@ -258,10 +279,14 @@ function FeatureCostCard({
   const [points, setPoints] = useState<number>(initial);
   const [enabled, setEnabled] = useState<boolean>(cost.enabled !== false);
   const [block, setBlock] = useState<boolean>(cost.block_on_empty !== false);
+  const [minPlan, setMinPlan] = useState<string>(cost.min_plan_code ?? "any");
+  const [isAddon, setIsAddon] = useState<boolean>(!!cost.is_addon);
   const dirty =
     points !== initial ||
     enabled !== (cost.enabled !== false) ||
-    block !== (cost.block_on_empty !== false);
+    block !== (cost.block_on_empty !== false) ||
+    minPlan !== (cost.min_plan_code ?? "any") ||
+    isAddon !== !!cost.is_addon;
 
   const sliderMax = Math.max(50, Math.ceil(Math.max(points, initial)));
 
@@ -307,13 +332,27 @@ function FeatureCostCard({
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <button type="button" onClick={() => setEnabled(!enabled)}>
           <Badge variant={enabled ? "default" : "outline"}>{enabled ? "Enabled" : "Disabled"}</Badge>
         </button>
         <button type="button" onClick={() => setBlock(!block)}>
           <Badge variant={block ? "destructive" : "secondary"}>{block ? "Hard stop" : "Allow negative"}</Badge>
         </button>
+        <button type="button" onClick={() => setIsAddon(!isAddon)}>
+          <Badge variant={isAddon ? "default" : "outline"}>{isAddon ? "Add-on" : "Core"}</Badge>
+        </button>
+        <select
+          value={minPlan}
+          onChange={(e) => setMinPlan(e.target.value)}
+          className="ml-auto h-7 rounded-md border bg-background px-2 text-[11px]"
+          title="Minimum plan required"
+        >
+          <option value="any">Any plan</option>
+          <option value="starter">Starter+</option>
+          <option value="pro">Pro+</option>
+          <option value="business">Business</option>
+        </select>
       </div>
 
       <div className="flex justify-end pt-1">
@@ -328,6 +367,8 @@ function FeatureCostCard({
             category: (cost.category ?? "ai"),
             enabled,
             block_on_empty: block,
+            min_plan_code: minPlan === "any" ? null : minPlan,
+            is_addon: isAddon,
           })}
         >
           <Save className="h-4 w-4 mr-1" /> Save
@@ -336,6 +377,7 @@ function FeatureCostCard({
     </div>
   );
 }
+
 
 // ---------- Wallets ----------
 

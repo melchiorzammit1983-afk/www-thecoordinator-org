@@ -45,14 +45,15 @@ export function useMyBilling() {
   return useQuery({
     queryKey: ["my-billing"],
     queryFn: () => fn() as Promise<{
-      company: { id: string; name: string; points_balance: number } | null;
-      subscription: { plan_id: string; points_remaining_this_period: number; current_period_end: string; plans: { name: string; included_points: number; price_monthly: number } } | null;
-      costs: { feature_key: string; points_cost: number; label: string | null }[];
+      company: { id: string; name: string; points_balance: number; trial_ends_at: string | null; grace_actions_remaining: number } | null;
+      subscription: { plan_id: string; points_remaining_this_period: number; current_period_end: string; plans: { code: string; name: string; included_points: number; price_monthly: number } } | null;
+      costs: { feature_key: string; points_cost: number; label: string | null; min_plan_code: string | null; is_addon: boolean; category: string | null; enabled: boolean; block_on_empty: boolean }[];
       recent: { id: string; feature_key: string | null; points_deducted: number; created_at: string; note: string | null }[];
     } | null>,
     staleTime: 15_000,
   });
 }
+
 
 export function useFeatureCost(key: string): number {
   const { data } = useMyBilling();

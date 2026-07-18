@@ -54,7 +54,7 @@ export const getMyBilling = createServerFn({ method: "GET" })
       { data: costs },
       { data: recent },
     ] = await Promise.all([
-      sb.from("companies").select("id, name, points_balance").eq("id", companyId).maybeSingle(),
+      sb.from("companies").select("id, name, points_balance, trial_ends_at, grace_actions_remaining").eq("id", companyId).maybeSingle(),
       sb.from("company_subscriptions").select("*, plans(*)").eq("company_id", companyId).maybeSingle(),
       sb.from("ai_feature_costs").select("*"),
       sb.from("points_ledger").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(20),
@@ -67,6 +67,7 @@ export const getMyBilling = createServerFn({ method: "GET" })
       recent: recent ?? [],
     };
   });
+
 
 export const listMyPointsHistory = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
