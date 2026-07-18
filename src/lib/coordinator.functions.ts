@@ -6250,16 +6250,28 @@ export const listMyReferrals = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
-    if (!(c as any).referral_code) return { code: null, requests: [] as any[] };
     const supabaseAdmin = await getAdminClient();
+    let code = (c as any).referral_code as string | null;
+    if (!code) {
+      const { data: gen, error: genErr } = await supabaseAdmin
+        .rpc("ensure_referral_code", { _company_id: c.id } as never);
+      if (genErr) throw new Error(genErr.message);
+      code = (gen as unknown as string) ?? null;
+    }
+    if (!code) return { code: null, requests: [] as any[], percent: 5, credit_until: null as string | null };
     const { data, error } = await supabaseAdmin
       .from("access_requests")
       .select("id, full_name, company_name, email, kind, status, created_at")
-      .eq("referral_code", (c as any).referral_code)
+      .eq("referral_code", code)
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
-    return { code: (c as any).referral_code as string, requests: data ?? [] };
+    return {
+      code,
+      requests: data ?? [],
+      percent: Number((c as any).referral_percent ?? 5),
+      credit_until: (c as any).referral_credit_until ?? null,
+    };
   });
 
 // ---------- AI TRAINING LOG (learning loop) ----------
