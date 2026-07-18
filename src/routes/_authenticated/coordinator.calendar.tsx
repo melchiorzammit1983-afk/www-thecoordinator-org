@@ -2486,11 +2486,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
 
+      {/* Ask AI (top-right) */}
+      <div className="absolute top-1 right-1 z-10">
+        <AskAiInlineButton trip={job} size="xs" variant="ghost" label="Ask AI" />
+      </div>
+
       {/* Tap area — opens details sheet */}
       <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {job.trip_no != null && (
+                <span
+                  className="inline-flex items-center rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[11px] font-mono font-semibold text-primary"
+                  title={`Trip #${job.trip_no}`}
+                >
+                  #{job.trip_no}
+                </span>
+              )}
               <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
               <span>·</span>
               <span>{job.date}</span>
