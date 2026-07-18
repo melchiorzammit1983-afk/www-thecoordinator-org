@@ -294,3 +294,51 @@ export const getJobForAssistant = createServerFn({ method: "POST" })
     return row;
   });
 
+/**
+ * Per-action metering for confirmed assistant actions. Called by the client
+ * AFTER the user hits Confirm on a proposal. One RPC call per unit charged
+ * — so a 3-trip batch confirm should invoke this three times (or pass
+ * count=3) so it costs 3× the configured `assistant_trip_action` rate.
+ *
+ * Soft-metering: mirrors the existing pattern — logs a warning on failure
+ * but never blocks the primary action (the trip has already been written).
+ */
+export const meterAssistantConfirm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        feature_key: z.enum(["assistant_trip_action", "assistant_data_fix"]),
+        count: z.number().int().min(1).max(50).default(1),
+        job_id: z.string().uuid().nullable().optional(),
+        note: z.string().max(200).optional(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) return { charged: 0 };
+    let charged = 0;
+    for (let i = 0; i < data.count; i++) {
+      try {
+        const { error } = await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: data.feature_key,
+          _job_id: (data.job_id ?? undefined) as unknown as string,
+          _note: data.note ?? `assistant confirm (${data.feature_key})`,
+          _cost_override: undefined as unknown as number,
+        });
+        if (!error) charged += 1;
+      } catch {
+        /* soft — do not throw */
+      }
+    }
+    return { charged };
+  });
+
+
