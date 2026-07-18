@@ -74,7 +74,13 @@ export type AssistantAnswer = {
   text: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft;
+export type AssistantBatch = {
+  kind: "batch";
+  drafts: AssistantDraft[]; // all action:"create"
+  clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch;
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
