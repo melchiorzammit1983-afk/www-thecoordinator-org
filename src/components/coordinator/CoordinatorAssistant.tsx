@@ -136,11 +136,14 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     mutationFn: async (text: string): Promise<AssistantResult> => {
       const history = messages
         .slice(-8)
-        .map((m) =>
-          "text" in m
-            ? { role: m.role, text: m.text }
-            : { role: "assistant" as const, text: m.draft.summary },
-        );
+        .map((m) => {
+          if ("text" in m) return { role: m.role, text: m.text };
+          if ("draft" in m) return { role: "assistant" as const, text: m.draft.summary };
+          return {
+            role: "assistant" as const,
+            text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
+          };
+        });
       return (await askFn({
         data: {
           message: text,
@@ -155,6 +158,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const id = crypto.randomUUID();
       if (result.kind === "draft") {
         setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
+      } else if (result.kind === "batch") {
+        setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
