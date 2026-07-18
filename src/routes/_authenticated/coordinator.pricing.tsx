@@ -29,6 +29,8 @@ import {
   listServiceAreas, upsertServiceArea, deleteServiceArea,
 } from "@/lib/pricing.functions";
 import { Calculator } from "lucide-react";
+import { computeFareBreakdown } from "@/lib/fare";
+import { FareBreakdownView } from "@/components/pricing/FareBreakdown";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/pricing")({
