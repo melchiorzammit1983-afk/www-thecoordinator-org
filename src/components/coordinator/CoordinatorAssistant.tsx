@@ -73,7 +73,8 @@ type ChatMsg =
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "assistant"; draft: AssistantDraft }
   | { id: string; role: "assistant"; batch: AssistantBatch }
-  | { id: string; role: "assistant"; fix: AssistantDataFix };
+  | { id: string; role: "assistant"; fix: AssistantDataFix }
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
