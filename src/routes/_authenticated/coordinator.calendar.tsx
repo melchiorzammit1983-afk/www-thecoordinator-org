@@ -1670,7 +1670,7 @@ function PendingPortalBookings() {
                   const t = payload.time
                     ? String(payload.time).slice(0, 5)
                     : payload.pickup_at
-                      ? new Date(payload.pickup_at).toISOString().slice(11, 16)
+                      ? formatMaltaTime(String(payload.pickup_at))
                       : null;
                   return (
                     <div className="text-[11px] font-semibold text-foreground">
