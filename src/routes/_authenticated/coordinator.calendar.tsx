@@ -3678,7 +3678,9 @@ function GroupedRunRow({
     .filter(Boolean)
     .sort()[0] as string | null;
   const pickup = earliest
-    ? new Date(earliest).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? (earliest.includes("T") && !earliest.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(earliest)
+        ? earliest.slice(11, 16)
+        : formatMaltaTime(earliest))
     : orderedJobs[0]?.time?.slice(0, 5) ?? null;
   const driverName =
     orderedJobs.find((j) => j.drivers?.name)?.drivers?.name ??
