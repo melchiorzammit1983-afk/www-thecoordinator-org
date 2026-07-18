@@ -31,17 +31,17 @@ import logoAsset from "@/assets/coordinators-logo.png.asset.json";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "The Coordinators — Malta's Transport Network Hub" },
+      { title: "The Coordinators — Your AI dispatcher, on call 24/7" },
       {
         name: "description",
         content:
-          "Stop manually dispatching. The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips, track flights, and share jobs instantly.",
+          "Just tell it what you need. Type or talk to your AI dispatcher — create trips, catch driver conflicts automatically, and undo any AI action with one click. Built for Malta's hotels, shipping agents, and fleet owners.",
       },
-      { property: "og:title", content: "The Coordinators — Malta's Transport Network Hub" },
+      { property: "og:title", content: "The Coordinators — Your AI dispatcher, on call 24/7" },
       {
         property: "og:description",
         content:
-          "Drag-and-drop dispatching, AI-powered bulk uploads, and instant live tracking links. Zero-friction driver web links — no app downloads required.",
+          "Type or talk to an AI dispatcher that drafts every action before running it. Automatic conflict detection, one-click undo, no driver app required.",
       },
       { property: "og:type", content: "website" },
     ],
