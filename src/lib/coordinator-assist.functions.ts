@@ -310,6 +310,9 @@ Rules:
   { "kind": "glossary_save", "term": "<short shorthand as the coordinator uses it, e.g. 'MSV'>", "meaning": "<full meaning, e.g. 'Medserv, based at Freeport'>" }
   { "kind": "glossary_list" }
   { "kind": "glossary_delete", "term": "<the shorthand to remove, exactly as stored>" }
+  { "kind": "partner_suggest",
+    "items": [ { "job_id": "<uuid from UPCOMING TRIPS>", "partner_company_id": "<uuid from ACTIVE PARTNERS>", "reason": "one short line, or null" } ],
+    "summary": "e.g. 'Suggest forwarding 2 trips to Malta Cabs'" }
 - For "update" (single) or "search_update" (multi), only include fields that CHANGE.
 - For "create" (single or in a batch), omit target_trip_id (null).
 - In a "batch" of creates, each element MUST be action:"create".
