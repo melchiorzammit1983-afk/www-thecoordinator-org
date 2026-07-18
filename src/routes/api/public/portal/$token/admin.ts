@@ -76,8 +76,8 @@ export const Route = createFileRoute("/api/public/portal/$token/admin")({
               return json({ ok: true, row });
             }
             const id = z.string().uuid().parse(body.id);
-            const res = await deleteResource(r.portal.id, resource as any, id);
-            return json({ ok: true, ...res });
+            await deleteResource(r.portal.id, resource as any, id);
+            return json({ ok: true });
           }
           return json({ error: "bad_action" }, 400);
         } catch (e: any) {

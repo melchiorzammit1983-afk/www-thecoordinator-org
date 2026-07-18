@@ -10,7 +10,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-export const Route = createFileRoute("/api/public/portal/guest/$session")({
+export const Route = createFileRoute("/api/public/portal/guest/$session/")({
   server: {
     handlers: {
       GET: async ({ params }) => {
