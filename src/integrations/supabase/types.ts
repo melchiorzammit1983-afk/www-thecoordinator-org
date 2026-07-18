@@ -400,9 +400,12 @@ export type Database = {
           category: string
           enabled: boolean
           feature_key: string
+          is_addon: boolean
           label: string | null
           metering_mode: string
+          min_plan_code: string | null
           points_cost: number
+          sort_order: number
           updated_at: string
         }
         Insert: {
@@ -410,9 +413,12 @@ export type Database = {
           category?: string
           enabled?: boolean
           feature_key: string
+          is_addon?: boolean
           label?: string | null
           metering_mode?: string
+          min_plan_code?: string | null
           points_cost?: number
+          sort_order?: number
           updated_at?: string
         }
         Update: {
@@ -420,9 +426,12 @@ export type Database = {
           category?: string
           enabled?: boolean
           feature_key?: string
+          is_addon?: boolean
           label?: string | null
           metering_mode?: string
+          min_plan_code?: string | null
           points_cost?: number
+          sort_order?: number
           updated_at?: string
         }
         Relationships: []
@@ -1317,6 +1326,8 @@ export type Database = {
           default_driver_wait_share_pct: number
           email: string
           free_wait_minutes: number
+          grace_actions_remaining: number
+          grace_reset_at: string
           id: string
           logo_url: string | null
           minimum_fare: number
@@ -1335,6 +1346,7 @@ export type Database = {
           safety_mode_enabled: boolean
           safety_mode_threshold_kmh: number
           status: Database["public"]["Enums"]["company_status"]
+          trial_ends_at: string | null
           updated_at: string
           waiting_rate_per_minute: number
         }
@@ -1361,6 +1373,8 @@ export type Database = {
           default_driver_wait_share_pct?: number
           email: string
           free_wait_minutes?: number
+          grace_actions_remaining?: number
+          grace_reset_at?: string
           id?: string
           logo_url?: string | null
           minimum_fare?: number
@@ -1379,6 +1393,7 @@ export type Database = {
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
+          trial_ends_at?: string | null
           updated_at?: string
           waiting_rate_per_minute?: number
         }
@@ -1405,6 +1420,8 @@ export type Database = {
           default_driver_wait_share_pct?: number
           email?: string
           free_wait_minutes?: number
+          grace_actions_remaining?: number
+          grace_reset_at?: string
           id?: string
           logo_url?: string | null
           minimum_fare?: number
@@ -1423,6 +1440,7 @@ export type Database = {
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
           status?: Database["public"]["Enums"]["company_status"]
+          trial_ends_at?: string | null
           updated_at?: string
           waiting_rate_per_minute?: number
         }
@@ -1678,7 +1696,6 @@ export type Database = {
       }
       company_subscriptions: {
         Row: {
-          ai_points_remaining_this_period: number
           company_id: string
           created_at: string
           current_period_end: string
@@ -1690,7 +1707,6 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          ai_points_remaining_this_period?: number
           company_id: string
           created_at?: string
           current_period_end?: string
@@ -1702,7 +1718,6 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          ai_points_remaining_this_period?: number
           company_id?: string
           created_at?: string
           current_period_end?: string
@@ -4179,37 +4194,46 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          description: string | null
+          driver_cap: number | null
           feature_keys: string[]
           id: string
-          included_ai_points: number
           included_points: number
+          is_public: boolean
           name: string
           price_monthly: number
           sort_order: number
+          trial_days: number
           updated_at: string
         }
         Insert: {
           code: string
           created_at?: string
+          description?: string | null
+          driver_cap?: number | null
           feature_keys?: string[]
           id?: string
-          included_ai_points?: number
           included_points?: number
+          is_public?: boolean
           name: string
           price_monthly?: number
           sort_order?: number
+          trial_days?: number
           updated_at?: string
         }
         Update: {
           code?: string
           created_at?: string
+          description?: string | null
+          driver_cap?: number | null
           feature_keys?: string[]
           id?: string
-          included_ai_points?: number
           included_points?: number
+          is_public?: boolean
           name?: string
           price_monthly?: number
           sort_order?: number
+          trial_days?: number
           updated_at?: string
         }
         Relationships: []
@@ -5925,6 +5949,10 @@ export type Database = {
         Returns: number
       }
       ensure_referral_code: { Args: { _company_id: string }; Returns: string }
+      feature_available: {
+        Args: { _company_id: string; _feature_key: string }
+        Returns: boolean
+      }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       match_ai_lessons: {
         Args: {
