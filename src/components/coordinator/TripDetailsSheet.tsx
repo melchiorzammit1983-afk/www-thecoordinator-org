@@ -161,6 +161,30 @@ export function TripDetailsSheet({
 
   const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
 
+  // Expose the currently open trip to the floating AI assistant so it can
+  // resolve "this trip", "move it to 7pm", etc.
+  useSetAssistantScreen(
+    open && isRealJobId
+      ? {
+          path: typeof window !== "undefined" ? window.location.pathname : null,
+          trip: {
+            id: job.id,
+            from_location: job.from_location ?? null,
+            to_location: job.to_location ?? null,
+            date: (job as unknown as { date?: string | null }).date ?? null,
+            time: (job as unknown as { time?: string | null }).time ?? null,
+            driver_id: (job as unknown as { driver_id?: string | null }).driver_id ?? null,
+            driver_name: shownDriver ?? null,
+            from_flight: job.from_flight ?? null,
+            to_flight: job.to_flight ?? null,
+            vehicle: (job as unknown as { vehicle?: string | null }).vehicle ?? null,
+            contact_phone: (job as unknown as { contact_phone?: string | null }).contact_phone ?? null,
+            clientcompanyname: (job as unknown as { clientcompanyname?: string | null }).clientcompanyname ?? null,
+          },
+        }
+      : null,
+  );
+
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
     queryFn: () => paxActivityFn({ data: { job_id: job.id } }) as Promise<Record<string, {
