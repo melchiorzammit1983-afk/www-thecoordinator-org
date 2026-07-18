@@ -41,8 +41,8 @@ export const logAssistantAction = createServerFn({ method: "POST" })
         actor_user_id: context.userId,
         action_kind: data.action_kind,
         outcome: data.outcome,
-        proposed_payload: proposed,
-        final_payload: final,
+        proposed_payload: proposed as never,
+        final_payload: final as never,
         raw_message: (data.raw_message ?? "").slice(0, 2000) || null,
       });
       return { logged: true };
