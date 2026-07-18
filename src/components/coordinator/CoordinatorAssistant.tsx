@@ -455,6 +455,51 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
   });
 
+  // Confirm ONE partner suggestion — reuses the existing Collaborate
+  // dispatchJobToPartner function (same call the manual Collaborate UI makes).
+  // The assistant never triggers this itself; the coordinator must click
+  // Confirm on the specific suggestion card.
+  const dispatchPartnerFn = useServerFn(dispatchJobToPartner);
+  const confirmSuggest = useMutation({
+    mutationFn: async (item: AssistantPartnerSuggest["items"][number]) => {
+      await dispatchPartnerFn({
+        data: {
+          job_id: item.job_id,
+          partner_company_id: item.partner_company_id,
+          note: "Suggested by AI assistant",
+        },
+      });
+      return item;
+    },
+    onSuccess: (item) => {
+      toast.success(`Sent to ${item.partner_name}.`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["collab", "connections"] });
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ Forwarded ${item.job_label} to ${item.partner_name}. They can accept or decline in their inbox.` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not forward the trip.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const removeSuggestItem = (msgId: string, idx: number) => {
+    setMessages((m) =>
+      m
+        .map((x) => {
+          if (x.id !== msgId || !("suggest" in x)) return x;
+          const items = x.suggest.items.filter((_, i) => i !== idx);
+          return { ...x, suggest: { ...x.suggest, items } };
+        })
+        .filter((x) => !("suggest" in x) || x.suggest.items.length > 0),
+    );
+  };
+
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
   };
