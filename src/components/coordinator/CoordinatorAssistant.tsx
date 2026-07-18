@@ -1,0 +1,387 @@
+"use client";
+/**
+ * AI Coordinator Assistant — floating FAB + slide-in chat panel.
+ *
+ * Text-only. Answers questions or drafts a single trip create/edit as a
+ * proposal card. On Confirm, it reuses the existing createJob / updateJob
+ * server functions — the assistant itself never writes to the DB.
+ *
+ * Scope this pass (per product spec): no voice, no bulk actions, no learning
+ * table, no driver-conflict detection. Metered via the general points system.
+ */
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
+import { askCoordinatorAssistant, getJobForAssistant, type AssistantResult, type AssistantDraft } from "@/lib/coordinator-assist.functions";
+import { createJob, updateJob } from "@/lib/coordinator.functions";
+import { useFeature } from "@/hooks/use-features";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+
+// ---------------- Screen context ----------------
+
+export type AssistantScreen = {
+  path?: string | null;
+  trip?: {
+    id: string;
+    from_location?: string | null;
+    to_location?: string | null;
+    date?: string | null;
+    time?: string | null;
+    driver_id?: string | null;
+    driver_name?: string | null;
+    from_flight?: string | null;
+    to_flight?: string | null;
+    vehicle?: string | null;
+    contact_phone?: string | null;
+    clientcompanyname?: string | null;
+  } | null;
+};
+
+type AssistantCtx = {
+  setScreen: (s: AssistantScreen | null) => void;
+  screenRef: React.MutableRefObject<AssistantScreen | null>;
+};
+const Ctx = createContext<AssistantCtx | null>(null);
+
+/**
+ * Register the trip/screen the coordinator is currently looking at so the
+ * assistant can resolve "this trip". Safe to call from anywhere below the
+ * provider — no-ops otherwise. Cleans up on unmount.
+ */
+export function useSetAssistantScreen(screen: AssistantScreen | null) {
+  const ctx = useContext(Ctx);
+  useEffect(() => {
+    if (!ctx) return;
+    ctx.setScreen(screen);
+    return () => {
+      // Only clear if we still own the context (avoid clobbering a sibling).
+      if (ctx.screenRef.current === screen) ctx.setScreen(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx, JSON.stringify(screen)]);
+}
+
+// ---------------- Chat state ----------------
+
+type ChatMsg =
+  | { id: string; role: "user"; text: string }
+  | { id: string; role: "assistant"; text: string }
+  | { id: string; role: "assistant"; draft: AssistantDraft };
+
+function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const push = (label: string, v?: string | null) => {
+    if (v != null && String(v).trim() !== "") out.push({ label, value: String(v) });
+  };
+  push("From", fields.from_location);
+  push("To", fields.to_location);
+  push("Date", fields.date);
+  push("Time", fields.time);
+  push("Driver", fields.driver_name ?? (fields.driver_id ? "(assigned)" : undefined));
+  push("Vehicle", fields.vehicle);
+  push("Phone", fields.contact_phone);
+  push("From flight", fields.from_flight);
+  push("To flight", fields.to_flight);
+  push("Client", fields.clientcompanyname);
+  return out;
+}
+
+// ---------------- Provider + FAB + Panel ----------------
+
+export function CoordinatorAssistant({ children }: { children: ReactNode }) {
+  const enabled = useFeature("ai_coordinator_assist");
+  const [screen, setScreenState] = useState<AssistantScreen | null>(null);
+  const screenRef = useRef<AssistantScreen | null>(null);
+  const setScreen = useCallback((s: AssistantScreen | null) => {
+    screenRef.current = s;
+    setScreenState(s);
+  }, []);
+
+  const ctxValue = useMemo<AssistantCtx>(() => ({ setScreen, screenRef }), [setScreen]);
+
+  return (
+    <Ctx.Provider value={ctxValue}>
+      {children}
+      {enabled ? <AssistantSurface screen={screen} /> : null}
+    </Ctx.Provider>
+  );
+}
+
+function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const askFn = useServerFn(askCoordinatorAssistant);
+  const getJobFn = useServerFn(getJobForAssistant);
+  const createFn = useServerFn(createJob);
+  const updateFn = useServerFn(updateJob);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [open]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  const ask = useMutation({
+    mutationFn: async (text: string): Promise<AssistantResult> => {
+      const history = messages
+        .slice(-8)
+        .map((m) =>
+          "text" in m
+            ? { role: m.role, text: m.text }
+            : { role: "assistant" as const, text: m.draft.summary },
+        );
+      return (await askFn({
+        data: {
+          message: text,
+          history,
+          screen: screen
+            ? { path: screen.path ?? (typeof window !== "undefined" ? window.location.pathname : null), trip: screen.trip ?? null }
+            : { path: typeof window !== "undefined" ? window.location.pathname : null, trip: null },
+        },
+      })) as AssistantResult;
+    },
+    onSuccess: (result) => {
+      const id = crypto.randomUUID();
+      if (result.kind === "draft") {
+        setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
+      } else {
+        setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
+      }
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Assistant failed. Try again.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const send = () => {
+    const text = input.trim();
+    if (!text || ask.isPending) return;
+    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text }]);
+    setInput("");
+    ask.mutate(text);
+  };
+
+  const confirm = useMutation({
+    mutationFn: async (draft: AssistantDraft) => {
+      const f = draft.fields;
+      if (draft.action === "update") {
+        const id = draft.target_trip_id ?? screen?.trip?.id;
+        if (!id) throw new Error("No trip selected to update.");
+        const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+        // Merge drafted fields over the existing full payload.
+        const payload = {
+          id,
+          from_location: (f.from_location ?? existing.from_location) as string,
+          to_location: (f.to_location ?? existing.to_location) as string,
+          date: (f.date ?? existing.date) as string,
+          time: (f.time ?? existing.time) as string,
+          flightorship: (existing.flightorship ?? "") as string,
+          from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
+          to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
+          clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
+          qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
+          tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
+          vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
+          contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
+          driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
+          pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
+          dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
+          pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
+          dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
+          tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+        };
+        return updateFn({ data: payload });
+      }
+      // create
+      const missing: string[] = [];
+      if (!f.from_location) missing.push("from location");
+      if (!f.to_location) missing.push("to location");
+      if (!f.date) missing.push("date");
+      if (!f.time) missing.push("time");
+      if (missing.length) throw new Error(`I still need: ${missing.join(", ")}.`);
+      return createFn({
+        data: {
+          from_location: f.from_location!,
+          to_location: f.to_location!,
+          date: f.date!,
+          time: f.time!,
+          flightorship: "",
+          from_flight: f.from_flight ?? "",
+          to_flight: f.to_flight ?? "",
+          clientcompanyname: f.clientcompanyname ?? "",
+          qr_strict_mode: false,
+          tracking_enabled: false,
+          vehicle: f.vehicle ?? "",
+          contact_phone: f.contact_phone ?? "",
+          driver_id: f.driver_id ?? null,
+          label_ids: [],
+          pickup_place_id: null,
+          dropoff_place_id: null,
+          pickup_display_name: null,
+          dropoff_display_name: null,
+          tracking_kind: "flight",
+        },
+      });
+    },
+    onSuccess: (_res, draft) => {
+      toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ Done — ${draft.summary}` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not apply the change.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const dismissDraft = (id: string) => {
+    setMessages((m) => m.filter((x) => x.id !== id));
+  };
+
+  return (
+    <>
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 hover:bg-primary/90 sm:bottom-6 sm:right-6"
+          aria-label="Open AI dispatch assistant"
+        >
+          <Sparkles className="h-5 w-5" />
+        </button>
+      )}
+      {open && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l bg-background shadow-2xl sm:m-4 sm:h-[calc(100vh-2rem)] sm:rounded-lg sm:border"
+          role="dialog"
+          aria-label="AI dispatch assistant"
+        >
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <div>
+                <div className="text-sm font-semibold">AI dispatch assistant</div>
+                <div className="text-xs text-muted-foreground">
+                  {screen?.trip ? `On trip · ${screen.trip.from_location ?? "?"} → ${screen.trip.to_location ?? "?"}` : "Ask, or draft a trip."}
+                </div>
+              </div>
+            </div>
+            <Button size="icon" variant="ghost" onClick={() => setOpen(false)} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div ref={scrollRef} className="flex flex-col gap-3 p-4">
+              {messages.length === 0 && (
+                <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  Try: <em>"Move this trip to 19:30"</em>, <em>"Create a trip tomorrow 10am from Hilton to airport"</em>, or <em>"How does auto-forward work?"</em>
+                  <div className="mt-2">Always verify before saving — AI can be wrong.</div>
+                </div>
+              )}
+              {messages.map((m) => {
+                if ("draft" in m) {
+                  const rows = draftFieldSummary(m.draft.fields);
+                  const busy = confirm.isPending;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {m.draft.action === "create" ? "Draft new trip" : "Proposed change"}
+                        </div>
+                        <div className="mb-2 text-sm">{m.draft.summary}</div>
+                        {rows.length > 0 && (
+                          <dl className="mb-3 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+                            {rows.map((r) => (
+                              <div key={r.label} className="contents">
+                                <dt className="text-muted-foreground">{r.label}</dt>
+                                <dd className="font-medium">{r.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        <div className="flex gap-2">
+                          <Button size="sm" disabled={busy} onClick={() => confirm.mutate(m.draft)}>
+                            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            Confirm
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                const isUser = m.role === "user";
+                return (
+                  <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
+                    <div className={`mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full ${isUser ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>
+                      {isUser ? <UserIcon className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+                    </div>
+                    <div className={`max-w-[85%] whitespace-pre-wrap rounded-md px-3 py-2 text-sm ${isUser ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                      {m.text}
+                    </div>
+                  </div>
+                );
+              })}
+              {ask.isPending && (
+                <div className="flex gap-2">
+                  <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                    <Bot className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Thinking…</div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <div className="border-t p-3">
+            <div className="flex items-end gap-2">
+              <Textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Ask about this trip, or say what to change…"
+                rows={2}
+                className="min-h-[44px] resize-none"
+                disabled={ask.isPending}
+              />
+              <Button size="icon" onClick={send} disabled={ask.isPending || !input.trim()} aria-label="Send">
+                {ask.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Verify before confirming. Each turn costs 1 point.
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
