@@ -2160,8 +2160,8 @@ async function fetchLiveStatusViaGemini(
     ok: true,
     status: String(extracted?.status ?? "unknown"),
     note: String(extracted?.note ?? "").slice(0, 160),
-    scheduled: extracted?.scheduled ?? null,
-    estimated: extracted?.estimated ?? null,
+    scheduled: normalizeMaltaIso(extracted?.scheduled),
+    estimated: normalizeMaltaIso(extracted?.estimated),
     confidence,
   };
   liveStatusCache.set(cacheKey, { at: Date.now(), value });
@@ -2205,7 +2205,7 @@ async function applyLiveStatusToJob(
     const p = new Date(job.pickup_at).getTime();
     if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
       status = "time_mismatch";
-      note = `Scheduled ${new Date(result.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(job.pickup_at).toISOString().slice(11, 16)}`;
+      note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
   }
 
@@ -2354,7 +2354,7 @@ async function _computeTripLiveStatus(data: {
         const p = new Date(pickupIso).getTime();
         if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
           status = "time_mismatch";
-          note = `Scheduled ${new Date(r.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(pickupIso).toISOString().slice(11, 16)}`;
+          note = `Scheduled ${formatMaltaTime(r.scheduled)} vs pickup ${formatMaltaTime(pickupIso)}`;
         }
       }
       flight = {
