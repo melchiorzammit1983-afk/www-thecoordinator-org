@@ -14,7 +14,7 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, type AssistantResult, type AssistantDraft } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, type AssistantResult, type AssistantDraft, type AssistantBatch } from "@/lib/coordinator-assist.functions";
 import { createJob, updateJob } from "@/lib/coordinator.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,8 @@ export function useSetAssistantScreen(screen: AssistantScreen | null) {
 type ChatMsg =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
-  | { id: string; role: "assistant"; draft: AssistantDraft };
+  | { id: string; role: "assistant"; draft: AssistantDraft }
+  | { id: string; role: "assistant"; batch: AssistantBatch };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -135,11 +136,14 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     mutationFn: async (text: string): Promise<AssistantResult> => {
       const history = messages
         .slice(-8)
-        .map((m) =>
-          "text" in m
-            ? { role: m.role, text: m.text }
-            : { role: "assistant" as const, text: m.draft.summary },
-        );
+        .map((m) => {
+          if ("text" in m) return { role: m.role, text: m.text };
+          if ("draft" in m) return { role: "assistant" as const, text: m.draft.summary };
+          return {
+            role: "assistant" as const,
+            text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
+          };
+        });
       return (await askFn({
         data: {
           message: text,
@@ -154,6 +158,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const id = crypto.randomUUID();
       if (result.kind === "draft") {
         setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
+      } else if (result.kind === "batch") {
+        setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
@@ -173,44 +179,20 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     ask.mutate(text);
   };
 
-  const confirm = useMutation({
-    mutationFn: async (draft: AssistantDraft) => {
+  const missingCreateFields = useCallback((f: AssistantDraft["fields"]): string[] => {
+    const missing: string[] = [];
+    if (!f.from_location) missing.push("from");
+    if (!f.to_location) missing.push("to");
+    if (!f.date) missing.push("date");
+    if (!f.time) missing.push("time");
+    return missing;
+  }, []);
+
+  const createDraft = useCallback(
+    async (draft: AssistantDraft) => {
       const f = draft.fields;
-      if (draft.action === "update") {
-        const id = draft.target_trip_id ?? screen?.trip?.id;
-        if (!id) throw new Error("No trip selected to update.");
-        const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
-        // Merge drafted fields over the existing full payload.
-        const payload = {
-          id,
-          from_location: (f.from_location ?? existing.from_location) as string,
-          to_location: (f.to_location ?? existing.to_location) as string,
-          date: (f.date ?? existing.date) as string,
-          time: (f.time ?? existing.time) as string,
-          flightorship: (existing.flightorship ?? "") as string,
-          from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
-          to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
-          clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
-          qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
-          tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
-          vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
-          contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
-          driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
-          pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
-          dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
-          pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
-          dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
-          tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
-        };
-        return updateFn({ data: payload });
-      }
-      // create
-      const missing: string[] = [];
-      if (!f.from_location) missing.push("from location");
-      if (!f.to_location) missing.push("to location");
-      if (!f.date) missing.push("date");
-      if (!f.time) missing.push("time");
-      if (missing.length) throw new Error(`I still need: ${missing.join(", ")}.`);
+      const missing = missingCreateFields(f);
+      if (missing.length) throw new Error(`Missing ${missing.join(", ")} for "${draft.summary}".`);
       return createFn({
         data: {
           from_location: f.from_location!,
@@ -235,6 +217,41 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         },
       });
     },
+    [createFn, missingCreateFields],
+  );
+
+  const confirm = useMutation({
+    mutationFn: async (draft: AssistantDraft) => {
+      if (draft.action === "update") {
+        const id = draft.target_trip_id ?? screen?.trip?.id;
+        if (!id) throw new Error("No trip selected to update.");
+        const f = draft.fields;
+        const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+        const payload = {
+          id,
+          from_location: (f.from_location ?? existing.from_location) as string,
+          to_location: (f.to_location ?? existing.to_location) as string,
+          date: (f.date ?? existing.date) as string,
+          time: (f.time ?? existing.time) as string,
+          flightorship: (existing.flightorship ?? "") as string,
+          from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
+          to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
+          clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
+          qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
+          tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
+          vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
+          contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
+          driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
+          pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
+          dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
+          pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
+          dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
+          tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+        };
+        return updateFn({ data: payload });
+      }
+      return createDraft(draft);
+    },
     onSuccess: (_res, draft) => {
       toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -250,6 +267,57 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
     },
   });
+
+  const confirmBatch = useMutation({
+    mutationFn: async (batchMsgId: string) => {
+      const msg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
+        | (ChatMsg & { batch: AssistantBatch })
+        | undefined;
+      if (!msg) throw new Error("Batch no longer available.");
+      const drafts = msg.batch.drafts;
+      const ok: string[] = [];
+      const failed: { summary: string; error: string }[] = [];
+      for (const d of drafts) {
+        try {
+          await createDraft(d);
+          ok.push(d.summary);
+        } catch (e) {
+          failed.push({ summary: d.summary, error: e instanceof Error ? e.message : "failed" });
+        }
+      }
+      return { ok, failed };
+    },
+    onSuccess: (res, batchMsgId) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      if (res.ok.length && !res.failed.length) toast.success(`Created ${res.ok.length} trips.`);
+      else if (res.ok.length && res.failed.length) toast.warning(`Created ${res.ok.length}, ${res.failed.length} need more info.`);
+      else toast.error("No trips created.");
+      const lines = [
+        ...res.ok.map((s) => `✔ ${s}`),
+        ...res.failed.map((f) => `⚠ ${f.summary} — ${f.error}`),
+      ].join("\n");
+      setMessages((m) => [
+        ...m.filter((x) => x.id !== batchMsgId || res.failed.length > 0),
+        { id: crypto.randomUUID(), role: "assistant", text: lines || "Nothing to do." },
+      ]);
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "Batch failed.");
+    },
+  });
+
+  const removeBatchItem = (batchId: string, idx: number) => {
+    setMessages((m) =>
+      m
+        .map((x) => {
+          if (x.id !== batchId || !("batch" in x)) return x;
+          const drafts = x.batch.drafts.filter((_, i) => i !== idx);
+          return { ...x, batch: { ...x.batch, drafts } };
+        })
+        .filter((x) => !("batch" in x) || x.batch.drafts.length > 0),
+    );
+  };
 
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
@@ -327,6 +395,86 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                           <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
                             Cancel
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("batch" in m) {
+                  const busy = confirmBatch.isPending;
+                  const anyMissing = m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {m.batch.drafts.length} new trips
+                          </div>
+                        </div>
+                        {m.batch.clarify && (
+                          <div className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                            {m.batch.clarify}
+                          </div>
+                        )}
+                        <div className="mb-3 space-y-2">
+                          {m.batch.drafts.map((d, i) => {
+                            const rows = draftFieldSummary(d.fields);
+                            const missing = missingCreateFields(d.fields);
+                            return (
+                              <div key={i} className="rounded border bg-background p-2">
+                                <div className="mb-1 flex items-start justify-between gap-2">
+                                  <div className="text-sm font-medium">
+                                    {i + 1}. {d.summary}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeBatchItem(m.id, i)}
+                                    disabled={busy}
+                                    aria-label={`Remove trip ${i + 1}`}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                                {rows.length > 0 && (
+                                  <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
+                                    {rows.map((r) => (
+                                      <div key={r.label} className="contents">
+                                        <dt className="text-muted-foreground">{r.label}</dt>
+                                        <dd className="font-medium">{r.value}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                )}
+                                {missing.length > 0 && (
+                                  <div className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                                    Needs: {missing.join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            disabled={busy || anyMissing}
+                            onClick={() => confirmBatch.mutate(m.id)}
+                          >
+                            {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                            Confirm all
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                            Cancel
+                          </Button>
+                          {anyMissing && (
+                            <span className="text-[11px] text-muted-foreground">
+                              Reply with the missing info and I'll update the list.
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

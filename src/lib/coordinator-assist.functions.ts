@@ -74,7 +74,13 @@ export type AssistantAnswer = {
   text: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft;
+export type AssistantBatch = {
+  kind: "batch";
+  drafts: AssistantDraft[]; // all action:"create"
+  clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch;
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -137,24 +143,30 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta.
 
-You do TWO things:
-1) ANSWER short, on-topic questions the coordinator asks about the currently open screen or general workflow.
-2) When the coordinator asks to CREATE or EDIT a single trip, return a structured DRAFT — never claim you've saved it. The user confirms.
+You do THREE things:
+1) ANSWER short, on-topic questions about the current screen or workflow.
+2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
+3) When the coordinator's message describes MULTIPLE trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
 
 Rules:
-- Return STRICT JSON only. No markdown. Shape:
+- Return STRICT JSON only. No markdown. One of:
   { "kind": "answer", "text": "..." }
-  OR
   { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
     "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
-                "driver_id"? (uuid from roster below or null), "driver_name"? (echo the name you matched),
+                "driver_id"? (uuid from roster below or null), "driver_name"?,
                 "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"? },
-    "summary": "one short sentence e.g. Move Trip #ABC to 19:00" }
-- For "update", set target_trip_id to the currently open trip id when the user says "this trip", "it", "the trip", etc. Only include fields that actually change.
-- For "create", omit target_trip_id (null).
+    "summary": "one short sentence" }
+  { "kind": "batch",
+    "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
+    "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
+- For "update", set target_trip_id when the user says "this trip" etc. Only include changed fields.
+- For "create" (single or in a batch), omit target_trip_id (null).
+- For "batch", each element MUST be action:"create".
 - Times are Malta local, 24h.
-- Only draft ONE trip. If the request is bulk or ambiguous, answer instead: politely say to use the bulk paste tool.
-- If the request is not about a single trip create/edit, use kind:"answer".
+- If any trip in a batch is missing pickup time, passenger count, exact pickup/drop-off location, or is ambiguous about which driver, STILL include it in "drafts" with the fields you do know, and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
+- Only use "batch" when there are 2+ trips. For 1 trip use "draft".
+- For "update" requests that touch multiple existing trips (e.g. "move all Smith trips to 7pm"), DO NOT batch — answer that this is not supported yet and to edit them individually.
+- If the request is not about trips, use kind:"answer".
 - Never mention how the system is built, database names, or model names.
 
 Today's date (Malta): ${today}
@@ -200,15 +212,28 @@ ${historyLines || "(none)"}
       return { kind: "answer", text: content || "Sorry, I couldn't parse that." };
     }
     const p = parsed as Record<string, unknown>;
-    if (p.kind === "draft") {
+    const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
+      const d = (raw ?? {}) as Record<string, unknown>;
       return {
         kind: "draft",
-        action: (p.action === "update" ? "update" : "create"),
-        target_trip_id: typeof p.target_trip_id === "string" ? p.target_trip_id : null,
-        fields: (p.fields as AssistantDraft["fields"]) ?? {},
-        summary: typeof p.summary === "string" ? p.summary : "Proposed trip change",
+        action: !forceCreate && d.action === "update" ? "update" : "create",
+        target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
+        fields: (d.fields as AssistantDraft["fields"]) ?? {},
+        summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
+    };
+    if (p.kind === "batch" && Array.isArray(p.drafts)) {
+      const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
+      if (drafts.length >= 2) {
+        return {
+          kind: "batch",
+          drafts,
+          clarify: typeof p.clarify === "string" && p.clarify.trim() ? p.clarify : null,
+        };
+      }
+      if (drafts.length === 1) return drafts[0];
     }
+    if (p.kind === "draft") return toDraft(p);
     return {
       kind: "answer",
       text: typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.",
