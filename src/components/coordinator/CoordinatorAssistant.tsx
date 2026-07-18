@@ -385,6 +385,71 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     );
   };
 
+  const confirmFix = useMutation({
+    mutationFn: async (fix: AssistantDataFix) => {
+      if (fix.target === "trip") {
+        // Reuse existing updateJob: pull the current row, patch the single field.
+        const existing = (await getJobFn({ data: { id: fix.target_id } })) as Record<string, unknown>;
+        const patched: Record<string, unknown> = { ...existing, [fix.field]: fix.new_value };
+        const payload = {
+          id: fix.target_id,
+          from_location: (patched.from_location ?? "") as string,
+          to_location: (patched.to_location ?? "") as string,
+          date: patched.date as string,
+          time: patched.time as string,
+          flightorship: (patched.flightorship ?? "") as string,
+          from_flight: (patched.from_flight ?? "") as string,
+          to_flight: (patched.to_flight ?? "") as string,
+          clientcompanyname: (patched.clientcompanyname ?? "") as string,
+          qr_strict_mode: (patched.qr_strict_mode ?? false) as boolean,
+          tracking_enabled: (patched.tracking_enabled ?? false) as boolean,
+          vehicle: (patched.vehicle ?? "") as string,
+          contact_phone: (patched.contact_phone ?? "") as string,
+          driver_id: (patched.driver_id ?? null) as string | null,
+          pickup_place_id: (patched.pickup_place_id ?? null) as string | null,
+          dropoff_place_id: (patched.dropoff_place_id ?? null) as string | null,
+          pickup_display_name: (patched.pickup_display_name ?? null) as string | null,
+          dropoff_display_name: (patched.dropoff_display_name ?? null) as string | null,
+          tracking_kind: (patched.tracking_kind ?? "flight") as "flight" | "vessel",
+        };
+        return updateFn({ data: payload });
+      }
+      // driver
+      const patch: { id: string; name?: string; phone?: string | null } = { id: fix.target_id };
+      if (fix.field === "name") patch.name = fix.new_value;
+      else if (fix.field === "phone") patch.phone = fix.new_value;
+      else throw new Error(`Unsupported driver field: ${fix.field}`);
+      return updateDriverFn({ data: patch });
+    },
+    onSuccess: (_res, fix) => {
+      toast.success(`Fixed ${fix.field_label.toLowerCase()}.`);
+      void meterFn({
+        data: {
+          feature_key: "assistant_data_fix",
+          count: 1,
+          job_id: fix.target === "trip" ? fix.target_id : null,
+          note: `assistant data_fix: ${fix.summary}`.slice(0, 200),
+        },
+      }).catch(() => { /* soft */ });
+      if (fix.target === "trip") {
+        qc.invalidateQueries({ queryKey: ["jobs"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      } else {
+        qc.invalidateQueries({ queryKey: ["drivers"] });
+      }
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ ${fix.summary}` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not apply the fix.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
   };
