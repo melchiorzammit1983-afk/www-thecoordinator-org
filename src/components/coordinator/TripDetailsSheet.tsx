@@ -64,6 +64,7 @@ type WaitProposalRow = {
 
 export type DetailsJob = {
   id: string;
+  trip_no?: number | null;
   from_location: string; to_location: string;
   date: string; time: string; pickup_at: string | null;
   status: string;
