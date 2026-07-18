@@ -200,6 +200,57 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
       : "(empty — nothing taught yet)";
 
+    // Active Collaborate partners (same source the Collaborate UI reads via
+    // listConnections). We only surface {company_id, company_name} to the
+    // model — the exact information the coordinator already sees when
+    // dispatching a trip manually. No cross-company internal data.
+    const { data: connRows } = await supabaseAdmin
+      .from("coordinator_connections")
+      .select("owner_company_id, partner_company_id, status")
+      .or(`owner_company_id.eq.${company.id},partner_company_id.eq.${company.id}`)
+      .eq("status", "active");
+    const partnerIds = Array.from(
+      new Set(
+        (connRows ?? [])
+          .map((r: any) => (r.owner_company_id === company.id ? r.partner_company_id : r.owner_company_id))
+          .filter((id: string) => id && id !== company.id),
+      ),
+    );
+    let partners: { id: string; name: string }[] = [];
+    if (partnerIds.length > 0) {
+      const { data: partnerRows } = await supabaseAdmin
+        .from("companies")
+        .select("id, name")
+        .in("id", partnerIds);
+      partners = (partnerRows ?? []).map((p: any) => ({ id: p.id, name: p.name ?? "Unknown" }));
+    }
+    const partnersBlock = partners.length
+      ? partners.map((p) => `${p.id} — ${p.name}`).join("\n")
+      : "(no active Collaborate partners)";
+
+    // Upcoming trips this company is currently the executor for. Used so the
+    // assistant can point at real trip IDs when the coordinator asks to hand
+    // work off (e.g. "close for the day, cover these"). Scoped to next 48h
+    // and to trips NOT already dispatched out to a partner.
+    const nowIso = new Date().toISOString();
+    const soonIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    const { data: upcomingRows } = await supabaseAdmin
+      .from("jobs")
+      .select("id, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
+      .eq("executor_company_id", company.id)
+      .not("status", "in", "(completed,cancelled)")
+      .gte("pickup_at", nowIso)
+      .lte("pickup_at", soonIso)
+      .order("pickup_at", { ascending: true })
+      .limit(40);
+    const upcoming = (upcomingRows ?? []) as any[];
+    const upcomingBlock = upcoming.length
+      ? upcoming
+          .map((r) => `${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
+          .join("\n")
+      : "(none in the next 48h)";
+
+
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
     const historyLines = (data.history ?? [])
