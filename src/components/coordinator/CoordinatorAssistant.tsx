@@ -738,6 +738,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
           logLearning({ action_kind: "data_fix", outcome: "cancelled", proposed: target.fix, raw_message: target.rawMessage });
         } else if ("suggest" in target) {
           logLearning({ action_kind: "partner_suggest", outcome: "cancelled", proposed: target.suggest, raw_message: target.rawMessage });
+        } else if ("actions" in target) {
+          logLearning({ action_kind: "batch", outcome: "cancelled", proposed: target.actions, raw_message: target.rawMessage });
         }
       }
       return m.filter((x) => x.id !== id);
