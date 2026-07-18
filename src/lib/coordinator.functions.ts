@@ -2077,7 +2077,7 @@ async function fetchLiveStatusViaGemini(
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
-  const cacheKey = `${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
+  const cacheKey = `v2:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
