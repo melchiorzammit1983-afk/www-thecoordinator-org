@@ -460,7 +460,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                 }
                 if ("batch" in m) {
                   const busy = confirmBatch.isPending;
-                  const anyMissing = m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
+                  const isUpdateBatch = m.batch.drafts.every((d) => d.action === "update");
+                  const anyMissing = !isUpdateBatch && m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
                   return (
                     <div key={m.id} className="flex gap-2">
                       <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
@@ -469,7 +470,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                       <div className="flex-1 rounded-md border bg-muted/30 p-3">
                         <div className="mb-2 flex items-center justify-between">
                           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {m.batch.drafts.length} new trips
+                            {isUpdateBatch ? `${m.batch.drafts.length} trip edits` : `${m.batch.drafts.length} new trips`}
                           </div>
                         </div>
                         {m.batch.clarify && (
