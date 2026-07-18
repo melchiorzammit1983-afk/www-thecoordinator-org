@@ -29,7 +29,7 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
