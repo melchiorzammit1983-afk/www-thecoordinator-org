@@ -192,19 +192,29 @@ function ManualForm({
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
-  const [trackingKind, setTrackingKind] = useState<"flight" | "vessel">(
-    (job?.tracking_kind as "flight" | "vessel") ?? "flight",
+  const [fromKind, setFromKind] = useState<EndpointKind>(() =>
+    inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
   );
+  const [toKind, setToKind] = useState<EndpointKind>(() =>
+    inferEndpointKind(job?.to_location ?? prefill?.to_location ?? "", job?.to_flight ?? prefill?.to_flight ?? ""),
+  );
+  const trackingKind: "flight" | "vessel" =
+    (fromKind === "seaport" && toKind !== "airport") || (toKind === "seaport" && fromKind !== "airport")
+      ? "vessel"
+      : "flight";
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
-  
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
   const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
+
 
   // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
   // and return the normalized code plus the remaining text with the match removed.
