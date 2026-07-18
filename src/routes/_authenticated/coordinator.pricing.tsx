@@ -379,30 +379,17 @@ function PricePreviewTab() {
   const [extraPerPax, setExtraPerPax] = useState<number>(0);
 
   const area = (areasQ.data ?? []).find((a) => a.id === areaId);
-  const currency = area?.currency ?? settings.currency ?? "EUR";
-  const basePrice = Number(area?.base_price ?? 0);
-  const pricePerKm = Number(area?.price_per_km ?? settings.price_per_km ?? 0);
-  const pricePerHour = Number(area?.price_per_hour ?? settings.price_per_hour ?? 0);
-  const minimumFare = Number(area?.minimum_fare ?? settings.minimum_fare ?? 0);
-  const freeWait = Number(area?.free_wait_minutes ?? settings.free_wait_minutes ?? 0);
-  const waitRate = Number(area?.waiting_rate_per_minute ?? settings.waiting_rate_per_minute ?? 0);
-
-  const distanceCost = km * pricePerKm;
-  const timeCost = (mins / 60) * pricePerHour;
-  const paxSurcharge = Math.max(0, pax - paxIncluded) * extraPerPax;
-  const preMin = basePrice + distanceCost + timeCost + paxSurcharge;
-  const fare = Math.max(preMin, minimumFare);
-  const minApplied = fare > preMin;
-  const chargeableWait = Math.max(0, waitMins - freeWait);
-  const waitCharge = chargeableWait * waitRate;
-  const total = fare + waitCharge;
+  const breakdown = computeFareBreakdown({
+    km, mins, waitMins, pax, paxIncluded, extraPerPax,
+    settings, area,
+  });
+  const { currency, total, fare, waitCharge, freeWaitMinutes } = breakdown;
 
   const commissionPct = Number(settings.default_driver_commission_pct ?? 0);
   const driverShare = Number(settings.default_driver_wait_share_pct ?? 100);
   const driverFromFare = fare * (1 - commissionPct / 100);
   const driverFromWait = waitCharge * (driverShare / 100);
   const driverTotal = driverFromFare + driverFromWait;
-
   const fmt = (n: number) => `${currency} ${n.toFixed(2)}`;
 
   return (
@@ -445,7 +432,7 @@ function PricePreviewTab() {
           <Field label="Driving time (min)">
             <NumInput step="1" value={mins} onChange={(v) => setMins(Math.max(0, Math.round(v)))} />
           </Field>
-          <Field label="Waiting time (min)" hint={`Free window: ${freeWait} min from pickup.`}>
+          <Field label="Waiting time (min)" hint={`Free window: ${freeWaitMinutes} min from pickup.`}>
             <NumInput step="1" value={waitMins} onChange={(v) => setWaitMins(Math.max(0, Math.round(v)))} />
           </Field>
           <div />
@@ -469,31 +456,7 @@ function PricePreviewTab() {
         <CardContent className="space-y-4">
           <div className="text-3xl font-semibold tabular-nums">{fmt(total)}</div>
 
-          <div className="rounded-md border divide-y text-sm">
-            <PreviewRow label="Base price" value={fmt(basePrice)} muted={basePrice === 0} />
-            <PreviewRow label={`Distance (${km.toFixed(1)} km × ${fmt(pricePerKm)})`} value={fmt(distanceCost)} muted={distanceCost === 0} />
-            <PreviewRow label={`Time (${mins} min × ${fmt(pricePerHour)}/hr)`} value={fmt(timeCost)} muted={timeCost === 0} />
-            {paxSurcharge > 0 && (
-              <PreviewRow label={`Passenger surcharge (${pax - paxIncluded} × ${fmt(extraPerPax)})`} value={fmt(paxSurcharge)} />
-            )}
-            <PreviewRow
-              label={minApplied ? `Fare (minimum ${fmt(minimumFare)} applied)` : "Fare"}
-              value={fmt(fare)}
-              strong
-            />
-            <PreviewRow
-              label={
-                waitMins === 0
-                  ? "Waiting"
-                  : chargeableWait === 0
-                    ? `Waiting (${waitMins} min — inside free window)`
-                    : `Waiting (${chargeableWait} chargeable min × ${fmt(waitRate)})`
-              }
-              value={fmt(waitCharge)}
-              muted={waitCharge === 0}
-            />
-            <PreviewRow label="Total" value={fmt(total)} strong />
-          </div>
+          <FareBreakdownView breakdown={breakdown} />
 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
