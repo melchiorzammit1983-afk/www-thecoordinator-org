@@ -66,10 +66,11 @@ function PortalPage() {
 
       <main className="max-w-5xl mx-auto p-4">
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="bookings">Bookings</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
+            {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
