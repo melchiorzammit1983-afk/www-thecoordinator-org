@@ -76,7 +76,7 @@ export type AssistantAnswer = {
 
 export type AssistantBatch = {
   kind: "batch";
-  drafts: AssistantDraft[]; // all action:"create"
+  drafts: AssistantDraft[]; // mixed action: all "create" (multi-trip create) OR all "update" (multi-trip edit)
   clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
 };
 
