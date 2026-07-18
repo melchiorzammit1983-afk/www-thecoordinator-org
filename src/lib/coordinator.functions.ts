@@ -6258,7 +6258,44 @@ export const listMyReferrals = createServerFn({ method: "GET" })
       if (genErr) throw new Error(genErr.message);
       code = (gen as unknown as string) ?? null;
     }
-    if (!code) return { code: null, requests: [] as any[], percent: 5, credit_until: null as string | null };
+
+    // Attribution: who referred THIS company (if anyone)
+    const referredById = (c as any).referred_by_company_id as string | null;
+    let attributed_to: { id: string; name: string | null; credit_until: string | null } | null = null;
+    if (referredById) {
+      const { data: ref } = await supabaseAdmin
+        .from("companies")
+        .select("id, name")
+        .eq("id", referredById)
+        .maybeSingle();
+      attributed_to = ref
+        ? { id: ref.id, name: ref.name, credit_until: (c as any).referral_credit_until ?? null }
+        : null;
+    }
+
+    // Kickbacks credited to me (negative points_deducted = credit)
+    const { data: kickbacks } = await supabaseAdmin
+      .from("points_ledger")
+      .select("id, points_deducted, note, feature_key, created_at")
+      .eq("company_id", c.id)
+      .ilike("note", "Referral kickback%")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    const total_credited = (kickbacks ?? []).reduce(
+      (sum, k: any) => sum + Math.abs(Number(k.points_deducted ?? 0)),
+      0,
+    );
+
+    const base = {
+      percent: Number((c as any).referral_percent ?? 5),
+      credit_until: (c as any).referral_credit_until ?? null,
+      attributed_to,
+      kickbacks: kickbacks ?? [],
+      total_credited,
+    };
+
+    if (!code) return { code: null, requests: [] as any[], ...base };
     const { data, error } = await supabaseAdmin
       .from("access_requests")
       .select("id, full_name, company_name, email, kind, status, created_at")
@@ -6266,12 +6303,7 @@ export const listMyReferrals = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
-    return {
-      code,
-      requests: data ?? [],
-      percent: Number((c as any).referral_percent ?? 5),
-      credit_until: (c as any).referral_credit_until ?? null,
-    };
+    return { code, requests: data ?? [], ...base };
   });
 
 // ---------- AI TRAINING LOG (learning loop) ----------
