@@ -255,7 +255,7 @@ export const undoAssistantAction = createServerFn({ method: "POST" })
         }
         const { error: upErr } = await sb
           .from("jobs")
-          .update(patch)
+          .update(patch as never)
           .eq("id", id)
           .eq("company_id", companyId);
         if (upErr) results.push({ id, ok: false, message: upErr.message });
