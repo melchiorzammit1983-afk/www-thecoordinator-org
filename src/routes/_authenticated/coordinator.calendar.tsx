@@ -191,6 +191,7 @@ function scrollToJob(jobId: string) {
 
 type Job = {
   id: string;
+  trip_no?: number | null;
   from_location: string;
   to_location: string;
   date: string;
