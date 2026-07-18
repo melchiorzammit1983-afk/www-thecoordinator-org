@@ -2469,6 +2469,10 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
         body: `Follow-up request: ${data.notes}`,
       } as never);
     }
+    {
+      const { autoPriceJobBg } = await import("./auto-price.server");
+      autoPriceJobBg(newJob!.id);
+    }
     return { ok: true, job_id: newJob!.id };
   });
 
