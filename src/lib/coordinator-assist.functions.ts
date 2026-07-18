@@ -347,6 +347,9 @@ Company: ${company.name}
 COMPANY GLOSSARY (per-company shorthand — apply these to the user's message BEFORE deciding the action):
 ${glossaryBlock}
 
+LEARNED PREFERENCES for this coordinator (SOFT BIASES, NOT RULES — summarized from their recent history). Treat these as gentle nudges only. NEVER apply them silently to a real action, NEVER skip the draft/confirm step because of them, and if a request is ambiguous ask a short clarifying question instead of assuming a learned preference applies:
+${learnedBlock}
+
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}
 
