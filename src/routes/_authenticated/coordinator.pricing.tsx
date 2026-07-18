@@ -214,7 +214,7 @@ function AreasTab() {
           draft={draft}
           currency={currency}
           onCancel={() => setDraft(null)}
-          onSave={(row) => { upsert.mutate(row); setDraft(null); }}
+          onSave={(row: any) => { upsert.mutate(row); setDraft(null); }}
         />
       )}
 

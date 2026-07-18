@@ -36,6 +36,7 @@ import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
 import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes/_authenticated/coordinator.statements'
 import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
+import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
 import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
@@ -222,6 +223,12 @@ const AuthenticatedCoordinatorReferRoute =
   AuthenticatedCoordinatorReferRouteImport.update({
     id: '/refer',
     path: '/refer',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPricingRoute =
+  AuthenticatedCoordinatorPricingRouteImport.update({
+    id: '/pricing',
+    path: '/pricing',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorPortalsRoute =
@@ -565,6 +572,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -639,6 +647,7 @@ export interface FileRoutesByTo {
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -718,6 +727,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/_authenticated/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/_authenticated/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/_authenticated/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/_authenticated/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
@@ -797,6 +807,7 @@ export interface FileRouteTypes {
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
+    | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/statements'
     | '/m/client/$token'
@@ -871,6 +882,7 @@ export interface FileRouteTypes {
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
+    | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/statements'
     | '/m/client/$token'
@@ -949,6 +961,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
     | '/_authenticated/coordinator/portals'
+    | '/_authenticated/coordinator/pricing'
     | '/_authenticated/coordinator/refer'
     | '/_authenticated/coordinator/statements'
     | '/m/client/$token'
@@ -1208,6 +1221,13 @@ declare module '@tanstack/react-router' {
       path: '/refer'
       fullPath: '/coordinator/refer'
       preLoaderRoute: typeof AuthenticatedCoordinatorReferRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/pricing': {
+      id: '/_authenticated/coordinator/pricing'
+      path: '/pricing'
+      fullPath: '/coordinator/pricing'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPricingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/portals': {
@@ -1621,6 +1641,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
   AuthenticatedCoordinatorPortalsRoute: typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  AuthenticatedCoordinatorPricingRoute: typeof AuthenticatedCoordinatorPricingRoute
   AuthenticatedCoordinatorReferRoute: typeof AuthenticatedCoordinatorReferRoute
   AuthenticatedCoordinatorStatementsRoute: typeof AuthenticatedCoordinatorStatementsRoute
   AuthenticatedCoordinatorIndexRoute: typeof AuthenticatedCoordinatorIndexRoute
@@ -1656,6 +1677,7 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorPortalLinksRoute,
     AuthenticatedCoordinatorPortalsRoute:
       AuthenticatedCoordinatorPortalsRouteWithChildren,
+    AuthenticatedCoordinatorPricingRoute: AuthenticatedCoordinatorPricingRoute,
     AuthenticatedCoordinatorReferRoute: AuthenticatedCoordinatorReferRoute,
     AuthenticatedCoordinatorStatementsRoute:
       AuthenticatedCoordinatorStatementsRoute,
