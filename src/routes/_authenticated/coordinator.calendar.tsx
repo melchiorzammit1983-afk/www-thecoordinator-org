@@ -2588,7 +2588,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 )}
               </div>
             )}
-            {job.clientcompanyname && (
+            {expanded && job.clientcompanyname && (
               <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
             )}
             {shownDriver && (
