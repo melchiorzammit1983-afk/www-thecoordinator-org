@@ -1015,76 +1015,104 @@ function CalendarPage() {
           )}
         </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
-          {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
-            const active = trafficFilter.has(s);
-            const styles: Record<string, string> = {
-              light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
-              moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
-              heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
-              severe: "border-red-500/50 text-red-700 dark:text-red-300",
-            };
-            const activeBg: Record<string, string> = {
-              light: "bg-emerald-500/15",
-              moderate: "bg-amber-500/15",
-              heavy: "bg-orange-500/15",
-              severe: "bg-red-500/15",
-            };
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleTrafficFilter(s)}
-                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
-                title={`Show only ${s} traffic trips`}
-              >
-                {active ? "● " : ""}
-                {s} · {severityCounts[s]}
-              </button>
-            );
-          })}
-          {trafficFilter.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setTrafficFilter(new Set())}
-              className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              clear
-            </button>
-          )}
-          <div className="flex rounded-md border overflow-hidden text-[11px]">
-            {(
-              [
-                { k: "none", label: "Default" },
-                { k: "leave_by", label: "Leave by ↑" },
-                { k: "severity", label: "Severity ↓" },
-              ] as const
-            ).map((o) => (
-              <button
-                key={o.k}
-                type="button"
-                onClick={() => setTrafficSort(o.k)}
-                className={`px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                title={`Sort by ${o.label}`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setAlertsOnly((v) => !v)}
-            className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
-              alertsOnly
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground hover:text-foreground"
-            }`}
-            title="Show only cards with unread messages, client changes, or SOS"
-          >
-            {alertsOnly ? "● " : ""}Only cards with alerts
-          </button>
-          <AutoRefreshToggle jobs={jobs ?? []} />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                More filters
+                {(trafficFilter.size > 0 || alertsOnly || trafficSort !== "none") && (
+                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                    {trafficFilter.size + (alertsOnly ? 1 : 0) + (trafficSort !== "none" ? 1 : 0)}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 space-y-3">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1.5">Traffic</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
+                    const active = trafficFilter.has(s);
+                    const styles: Record<string, string> = {
+                      light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
+                      moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+                      heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
+                      severe: "border-red-500/50 text-red-700 dark:text-red-300",
+                    };
+                    const activeBg: Record<string, string> = {
+                      light: "bg-emerald-500/15",
+                      moderate: "bg-amber-500/15",
+                      heavy: "bg-orange-500/15",
+                      severe: "bg-red-500/15",
+                    };
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => toggleTrafficFilter(s)}
+                        className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
+                      >
+                        {active ? "● " : ""}
+                        {s} · {severityCounts[s]}
+                      </button>
+                    );
+                  })}
+                  {trafficFilter.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setTrafficFilter(new Set())}
+                      className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1.5">Sort</div>
+                <div className="flex rounded-md border overflow-hidden text-[11px] w-full">
+                  {(
+                    [
+                      { k: "none", label: "Default" },
+                      { k: "leave_by", label: "Leave by ↑" },
+                      { k: "severity", label: "Severity ↓" },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.k}
+                      type="button"
+                      onClick={() => setTrafficSort(o.k)}
+                      className={`flex-1 px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAlertsOnly((v) => !v)}
+                  className={`flex-1 px-2.5 py-1 rounded-md border text-[11px] transition-colors ${
+                    alertsOnly
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {alertsOnly ? "● " : ""}Only cards with alerts
+                </button>
+              </div>
+
+              <div className="pt-1 border-t">
+                <AutoRefreshToggle jobs={jobs ?? []} />
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </header>
+
 
       {/* Drivers currently on waiting time */}
       <WaitingNowStrip
