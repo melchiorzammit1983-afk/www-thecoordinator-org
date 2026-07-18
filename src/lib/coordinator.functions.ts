@@ -2321,6 +2321,73 @@ async function applyLiveStatusToJob(
 }
 
 
+// Lightweight "fix this flight code" endpoint — used by the calendar's flight
+// chip when Gemini couldn't resolve a code. Applies a minimal patch to the
+// flight fields (no full job re-validation) and immediately retries the
+// live-status resolver so the chip refreshes to a real time or a clearer
+// error.
+export const updateJobFlightCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        job_id: z.string().uuid(),
+        from_flight: z.string().trim().max(16).nullable().optional(),
+        to_flight: z.string().trim().max(16).nullable().optional(),
+        // "flight" clears vessel-side tracking; "vessel" moves the value into
+        // the vessel tracking kind (used when the coordinator realises a
+        // ship name landed in the flight field).
+        move_to: z.enum(["flight", "vessel"]).optional(),
+        retry: z.boolean().default(true),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+
+    const patch: Record<string, unknown> = {};
+    if (data.from_flight !== undefined)
+      patch.from_flight = (data.from_flight || "").toUpperCase().trim() || null;
+    if (data.to_flight !== undefined)
+      patch.to_flight = (data.to_flight || "").toUpperCase().trim() || null;
+    if (data.move_to === "vessel") patch.tracking_kind = "vessel";
+    if (data.move_to === "flight") patch.tracking_kind = "flight";
+    // Reset stale status so the chip doesn't keep showing the wrong value
+    // while the retry is in flight.
+    patch.flight_status = null;
+    patch.flight_status_note = null;
+    patch.flight_scheduled_at = null;
+    patch.flight_estimated_at = null;
+    patch.flight_status_updated_at = new Date().toISOString();
+
+    const { error: upErr } = await supabaseAdmin
+      .from("jobs")
+      .update(patch)
+      .eq("id", data.job_id)
+      .eq("company_id", c.id);
+    if (upErr) throw new Error(upErr.message);
+
+    if (!data.retry) return { ok: true, retried: false as const };
+
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind",
+      )
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (!job) return { ok: true, retried: false as const };
+
+    // Retry is free here — treat the fix as part of the previous paid attempt.
+    const result = await applyLiveStatusToJob(supabaseAdmin, job as any);
+    return { ok: true, retried: true as const, result };
+  });
+
+
+
+
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
