@@ -631,6 +631,10 @@ export const createJob = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
+    // Auto-estimate the fare from company pricing + service areas. Route
+    // data may not exist yet — the batch enricher will refresh once cached.
+    const { autoPriceJobBg } = await import("./auto-price.server");
+    autoPriceJobBg(row.id);
     return row;
   });
 
