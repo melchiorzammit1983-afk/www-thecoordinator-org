@@ -64,6 +64,7 @@ type WaitProposalRow = {
 
 export type DetailsJob = {
   id: string;
+  trip_no?: number | null;
   from_location: string; to_location: string;
   date: string; time: string; pickup_at: string | null;
   status: string;
@@ -361,6 +362,14 @@ export function TripDetailsSheet({
         <div className="p-5 space-y-4">
           <SheetHeader className="space-y-1 text-left">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {job.trip_no != null && (
+                <span
+                  className="inline-flex items-center rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[11px] font-mono font-semibold text-primary"
+                  title={`Trip #${job.trip_no}`}
+                >
+                  #{job.trip_no}
+                </span>
+              )}
               <span>{job.date}</span>
               <span>·</span>
               <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>

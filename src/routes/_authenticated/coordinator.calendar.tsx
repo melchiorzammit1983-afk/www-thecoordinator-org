@@ -153,6 +153,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
 import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
+import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
 import { useFeature } from "@/hooks/use-features";
 import { IfFeature } from "@/components/billing/IfFeature";
 
@@ -191,6 +192,7 @@ function scrollToJob(jobId: string) {
 
 type Job = {
   id: string;
+  trip_no?: number | null;
   from_location: string;
   to_location: string;
   date: string;
@@ -252,6 +254,45 @@ type Job = {
   route_duration_sec?: number | null;
   route_distance_m?: number | null;
 };
+
+function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI" }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string }) {
+  const openAi = useOpenAssistant();
+  return (
+    <Button
+      size="sm"
+      variant={variant}
+      className={size === "xs" ? "h-6 px-2 text-[10px]" : ""}
+      onClick={(e) => {
+        e.stopPropagation();
+        openAi(
+          trip
+            ? {
+                path: typeof window !== "undefined" ? window.location.pathname : null,
+                trip: {
+                  id: trip.id,
+                  trip_no: trip.trip_no ?? null,
+                  from_location: trip.from_location,
+                  to_location: trip.to_location,
+                  date: trip.date,
+                  time: trip.time,
+                  driver_id: trip.driver_id,
+                  driver_name: trip.drivers?.name ?? null,
+                  from_flight: trip.from_flight,
+                  to_flight: trip.to_flight,
+                  vehicle: trip.vehicle,
+                  contact_phone: trip.contact_phone,
+                  clientcompanyname: trip.clientcompanyname,
+                },
+              }
+            : null,
+        );
+      }}
+    >
+      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-3.5 w-3.5 mr-1"} />
+      {label}
+    </Button>
+  );
+}
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -1079,7 +1120,8 @@ function CalendarPage() {
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end mb-2 gap-2">
+        <AskAiInlineButton />
         <AiAutoCoordinateButton />
       </div>
 
@@ -2444,11 +2486,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
 
+      {/* Ask AI (top-right) */}
+      <div className="absolute top-1 right-1 z-10">
+        <AskAiInlineButton trip={job} size="xs" variant="ghost" label="Ask AI" />
+      </div>
+
       {/* Tap area — opens details sheet */}
       <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {job.trip_no != null && (
+                <span
+                  className="inline-flex items-center rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[11px] font-mono font-semibold text-primary"
+                  title={`Trip #${job.trip_no}`}
+                >
+                  #{job.trip_no}
+                </span>
+              )}
               <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
               <span>·</span>
               <span>{job.date}</span>

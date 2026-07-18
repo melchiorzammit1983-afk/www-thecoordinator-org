@@ -17,6 +17,7 @@ const screenSchema = z
     trip: z
       .object({
         id: z.string().uuid(),
+        trip_no: z.number().int().nullable().optional(),
         from_location: z.string().nullable().optional(),
         to_location: z.string().nullable().optional(),
         date: z.string().nullable().optional(),
@@ -331,7 +332,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const soonIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
     const { data: upcomingRows } = await supabaseAdmin
       .from("jobs")
-      .select("id, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
+      .select("id, trip_no, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
       .eq("executor_company_id", company.id)
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", nowIso)
@@ -341,9 +342,34 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const upcoming = (upcomingRows ?? []) as any[];
     const upcomingBlock = upcoming.length
       ? upcoming
-          .map((r) => `${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
+          .map((r) => `#${r.trip_no ?? "?"} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
           .join("\n")
       : "(none in the next 48h)";
+
+    // Serial-number resolver: parse the coordinator's message for references
+    // like "#123", "card 45", "trip 7" and look up the matching trips in this
+    // company. Surface them to the model so a bare number reliably resolves
+    // to the right trip even when it isn't in the 48h window.
+    const serialMatches = Array.from(
+      new Set(
+        (data.message.match(/(?:#|\bcard\s*#?|\btrip\s*#?)\s*(\d{1,7})/gi) ?? [])
+          .map((m) => Number((m.match(/(\d{1,7})/) ?? [])[1]))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ).slice(0, 10);
+    let referencedBlock = "(none)";
+    if (serialMatches.length) {
+      const { data: refRows } = await supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, date, time, from_location, to_location, driver_id, status, clientcompanyname")
+        .eq("company_id", company.id)
+        .in("trip_no", serialMatches);
+      if (refRows && refRows.length) {
+        referencedBlock = refRows
+          .map((r: any) => `#${r.trip_no} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"} · status:${r.status}${r.driver_id ? " · (driver assigned)" : ""}`)
+          .join("\n");
+      }
+    }
 
 
     const today = new Date().toISOString().slice(0, 10);
@@ -428,6 +454,7 @@ Rules:
 - Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
 - GLOSSARY EXPANSION: BEFORE producing any other kind, silently expand any glossary term found in the coordinator's message using COMPANY GLOSSARY below (case-insensitive).
 - GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
+- SERIAL NUMBER RESOLUTION: The coordinator may refer to any trip by its per-company serial number ("#123", "card 45", "trip 7"). ALWAYS resolve these against TRIPS REFERENCED BY SERIAL NUMBER first, then UPCOMING TRIPS. Use the UUID (not the "#N" string) as job_id / target_trip_id. If a referenced serial does not appear in either list, ask a short clarifying question instead of guessing.
 - Answers are plain text (no markdown).
 
 Today's date (Malta): ${today}
@@ -448,8 +475,11 @@ ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no 
 ACTIVE PARTNERS in your Collaborate network (id — name). ONLY companies you can suggest handing trips to.
 ${partnersBlock}
 
-UPCOMING TRIPS your company is currently the executor for (next 48h):
+UPCOMING TRIPS your company is currently the executor for (next 48h). Each line starts with the per-company SERIAL NUMBER (e.g. #123), followed by the UUID:
 ${upcomingBlock}
+
+TRIPS REFERENCED BY SERIAL NUMBER in the current message (resolve any bare "#N" / "card N" / "trip N" to these UUIDs before choosing an action):
+${referencedBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}

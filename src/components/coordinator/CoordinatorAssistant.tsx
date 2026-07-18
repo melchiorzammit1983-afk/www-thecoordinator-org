@@ -30,6 +30,7 @@ export type AssistantScreen = {
   path?: string | null;
   trip?: {
     id: string;
+    trip_no?: number | null;
     from_location?: string | null;
     to_location?: string | null;
     date?: string | null;
@@ -47,6 +48,7 @@ export type AssistantScreen = {
 type AssistantCtx = {
   setScreen: (s: AssistantScreen | null) => void;
   screenRef: React.MutableRefObject<AssistantScreen | null>;
+  openPanel: (s?: AssistantScreen | null) => void;
 };
 const Ctx = createContext<AssistantCtx | null>(null);
 
@@ -66,6 +68,15 @@ export function useSetAssistantScreen(screen: AssistantScreen | null) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx, JSON.stringify(screen)]);
+}
+
+/**
+ * Open the assistant panel. Optionally passes a one-shot screen context
+ * (e.g. "this trip") so the coordinator can immediately ask about it.
+ */
+export function useOpenAssistant(): (screen?: AssistantScreen | null) => void {
+  const ctx = useContext(Ctx);
+  return ctx?.openPanel ?? (() => {});
 }
 
 // ---------------- Chat state ----------------
@@ -111,23 +122,30 @@ export function CoordinatorAssistant({ children }: { children: ReactNode }) {
   const enabled = useFeature("ai_coordinator_assist");
   const [screen, setScreenState] = useState<AssistantScreen | null>(null);
   const screenRef = useRef<AssistantScreen | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const setScreen = useCallback((s: AssistantScreen | null) => {
     screenRef.current = s;
     setScreenState(s);
   }, []);
+  const openPanel = useCallback((s?: AssistantScreen | null) => {
+    if (s !== undefined) {
+      screenRef.current = s;
+      setScreenState(s);
+    }
+    setPanelOpen(true);
+  }, []);
 
-  const ctxValue = useMemo<AssistantCtx>(() => ({ setScreen, screenRef }), [setScreen]);
+  const ctxValue = useMemo<AssistantCtx>(() => ({ setScreen, screenRef, openPanel }), [setScreen, openPanel]);
 
   return (
     <Ctx.Provider value={ctxValue}>
       {children}
-      {enabled ? <AssistantSurface screen={screen} /> : null}
+      {enabled ? <AssistantSurface screen={screen} open={panelOpen} setOpen={setPanelOpen} /> : null}
     </Ctx.Provider>
   );
 }
 
-function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
-  const [open, setOpen] = useState(false);
+function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen | null; open: boolean; setOpen: (v: boolean) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
