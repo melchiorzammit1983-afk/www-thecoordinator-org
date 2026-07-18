@@ -317,7 +317,49 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
+    // ---- Glossary management (server-side, no UI card required) ----
+    if (p.kind === "glossary_save") {
+      const term = typeof p.term === "string" ? p.term.trim() : "";
+      const meaning = typeof p.meaning === "string" ? p.meaning.trim() : "";
+      if (!term || !meaning) {
+        return answer("Tell me the shorthand and what it means, e.g. \"MSV means Medserv, based at Freeport\".");
+      }
+      if (term.length > 80 || meaning.length > 400) {
+        return answer("Please keep the shorthand under 80 characters and the meaning under 400.");
+      }
+      const { error } = await supabaseAdmin
+        .from("assistant_glossary")
+        .upsert(
+          { company_id: company.id, term, meaning, updated_at: new Date().toISOString() },
+          { onConflict: "company_id,term" },
+        );
+      if (error) return answer(`Couldn't save that: ${error.message}`);
+      return answer(`Got it — ${term} = ${meaning}. I'll use this from now on. Say "forget ${term}" to remove it.`);
+    }
+    if (p.kind === "glossary_list") {
+      if (glossary.length === 0) {
+        return answer("No shortcuts saved yet. Teach me one with something like: \"MSV means Medserv, based at Freeport\".");
+      }
+      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}`).join("\n");
+      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one.`);
+    }
+    if (p.kind === "glossary_delete") {
+      const rawTerm = typeof p.term === "string" ? p.term.trim() : "";
+      if (!rawTerm) return answer("Which shortcut should I forget?");
+      // Case-insensitive match — find the actual stored row so we can confirm the exact term.
+      const target = glossary.find((g) => g.term.toLowerCase() === rawTerm.toLowerCase());
+      if (!target) return answer(`I don't have a shortcut for "${rawTerm}". Say "show me the glossary" to see what's saved.`);
+      const { error } = await supabaseAdmin
+        .from("assistant_glossary")
+        .delete()
+        .eq("id", target.id)
+        .eq("company_id", company.id);
+      if (error) return answer(`Couldn't remove that: ${error.message}`);
+      return answer(`Forgotten — ${target.term} is no longer a shortcut.`);
+    }
+
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
+
       const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
       // Drafts/batches are NOT metered here — assistant_trip_action is charged
       // on Confirm (once per trip) via meterAssistantConfirm.
