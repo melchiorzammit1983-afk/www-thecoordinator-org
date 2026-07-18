@@ -666,31 +666,31 @@ function Bento() {
 
       <div className="mt-10 grid grid-cols-1 md:grid-cols-6 gap-4 md:auto-rows-[220px]">
         <BentoCard
-          className="md:col-span-3"
-          icon={<Network className="h-5 w-5" />}
-          title="Trip 'Jumping'"
-          body="Overbooked? Pass trips seamlessly between trusted partner companies while keeping total tracking control of your client."
-          visual={<JumpingVisual />}
-        />
-        <BentoCard
-          className="md:col-span-3"
-          icon={<Smartphone className="h-5 w-5" />}
-          title="Zero-Friction Drivers"
-          body="No app downloads. No account creation. Just send a secure, time-limited web link to your driver's phone, and they are ready to go."
-          visual={<PhoneLinkVisual />}
+          className="md:col-span-4 md:row-span-2"
+          icon={<Sparkles className="h-5 w-5" />}
+          title="Your AI dispatcher"
+          body="Type it, paste a whole email, or just say it out loud — the assistant creates trips, moves them, groups runs, and messages drivers. It drafts every action first so you see exactly what will change, catches driver schedule conflicts before they happen, and lets you undo anything with one click."
+          visual={<AssistantVisual />}
         />
         <BentoCard
           className="md:col-span-2"
-          icon={<Sparkles className="h-5 w-5" />}
-          title="AI Bulk Uploads"
-          body="Paste a list of bookings and let AI format them instantly. Built-in flight tracking alerts you to delays before the driver even leaves."
-          visual={<AIVisual />}
+          icon={<Network className="h-5 w-5" />}
+          title="Trip 'Jumping'"
+          body="Overbooked? Pass trips to trusted partner companies while keeping full tracking control of your client."
+          visual={<JumpingVisual />}
         />
         <BentoCard
-          className="md:col-span-4"
+          className="md:col-span-2"
+          icon={<Smartphone className="h-5 w-5" />}
+          title="Zero-Friction Drivers"
+          body="No app downloads. No account creation. Just a secure, time-limited web link — and they're ready to drive."
+          visual={<PhoneLinkVisual />}
+        />
+        <BentoCard
+          className="md:col-span-6"
           icon={<Megaphone className="h-5 w-5" />}
           title="Your Own Ad Network"
-          body="Turn your client and driver tracking screens into revenue. Display targeted ads for local partner services, or your own brand."
+          body="Turn client and driver tracking screens into revenue with targeted ads for partner services or your own brand."
           visual={<AdVisual />}
         />
       </div>
