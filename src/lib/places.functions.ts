@@ -349,6 +349,8 @@ export const estimateRouteEta = createServerFn({ method: "POST" })
           route_distance_m: distanceM,
           route_computed_at: new Date().toISOString(),
         } as any).eq("id", data.job_id);
+        const { autoPriceJobBg } = await import("./auto-price.server");
+        autoPriceJobBg(data.job_id);
       }
 
       return {
@@ -704,6 +706,10 @@ export const backfillJobEnrichment = createServerFn({ method: "POST" })
         if (Object.keys(patch).length) {
           await sb.from("jobs").update(patch as any).eq("id", j.id);
           updated++;
+          if (patch.route_duration_sec != null || patch.pickup_display_name || patch.dropoff_display_name) {
+            const { autoPriceJobBg } = await import("./auto-price.server");
+            autoPriceJobBg(j.id);
+          }
         }
       }
     }

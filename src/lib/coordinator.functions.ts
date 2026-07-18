@@ -631,6 +631,10 @@ export const createJob = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
+    // Auto-estimate the fare from company pricing + service areas. Route
+    // data may not exist yet — the batch enricher will refresh once cached.
+    const { autoPriceJobBg } = await import("./auto-price.server");
+    autoPriceJobBg(row.id);
     return row;
   });
 
@@ -747,6 +751,9 @@ export const updateJob = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
     await syncJobLabels(context, c.id, data.id, data.label_ids);
+    // Refresh auto-estimate (no-op when a manual price is already set).
+    const { autoPriceJobBg } = await import("./auto-price.server");
+    autoPriceJobBg(data.id);
     return { ok: true };
   });
 
@@ -2067,6 +2074,10 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       } else {
         await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
       }
+    }
+    if (created.length) {
+      const { autoPriceJobBg } = await import("./auto-price.server");
+      created.forEach(autoPriceJobBg);
     }
     return {
       created,
