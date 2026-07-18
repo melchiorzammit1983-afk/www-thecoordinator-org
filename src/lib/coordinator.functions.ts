@@ -1,7 +1,34 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { maltaWallTimeToUtcIso, isoToMaltaDateTime } from "./time";
+import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
+
+/**
+ * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
+ * naive strings like "2026-07-18T08:15:00" (no timezone), which JS parses as
+ * UTC — wrong for Malta (UTC+2 in summer). If no explicit Z / ±HH:MM offset
+ * is present, interpret the wall-clock as Europe/Malta local time and convert
+ * to a real UTC ISO.
+ */
+function normalizeMaltaIso(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const s = raw.trim();
+  const hasTz = /(Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  if (hasTz) {
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/);
+  if (!m) {
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  try {
+    return maltaWallTimeToUtcIso(m[1], m[2]);
+  } catch {
+    return null;
+  }
+}
 
 type Ctx = { supabase: any; userId: string };
 
