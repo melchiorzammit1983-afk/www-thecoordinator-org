@@ -4259,53 +4259,128 @@ export type Database = {
           },
         ]
       }
+      portal_addons: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          portal_company_id: string
+          price: number | null
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          portal_company_id: string
+          price?: number | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          portal_company_id?: string
+          price?: number | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_addons_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_bookings: {
         Row: {
           accepted_at: string | null
+          addon_selections: Json | null
           agreed_price: number | null
           created_at: string
           created_by_email: string | null
           created_by_name: string | null
           currency: string | null
+          fare_breakdown: Json | null
+          guest_session_id: string | null
           id: string
           job_id: string | null
           payload: Json
           portal_company_id: string
+          promo_code: string | null
           requires_approval: boolean
+          room_id: string | null
           status: string
           updated_at: string
+          zone_id: string | null
         }
         Insert: {
           accepted_at?: string | null
+          addon_selections?: Json | null
           agreed_price?: number | null
           created_at?: string
           created_by_email?: string | null
           created_by_name?: string | null
           currency?: string | null
+          fare_breakdown?: Json | null
+          guest_session_id?: string | null
           id?: string
           job_id?: string | null
           payload?: Json
           portal_company_id: string
+          promo_code?: string | null
           requires_approval?: boolean
+          room_id?: string | null
           status?: string
           updated_at?: string
+          zone_id?: string | null
         }
         Update: {
           accepted_at?: string | null
+          addon_selections?: Json | null
           agreed_price?: number | null
           created_at?: string
           created_by_email?: string | null
           created_by_name?: string | null
           currency?: string | null
+          fare_breakdown?: Json | null
+          guest_session_id?: string | null
           id?: string
           job_id?: string | null
           payload?: Json
           portal_company_id?: string
+          promo_code?: string | null
           requires_approval?: boolean
+          room_id?: string | null
           status?: string
           updated_at?: string
+          zone_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "portal_bookings_guest_session_id_fkey"
+            columns: ["guest_session_id"]
+            isOneToOne: false
+            referencedRelation: "portal_guest_sessions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "portal_bookings_job_id_fkey"
             columns: ["job_id"]
@@ -4318,6 +4393,20 @@ export type Database = {
             columns: ["portal_company_id"]
             isOneToOne: false
             referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_bookings_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "portal_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_bookings_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "portal_zones"
             referencedColumns: ["id"]
           },
         ]
@@ -4384,6 +4473,7 @@ export type Database = {
           contact_phone: string | null
           coordinator_company_id: string
           created_at: string
+          currency: string
           display_name_for_passenger: string | null
           id: string
           kind: string
@@ -4395,6 +4485,7 @@ export type Database = {
           name: string
           notification_email: string | null
           points_per_booking: number
+          pricing_mode: string
           slug: string | null
           updated_at: string
         }
@@ -4405,6 +4496,7 @@ export type Database = {
           contact_phone?: string | null
           coordinator_company_id: string
           created_at?: string
+          currency?: string
           display_name_for_passenger?: string | null
           id?: string
           kind?: string
@@ -4416,6 +4508,7 @@ export type Database = {
           name: string
           notification_email?: string | null
           points_per_booking?: number
+          pricing_mode?: string
           slug?: string | null
           updated_at?: string
         }
@@ -4426,6 +4519,7 @@ export type Database = {
           contact_phone?: string | null
           coordinator_company_id?: string
           created_at?: string
+          currency?: string
           display_name_for_passenger?: string | null
           id?: string
           kind?: string
@@ -4437,6 +4531,7 @@ export type Database = {
           name?: string
           notification_email?: string | null
           points_per_booking?: number
+          pricing_mode?: string
           slug?: string | null
           updated_at?: string
         }
@@ -4446,6 +4541,60 @@ export type Database = {
             columns: ["coordinator_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_guest_sessions: {
+        Row: {
+          created_at: string
+          email: string | null
+          expires_at: string
+          guest_name: string
+          id: string
+          last_seen_at: string
+          phone: string | null
+          portal_company_id: string
+          room_id: string | null
+          session_token: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          expires_at?: string
+          guest_name: string
+          id?: string
+          last_seen_at?: string
+          phone?: string | null
+          portal_company_id: string
+          room_id?: string | null
+          session_token?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          expires_at?: string
+          guest_name?: string
+          id?: string
+          last_seen_at?: string
+          phone?: string | null
+          portal_company_id?: string
+          room_id?: string | null
+          session_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_guest_sessions_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_guest_sessions_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "portal_rooms"
             referencedColumns: ["id"]
           },
         ]
@@ -4522,6 +4671,59 @@ export type Database = {
             columns: ["thread_id"]
             isOneToOne: false
             referencedRelation: "portal_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_offers: {
+        Row: {
+          active: boolean
+          created_at: string
+          cta_label: string | null
+          cta_url: string | null
+          description: string | null
+          id: string
+          image_url: string | null
+          portal_company_id: string
+          price: number | null
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          cta_label?: string | null
+          cta_url?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          portal_company_id: string
+          price?: number | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          cta_label?: string | null
+          cta_url?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          portal_company_id?: string
+          price?: number | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_offers_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
             referencedColumns: ["id"]
           },
         ]
@@ -4609,6 +4811,65 @@ export type Database = {
           },
         ]
       }
+      portal_promos: {
+        Row: {
+          active: boolean
+          applies_to: string
+          code: string
+          created_at: string
+          ends_at: string | null
+          id: string
+          kind: string
+          max_uses: number | null
+          min_price: number | null
+          portal_company_id: string
+          starts_at: string | null
+          updated_at: string
+          uses_count: number
+          value: number
+        }
+        Insert: {
+          active?: boolean
+          applies_to?: string
+          code: string
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          kind?: string
+          max_uses?: number | null
+          min_price?: number | null
+          portal_company_id: string
+          starts_at?: string | null
+          updated_at?: string
+          uses_count?: number
+          value: number
+        }
+        Update: {
+          active?: boolean
+          applies_to?: string
+          code?: string
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          kind?: string
+          max_uses?: number | null
+          min_price?: number | null
+          portal_company_id?: string
+          starts_at?: string | null
+          updated_at?: string
+          uses_count?: number
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_promos_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_rate_limits: {
         Row: {
           count: number
@@ -4626,6 +4887,47 @@ export type Database = {
           token?: string
         }
         Relationships: []
+      }
+      portal_rooms: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          label: string | null
+          portal_company_id: string
+          qr_token: string
+          room_number: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string | null
+          portal_company_id: string
+          qr_token?: string
+          room_number: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string | null
+          portal_company_id?: string
+          qr_token?: string
+          room_number?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_rooms_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       portal_statements: {
         Row: {
@@ -4704,6 +5006,85 @@ export type Database = {
           },
           {
             foreignKeyName: "portal_threads_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_zone_fares: {
+        Row: {
+          coordinator_base_price: number | null
+          created_at: string
+          id: string
+          markup: number | null
+          pax_tier: string
+          price: number
+          updated_at: string
+          zone_id: string
+        }
+        Insert: {
+          coordinator_base_price?: number | null
+          created_at?: string
+          id?: string
+          markup?: number | null
+          pax_tier?: string
+          price: number
+          updated_at?: string
+          zone_id: string
+        }
+        Update: {
+          coordinator_base_price?: number | null
+          created_at?: string
+          id?: string
+          markup?: number | null
+          pax_tier?: string
+          price?: number
+          updated_at?: string
+          zone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_zone_fares_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "portal_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_zones: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          portal_company_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          portal_company_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          portal_company_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_zones_portal_company_id_fkey"
             columns: ["portal_company_id"]
             isOneToOne: false
             referencedRelation: "portal_companies"

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -28,7 +29,7 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
@@ -65,10 +66,11 @@ function PortalPage() {
 
       <main className="max-w-5xl mx-auto p-4">
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="bookings">Bookings</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
+            {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
@@ -84,6 +86,12 @@ function PortalPage() {
           <TabsContent value="chat" className="mt-4">
             <ChatPanel token={token} bookings={boot.bookings} />
           </TabsContent>
+
+          {boot.portal.kind === "hotel" && (
+            <TabsContent value="manage" className="mt-4">
+              <HotelManagePanel token={token} portal={boot.portal as any} />
+            </TabsContent>
+          )}
 
           <TabsContent value="settings" className="mt-4">
             <SettingsPanel token={token} portal={boot.portal} onSaved={reload} />
