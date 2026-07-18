@@ -280,7 +280,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   );
 
   const confirm = useMutation({
-    mutationFn: async (draft: AssistantDraft) => {
+    mutationFn: async ({ draft }: { draft: AssistantDraft; rawMessage?: string }) => {
       if (draft.action === "update") {
         const id = draft.target_trip_id ?? screen?.trip?.id;
         if (!id) throw new Error("No trip selected to update.");
@@ -311,10 +311,12 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       }
       return createDraft(draft);
     },
-    onSuccess: (_res, draft) => {
+    onSuccess: (_res, vars) => {
+      const { draft, rawMessage } = vars;
       const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "draft", outcome: "confirmed", proposed: draft, raw_message: rawMessage });
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
