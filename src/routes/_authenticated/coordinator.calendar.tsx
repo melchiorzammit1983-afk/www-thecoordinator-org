@@ -1081,7 +1081,8 @@ function CalendarPage() {
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
 
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end mb-2 gap-2">
+        <PageAskAiButton />
         <AiAutoCoordinateButton />
       </div>
 
