@@ -17,6 +17,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
+import { recordAiAuditAction } from "@/lib/ai-audit.functions";
 import { createJob, updateJob, updateDriverBasic, applyAiCommandActions } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
@@ -158,6 +159,22 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const meterFn = useServerFn(meterAssistantConfirm);
   const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
+  const auditFn = useServerFn(recordAiAuditAction);
+  const logAudit = useCallback(
+    (args: {
+      action_kind: "create" | "update" | "search_update" | "data_fix" | "group" | "ungroup" | "message" | "partner_suggest";
+      target_table: string;
+      target_id?: string | null;
+      target_ids?: string[] | null;
+      before_state?: unknown;
+      after_state?: unknown;
+      summary?: string | null;
+      raw_message?: string | null;
+    }) => {
+      void auditFn({ data: args }).catch(() => { /* silent — must not break confirm */ });
+    },
+    [auditFn],
+  );
   const lastUserMsgRef = useRef<string>("");
   const logLearning = useCallback(
     (args: {
@@ -351,16 +368,46 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
           tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
         };
-        return updateFn({ data: payload });
+        const res = await updateFn({ data: payload });
+        // Before-state = only the fields we're about to change.
+        const beforeSnap: Record<string, unknown> = { id };
+        const afterSnap: Record<string, unknown> = { id };
+        for (const k of Object.keys(f)) {
+          if (k in existing) beforeSnap[k] = (existing as Record<string, unknown>)[k];
+          afterSnap[k] = (f as Record<string, unknown>)[k];
+        }
+        return { res, kind: "update" as const, id, beforeSnap, afterSnap };
       }
-      return createDraft(draft);
+      const created = (await createDraft(draft)) as { id?: string; updated_at?: string } & Record<string, unknown>;
+      return { res: created, kind: "create" as const, id: created?.id ?? null, createdRow: created };
     },
-    onSuccess: (_res, vars) => {
+    onSuccess: (out, vars) => {
       const { draft, rawMessage } = vars;
       const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "draft", outcome: "confirmed", proposed: draft, raw_message: rawMessage });
+      if (out.kind === "create" && out.id) {
+        logAudit({
+          action_kind: "create",
+          target_table: "jobs",
+          target_id: out.id,
+          before_state: null,
+          after_state: out.createdRow,
+          summary: draft.summary,
+          raw_message: rawMessage ?? null,
+        });
+      } else if (out.kind === "update" && out.id) {
+        logAudit({
+          action_kind: "update",
+          target_table: "jobs",
+          target_id: out.id,
+          before_state: out.beforeSnap,
+          after_state: out.afterSnap,
+          summary: draft.summary,
+          raw_message: rawMessage ?? null,
+        });
+      }
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
@@ -420,7 +467,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const confirmBatch = useMutation({
     mutationFn: async (batchMsgId: string) => {
       const msg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
-        | (ChatMsg & { batch: AssistantBatch })
+        | (ChatMsg & { batch: AssistantBatch; rawMessage?: string })
         | undefined;
       if (!msg) throw new Error("Batch no longer available.");
       const drafts = msg.batch.drafts;
@@ -428,8 +475,40 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
       const failed: { summary: string; error: string }[] = [];
       for (const d of drafts) {
         try {
-          if (d.action === "update") await updateExisting(d);
-          else await createDraft(d);
+          if (d.action === "update") {
+            const id = d.target_trip_id!;
+            const before = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+            await updateExisting(d);
+            const f = d.fields as Record<string, unknown>;
+            const beforeSnap: Record<string, unknown> = { id };
+            const afterSnap: Record<string, unknown> = { id };
+            for (const k of Object.keys(f)) {
+              if (k in before) beforeSnap[k] = before[k];
+              afterSnap[k] = f[k];
+            }
+            logAudit({
+              action_kind: "search_update",
+              target_table: "jobs",
+              target_id: id,
+              before_state: beforeSnap,
+              after_state: afterSnap,
+              summary: d.summary,
+              raw_message: msg.rawMessage ?? null,
+            });
+          } else {
+            const created = (await createDraft(d)) as Record<string, unknown> & { id?: string };
+            if (created?.id) {
+              logAudit({
+                action_kind: "create",
+                target_table: "jobs",
+                target_id: created.id,
+                before_state: null,
+                after_state: created,
+                summary: d.summary,
+                raw_message: msg.rawMessage ?? null,
+              });
+            }
+          }
           ok.push(d.summary);
         } catch (e) {
           failed.push({ summary: d.summary, error: e instanceof Error ? e.message : "failed" });
@@ -529,20 +608,30 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           dropoff_display_name: (patched.dropoff_display_name ?? null) as string | null,
           tracking_kind: (patched.tracking_kind ?? "flight") as "flight" | "vessel",
         };
-        return updateFn({ data: payload });
+        await updateFn({ data: payload });
+        return { beforeVal: existing[fix.field] ?? null };
       }
       // driver
       const patch: { id: string; name?: string; phone?: string | null } = { id: fix.target_id };
       if (fix.field === "name") patch.name = fix.new_value;
       else if (fix.field === "phone") patch.phone = fix.new_value;
       else throw new Error(`Unsupported driver field: ${fix.field}`);
-      return updateDriverFn({ data: patch });
+      await updateDriverFn({ data: patch });
+      return { beforeVal: fix.old_value ?? null };
     },
-    onSuccess: (_res, fix) => {
+    onSuccess: (out, fix) => {
       const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "data_fix", outcome: "confirmed", proposed: fix });
+      logAudit({
+        action_kind: "data_fix",
+        target_table: fix.target === "trip" ? "jobs" : "drivers",
+        target_id: fix.target_id,
+        before_state: { id: fix.target_id, [fix.field]: out.beforeVal },
+        after_state: { id: fix.target_id, [fix.field]: fix.new_value },
+        summary: fix.summary,
+      });
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
@@ -577,6 +666,15 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const dispatchPartnerFn = useServerFn(dispatchJobToPartner);
   const confirmSuggest = useMutation({
     mutationFn: async (item: AssistantPartnerSuggest["items"][number]) => {
+      // Snapshot executor state BEFORE dispatch so undo can restore it.
+      let before: Record<string, unknown> | null = null;
+      try {
+        const j = (await getJobFn({ data: { id: item.job_id } })) as Record<string, unknown>;
+        before = {
+          id: item.job_id,
+          executor_company_id: j.executor_company_id ?? null,
+        };
+      } catch { /* soft — audit will simply record null before */ }
       await dispatchPartnerFn({
         data: {
           job_id: item.job_id,
@@ -584,13 +682,21 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           note: "Suggested by AI assistant",
         },
       });
-      return item;
+      return { item, before };
     },
-    onSuccess: (item) => {
+    onSuccess: ({ item, before }) => {
       const msg = `Sent to ${item.partner_name}.`;
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "partner_suggest", outcome: "confirmed", proposed: item });
+      logAudit({
+        action_kind: "partner_suggest",
+        target_table: "jobs",
+        target_id: item.job_id,
+        before_state: before,
+        after_state: { id: item.job_id, executor_company_id: item.partner_company_id },
+        summary: `Forwarded to ${item.partner_name}`,
+      });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
