@@ -237,9 +237,9 @@ export const adminHelpInsights = createServerFn({ method: "GET" })
  */
 export const analyzeHelpTurn = createServerFn({ method: "POST" })
   .inputValidator((raw) => z.object({
-    question: z.string().min(1).max(2000),
-    answer: z.string().min(1).max(4000),
-    thread: z.array(z.object({ role: z.string().max(32), text: z.string().max(2000) })).max(20).optional(),
+    question: z.string().min(1).max(4000).transform((s) => s.slice(0, 4000)),
+    answer: z.string().min(1).max(8000).transform((s) => s.slice(0, 8000)),
+    thread: z.array(z.object({ role: z.string().max(32), text: z.string().max(8000).transform((s) => s.slice(0, 8000)) })).max(20).optional(),
   }).parse(raw))
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY;
