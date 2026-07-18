@@ -336,6 +336,12 @@ ${glossaryBlock}
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}
 
+ACTIVE PARTNERS in your Collaborate network (id — name). These are the ONLY companies you can suggest handing trips to. Do not invent names or IDs. Only the partner NAME will ever be shown — you have no other information about them.
+${partnersBlock}
+
+UPCOMING TRIPS your company is currently the executor for (next 48h). Use these IDs when suggesting hand-offs:
+${upcomingBlock}
+
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
