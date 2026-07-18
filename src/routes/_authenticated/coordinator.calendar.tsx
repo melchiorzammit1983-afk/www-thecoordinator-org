@@ -2784,9 +2784,10 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`}
               />
             </span>
-
+          </div>
         </div>
       </button>
+
 
       {/* Top-right controls: drag (desktop) + menu */}
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
