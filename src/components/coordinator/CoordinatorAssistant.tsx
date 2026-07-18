@@ -602,6 +602,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         })
         .filter((x) => !("suggest" in x) || x.suggest.items.length > 0),
     );
+  };
+
+
 
   // ------------- Structured command actions (group / ungroup / message) -------------
   // Stage via stageAssistantActions, then apply via the EXISTING
