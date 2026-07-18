@@ -2106,13 +2106,26 @@ async function fetchLiveStatusViaGemini(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
+  opts: { airportHint?: string | null; variant?: string } = {},
 ): Promise<LiveStatusResult> {
   const id = (identifier || "").trim();
   if (!id) return { ok: false, reason: "no_code" };
+
+  // Fail fast for obviously invalid flight codes so we don't burn a Gemini
+  // call (or points) on `ASSO VENTICINCUE` sitting in a flight field.
+  if (kind === "flight") {
+    const parsed = parseFlightCode(id);
+    if (!parsed.ok) {
+      if (looksLikeVessel(id)) return { ok: false, reason: "vessel_in_flight_field" };
+      return { ok: false, reason: "invalid_code" };
+    }
+  }
+
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
-  const cacheKey = `v2:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
+  const variant = opts.variant ? `:${opts.variant}` : "";
+  const cacheKey = `v3:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
@@ -2120,10 +2133,22 @@ async function fetchLiveStatusViaGemini(
     ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
     : `No specific pickup time was provided.`;
 
+  // Airline-name expansion is the single biggest reliability win for
+  // two-letter carrier codes that Gemini otherwise doesn't disambiguate.
+  const flightDescriptor =
+    kind === "flight"
+      ? (() => {
+          const parsed = parseFlightCode(id);
+          const airline = parsed.ok && parsed.airline ? ` (${describeFlight(parsed)})` : "";
+          const hint = opts.airportHint ? ` involving ${opts.airportHint}` : "";
+          return `flight "${id}"${airline}${hint}`;
+        })()
+      : `vessel "${id}"${opts.airportHint ? ` near ${opts.airportHint}` : ""}`;
+
   const groundedPrompt =
     kind === "flight"
-      ? `You are checking the current status of flight "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
-      : `You are checking the current status of the vessel "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
+      ? `You are checking the current status of ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
+      : `You are checking the current status of the ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
 
   // ---- Step 1: grounded free-text ----
   let groundedText = "";
@@ -2159,6 +2184,7 @@ async function fetchLiveStatusViaGemini(
   } catch (e) {
     return { ok: false, reason: "exception" };
   }
+
 
   // ---- Step 2: JSON extraction ----
   const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // FULL ISO8601 WITH TIMEZONE (e.g. "2026-07-18T08:15:00+02:00" for Malta summer, or "...Z" for UTC). If only a local wall-clock time is stated without a timezone, assume Europe/Malta and emit "+02:00" in summer / "+01:00" in winter. Null if not stated.\n  "estimated": string | null,       // Same rules as scheduled.\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose. Never emit a naive datetime without a timezone offset.\n\nTEXT:\n${groundedText}`;
