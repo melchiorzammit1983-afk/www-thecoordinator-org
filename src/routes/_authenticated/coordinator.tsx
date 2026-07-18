@@ -242,7 +242,9 @@ function CoordinatorLayout() {
             </Button>
           </div>
         )}
-        <Outlet />
+        <CoordinatorAssistant>
+          <Outlet />
+        </CoordinatorAssistant>
       </main>
 
       <MobileTabBar onOpenChangePassword={() => setShowChangePw(true)} />
