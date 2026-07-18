@@ -254,6 +254,7 @@ function CoordinatorLayout() {
       {showChangePw && !mustChangePw && (
         <ChangePasswordDialog mode="voluntary" onDone={() => setShowChangePw(false)} onCancel={() => setShowChangePw(false)} />
       )}
+      <CriticalAlertModal />
     </div>
 
   );
