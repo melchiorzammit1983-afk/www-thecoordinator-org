@@ -828,11 +828,23 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                     send();
                   }
                 }}
-                placeholder="Ask about this trip, or say what to change…"
+                placeholder={voice.listening ? "Listening…" : "Ask about this trip, or say what to change…"}
                 rows={2}
                 className="min-h-[44px] resize-none"
                 disabled={ask.isPending}
               />
+              {voice.supported && (
+                <Button
+                  size="icon"
+                  variant={voice.listening ? "destructive" : "outline"}
+                  onClick={voice.toggle}
+                  disabled={ask.isPending}
+                  aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+                  title={voice.listening ? "Stop voice input" : "Start voice input"}
+                >
+                  {voice.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              )}
               <Button size="icon" onClick={send} disabled={ask.isPending || !input.trim()} aria-label="Send">
                 {ask.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
