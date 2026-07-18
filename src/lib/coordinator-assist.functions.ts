@@ -164,6 +164,21 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .limit(80);
     const drivers = (driverRows ?? []) as { id: string; name: string | null }[];
 
+    // Per-company glossary (term → meaning). Loaded on every turn so the
+    // model can (a) recognize teaching statements consistently, (b) list
+    // entries on request, and (c) expand shorthand before drafting any
+    // trip action or search. Kept small on purpose (cap 200 rows).
+    const { data: glossRows } = await supabaseAdmin
+      .from("assistant_glossary")
+      .select("id, term, meaning")
+      .eq("company_id", company.id)
+      .order("term", { ascending: true })
+      .limit(200);
+    const glossary = (glossRows ?? []) as { id: string; term: string; meaning: string }[];
+    const glossaryBlock = glossary.length
+      ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
+      : "(empty — nothing taught yet)";
+
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
     const historyLines = (data.history ?? [])
@@ -184,12 +199,16 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do FIVE things:
+You do SIX things:
 1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) When the coordinator's message describes MULTIPLE NEW trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
 4) When the coordinator asks to EDIT MULTIPLE EXISTING trips matching some shared reference (e.g. "move all trips for Asso 25 to 19:00 instead of 11am", "reassign all of Hilton's trips to driver Y", "cancel all X's trips today"), return a SEARCH_UPDATE — the server will resolve which trips match and build the update batch.
 5) When the coordinator asks to FIX a small typo on a single existing record (spelling of a location on this trip, client company name, passenger contact phone, flight code, or a driver's name/phone), return a DATA_FIX (single record, single field). Use this for corrections — not for schedule or driver-assignment changes.
+6) GLOSSARY MANAGEMENT — the coordinator can teach you their shorthand / aliases / abbreviations (term → meaning), review them, or forget them:
+   - Teaching: statements like "MSV means Medserv, based at Freeport", "Asso 25 = Asso Venticinque", "when I say WE I mean Waters Edge Hotel" → kind:"glossary_save".
+   - Listing: "what do you know?", "show me the glossary", "list my shortcuts" → kind:"glossary_list".
+   - Deleting: "forget MSV", "delete the WE shortcut", "remove Asso 25" → kind:"glossary_delete" with the term to remove.
 
 Rules:
 - Return STRICT JSON only. No markdown. One of:
@@ -214,6 +233,9 @@ Rules:
     "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (for trip);   name | phone   (for driver)>",
     "new_value": "<corrected value>",
     "summary": "one short sentence, e.g. 'Fix spelling: Cervinjano → Cervignano on this trip'" }
+  { "kind": "glossary_save", "term": "<short shorthand as the coordinator uses it, e.g. 'MSV'>", "meaning": "<full meaning, e.g. 'Medserv, based at Freeport'>" }
+  { "kind": "glossary_list" }
+  { "kind": "glossary_delete", "term": "<the shorthand to remove, exactly as stored>" }
 - For "update" (single) or "search_update" (multi), only include fields that CHANGE.
 - For "create" (single or in a batch), omit target_trip_id (null).
 - In a "batch" of creates, each element MUST be action:"create".
@@ -224,10 +246,15 @@ Rules:
 - Use "data_fix" ONLY for a small correction to a single existing record — spelling of an address/client/driver, wrong phone digits, wrong flight code. The target_id MUST be a real uuid: use the Currently open trip's id when the coordinator says "this trip", otherwise use a uuid from the roster (drivers). If you cannot confidently identify which record or which field, return kind:"answer" with ONE short clarifying question — do NOT guess. Never use data_fix to change pickup time, date, or driver assignment (those go through draft/update).
 - If a search_update reference is genuinely too vague to search reliably (e.g. "fix the trips"), return kind:"answer" asking one short clarifying question instead of guessing.
 - If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
+- GLOSSARY EXPANSION: BEFORE producing a draft / batch / search_update / data_fix / answer, silently expand any glossary term found in the coordinator's message using the COMPANY GLOSSARY below (case-insensitive substring match). E.g. if the glossary contains "MSV = Medserv, based at Freeport" and the user says "move MSV's trips to 7pm", treat it as "move Medserv's trips to 7pm" for search_update criteria_terms and criteria (use "medserv" as the term).
+- GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Not for one-off references. Keep "term" short (usually what the user actually says as shorthand). Do NOT combine glossary_save with any other action in the same turn.
 - Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
 
 Today's date (Malta): ${today}
 Company: ${company.name}
+
+COMPANY GLOSSARY (per-company shorthand — apply these to the user's message BEFORE deciding the action):
+${glossaryBlock}
 
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}
@@ -241,6 +268,8 @@ ${historyLines || "(none)"}
 ===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
 ${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
 `;
+
+
 
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -288,7 +317,49 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
+    // ---- Glossary management (server-side, no UI card required) ----
+    if (p.kind === "glossary_save") {
+      const term = typeof p.term === "string" ? p.term.trim() : "";
+      const meaning = typeof p.meaning === "string" ? p.meaning.trim() : "";
+      if (!term || !meaning) {
+        return answer("Tell me the shorthand and what it means, e.g. \"MSV means Medserv, based at Freeport\".");
+      }
+      if (term.length > 80 || meaning.length > 400) {
+        return answer("Please keep the shorthand under 80 characters and the meaning under 400.");
+      }
+      const { error } = await supabaseAdmin
+        .from("assistant_glossary")
+        .upsert(
+          { company_id: company.id, term, meaning, updated_at: new Date().toISOString() },
+          { onConflict: "company_id,term" },
+        );
+      if (error) return answer(`Couldn't save that: ${error.message}`);
+      return answer(`Got it — ${term} = ${meaning}. I'll use this from now on. Say "forget ${term}" to remove it.`);
+    }
+    if (p.kind === "glossary_list") {
+      if (glossary.length === 0) {
+        return answer("No shortcuts saved yet. Teach me one with something like: \"MSV means Medserv, based at Freeport\".");
+      }
+      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}`).join("\n");
+      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one.`);
+    }
+    if (p.kind === "glossary_delete") {
+      const rawTerm = typeof p.term === "string" ? p.term.trim() : "";
+      if (!rawTerm) return answer("Which shortcut should I forget?");
+      // Case-insensitive match — find the actual stored row so we can confirm the exact term.
+      const target = glossary.find((g) => g.term.toLowerCase() === rawTerm.toLowerCase());
+      if (!target) return answer(`I don't have a shortcut for "${rawTerm}". Say "show me the glossary" to see what's saved.`);
+      const { error } = await supabaseAdmin
+        .from("assistant_glossary")
+        .delete()
+        .eq("id", target.id)
+        .eq("company_id", company.id);
+      if (error) return answer(`Couldn't remove that: ${error.message}`);
+      return answer(`Forgotten — ${target.term} is no longer a shortcut.`);
+    }
+
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
+
       const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
       // Drafts/batches are NOT metered here — assistant_trip_action is charged
       // on Confirm (once per trip) via meterAssistantConfirm.
