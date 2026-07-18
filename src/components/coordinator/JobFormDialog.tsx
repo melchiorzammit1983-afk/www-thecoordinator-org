@@ -78,7 +78,10 @@ export function JobFormDialog({
   onSaved: (createdDate?: string) => void;
 }) {
   const isEdit = !!job;
-  const bulkEnabled = useFeature("bulk_paste");
+  // Bulk paste tab hidden in favour of the AI coordinator assistant (multi-trip
+  // creation from pasted text/email). BulkForm code kept intact below so it can
+  // be restored by flipping this back to `useFeature("bulk_paste")`.
+  const bulkEnabled = false;
   const [tab, setTab] = useState<"manual" | "bulk">("manual");
   const [prefill, setPrefill] = useState<Prefill | undefined>(undefined);
   useEffect(() => { if (open) { setTab("manual"); setPrefill(undefined); } }, [open]);
