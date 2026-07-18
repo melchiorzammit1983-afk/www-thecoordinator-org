@@ -15,9 +15,9 @@ import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
-import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
@@ -76,7 +76,16 @@ type ChatMsg =
   | { id: string; role: "assistant"; draft: AssistantDraft; rawMessage?: string }
   | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
-  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string };
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
+  | {
+      id: string;
+      role: "assistant";
+      actions: AssistantCommandActions;
+      rawMessage?: string;
+      selected: boolean[]; // per action
+      applied?: boolean;
+      results?: Array<{ index: number; ok: boolean; message: string }>;
+    };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -184,7 +193,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
             };
           }
           if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
-          return { role: "assistant" as const, text: m.suggest.summary };
+          if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
+          if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
+          return { role: "assistant" as const, text: "" };
         });
       return (await askFn({
         data: {
@@ -208,9 +219,16 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       } else if (result.kind === "partner_suggest") {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
       } else if (result.kind === "command_actions") {
-        const summary = result.summary || `${result.actions.length} action${result.actions.length === 1 ? "" : "s"} pending your approval`;
-        const lines = result.actions.map((a) => `• ${a.label}`).join("\n");
-        setMessages((m) => [...m, { id, role: "assistant", text: `${summary}\n${lines}\n\n(Approving these from chat is coming soon — for now, open the trips from Calendar to apply.)` }]);
+        setMessages((m) => [
+          ...m,
+          {
+            id,
+            role: "assistant",
+            actions: result,
+            rawMessage,
+            selected: result.actions.map(() => true),
+          },
+        ]);
       } else if (result.kind === "auto_coordinate") {
         setMessages((m) => [...m, { id, role: "assistant", text: `${result.intro}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)` }]);
         maybeSpeak(result.intro);
@@ -586,6 +604,128 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     );
   };
 
+
+
+  // ------------- Structured command actions (group / ungroup / message) -------------
+  // Stage via stageAssistantActions, then apply via the EXISTING
+  // applyAiCommandActions server function — same audit path & metering the
+  // old Command Bar uses. Per-item results are surfaced back into the chat.
+  const stageFn = useServerFn(stageAssistantActions);
+  const applyCmdFn = useServerFn(applyAiCommandActions);
+  const confirmActions = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find(
+        (x): x is Extract<ChatMsg, { actions: AssistantCommandActions }> =>
+          x.id === msgId && "actions" in x,
+      );
+      if (!msg) throw new Error("Actions not found");
+      const chosenLocalIdx: number[] = [];
+      const chosenActions = msg.actions.actions.filter((_, i) => {
+        if (msg.selected[i]) {
+          chosenLocalIdx.push(i);
+          return true;
+        }
+        return false;
+      });
+      if (chosenActions.length === 0) throw new Error("Nothing selected");
+      const stagePayload = chosenActions.map((a) => {
+        if (a.type === "group") {
+          return { type: "group" as const, job_ids: a.job_ids ?? [], group_name: a.group_name ?? null };
+        }
+        if (a.type === "ungroup") {
+          return { type: "ungroup" as const, job_id: a.job_id ?? "" };
+        }
+        return {
+          type: "message" as const,
+          job_id: a.job_id ?? "",
+          thread: (a.thread ?? "driver") as "driver" | "client" | "group",
+          body: a.body ?? "",
+        };
+      });
+      const staged = await stageFn({
+        data: {
+          raw_message: msg.rawMessage ?? "",
+          summary: msg.actions.summary,
+          actions: stagePayload,
+        },
+      });
+      const res = (await applyCmdFn({
+        data: {
+          command_log_id: (staged as { id: string }).id,
+          // We staged only the chosen ones; apply all staged indices.
+          action_indices: chosenActions.map((_, i) => i),
+        },
+      })) as { ok: boolean; affected: number; results: Array<{ index: number; ok: boolean; message: string }> };
+      // Map staged-index results back to the LOCAL (proposal) indices.
+      const mapped = res.results.map((r) => ({
+        index: chosenLocalIdx[r.index] ?? r.index,
+        ok: r.ok,
+        message: r.message,
+      }));
+      return { msgId, results: mapped, affected: res.affected };
+    },
+    onSuccess: ({ msgId, results, affected }) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["trip-messages"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      const target = messages.find(
+        (x): x is Extract<ChatMsg, { actions: AssistantCommandActions }> =>
+          x.id === msgId && "actions" in x,
+      );
+      const okLines: string[] = [];
+      const failLines: string[] = [];
+      for (const r of results) {
+        const label = target?.actions.actions[r.index]?.label ?? `Action ${r.index + 1}`;
+        if (r.ok) okLines.push(`✔ ${label}`);
+        else failLines.push(`⚠ ${label} — ${r.message}`);
+      }
+      if (target) {
+        logLearning({
+          action_kind: "batch",
+          outcome: "confirmed",
+          proposed: target.actions,
+          final: { results },
+          raw_message: target.rawMessage,
+        });
+      }
+      setMessages((m) =>
+        m.map((x) => {
+          if (x.id !== msgId || !("actions" in x)) return x;
+          return { ...x, applied: true, results };
+        }),
+      );
+      const summary =
+        failLines.length === 0
+          ? `Applied ${affected} action${affected === 1 ? "" : "s"}.`
+          : `Applied ${affected} of ${results.length}. ${failLines.length} failed.`;
+      const body = [...okLines, ...failLines].join("\n");
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `${summary}\n${body}` },
+      ]);
+      if (failLines.length === 0) toast.success(summary);
+      else if (okLines.length === 0) toast.error(summary);
+      else toast.warning(summary);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not apply actions.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const toggleActionRow = (msgId: string, idx: number) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== msgId || !("actions" in x) || x.applied) return x;
+        const selected = x.selected.map((v, i) => (i === idx ? !v : v));
+        return { ...x, selected };
+      }),
+    );
+  };
+
+
   const dismissDraft = (id: string) => {
     setMessages((m) => {
       const target = m.find((x) => x.id === id);
@@ -598,6 +738,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
           logLearning({ action_kind: "data_fix", outcome: "cancelled", proposed: target.fix, raw_message: target.rawMessage });
         } else if ("suggest" in target) {
           logLearning({ action_kind: "partner_suggest", outcome: "cancelled", proposed: target.suggest, raw_message: target.rawMessage });
+        } else if ("actions" in target) {
+          logLearning({ action_kind: "batch", outcome: "cancelled", proposed: target.actions, raw_message: target.rawMessage });
         }
       }
       return m.filter((x) => x.id !== id);
@@ -869,6 +1011,65 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                             Dismiss all
                           </Button>
                         </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("actions" in m) {
+                  const busy = confirmActions.isPending && confirmActions.variables === m.id;
+                  const chosenCount = m.selected.filter(Boolean).length;
+                  const resultByIdx = new Map((m.results ?? []).map((r) => [r.index, r]));
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {m.applied ? "Actions applied" : "Proposed actions — needs your approval"}
+                        </div>
+                        {m.actions.summary && (
+                          <div className="mb-2 text-sm">{m.actions.summary}</div>
+                        )}
+                        <div className="mb-3 space-y-1.5 rounded border bg-background p-2">
+                          {m.actions.actions.map((a, i) => {
+                            const r = resultByIdx.get(i);
+                            return (
+                              <label key={i} className="flex items-start gap-2 text-xs">
+                                {!m.applied && (
+                                  <input
+                                    type="checkbox"
+                                    checked={m.selected[i]}
+                                    onChange={() => toggleActionRow(m.id, i)}
+                                    disabled={busy}
+                                    className="mt-0.5"
+                                  />
+                                )}
+                                <span className={`flex-1 ${r && !r.ok ? "text-destructive" : ""}`}>{a.label}</span>
+                                {r && (
+                                  <span className={r.ok ? "text-emerald-600" : "text-destructive"}>
+                                    {r.ok ? "✓" : "✗"} {r.message}
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {!m.applied && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              disabled={busy || chosenCount === 0}
+                              onClick={() => confirmActions.mutate(m.id)}
+                            >
+                              {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                              Confirm selected ({chosenCount})
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
