@@ -54,7 +54,7 @@ function RoomLandingPage() {
     if (!r.ok) { toast.error("Could not open portal — please ask reception."); return; }
     const j = await r.json();
     try { localStorage.setItem(`guest:${boot?.portal.id}`, j.session_token); } catch {}
-    nav({ to: "/g/$session" as any, params: { session: j.session_token } });
+    window.location.assign(`/g/${encodeURIComponent(j.session_token)}`);
   }
 
   if (err) return <Unavailable msg={err} />;

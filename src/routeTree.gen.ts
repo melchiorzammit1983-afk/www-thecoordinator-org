@@ -24,6 +24,7 @@ import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
 import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
+import { Route as GSessionRouteImport } from './routes/g.$session'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
@@ -63,6 +64,7 @@ import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
+import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
 import { Route as ApiPublicHooksSummarizeLearningRouteImport } from './routes/api/public/hooks/summarize-learning'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
@@ -156,6 +158,11 @@ const HelpTopicRoute = HelpTopicRouteImport.update({
 const HSlugRoute = HSlugRouteImport.update({
   id: '/h/$slug',
   path: '/h/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GSessionRoute = GSessionRouteImport.update({
+  id: '/g/$session',
+  path: '/g/$session',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CTokenRoute = CTokenRouteImport.update({
@@ -385,6 +392,11 @@ const LovableEmailQueueProcessRoute =
     path: '/lovable/email/queue/process',
     getParentRoute: () => rootRouteImport,
   } as any)
+const HSlugRQrRoute = HSlugRQrRouteImport.update({
+  id: '/r/$qr',
+  path: '/r/$qr',
+  getParentRoute: () => HSlugRoute,
+} as any)
 const ApiPublicHooksWaitThresholdsRoute =
   ApiPublicHooksWaitThresholdsRouteImport.update({
     id: '/api/public/hooks/wait-thresholds',
@@ -519,7 +531,8 @@ export interface FileRoutesByFullPath {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
-  '/h/$slug': typeof HSlugRoute
+  '/g/$session': typeof GSessionRoute
+  '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
@@ -564,6 +577,7 @@ export interface FileRoutesByFullPath {
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
+  '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -591,7 +605,8 @@ export interface FileRoutesByTo {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
-  '/h/$slug': typeof HSlugRoute
+  '/g/$session': typeof GSessionRoute
+  '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
@@ -636,6 +651,7 @@ export interface FileRoutesByTo {
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
+  '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -668,7 +684,8 @@ export interface FileRoutesById {
   '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
-  '/h/$slug': typeof HSlugRoute
+  '/g/$session': typeof GSessionRoute
+  '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
@@ -713,6 +730,7 @@ export interface FileRoutesById {
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
+  '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
@@ -745,6 +763,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
+    | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
     | '/portal/$token'
@@ -790,6 +809,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
+    | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
@@ -817,6 +837,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
+    | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
     | '/portal/$token'
@@ -862,6 +883,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
+    | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
@@ -893,6 +915,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
+    | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
     | '/portal/$token'
@@ -938,6 +961,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
+    | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
@@ -967,7 +991,8 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiHelpChatRoute: typeof ApiHelpChatRoute
   CTokenRoute: typeof CTokenRoute
-  HSlugRoute: typeof HSlugRoute
+  GSessionRoute: typeof GSessionRoute
+  HSlugRoute: typeof HSlugRouteWithChildren
   PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
@@ -1099,6 +1124,13 @@ declare module '@tanstack/react-router' {
       path: '/h/$slug'
       fullPath: '/h/$slug'
       preLoaderRoute: typeof HSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/g/$session': {
+      id: '/g/$session'
+      path: '/g/$session'
+      fullPath: '/g/$session'
+      preLoaderRoute: typeof GSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$token': {
@@ -1373,6 +1405,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/lovable/email/queue/process'
       preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/h/$slug/r/$qr': {
+      id: '/h/$slug/r/$qr'
+      path: '/r/$qr'
+      fullPath: '/h/$slug/r/$qr'
+      preLoaderRoute: typeof HSlugRQrRouteImport
+      parentRoute: typeof HSlugRoute
     }
     '/api/public/hooks/wait-thresholds': {
       id: '/api/public/hooks/wait-thresholds'
@@ -1655,6 +1694,16 @@ const HelpRouteChildren: HelpRouteChildren = {
 
 const HelpRouteWithChildren = HelpRoute._addFileChildren(HelpRouteChildren)
 
+interface HSlugRouteChildren {
+  HSlugRQrRoute: typeof HSlugRQrRoute
+}
+
+const HSlugRouteChildren: HSlugRouteChildren = {
+  HSlugRQrRoute: HSlugRQrRoute,
+}
+
+const HSlugRouteWithChildren = HSlugRoute._addFileChildren(HSlugRouteChildren)
+
 interface MDriverTokenRouteChildren {
   MDriverTokenSignJobIdRoute: typeof MDriverTokenSignJobIdRoute
 }
@@ -1679,7 +1728,8 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiHelpChatRoute: ApiHelpChatRoute,
   CTokenRoute: CTokenRoute,
-  HSlugRoute: HSlugRoute,
+  GSessionRoute: GSessionRoute,
+  HSlugRoute: HSlugRouteWithChildren,
   PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
   TrackTokenRoute: TrackTokenRoute,
