@@ -3,21 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save, Sparkles, Wallet, ShieldAlert, Send } from "lucide-react";
+import { Save, Sparkles } from "lucide-react";
 
 import { listAiFeatureCosts } from "@/lib/billing.functions";
 import { adminSetFeatureCost } from "@/lib/admin.functions";
-import { getPortalSettings, updatePortalSettings, applyAiWalletDefaultsToAllCompanies } from "@/lib/portal.functions";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-settings")({
   component: AiSettingsAdmin,
@@ -41,11 +36,10 @@ function AiSettingsAdmin() {
           <Sparkles className="h-5 w-5 text-primary" /> AI settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Set the point cost for each AI action, and the default wallet cap behavior applied to companies.
+          Set the point cost for each AI action. AI actions deduct from the general points balance.
         </p>
       </div>
       <ActionCostsCard />
-      <WalletDefaultsCard />
     </div>
   );
 }
@@ -155,128 +149,5 @@ function ActionRow({
   );
 }
 
-// ---------------- Wallet defaults ----------------
 
-function WalletDefaultsCard() {
-  const qc = useQueryClient();
-  const getFn   = useServerFn(getPortalSettings);
-  const upFn    = useServerFn(updatePortalSettings);
-  const applyFn = useServerFn(applyAiWalletDefaultsToAllCompanies);
-  const { data: settings } = useQuery({ queryKey: ["portal-settings"], queryFn: () => getFn() });
 
-  const [cap, setCap] = useState<number>(0);
-  const [fallback, setFallback] = useState<boolean>(true);
-  const [behavior, setBehavior] = useState<"block" | "fallback" | "warn">("fallback");
-  const [onlyUnset, setOnlyUnset] = useState<boolean>(true);
-
-  useEffect(() => {
-    if (!settings) return;
-    setCap(Number((settings as any).default_ai_monthly_cap ?? 0));
-    setFallback(Boolean((settings as any).default_ai_fallback_to_general ?? true));
-    setBehavior(((settings as any).ai_cap_behavior ?? "fallback") as any);
-  }, [settings]);
-
-  const saveMut = useMutation({
-    mutationFn: () => upFn({ data: {
-      default_ai_monthly_cap: cap,
-      default_ai_fallback_to_general: fallback,
-      ai_cap_behavior: behavior,
-    } }),
-    onSuccess: () => { toast.success("Wallet defaults saved"); qc.invalidateQueries({ queryKey: ["portal-settings"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const applyMut = useMutation({
-    mutationFn: () => applyFn({ data: { apply_cap: true, apply_fallback: true, only_unset: onlyUnset } }),
-    onSuccess: (r: any) => toast.success(`Applied to ${r?.updated ?? 0} companies`),
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Wallet className="h-4 w-4" /> AI wallet defaults</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Applied to new companies. Existing companies keep their per-company overrides unless you push these defaults.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label>Default monthly AI cap (points)</Label>
-            <Input
-              type="number" min="0" step="1" value={String(cap)}
-              onChange={(e) => setCap(Number(e.target.value) || 0)}
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              0 = unlimited. Otherwise the max AI points a company can spend per calendar month.
-            </p>
-          </div>
-          <div className="rounded-md border p-3 flex items-start gap-3">
-            <div className="flex-1">
-              <div className="text-sm font-medium">Fall back to general wallet</div>
-              <div className="text-[11px] text-muted-foreground">
-                When the AI wallet is empty, keep charging general points instead of blocking.
-              </div>
-            </div>
-            <Switch checked={fallback} onCheckedChange={setFallback} />
-          </div>
-        </div>
-
-        <Separator />
-
-        <div>
-          <div className="text-sm font-medium mb-2 flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4" /> When the monthly cap is reached
-          </div>
-          <RadioGroup value={behavior} onValueChange={(v) => setBehavior(v as any)} className="grid gap-2 md:grid-cols-3">
-            <label className="rounded-md border p-3 flex items-start gap-2 cursor-pointer hover:bg-muted/50">
-              <RadioGroupItem value="block" className="mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">Block</div>
-                <div className="text-[11px] text-muted-foreground">Refuse further AI actions until next month or manual raise.</div>
-              </div>
-            </label>
-            <label className="rounded-md border p-3 flex items-start gap-2 cursor-pointer hover:bg-muted/50">
-              <RadioGroupItem value="fallback" className="mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">Fall back</div>
-                <div className="text-[11px] text-muted-foreground">Keep working but charge the general wallet instead.</div>
-              </div>
-            </label>
-            <label className="rounded-md border p-3 flex items-start gap-2 cursor-pointer hover:bg-muted/50">
-              <RadioGroupItem value="warn" className="mt-0.5" />
-              <div>
-                <div className="text-sm font-medium">Warn only</div>
-                <div className="text-[11px] text-muted-foreground">Show a banner but keep AI running normally.</div>
-              </div>
-            </label>
-          </RadioGroup>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <div className="flex items-center gap-2">
-            <Switch checked={onlyUnset} onCheckedChange={setOnlyUnset} id="only-unset" />
-            <Label htmlFor="only-unset" className="text-xs">Only apply to companies without a cap set</Label>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline" size="sm"
-              disabled={applyMut.isPending}
-              onClick={() => applyMut.mutate()}
-            >
-              <Send className="h-4 w-4 mr-1" /> Apply to all companies
-            </Button>
-            <Button
-              size="sm"
-              disabled={saveMut.isPending}
-              onClick={() => saveMut.mutate()}
-            >
-              <Save className="h-4 w-4 mr-1" /> Save defaults
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
