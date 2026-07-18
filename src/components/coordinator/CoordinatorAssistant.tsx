@@ -301,6 +301,18 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     onSuccess: (res, batchMsgId) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      // Per-action pricing: charge assistant_trip_action ONCE PER confirmed
+      // trip in the batch (so 3 trips = 3× the single-trip cost).
+      if (res.ok.length > 0) {
+        void meterFn({
+          data: {
+            feature_key: "assistant_trip_action",
+            count: res.ok.length,
+            note: `assistant batch confirm: ${res.ok.length} trips`,
+          },
+        }).catch(() => { /* soft */ });
+      }
       if (res.ok.length && !res.failed.length) toast.success(`Created ${res.ok.length} trips.`);
       else if (res.ok.length && res.failed.length) toast.warning(`Created ${res.ok.length}, ${res.failed.length} need more info.`);
       else toast.error("No trips created.");
