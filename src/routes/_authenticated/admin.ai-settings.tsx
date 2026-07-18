@@ -3,11 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save, Sparkles, Wallet, ShieldAlert, Send } from "lucide-react";
+import { Save, Sparkles } from "lucide-react";
 
 import { listAiFeatureCosts } from "@/lib/billing.functions";
 import { adminSetFeatureCost } from "@/lib/admin.functions";
-import { getPortalSettings, updatePortalSettings, applyAiWalletDefaultsToAllCompanies } from "@/lib/portal.functions";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
