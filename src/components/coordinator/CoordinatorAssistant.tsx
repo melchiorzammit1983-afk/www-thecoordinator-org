@@ -129,6 +129,15 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  useEffect(() => { mutedRef.current = muted; if (muted) cancelSpeak(); }, [muted]);
+  const ttsSupported = isSpeechSynthesisSupported();
+  const maybeSpeak = useCallback((t: string) => {
+    if (mutedRef.current) return;
+    speak(t);
+  }, []);
+
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
