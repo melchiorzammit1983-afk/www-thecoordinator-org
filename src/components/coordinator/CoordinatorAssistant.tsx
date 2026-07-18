@@ -129,7 +129,29 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
+  const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
+  const lastUserMsgRef = useRef<string>("");
+  const logLearning = useCallback(
+    (args: {
+      action_kind: "draft" | "batch" | "search_update" | "data_fix" | "partner_suggest";
+      outcome: "confirmed" | "edited_then_confirmed" | "cancelled" | "skipped";
+      proposed: unknown;
+      final?: unknown;
+      raw_message?: string | null;
+    }) => {
+      void logFn({
+        data: {
+          action_kind: args.action_kind,
+          outcome: args.outcome,
+          proposed_payload: args.proposed,
+          final_payload: args.final ?? args.proposed,
+          raw_message: args.raw_message ?? null,
+        },
+      }).catch(() => { /* silent — never break the primary flow */ });
+    },
+    [logFn],
+  );
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
   useEffect(() => { mutedRef.current = muted; if (muted) cancelSpeak(); }, [muted]);
