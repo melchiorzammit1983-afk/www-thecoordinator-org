@@ -1265,6 +1265,7 @@ type CardCtx = {
   onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
   urgency: UrgencyThresholds;
   nowTick: number; // ms — bumped every minute so cards re-evaluate glow
+  openFlightFix?: (arg: { jobId: string; code: string; side: "from" | "to" }) => void;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
