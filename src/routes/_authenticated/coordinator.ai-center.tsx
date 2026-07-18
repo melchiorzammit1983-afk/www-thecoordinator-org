@@ -27,12 +27,19 @@ import {
 import { listAiRules, upsertAiRule, deleteAiRule } from "@/lib/coordinator.functions";
 import { listMyLessons, archiveMyLesson } from "@/lib/ai-lessons.functions";
 import { listAiAuditActions, upsertGlossaryTerm, undoAssistantAction } from "@/lib/ai-audit.functions";
+import { AiLearningTab } from "@/components/coordinator/AiLearningTab";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    tab: (typeof s.tab === "string" ? s.tab : "knowledge") as
+      | "knowledge" | "agents" | "activity" | "learning",
+  }),
   component: AiBrainPage,
 });
 
 function AiBrainPage() {
+  const { tab } = Route.useSearch();
+  const navigate = Route.useNavigate();
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -45,13 +52,18 @@ function AiBrainPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="knowledge">
-        <TabsList className="grid grid-cols-3 w-full max-w-lg">
+      <Tabs
+        value={tab}
+        onValueChange={(v) => navigate({ search: { tab: v as typeof tab }, replace: true })}
+      >
+        <TabsList className="grid grid-cols-4 w-full max-w-2xl">
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
+          <TabsTrigger value="learning">Learning</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
-          <TabsTrigger value="activity">Activity &amp; Rollback</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="knowledge" className="mt-4 space-y-4"><KnowledgeTab /></TabsContent>
+        <TabsContent value="learning" className="mt-4"><AiLearningTab /></TabsContent>
         <TabsContent value="agents" className="mt-4 space-y-4"><AgentsTab /></TabsContent>
         <TabsContent value="activity" className="mt-4"><ActivityTab /></TabsContent>
       </Tabs>
