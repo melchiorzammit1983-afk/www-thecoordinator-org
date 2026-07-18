@@ -80,7 +80,30 @@ export type AssistantBatch = {
   clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch;
+/**
+ * Single-record data correction (typo fix) draft. Shown as an old→new diff
+ * card. On confirm the UI reuses the existing update function for the
+ * target record type (trip → updateJob, driver → updateDriverBasic) and
+ * meters via meterAssistantConfirm(assistant_data_fix).
+ *
+ * `field` for trips is one of the writable jobInput keys (from_location,
+ * to_location, contact_phone, clientcompanyname, from_flight, to_flight,
+ * vehicle). For drivers it's `name` or `phone`.
+ */
+export type AssistantDataFix = {
+  kind: "data_fix";
+  target: "trip" | "driver";
+  target_id: string;
+  target_label: string; // e.g. "Trip · Airport → Hilton · 10:00" or "Driver · John Doe"
+  field: string;
+  field_label: string;  // human label e.g. "From location", "Driver phone"
+  old_value: string | null;
+  new_value: string;
+  summary: string;
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix;
+
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
