@@ -179,44 +179,20 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     ask.mutate(text);
   };
 
-  const confirm = useMutation({
-    mutationFn: async (draft: AssistantDraft) => {
+  const missingCreateFields = useCallback((f: AssistantDraft["fields"]): string[] => {
+    const missing: string[] = [];
+    if (!f.from_location) missing.push("from");
+    if (!f.to_location) missing.push("to");
+    if (!f.date) missing.push("date");
+    if (!f.time) missing.push("time");
+    return missing;
+  }, []);
+
+  const createDraft = useCallback(
+    async (draft: AssistantDraft) => {
       const f = draft.fields;
-      if (draft.action === "update") {
-        const id = draft.target_trip_id ?? screen?.trip?.id;
-        if (!id) throw new Error("No trip selected to update.");
-        const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
-        // Merge drafted fields over the existing full payload.
-        const payload = {
-          id,
-          from_location: (f.from_location ?? existing.from_location) as string,
-          to_location: (f.to_location ?? existing.to_location) as string,
-          date: (f.date ?? existing.date) as string,
-          time: (f.time ?? existing.time) as string,
-          flightorship: (existing.flightorship ?? "") as string,
-          from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
-          to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
-          clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
-          qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
-          tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
-          vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
-          contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
-          driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
-          pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
-          dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
-          pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
-          dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
-          tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
-        };
-        return updateFn({ data: payload });
-      }
-      // create
-      const missing: string[] = [];
-      if (!f.from_location) missing.push("from location");
-      if (!f.to_location) missing.push("to location");
-      if (!f.date) missing.push("date");
-      if (!f.time) missing.push("time");
-      if (missing.length) throw new Error(`I still need: ${missing.join(", ")}.`);
+      const missing = missingCreateFields(f);
+      if (missing.length) throw new Error(`Missing ${missing.join(", ")} for "${draft.summary}".`);
       return createFn({
         data: {
           from_location: f.from_location!,
@@ -241,6 +217,41 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         },
       });
     },
+    [createFn, missingCreateFields],
+  );
+
+  const confirm = useMutation({
+    mutationFn: async (draft: AssistantDraft) => {
+      if (draft.action === "update") {
+        const id = draft.target_trip_id ?? screen?.trip?.id;
+        if (!id) throw new Error("No trip selected to update.");
+        const f = draft.fields;
+        const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+        const payload = {
+          id,
+          from_location: (f.from_location ?? existing.from_location) as string,
+          to_location: (f.to_location ?? existing.to_location) as string,
+          date: (f.date ?? existing.date) as string,
+          time: (f.time ?? existing.time) as string,
+          flightorship: (existing.flightorship ?? "") as string,
+          from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
+          to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
+          clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
+          qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
+          tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
+          vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
+          contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
+          driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
+          pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
+          dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
+          pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
+          dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
+          tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+        };
+        return updateFn({ data: payload });
+      }
+      return createDraft(draft);
+    },
     onSuccess: (_res, draft) => {
       toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -256,6 +267,57 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
     },
   });
+
+  const confirmBatch = useMutation({
+    mutationFn: async (batchMsgId: string) => {
+      const msg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
+        | (ChatMsg & { batch: AssistantBatch })
+        | undefined;
+      if (!msg) throw new Error("Batch no longer available.");
+      const drafts = msg.batch.drafts;
+      const ok: string[] = [];
+      const failed: { summary: string; error: string }[] = [];
+      for (const d of drafts) {
+        try {
+          await createDraft(d);
+          ok.push(d.summary);
+        } catch (e) {
+          failed.push({ summary: d.summary, error: e instanceof Error ? e.message : "failed" });
+        }
+      }
+      return { ok, failed };
+    },
+    onSuccess: (res, batchMsgId) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      if (res.ok.length && !res.failed.length) toast.success(`Created ${res.ok.length} trips.`);
+      else if (res.ok.length && res.failed.length) toast.warning(`Created ${res.ok.length}, ${res.failed.length} need more info.`);
+      else toast.error("No trips created.");
+      const lines = [
+        ...res.ok.map((s) => `✔ ${s}`),
+        ...res.failed.map((f) => `⚠ ${f.summary} — ${f.error}`),
+      ].join("\n");
+      setMessages((m) => [
+        ...m.filter((x) => x.id !== batchMsgId || res.failed.length > 0),
+        { id: crypto.randomUUID(), role: "assistant", text: lines || "Nothing to do." },
+      ]);
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "Batch failed.");
+    },
+  });
+
+  const removeBatchItem = (batchId: string, idx: number) => {
+    setMessages((m) =>
+      m
+        .map((x) => {
+          if (x.id !== batchId || !("batch" in x)) return x;
+          const drafts = x.batch.drafts.filter((_, i) => i !== idx);
+          return { ...x, batch: { ...x.batch, drafts } };
+        })
+        .filter((x) => !("batch" in x) || x.batch.drafts.length > 0),
+    );
+  };
 
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
