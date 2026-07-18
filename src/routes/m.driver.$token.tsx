@@ -1313,10 +1313,13 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
     staleTime: 45_000,
     queryFn: () => routeFn({
       data: {
+        job_id: job.id,
+        driver_token: token,
+        leg: "to_pickup",
         origin: { latitude: driverPos!.lat, longitude: driverPos!.lng },
-        destination_address: job.from_location!,
       },
     }) as Promise<{ primary: null | { duration_sec: number | null; static_duration_sec: number | null; distance_m: number | null } }>,
+
   });
   const toPickupPrimary = toPickupData?.primary ?? null;
 
