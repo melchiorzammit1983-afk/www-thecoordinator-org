@@ -54,6 +54,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "address_name_resolve", label: "Address name lookup", description: "Show hotel / business name (from Google Places) instead of plus-codes or coordinates on cards, sheets, and client portal. Coordinates stay stored for routing." },
   { key: "route_eta",        label: "From → To ETA",      description: "Estimate driving time & distance between pickup and dropoff. Shown in the trip form, on calendar cards, and in the client portal." },
   { key: "availability_autoforward", label: "Availability & auto-forward", description: "Set opening hours for the company and each driver. Off-hours or unanswered trips auto-jump to the next available partner in your network. Admin charges a small per-forward fee." },
+  { key: "ai_coordinator_assist", label: "AI coordinator assistant", description: "Floating chat that answers questions about your dispatch and drafts a single trip create/edit for one-tap confirmation.", isAi: true },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];
