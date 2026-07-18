@@ -207,10 +207,18 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", fix: result, rawMessage }]);
       } else if (result.kind === "partner_suggest") {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
+      } else if (result.kind === "command_actions") {
+        const summary = result.summary || `${result.actions.length} action${result.actions.length === 1 ? "" : "s"} pending your approval`;
+        const lines = result.actions.map((a) => `• ${a.label}`).join("\n");
+        setMessages((m) => [...m, { id, role: "assistant", text: `${summary}\n${lines}\n\n(Approving these from chat is coming soon — for now, open the trips from Calendar to apply.)` }]);
+      } else if (result.kind === "auto_coordinate") {
+        setMessages((m) => [...m, { id, role: "assistant", text: `${result.intro}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)` }]);
+        maybeSpeak(result.intro);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
       }
+
     },
 
     onError: (e: unknown) => {
