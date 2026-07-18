@@ -29,7 +29,7 @@ export function FlightCodeFixDialog({ open, onOpenChange, jobId, currentCode, cu
   const qc = useQueryClient();
   const fix = useServerFn(updateJobFlightCode);
   const mut = useMutation({
-    mutationFn: (input: Parameters<typeof fix>[0]["data"]) => fix({ data: input }),
+    mutationFn: (input: any) => fix({ data: input }),
     onSuccess: (r: any) => {
       if (r?.retried && r?.result?.ok) toast.success("Flight tracked — status updated");
       else if (r?.retried) toast.info("Saved. Couldn't resolve — try again in a minute");
