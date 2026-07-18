@@ -252,3 +252,8 @@
   animation: route-flow 1.2s linear infinite;
 }
 
+
+/* Trip form mobile wizard: hide sections not matching the active step. */
+.wizard-mobile[data-active-step="1"] section[data-step]:not([data-step="1"]) { display: none; }
+.wizard-mobile[data-active-step="2"] section[data-step]:not([data-step="2"]) { display: none; }
+.wizard-mobile[data-active-step="3"] section[data-step]:not([data-step="3"]) { display: none; }
