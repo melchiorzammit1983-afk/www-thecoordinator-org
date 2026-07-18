@@ -234,34 +234,66 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .limit(80);
     const drivers = (driverRows ?? []) as { id: string; name: string | null }[];
 
-    // Per-company glossary (term → meaning). Loaded on every turn so the
-    // model can (a) recognize teaching statements consistently, (b) list
-    // entries on request, and (c) expand shorthand before drafting any
-    // trip action or search. Kept small on purpose (cap 200 rows).
-    const { data: glossRows } = await supabaseAdmin
-      .from("assistant_glossary")
-      .select("id, term, meaning")
-      .eq("company_id", company.id)
-      .order("term", { ascending: true })
-      .limit(200);
-    const glossary = (glossRows ?? []) as { id: string; term: string; meaning: string }[];
-    const glossaryBlock = glossary.length
-      ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
-      : "(empty — nothing taught yet)";
-
-    // Silent-learning: short soft-preference notes summarized daily from
-    // this coordinator's recent assistant_action_log. SOFT BIAS ONLY — the
-    // model must still draft/confirm normally; never skip confirmation
-    // because of a learned note. See src/routes/api/public/hooks/summarize-learning.ts.
-    const { data: learnedRow } = await supabaseAdmin
-      .from("assistant_learned_preferences")
-      .select("notes, updated_at")
+    // Per-company glossary (term → meaning). CANONICAL SOURCE: `ai_lessons`
+    // with kind='glossary' — the same shared lessons store the AI Learning
+    // page manages. Company-scoped rows always visible; approved global
+    // glossary terms are surfaced only if the coordinator has opted in via
+    // `ai_lesson_share_settings.consume_global`.
+    const { data: shareRow } = await supabaseAdmin
+      .from("ai_lesson_share_settings")
+      .select("consume_global")
       .eq("company_id", company.id)
       .maybeSingle();
-    const learnedBlock =
-      learnedRow && typeof learnedRow.notes === "string" && learnedRow.notes.trim()
-        ? learnedRow.notes.trim()
-        : "(no learned preferences yet)";
+    const consumeGlobal = shareRow?.consume_global ?? true;
+    const glossaryQuery = supabaseAdmin
+      .from("ai_lessons")
+      .select("id, title, rule_text, company_id, scope, status")
+      .eq("kind", "glossary")
+      .eq("status", "approved")
+      .order("title", { ascending: true })
+      .limit(200);
+    const { data: glossRows } = consumeGlobal
+      ? await glossaryQuery.or(`company_id.eq.${company.id},scope.eq.global`)
+      : await glossaryQuery.eq("company_id", company.id);
+    const glossary = ((glossRows ?? []) as Array<{ id: string; title: string; rule_text: string; company_id: string | null; scope: string }>).map(
+      (g) => ({ id: g.id, term: g.title, meaning: g.rule_text, owned: g.company_id === company.id }),
+    );
+    const glossaryBlock = glossary.length
+      ? glossary.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
+      : "(empty — nothing taught yet)";
+
+    // Coordinator-authored business rules from the AI Center → Rules tab.
+    // These are HARD company rules and should be applied before soft biases.
+    const { data: ruleRows } = await supabaseAdmin
+      .from("company_ai_rules")
+      .select("title, rule_text")
+      .eq("company_id", company.id)
+      .eq("enabled", true)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(50);
+    const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
+    const rulesBlock = rules.length
+      ? rules.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
+      : "(no custom rules configured)";
+
+    // Silent-learning bias summary. CANONICAL SOURCE: `ai_lessons` with
+    // kind='suggestion_rule' (either the "AI learned bias" row written by
+    // the summarize-learning cron, or any suggestion rules a coordinator
+    // saved manually via the AI Learning page). Company-scoped only.
+    const { data: biasRows } = await supabaseAdmin
+      .from("ai_lessons")
+      .select("title, rule_text")
+      .eq("kind", "suggestion_rule")
+      .eq("status", "approved")
+      .eq("company_id", company.id)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    const learnedBlock = biasRows && biasRows.length
+      ? biasRows.map((r) => `• ${r.rule_text}`).join("\n")
+      : "(no learned preferences yet)";
+
+
 
     // Active Collaborate partners (same source the Collaborate UI reads via
     // listConnections). We only surface {company_id, company_name} to the
