@@ -2538,6 +2538,29 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {!delayed && !flightEarly && hasFlightCode && schedTime && !flightMsg.startsWith("Not tracked") && (
+              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                ✈ {flightCode} · {flightMsg}
+              </div>
+            )}
+            {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.openFlightFix?.({
+                    jobId: job.id,
+                    code: job.from_flight || job.to_flight || "",
+                    side: job.from_flight ? "from" : "to",
+                  });
+                }}
+                className="text-[11px] font-medium text-amber-600 hover:underline mt-0.5 truncate text-left"
+                title="Click to fix the flight code"
+              >
+                ✈ {flightCode} · Not tracked · fix code
+              </button>
+            )}
+
             {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
