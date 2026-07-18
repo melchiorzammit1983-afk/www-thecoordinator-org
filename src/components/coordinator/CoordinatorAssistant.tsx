@@ -368,16 +368,46 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
           tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
         };
-        return updateFn({ data: payload });
+        const res = await updateFn({ data: payload });
+        // Before-state = only the fields we're about to change.
+        const beforeSnap: Record<string, unknown> = { id };
+        const afterSnap: Record<string, unknown> = { id };
+        for (const k of Object.keys(f)) {
+          if (k in existing) beforeSnap[k] = (existing as Record<string, unknown>)[k];
+          afterSnap[k] = (f as Record<string, unknown>)[k];
+        }
+        return { res, kind: "update" as const, id, beforeSnap, afterSnap };
       }
-      return createDraft(draft);
+      const created = (await createDraft(draft)) as { id?: string; updated_at?: string } & Record<string, unknown>;
+      return { res: created, kind: "create" as const, id: created?.id ?? null, createdRow: created };
     },
-    onSuccess: (_res, vars) => {
+    onSuccess: (out, vars) => {
       const { draft, rawMessage } = vars;
       const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "draft", outcome: "confirmed", proposed: draft, raw_message: rawMessage });
+      if (out.kind === "create" && out.id) {
+        logAudit({
+          action_kind: "create",
+          target_table: "jobs",
+          target_id: out.id,
+          before_state: null,
+          after_state: out.createdRow,
+          summary: draft.summary,
+          raw_message: rawMessage ?? null,
+        });
+      } else if (out.kind === "update" && out.id) {
+        logAudit({
+          action_kind: "update",
+          target_table: "jobs",
+          target_id: out.id,
+          before_state: out.beforeSnap,
+          after_state: out.afterSnap,
+          summary: draft.summary,
+          raw_message: rawMessage ?? null,
+        });
+      }
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
