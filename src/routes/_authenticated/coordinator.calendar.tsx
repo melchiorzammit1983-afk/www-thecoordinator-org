@@ -2340,6 +2340,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       return "";
     }
   })();
+  const hasFlightCode = !!(job.from_flight || job.to_flight);
   const flightMsg =
     job.flight_status === "cancelled"
       ? "CANCELLED"
@@ -2351,7 +2352,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             ? newTime
               ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}`
               : job.flight_status_note || "EARLY"
-            : "";
+            : hasFlightCode && schedTime
+              ? `Flight ${schedTime}`
+              : hasFlightCode && (job.flight_status === "unknown" || !job.flight_status)
+                ? "Not tracked · check code"
+                : "";
+
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
 
