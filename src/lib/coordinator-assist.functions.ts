@@ -214,3 +214,33 @@ ${historyLines || "(none)"}
       text: typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.",
     };
   });
+
+/**
+ * Load the minimum fields required by `jobInput` so the client can merge an
+ * assistant draft and call the existing `updateJob` server function. Scoped
+ * to the caller's company.
+ */
+export const getJobForAssistant = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) throw new Error("No company assigned to this account.");
+    const { data: row, error } = await supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, from_location, to_location, date, time, flightorship, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, vehicle, contact_phone, driver_id, pickup_place_id, dropoff_place_id, pickup_display_name, dropoff_display_name, tracking_kind",
+      )
+      .eq("id", data.id)
+      .eq("company_id", company.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Trip not found.");
+    return row;
+  });
+
