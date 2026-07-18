@@ -563,6 +563,10 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       m
         .map((x) => {
           if (x.id !== msgId || !("suggest" in x)) return x;
+          const skipped = x.suggest.items[idx];
+          if (skipped) {
+            logLearning({ action_kind: "partner_suggest", outcome: "skipped", proposed: skipped, raw_message: x.rawMessage });
+          }
           const items = x.suggest.items.filter((_, i) => i !== idx);
           return { ...x, suggest: { ...x.suggest, items } };
         })
@@ -571,7 +575,21 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   };
 
   const dismissDraft = (id: string) => {
-    setMessages((m) => m.filter((x) => x.id !== id));
+    setMessages((m) => {
+      const target = m.find((x) => x.id === id);
+      if (target) {
+        if ("draft" in target) {
+          logLearning({ action_kind: "draft", outcome: "cancelled", proposed: target.draft, raw_message: target.rawMessage });
+        } else if ("batch" in target) {
+          logLearning({ action_kind: "batch", outcome: "cancelled", proposed: target.batch, raw_message: target.rawMessage });
+        } else if ("fix" in target) {
+          logLearning({ action_kind: "data_fix", outcome: "cancelled", proposed: target.fix, raw_message: target.rawMessage });
+        } else if ("suggest" in target) {
+          logLearning({ action_kind: "partner_suggest", outcome: "cancelled", proposed: target.suggest, raw_message: target.rawMessage });
+        }
+      }
+      return m.filter((x) => x.id !== id);
+    });
   };
 
   return (
