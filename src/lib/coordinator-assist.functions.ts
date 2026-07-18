@@ -123,7 +123,56 @@ export type AssistantPartnerSuggest = {
   summary: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix | AssistantPartnerSuggest;
+/**
+ * Structured multi-action proposal (group/ungroup trips, send a driver or
+ * client message, and future kinds handled by the OLD Command Bar's execution
+ * layer). The assistant returns a validated list; the client stages it into
+ * `ai_command_log` via `stageAssistantActions` and applies confirmed items
+ * with the existing `applyAiCommandActions` server function — no
+ * reimplementation of the underlying writes.
+ *
+ * `type` mirrors ai_command_log action shapes: assign | unassign | reschedule
+ * | status | group | ungroup | message | dispatch | note. We limit the
+ * assistant to `group | ungroup | message` for now (create/update trips still
+ * go through draft/batch cards, so those write-paths keep their existing
+ * verification UI).
+ */
+export type AssistantCommandActions = {
+  kind: "command_actions";
+  actions: Array<{
+    type: "group" | "ungroup" | "message";
+    job_id?: string | null;
+    job_ids?: string[] | null;
+    group_name?: string | null;
+    thread?: "driver" | "client" | "group" | null;
+    body?: string | null;
+    label: string; // human-readable, e.g. "Group 2 trips as 'Asso 25'"
+  }>;
+  summary: string;
+};
+
+/**
+ * Trigger card for the existing AI Auto-Coordinate flow. The server fn
+ * `aiAutoCoordinate` is invoked on Confirm from the client and its proposals
+ * are then applied one-by-one via `applyAutoCoordinateProposal` — the SAME
+ * pathway the AI Auto-Coordinate button used before. No new metering, no
+ * duplicate logic.
+ */
+export type AssistantAutoCoordinate = {
+  kind: "auto_coordinate";
+  intro: string; // one-line preamble to show above the run button
+};
+
+export type AssistantResult =
+  | AssistantAnswer
+  | AssistantDraft
+  | AssistantBatch
+  | AssistantDataFix
+  | AssistantPartnerSuggest
+  | AssistantCommandActions
+  | AssistantAutoCoordinate;
+
+
 
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
@@ -185,34 +234,66 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .limit(80);
     const drivers = (driverRows ?? []) as { id: string; name: string | null }[];
 
-    // Per-company glossary (term → meaning). Loaded on every turn so the
-    // model can (a) recognize teaching statements consistently, (b) list
-    // entries on request, and (c) expand shorthand before drafting any
-    // trip action or search. Kept small on purpose (cap 200 rows).
-    const { data: glossRows } = await supabaseAdmin
-      .from("assistant_glossary")
-      .select("id, term, meaning")
-      .eq("company_id", company.id)
-      .order("term", { ascending: true })
-      .limit(200);
-    const glossary = (glossRows ?? []) as { id: string; term: string; meaning: string }[];
-    const glossaryBlock = glossary.length
-      ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
-      : "(empty — nothing taught yet)";
-
-    // Silent-learning: short soft-preference notes summarized daily from
-    // this coordinator's recent assistant_action_log. SOFT BIAS ONLY — the
-    // model must still draft/confirm normally; never skip confirmation
-    // because of a learned note. See src/routes/api/public/hooks/summarize-learning.ts.
-    const { data: learnedRow } = await supabaseAdmin
-      .from("assistant_learned_preferences")
-      .select("notes, updated_at")
+    // Per-company glossary (term → meaning). CANONICAL SOURCE: `ai_lessons`
+    // with kind='glossary' — the same shared lessons store the AI Learning
+    // page manages. Company-scoped rows always visible; approved global
+    // glossary terms are surfaced only if the coordinator has opted in via
+    // `ai_lesson_share_settings.consume_global`.
+    const { data: shareRow } = await supabaseAdmin
+      .from("ai_lesson_share_settings")
+      .select("consume_global")
       .eq("company_id", company.id)
       .maybeSingle();
-    const learnedBlock =
-      learnedRow && typeof learnedRow.notes === "string" && learnedRow.notes.trim()
-        ? learnedRow.notes.trim()
-        : "(no learned preferences yet)";
+    const consumeGlobal = shareRow?.consume_global ?? true;
+    const glossaryQuery = supabaseAdmin
+      .from("ai_lessons")
+      .select("id, title, rule_text, company_id, scope, status")
+      .eq("kind", "glossary")
+      .eq("status", "approved")
+      .order("title", { ascending: true })
+      .limit(200);
+    const { data: glossRows } = consumeGlobal
+      ? await glossaryQuery.or(`company_id.eq.${company.id},scope.eq.global`)
+      : await glossaryQuery.eq("company_id", company.id);
+    const glossary = ((glossRows ?? []) as Array<{ id: string; title: string; rule_text: string; company_id: string | null; scope: string }>).map(
+      (g) => ({ id: g.id, term: g.title, meaning: g.rule_text, owned: g.company_id === company.id }),
+    );
+    const glossaryBlock = glossary.length
+      ? glossary.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
+      : "(empty — nothing taught yet)";
+
+    // Coordinator-authored business rules from the AI Center → Rules tab.
+    // These are HARD company rules and should be applied before soft biases.
+    const { data: ruleRows } = await supabaseAdmin
+      .from("company_ai_rules")
+      .select("title, rule_text")
+      .eq("company_id", company.id)
+      .eq("enabled", true)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(50);
+    const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
+    const rulesBlock = rules.length
+      ? rules.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
+      : "(no custom rules configured)";
+
+    // Silent-learning bias summary. CANONICAL SOURCE: `ai_lessons` with
+    // kind='suggestion_rule' (either the "AI learned bias" row written by
+    // the summarize-learning cron, or any suggestion rules a coordinator
+    // saved manually via the AI Learning page). Company-scoped only.
+    const { data: biasRows } = await supabaseAdmin
+      .from("ai_lessons")
+      .select("title, rule_text")
+      .eq("kind", "suggestion_rule")
+      .eq("status", "approved")
+      .eq("company_id", company.id)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    const learnedBlock = biasRows && biasRows.length
+      ? biasRows.map((r) => `• ${r.rule_text}`).join("\n")
+      : "(no learned preferences yet)";
+
+
 
     // Active Collaborate partners (same source the Collaborate UI reads via
     // listConnections). We only surface {company_id, company_name} to the
@@ -285,17 +366,16 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do SEVEN things:
-1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
+You do NINE things:
+1) ANSWER on-topic questions using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
-3) When the coordinator's message describes MULTIPLE NEW trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
-4) When the coordinator asks to EDIT MULTIPLE EXISTING trips matching some shared reference (e.g. "move all trips for Asso 25 to 19:00 instead of 11am", "reassign all of Hilton's trips to driver Y", "cancel all X's trips today"), return a SEARCH_UPDATE — the server will resolve which trips match and build the update batch.
-5) When the coordinator asks to FIX a small typo on a single existing record (spelling of a location on this trip, client company name, passenger contact phone, flight code, or a driver's name/phone), return a DATA_FIX (single record, single field). Use this for corrections — not for schedule or driver-assignment changes.
-6) GLOSSARY MANAGEMENT — the coordinator can teach you their shorthand / aliases / abbreviations (term → meaning), review them, or forget them:
-   - Teaching: statements like "MSV means Medserv, based at Freeport", "Asso 25 = Asso Venticinque", "when I say WE I mean Waters Edge Hotel" → kind:"glossary_save".
-   - Listing: "what do you know?", "show me the glossary", "list my shortcuts" → kind:"glossary_list".
-   - Deleting: "forget MSV", "delete the WE shortcut", "remove Asso 25" → kind:"glossary_delete" with the term to remove.
-7) SUGGEST PARTNER HAND-OFF via the coordinator's existing Collaborate network — when they say things like "I'm closing for the day, cover my trips", "I can't cover this", "who can take this one", "hand this off", or ask about an upcoming trip with no available driver, return kind:"partner_suggest" listing one item per trip that should be handed to a partner. Choose partners ONLY from the ACTIVE PARTNERS list below (by their UUID). Choose trips ONLY from the UPCOMING TRIPS list below (by their UUID), or from the currently open trip if the coordinator says "this trip". This is SUGGEST-ONLY: the client shows a Confirm/Cancel card per item and only then triggers the existing hand-off. Never invent partner names, never guess IDs, and never expose any information about the partner beyond their name — you have no other data about them. If there are no active partners, return kind:"answer" saying so plainly. If no trip clearly matches, return kind:"answer" asking one short clarifying question.
+3) MULTIPLE NEW trips → BATCH of create drafts.
+4) EDIT MULTIPLE EXISTING trips by shared reference → SEARCH_UPDATE.
+5) Small typo on a single record → DATA_FIX.
+6) GLOSSARY MANAGEMENT (kind:"glossary_save" / "glossary_list" / "glossary_delete"). Glossary entries live in the shared AI Lessons store so the coordinator can also see and edit them from AI Learning.
+7) SUGGEST PARTNER HAND-OFF → kind:"partner_suggest" (see below).
+8) STRUCTURED ACTIONS on existing trips — group / ungroup / send a message to the driver or client on a trip. Return kind:"command_actions" with an array. This is the same execution layer as the old Command Bar, so the writes are trusted and audited. Use this when the coordinator says things like "group these two trips", "ungroup that trip", "message the driver that pickup is delayed 10 minutes", "tell the client we're 5 min away". Do NOT use command_actions for creating/updating trip content — those still go through draft / batch / search_update / data_fix.
+9) COORDINATE THE BACKLOG — when the coordinator says things like "coordinate my backlog", "review unassigned trips", "auto-coordinate", "sort out today", return kind:"auto_coordinate" with a one-line intro. The client then runs the existing AI Auto-Coordinate engine and presents its proposals for per-item approval.
 
 
 Rules:
@@ -311,52 +391,64 @@ Rules:
     "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
   { "kind": "search_update",
     "criteria": "short human phrase describing which trips to match, e.g. 'Asso 25 trips today'",
-    "criteria_terms": ["asso 25"],   // 1-3 lowercase tokens matched (ILIKE) against clientcompanyname, group_name, from_flight, to_flight, from_location, to_location
-    "date": "yyyy-mm-dd" | null,      // scope to this date if the user named one, else null
+    "criteria_terms": ["asso 25"],
+    "date": "yyyy-mm-dd" | null,
     "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
-    "summary": "e.g. 'Move Asso 25 trips today from 11:00 to 19:00'" }
+    "summary": "..." }
   { "kind": "data_fix",
     "target": "trip" | "driver",
-    "target_id": "<uuid — the trip or driver record being corrected>",
-    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (for trip);   name | phone   (for driver)>",
+    "target_id": "<uuid>",
+    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (trip);   name | phone   (driver)>",
     "new_value": "<corrected value>",
-    "summary": "one short sentence, e.g. 'Fix spelling: Cervinjano → Cervignano on this trip'" }
-  { "kind": "glossary_save", "term": "<short shorthand as the coordinator uses it, e.g. 'MSV'>", "meaning": "<full meaning, e.g. 'Medserv, based at Freeport'>" }
+    "summary": "..." }
+  { "kind": "glossary_save", "term": "<shorthand>", "meaning": "<full meaning>" }
   { "kind": "glossary_list" }
-  { "kind": "glossary_delete", "term": "<the shorthand to remove, exactly as stored>" }
+  { "kind": "glossary_delete", "term": "<shorthand>" }
   { "kind": "partner_suggest",
     "items": [ { "job_id": "<uuid from UPCOMING TRIPS>", "partner_company_id": "<uuid from ACTIVE PARTNERS>", "reason": "one short line, or null" } ],
-    "summary": "e.g. 'Suggest forwarding 2 trips to Malta Cabs'" }
-- For "update" (single) or "search_update" (multi), only include fields that CHANGE.
-- For "create" (single or in a batch), omit target_trip_id (null).
-- In a "batch" of creates, each element MUST be action:"create".
+    "summary": "..." }
+  { "kind": "command_actions",
+    "actions": [
+      { "type": "group",   "job_ids": ["<uuid>","<uuid>", ...], "group_name": "<optional name>" },
+      { "type": "ungroup", "job_id": "<uuid>" },
+      { "type": "message", "job_id": "<uuid>", "thread": "driver" | "client" | "group", "body": "<short message>" }
+    ],
+    "summary": "..." }
+  { "kind": "auto_coordinate", "intro": "<one short sentence, e.g. 'Reviewing your unassigned backlog now.'>" }
+- For "update" or "search_update", only include fields that CHANGE.
+- For "create" (single or batched), omit target_trip_id (null).
+- Batch of creates: each element MUST be action:"create".
 - Times are Malta local, 24h.
-- For a multi-trip CREATE batch, if any trip is missing pickup time / passenger count / exact pickup or drop-off / ambiguous driver, STILL include it and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
-- Use "batch" only when there are 2+ new trips. For 1 new trip use "draft".
-- Use "search_update" for ANY request that edits multiple existing trips by a shared reference. Do NOT tell the user this is unsupported and do NOT ask them to edit trips one by one.
-- Use "data_fix" ONLY for a small correction to a single existing record — spelling of an address/client/driver, wrong phone digits, wrong flight code. The target_id MUST be a real uuid: use the Currently open trip's id when the coordinator says "this trip", otherwise use a uuid from the roster (drivers). If you cannot confidently identify which record or which field, return kind:"answer" with ONE short clarifying question — do NOT guess. Never use data_fix to change pickup time, date, or driver assignment (those go through draft/update).
-- If a search_update reference is genuinely too vague to search reliably (e.g. "fix the trips"), return kind:"answer" asking one short clarifying question instead of guessing.
-- If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
-- GLOSSARY EXPANSION: BEFORE producing a draft / batch / search_update / data_fix / answer, silently expand any glossary term found in the coordinator's message using the COMPANY GLOSSARY below (case-insensitive substring match). E.g. if the glossary contains "MSV = Medserv, based at Freeport" and the user says "move MSV's trips to 7pm", treat it as "move Medserv's trips to 7pm" for search_update criteria_terms and criteria (use "medserv" as the term).
-- GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Not for one-off references. Keep "term" short (usually what the user actually says as shorthand). Do NOT combine glossary_save with any other action in the same turn.
-- Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
+- For a multi-trip CREATE batch, if any trip is missing pickup time / passenger count / exact pickup or drop-off / ambiguous driver, STILL include it and put ONE targeted question in "clarify".
+- Use "batch" only when 2+ new trips.
+- Use "search_update" for ANY multi-existing-trip edit by a shared reference.
+- Use "data_fix" ONLY for spelling/phone/flight-code fixes.
+- If a request is genuinely too vague, kind:"answer" with ONE short clarifying question.
+- Structured actions: prefer command_actions for grouping and messages. Only include job_ids/job_id values that appear in UPCOMING TRIPS or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
+- Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
+- GLOSSARY EXPANSION: BEFORE producing any other kind, silently expand any glossary term found in the coordinator's message using COMPANY GLOSSARY below (case-insensitive).
+- GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
+- Answers are plain text (no markdown).
 
 Today's date (Malta): ${today}
 Company: ${company.name}
 
+COMPANY BUSINESS RULES (HARD rules — apply to every proposal you make):
+${rulesBlock}
+
 COMPANY GLOSSARY (per-company shorthand — apply these to the user's message BEFORE deciding the action):
 ${glossaryBlock}
 
-LEARNED PREFERENCES for this coordinator (SOFT BIASES, NOT RULES — summarized from their recent history). Treat these as gentle nudges only. NEVER apply them silently to a real action, NEVER skip the draft/confirm step because of them, and if a request is ambiguous ask a short clarifying question instead of assuming a learned preference applies:
+LEARNED PREFERENCES for this coordinator (SOFT BIASES, NOT RULES). Gentle nudges only. NEVER apply silently and NEVER skip draft/confirm because of them:
 ${learnedBlock}
 
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}
 
-ACTIVE PARTNERS in your Collaborate network (id — name). These are the ONLY companies you can suggest handing trips to. Do not invent names or IDs. Only the partner NAME will ever be shown — you have no other information about them.
+ACTIVE PARTNERS in your Collaborate network (id — name). ONLY companies you can suggest handing trips to.
 ${partnersBlock}
 
-UPCOMING TRIPS your company is currently the executor for (next 48h). Use these IDs when suggesting hand-offs:
+UPCOMING TRIPS your company is currently the executor for (next 48h):
 ${upcomingBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
@@ -368,6 +460,7 @@ ${historyLines || "(none)"}
 ===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
 ${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
 `;
+
 
 
 
@@ -417,7 +510,11 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
-    // ---- Glossary management (server-side, no UI card required) ----
+    // ---- Glossary management via the shared ai_lessons store ----
+    // Writes go through the same table the AI Learning page reads/manages, so
+    // coordinators can see and curate them there too. Company-scope + status
+    // 'approved' means they're immediately usable, and PII redaction still
+    // applies (the shared submit path enforces that policy).
     if (p.kind === "glossary_save") {
       const term = typeof p.term === "string" ? p.term.trim() : "";
       const meaning = typeof p.meaning === "string" ? p.meaning.trim() : "";
@@ -427,36 +524,120 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
       if (term.length > 80 || meaning.length > 400) {
         return answer("Please keep the shorthand under 80 characters and the meaning under 400.");
       }
-      const { error } = await supabaseAdmin
-        .from("assistant_glossary")
-        .upsert(
-          { company_id: company.id, term, meaning, updated_at: new Date().toISOString() },
-          { onConflict: "company_id,term" },
-        );
-      if (error) return answer(`Couldn't save that: ${error.message}`);
-      return answer(`Got it — ${term} = ${meaning}. I'll use this from now on. Say "forget ${term}" to remove it.`);
+      // Redact PII from the meaning before storage (matches submitLesson).
+      const { redactPii } = await import("@/lib/ai-pii.server");
+      const meaningR = redactPii(meaning);
+      if (!meaningR.safe) return answer(`I can't store that shortcut — ${meaningR.reason}. Try again without personal contact details.`);
+      // Upsert by case-insensitive title match against the caller's own rows.
+      const existing = glossary.find((g) => g.owned && g.term.toLowerCase() === term.toLowerCase());
+      if (existing) {
+        const { error } = await supabaseAdmin
+          .from("ai_lessons")
+          .update({ rule_text: meaningR.text, example_input_redacted: term, updated_at: new Date().toISOString() })
+          .eq("id", existing.id)
+          .eq("company_id", company.id);
+        if (error) return answer(`Couldn't save that: ${error.message}`);
+      } else {
+        const { error } = await supabaseAdmin.from("ai_lessons").insert({
+          kind: "glossary",
+          scope: "company",
+          company_id: company.id,
+          title: term,
+          example_input_redacted: term,
+          rule_text: meaningR.text,
+          status: "approved",
+          submitted_by: context.userId,
+        });
+        if (error) return answer(`Couldn't save that: ${error.message}`);
+      }
+      return answer(`Got it — ${term} = ${meaningR.text}. Manage all shortcuts on the AI Learning page. Say "forget ${term}" to remove it.`);
     }
     if (p.kind === "glossary_list") {
       if (glossary.length === 0) {
         return answer("No shortcuts saved yet. Teach me one with something like: \"MSV means Medserv, based at Freeport\".");
       }
-      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}`).join("\n");
-      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one.`);
+      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}${g.owned ? "" : "  (shared)"}`).join("\n");
+      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one, or open AI Learning to edit.`);
     }
     if (p.kind === "glossary_delete") {
       const rawTerm = typeof p.term === "string" ? p.term.trim() : "";
       if (!rawTerm) return answer("Which shortcut should I forget?");
-      // Case-insensitive match — find the actual stored row so we can confirm the exact term.
-      const target = glossary.find((g) => g.term.toLowerCase() === rawTerm.toLowerCase());
-      if (!target) return answer(`I don't have a shortcut for "${rawTerm}". Say "show me the glossary" to see what's saved.`);
+      const target = glossary.find((g) => g.owned && g.term.toLowerCase() === rawTerm.toLowerCase());
+      if (!target) return answer(`I don't have a company shortcut for "${rawTerm}". Shared/global entries can only be removed by an admin.`);
+      // Archive (not delete) to match how the AI Learning page manages lessons.
       const { error } = await supabaseAdmin
-        .from("assistant_glossary")
-        .delete()
+        .from("ai_lessons")
+        .update({ status: "archived" })
         .eq("id", target.id)
         .eq("company_id", company.id);
       if (error) return answer(`Couldn't remove that: ${error.message}`);
       return answer(`Forgotten — ${target.term} is no longer a shortcut.`);
     }
+
+    // ---- Structured multi-action proposals (group / ungroup / message) ----
+    // We validate here to avoid staging bad ids into ai_command_log later. The
+    // client stages the returned actions and applies them via the EXISTING
+    // applyAiCommandActions server function.
+    if (p.kind === "command_actions") {
+      const rawActions = Array.isArray(p.actions) ? (p.actions as unknown[]) : [];
+      const upcomingIds = new Set(upcoming.map((r: any) => r.id as string));
+      const openId = trip?.id ?? null;
+      const validJobId = (id: unknown): id is string =>
+        typeof id === "string" && (upcomingIds.has(id) || id === openId);
+      const cleaned: AssistantCommandActions["actions"] = [];
+      for (const raw of rawActions.slice(0, 20)) {
+        const it = (raw ?? {}) as Record<string, unknown>;
+        const type = it.type as string;
+        if (type === "group") {
+          const ids = Array.isArray(it.job_ids)
+            ? (it.job_ids as unknown[]).filter(validJobId).slice(0, 20)
+            : [];
+          if (ids.length < 2) continue;
+          const group_name = typeof it.group_name === "string" && it.group_name.trim() ? it.group_name.trim().slice(0, 80) : null;
+          cleaned.push({
+            type: "group",
+            job_ids: ids,
+            group_name,
+            label: `Group ${ids.length} trips${group_name ? ` as "${group_name}"` : ""}`,
+          });
+        } else if (type === "ungroup") {
+          if (!validJobId(it.job_id)) continue;
+          cleaned.push({
+            type: "ungroup",
+            job_id: it.job_id,
+            label: `Ungroup trip ${(it.job_id as string).slice(0, 8)}`,
+          });
+        } else if (type === "message") {
+          if (!validJobId(it.job_id)) continue;
+          const body = typeof it.body === "string" ? it.body.trim().slice(0, 800) : "";
+          if (!body) continue;
+          const thread = (it.thread === "driver" || it.thread === "client" || it.thread === "group") ? it.thread : "driver";
+          cleaned.push({
+            type: "message",
+            job_id: it.job_id,
+            thread,
+            body,
+            label: `Message (${thread}) on ${(it.job_id as string).slice(0, 8)}: ${body.slice(0, 80)}`,
+          });
+        }
+      }
+      if (cleaned.length === 0) {
+        return answer("I couldn't line up any actions on trips I can see. Open the trip(s) you mean and try again.");
+      }
+      return {
+        kind: "command_actions",
+        actions: cleaned,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `${cleaned.length} action${cleaned.length === 1 ? "" : "s"} pending your approval`,
+      };
+    }
+
+    // ---- Auto-coordinate trigger ----
+    if (p.kind === "auto_coordinate") {
+      const intro = typeof p.intro === "string" && p.intro.trim() ? p.intro.trim().slice(0, 240) : "Reviewing your unassigned backlog and grouping opportunities.";
+      return { kind: "auto_coordinate", intro };
+    }
+
+
 
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
 
@@ -728,5 +909,103 @@ export const meterAssistantConfirm = createServerFn({ method: "POST" })
     }
     return { charged };
   });
+
+/**
+ * Stage a validated `command_actions` proposal into `ai_command_log` so the
+ * client can then apply confirmed items via the EXISTING
+ * `applyAiCommandActions` server function (same audit trail, same execution
+ * layer, no reimplementation).
+ *
+ * We do not run the actions here — the client will call applyAiCommandActions
+ * with the returned log id and the indices the coordinator approved. Returns
+ * `{ id, actions }` where `actions` mirrors the persisted array so the client
+ * can render describeAction-style cards from the authoritative payload.
+ */
+export const stageAssistantActions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        raw_message: z.string().max(2000).default(""),
+        summary: z.string().max(500).default(""),
+        actions: z
+          .array(
+            z.discriminatedUnion("type", [
+              z.object({
+                type: z.literal("group"),
+                job_ids: z.array(z.string().uuid()).min(2).max(20),
+                group_name: z.string().max(80).nullable().optional(),
+              }),
+              z.object({ type: z.literal("ungroup"), job_id: z.string().uuid() }),
+              z.object({
+                type: z.literal("message"),
+                job_id: z.string().uuid(),
+                thread: z.enum(["driver", "client", "group"]),
+                body: z.string().min(1).max(2000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(20),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) throw new Error("No company assigned to this account.");
+    // Normalize into the exact shape ai_command_log stores (same keys the old
+    // Command Bar produces, so applyAiCommandActions consumes them as-is).
+    const stored = data.actions.map((a) => {
+      const base: Record<string, unknown> = {
+        type: a.type,
+        job_id: null,
+        job_ids: null,
+        driver_id: null,
+        date: null,
+        time: null,
+        pickup_at: null,
+        new_status: null,
+        group_name: null,
+        partner_company_id: null,
+        thread: null,
+        body: null,
+        note: null,
+      };
+      if (a.type === "group") {
+        base.job_ids = a.job_ids;
+        base.group_name = a.group_name ?? null;
+      } else if (a.type === "ungroup") {
+        base.job_id = a.job_id;
+      } else if (a.type === "message") {
+        base.job_id = a.job_id;
+        base.thread = a.thread;
+        base.body = a.body;
+      }
+      return base;
+    });
+    const { data: row, error } = await supabaseAdmin
+      .from("ai_command_log")
+      .insert({
+        company_id: company.id,
+        actor_user_id: context.userId,
+        mode: "execute",
+        prompt: data.raw_message.slice(0, 2000) || "(via AI dispatch assistant)",
+        response: data.summary || "Proposed by AI dispatch assistant",
+        actions: stored as never,
+        status: "awaiting_confirm",
+        requires_confirmation: true,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Failed to stage actions.");
+    return { id: (row as { id: string }).id };
+  });
+
 
 
