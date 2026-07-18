@@ -3367,7 +3367,7 @@ function DispatchTripList({
           const status = toSimpleStatus(job);
           const pickup =
             job.pickup_at
-              ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              ? formatMaltaTime(String(job.pickup_at))
               : job.time?.slice(0, 5) ?? null;
           const paxCount = job.pax?.length ?? 0;
           const flight = job.from_flight || job.to_flight;
