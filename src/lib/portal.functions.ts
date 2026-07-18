@@ -254,6 +254,10 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       booking_ref: (job as any).id.slice(0, 8),
     } as any);
 
+    {
+      const { autoPriceJobBg } = await import("./auto-price.server");
+      autoPriceJobBg((job as any).id);
+    }
     return { ok: true, job_id: (job as any).id };
   });
 
