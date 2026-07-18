@@ -573,6 +573,64 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
       };
     }
+    if (p.kind === "partner_suggest") {
+      if (partners.length === 0) {
+        return answer(
+          "You don't have any active Collaborate partners yet. Open Collaborate to invite another company or accept an invite, and I'll be able to suggest hand-offs.",
+        );
+      }
+      const rawItems = Array.isArray(p.items) ? (p.items as unknown[]) : [];
+      const partnerById = new Map(partners.map((x) => [x.id, x.name]));
+      const upcomingById = new Map(upcoming.map((r: any) => [r.id, r]));
+      const openTripId = trip?.id ?? null;
+      const items: AssistantPartnerSuggest["items"] = [];
+      for (const raw of rawItems.slice(0, 20)) {
+        const it = (raw ?? {}) as Record<string, unknown>;
+        const job_id = typeof it.job_id === "string" ? it.job_id : "";
+        const partner_company_id = typeof it.partner_company_id === "string" ? it.partner_company_id : "";
+        const reason = typeof it.reason === "string" && it.reason.trim() ? it.reason.trim().slice(0, 200) : null;
+        if (!job_id || !partner_company_id) continue;
+        if (!partnerById.has(partner_company_id)) continue;
+        // Trip must be either the currently open trip OR one of the upcoming trips we surfaced.
+        const row = upcomingById.get(job_id) ?? (openTripId === job_id ? trip : null);
+        if (!row) continue;
+        // Cross-check ownership on the currently-open trip since it wasn't in the pre-loaded list.
+        if (!upcomingById.has(job_id)) {
+          const { data: check } = await supabaseAdmin
+            .from("jobs")
+            .select("id, executor_company_id, dispatch_status, from_location, to_location, date, time")
+            .eq("id", job_id)
+            .eq("executor_company_id", company.id)
+            .maybeSingle();
+          if (!check) continue;
+          if (check.dispatch_status === "pending") continue;
+          items.push({
+            job_id,
+            job_label: `${(check.time ?? "").slice(0, 5)} · ${check.from_location ?? "?"} → ${check.to_location ?? "?"}`.trim(),
+            partner_company_id,
+            partner_name: partnerById.get(partner_company_id)!,
+            reason,
+          });
+          continue;
+        }
+        if (row.dispatch_status === "pending") continue;
+        items.push({
+          job_id,
+          job_label: `${(row.time ?? "").slice(0, 5)} · ${row.from_location ?? "?"} → ${row.to_location ?? "?"}`.trim(),
+          partner_company_id,
+          partner_name: partnerById.get(partner_company_id)!,
+          reason,
+        });
+      }
+      if (items.length === 0) {
+        return answer("I couldn't match your request to a specific trip and partner. Open the trip you want to hand off and try again, or name the trip and partner.");
+      }
+      return {
+        kind: "partner_suggest",
+        items,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Suggest forwarding ${items.length} trip${items.length === 1 ? "" : "s"} to your partners`,
+      };
+    }
     if (p.kind === "draft") return toDraft(p);
     return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
