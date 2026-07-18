@@ -474,26 +474,26 @@ function HowItWorks() {
   const steps = [
     {
       n: "01",
-      title: "Paste your bookings",
-      body: "Drop a WhatsApp block or a hotel's daily sheet straight into the Pending screen. No formatting needed.",
+      title: "Tell the assistant",
+      body: "Type or talk. Paste a full email of bookings, describe a change, or just say what you need — plain language works.",
       visual: <StepPasteVisual />,
     },
     {
       n: "02",
-      title: "AI parses in seconds",
-      body: "Names, flights, times and pax are pulled out automatically. Review, tweak, approve.",
+      title: "See the draft first",
+      body: "It shows you exactly what will happen — the trip, the driver, the times — before touching a thing. Nothing runs without you.",
       visual: <StepAIVisual />,
     },
     {
       n: "03",
-      title: "Send driver a web link",
-      body: "One tap sends a secure WhatsApp link. Your driver opens the trip — no login, no download.",
+      title: "Confirm and it's done",
+      body: "One tap. Trips get created, drivers get their web link, runs get grouped, messages go out — whatever was needed.",
       visual: <StepDriverVisual />,
     },
     {
       n: "04",
-      title: "Track live & collaborate",
-      body: "Watch flights, driver status and client ETA. Overflow? Jump the trip to a partner in one tap.",
+      title: "It keeps watch",
+      body: "The assistant flags driver schedule collisions automatically, so overlaps don't sneak into your day. Undo any AI action with one click.",
       visual: <StepTrackVisual />,
     },
   ];
