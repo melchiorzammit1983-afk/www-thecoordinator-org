@@ -2636,18 +2636,31 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
                 <EtaChip point={livePoint} job={job} />
+                {livePoint?.wait_started_at && (
+                  <WaitTimerChip startedAt={livePoint.wait_started_at} pickupAt={job.pickup_at ?? null} />
+                )}
+                {livePoint && (
+                  <span
+                    className="text-[10px] text-muted-foreground"
+                    title={new Date(livePoint.captured_at).toLocaleTimeString()}
+                  >
+                    · updated {formatAgo(livePoint.captured_at)}
+                  </span>
+                )}
               </div>
             )}
-            <TrafficBadge
-              info={{
-                traffic_delay_minutes: job.traffic_delay_minutes,
-                traffic_severity: job.traffic_severity,
-                leave_by_at: job.leave_by_at,
-                pickup_shift_reason: job.pickup_shift_reason,
-              }}
-              compact
-              className="mt-1"
-            />
+            {(job.driver_id || (job.traffic_delay_minutes ?? 0) > 0) && (
+              <TrafficBadge
+                info={{
+                  traffic_delay_minutes: job.traffic_delay_minutes,
+                  traffic_severity: job.traffic_severity,
+                  leave_by_at: job.leave_by_at,
+                  pickup_shift_reason: job.pickup_shift_reason,
+                }}
+                compact
+                className="mt-1"
+              />
+            )}
             <div className="flex flex-wrap gap-1 mt-1">
               {paxCount > 0 &&
                 (() => {
