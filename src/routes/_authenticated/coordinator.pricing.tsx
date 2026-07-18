@@ -359,3 +359,168 @@ function DriverDefaultsTab() {
     </Card>
   );
 }
+
+// ---------- Price preview ----------
+function PricePreviewTab() {
+  const { data: settings } = useSettings();
+  const listFn = useServerFn(listServiceAreas);
+  const areasQ = useQuery({ queryKey: ["pricing", "areas"], queryFn: () => listFn() as Promise<any[]> });
+
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [km, setKm] = useState<number>(0);
+  const [mins, setMins] = useState<number>(0);
+  const [pax, setPax] = useState<number>(1);
+  const [waitMins, setWaitMins] = useState<number>(0);
+  const [areaId, setAreaId] = useState<string>("");
+  const [paxIncluded, setPaxIncluded] = useState<number>(4);
+  const [extraPerPax, setExtraPerPax] = useState<number>(0);
+
+  const area = (areasQ.data ?? []).find((a) => a.id === areaId);
+  const currency = area?.currency ?? settings.currency ?? "EUR";
+  const basePrice = Number(area?.base_price ?? 0);
+  const pricePerKm = Number(area?.price_per_km ?? settings.price_per_km ?? 0);
+  const pricePerHour = Number(area?.price_per_hour ?? settings.price_per_hour ?? 0);
+  const minimumFare = Number(area?.minimum_fare ?? settings.minimum_fare ?? 0);
+  const freeWait = Number(area?.free_wait_minutes ?? settings.free_wait_minutes ?? 0);
+  const waitRate = Number(area?.waiting_rate_per_minute ?? settings.waiting_rate_per_minute ?? 0);
+
+  const distanceCost = km * pricePerKm;
+  const timeCost = (mins / 60) * pricePerHour;
+  const paxSurcharge = Math.max(0, pax - paxIncluded) * extraPerPax;
+  const preMin = basePrice + distanceCost + timeCost + paxSurcharge;
+  const fare = Math.max(preMin, minimumFare);
+  const minApplied = fare > preMin;
+  const chargeableWait = Math.max(0, waitMins - freeWait);
+  const waitCharge = chargeableWait * waitRate;
+  const total = fare + waitCharge;
+
+  const commissionPct = Number(settings.default_driver_commission_pct ?? 0);
+  const driverShare = Number(settings.default_driver_wait_share_pct ?? 100);
+  const driverFromFare = fare * (1 - commissionPct / 100);
+  const driverFromWait = waitCharge * (driverShare / 100);
+  const driverTotal = driverFromFare + driverFromWait;
+
+  const fmt = (n: number) => `${currency} ${n.toFixed(2)}`;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Calculator className="h-4 w-4" /> Try a trip
+          </CardTitle>
+          <CardDescription>
+            Nothing is saved — enter a route, passengers, and expected waiting time to see the exact fare
+            using your current rates.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="From (optional)">
+            <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Pickup location" />
+          </Field>
+          <Field label="To (optional)">
+            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Dropoff location" />
+          </Field>
+          <Field label="Service area" hint="Optional — overrides base rates.">
+            <select
+              className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              value={areaId}
+              onChange={(e) => setAreaId(e.target.value)}
+            >
+              <option value="">Base rates (no area)</option>
+              {(areasQ.data ?? []).filter((a) => a.active).map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Passengers">
+            <NumInput step="1" value={pax} onChange={(v) => setPax(Math.max(1, Math.round(v)))} />
+          </Field>
+          <Field label="Distance (km)">
+            <NumInput step="0.1" value={km} onChange={setKm} />
+          </Field>
+          <Field label="Driving time (min)">
+            <NumInput step="1" value={mins} onChange={(v) => setMins(Math.max(0, Math.round(v)))} />
+          </Field>
+          <Field label="Waiting time (min)" hint={`Free window: ${freeWait} min from pickup.`}>
+            <NumInput step="1" value={waitMins} onChange={(v) => setWaitMins(Math.max(0, Math.round(v)))} />
+          </Field>
+          <div />
+          <Field label="Included passengers" hint="No surcharge up to this count.">
+            <NumInput step="1" value={paxIncluded} onChange={(v) => setPaxIncluded(Math.max(1, Math.round(v)))} />
+          </Field>
+          <Field label={`Extra per additional passenger (${currency})`}>
+            <NumInput value={extraPerPax} onChange={setExtraPerPax} />
+          </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Quote</CardTitle>
+          <CardDescription>
+            {area ? <>Using area <strong>{area.name}</strong></> : <>Using company base rates</>}
+            {(from || to) && <> · {from || "?"} → {to || "?"}</>}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-3xl font-semibold tabular-nums">{fmt(total)}</div>
+
+          <div className="rounded-md border divide-y text-sm">
+            <PreviewRow label="Base price" value={fmt(basePrice)} muted={basePrice === 0} />
+            <PreviewRow label={`Distance (${km.toFixed(1)} km × ${fmt(pricePerKm)})`} value={fmt(distanceCost)} muted={distanceCost === 0} />
+            <PreviewRow label={`Time (${mins} min × ${fmt(pricePerHour)}/hr)`} value={fmt(timeCost)} muted={timeCost === 0} />
+            {paxSurcharge > 0 && (
+              <PreviewRow label={`Passenger surcharge (${pax - paxIncluded} × ${fmt(extraPerPax)})`} value={fmt(paxSurcharge)} />
+            )}
+            <PreviewRow
+              label={minApplied ? `Fare (minimum ${fmt(minimumFare)} applied)` : "Fare"}
+              value={fmt(fare)}
+              strong
+            />
+            <PreviewRow
+              label={
+                waitMins === 0
+                  ? "Waiting"
+                  : chargeableWait === 0
+                    ? `Waiting (${waitMins} min — inside free window)`
+                    : `Waiting (${chargeableWait} chargeable min × ${fmt(waitRate)})`
+              }
+              value={fmt(waitCharge)}
+              muted={waitCharge === 0}
+            />
+            <PreviewRow label="Total" value={fmt(total)} strong />
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Driver payout preview
+            </div>
+            <div className="rounded-md border divide-y text-sm">
+              <PreviewRow
+                label={`From fare (${(100 - commissionPct).toFixed(0)}% after ${commissionPct}% commission)`}
+                value={fmt(driverFromFare)}
+              />
+              <PreviewRow label={`From waiting (${driverShare}% share)`} value={fmt(driverFromWait)} muted={driverFromWait === 0} />
+              <PreviewRow label="Driver total" value={fmt(driverTotal)} strong />
+              <PreviewRow label="You keep" value={fmt(total - driverTotal)} strong />
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Uses company defaults. A driver with per-driver overrides will earn different amounts.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PreviewRow({ label, value, muted, strong }: { label: string; value: string; muted?: boolean; strong?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between px-3 py-2 ${muted ? "text-muted-foreground" : ""} ${strong ? "font-semibold" : ""}`}>
+      <span>{label}</span>
+      <span className="tabular-nums">{value}</span>
+    </div>
+  );
+}
