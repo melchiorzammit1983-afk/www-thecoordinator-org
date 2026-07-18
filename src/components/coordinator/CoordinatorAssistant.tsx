@@ -193,7 +193,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
             };
           }
           if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
-          return { role: "assistant" as const, text: m.suggest.summary };
+          if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
+          if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
+          return { role: "assistant" as const, text: "" };
         });
       return (await askFn({
         data: {
