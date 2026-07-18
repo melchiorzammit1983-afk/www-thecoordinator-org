@@ -264,15 +264,14 @@ function Hero() {
 
             {/* Main Heading */}
             <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-              <span style={{ color: COLORS.white }}>Stop manually dispatching.</span>
+              <span style={{ color: COLORS.white }}>Just tell it</span>
               <br />
-              <span style={{ color: COLORS.yellow }}>Start collaborating.</span>
+              <span style={{ color: COLORS.yellow }}>what you need.</span>
             </h1>
 
             {/* Description */}
             <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
-              The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips,
-              track flights, and share jobs instantly—without forcing your drivers to download an app.
+              Your AI dispatcher, on call 24/7. Type or talk to it in plain language — create trips, move them, paste in a whole email of bookings. It catches driver schedule conflicts before they happen, and every action can be undone with one click.
             </p>
 
             {/* CTA Buttons */}
@@ -302,7 +301,7 @@ function Hero() {
 
             {/* Features List */}
             <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs">
-              {["Pay as you go", "No driver app required", "Live flight tracking"].map((feature) => (
+              {["Pay as you go", "No driver app required", "Undo any AI action"].map((feature) => (
                 <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.yellow }}>
                   <Check className="h-3.5 w-3.5" /> {feature}
                 </span>
