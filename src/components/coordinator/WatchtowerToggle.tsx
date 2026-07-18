@@ -34,6 +34,7 @@ import {
   getWatchtowerSettings,
   listWatchtowerAlerts,
   runWatchtowerScan,
+  saveWatchtowerSettings,
   type WatchKind,
 } from "@/lib/watchtower.functions";
 
@@ -61,10 +62,7 @@ const SEV_LABELS: Record<number, string> = {
 export function WatchtowerToggle() {
   const qc = useQueryClient();
   const getSettings = useServerFn(getWatchtowerSettings);
-  const saveSettingsFn = useServerFn(
-    // avoid import churn — inline reference
-    (await import("@/lib/watchtower.functions")).saveWatchtowerSettings,
-  );
+  const saveSettingsFn = useServerFn(saveWatchtowerSettings);
   const runScan = useServerFn(runWatchtowerScan);
   const listAlerts = useServerFn(listWatchtowerAlerts);
   const ackAlert = useServerFn(acknowledgeWatchtowerAlert);

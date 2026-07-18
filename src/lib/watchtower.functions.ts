@@ -79,7 +79,7 @@ export const saveWatchtowerSettings = createServerFn({ method: "POST" })
     if (data.daily_scan_cap !== undefined) patch.daily_scan_cap = data.daily_scan_cap;
     const { data: updated } = await supabaseAdmin
       .from("watchtower_settings")
-      .update(patch)
+      .update(patch as never)
       .eq("user_id", context.userId)
       .select("*")
       .single();
