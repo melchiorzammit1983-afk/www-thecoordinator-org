@@ -1599,7 +1599,40 @@ export const createDriver = createServerFn({ method: "POST" })
     return row;
   });
 
-// ---------- BOOKINGS ----------
+/**
+ * Minimal driver-record update used by the AI assistant's data-fix flow
+ * (typo'd driver name / phone). Scoped to the caller's company. Kept small
+ * on purpose — coordinators still use the drivers page for full edits.
+ */
+export const updateDriverBasic = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().trim().min(1).max(120).optional(),
+        phone: z.string().trim().max(40).nullable().optional(),
+      })
+      .refine((v) => v.name !== undefined || v.phone !== undefined, {
+        message: "Provide name or phone to update.",
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.phone !== undefined) patch.phone = data.phone || null;
+    const { error } = await supabaseAdmin
+      .from("drivers")
+      .update(patch as never)
+      .eq("id", data.id)
+      .eq("company_id", c.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 
 export const listPendingBookings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
