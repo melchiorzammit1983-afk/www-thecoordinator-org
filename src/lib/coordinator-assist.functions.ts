@@ -102,7 +102,28 @@ export type AssistantDataFix = {
   summary: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix;
+/**
+ * Suggest handing off one or more trips to partner companies in the
+ * coordinator's existing Collaborate network. SUGGESTION ONLY — the client
+ * renders Confirm/Cancel per item and only then calls the existing
+ * `dispatchJobToPartner` server function. The assistant never triggers the
+ * hand-off itself, and it never accesses any cross-company data beyond
+ * partner company id/name (which the coordinator already sees in the
+ * Collaborate UI via `listConnections`).
+ */
+export type AssistantPartnerSuggest = {
+  kind: "partner_suggest";
+  items: {
+    job_id: string;
+    job_label: string;        // "10:00 · Hilton → Airport"
+    partner_company_id: string;
+    partner_name: string;
+    reason?: string | null;   // short "why this partner" line, from model
+  }[];
+  summary: string;
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix | AssistantPartnerSuggest;
 
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
