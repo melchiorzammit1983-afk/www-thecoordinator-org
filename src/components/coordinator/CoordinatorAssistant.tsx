@@ -10,7 +10,8 @@
  * table, no driver-conflict detection. Metered via the general points system.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
+import { Sparkles, X, Send, Loader2, Bot, User as UserIcon, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } from "@/hooks/use-voice";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
