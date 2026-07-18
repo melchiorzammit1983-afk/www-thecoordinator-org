@@ -602,7 +602,126 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         })
         .filter((x) => !("suggest" in x) || x.suggest.items.length > 0),
     );
+
+  // ------------- Structured command actions (group / ungroup / message) -------------
+  // Stage via stageAssistantActions, then apply via the EXISTING
+  // applyAiCommandActions server function — same audit path & metering the
+  // old Command Bar uses. Per-item results are surfaced back into the chat.
+  const stageFn = useServerFn(stageAssistantActions);
+  const applyCmdFn = useServerFn(applyAiCommandActions);
+  const confirmActions = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find(
+        (x): x is Extract<ChatMsg, { actions: AssistantCommandActions }> =>
+          x.id === msgId && "actions" in x,
+      );
+      if (!msg) throw new Error("Actions not found");
+      const chosenLocalIdx: number[] = [];
+      const chosenActions = msg.actions.actions.filter((_, i) => {
+        if (msg.selected[i]) {
+          chosenLocalIdx.push(i);
+          return true;
+        }
+        return false;
+      });
+      if (chosenActions.length === 0) throw new Error("Nothing selected");
+      const stagePayload = chosenActions.map((a) => {
+        if (a.type === "group") {
+          return { type: "group" as const, job_ids: a.job_ids ?? [], group_name: a.group_name ?? null };
+        }
+        if (a.type === "ungroup") {
+          return { type: "ungroup" as const, job_id: a.job_id ?? "" };
+        }
+        return {
+          type: "message" as const,
+          job_id: a.job_id ?? "",
+          thread: (a.thread ?? "driver") as "driver" | "client" | "group",
+          body: a.body ?? "",
+        };
+      });
+      const staged = await stageFn({
+        data: {
+          raw_message: msg.rawMessage ?? "",
+          summary: msg.actions.summary,
+          actions: stagePayload,
+        },
+      });
+      const res = (await applyCmdFn({
+        data: {
+          command_log_id: (staged as { id: string }).id,
+          // We staged only the chosen ones; apply all staged indices.
+          action_indices: chosenActions.map((_, i) => i),
+        },
+      })) as { ok: boolean; affected: number; results: Array<{ index: number; ok: boolean; message: string }> };
+      // Map staged-index results back to the LOCAL (proposal) indices.
+      const mapped = res.results.map((r) => ({
+        index: chosenLocalIdx[r.index] ?? r.index,
+        ok: r.ok,
+        message: r.message,
+      }));
+      return { msgId, results: mapped, affected: res.affected };
+    },
+    onSuccess: ({ msgId, results, affected }) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["trip-messages"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      const target = messages.find(
+        (x): x is Extract<ChatMsg, { actions: AssistantCommandActions }> =>
+          x.id === msgId && "actions" in x,
+      );
+      const okLines: string[] = [];
+      const failLines: string[] = [];
+      for (const r of results) {
+        const label = target?.actions.actions[r.index]?.label ?? `Action ${r.index + 1}`;
+        if (r.ok) okLines.push(`✔ ${label}`);
+        else failLines.push(`⚠ ${label} — ${r.message}`);
+      }
+      if (target) {
+        logLearning({
+          action_kind: "batch",
+          outcome: "confirmed",
+          proposed: target.actions,
+          final: { results },
+          raw_message: target.rawMessage,
+        });
+      }
+      setMessages((m) =>
+        m.map((x) => {
+          if (x.id !== msgId || !("actions" in x)) return x;
+          return { ...x, applied: true, results };
+        }),
+      );
+      const summary =
+        failLines.length === 0
+          ? `Applied ${affected} action${affected === 1 ? "" : "s"}.`
+          : `Applied ${affected} of ${results.length}. ${failLines.length} failed.`;
+      const body = [...okLines, ...failLines].join("\n");
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `${summary}\n${body}` },
+      ]);
+      if (failLines.length === 0) toast.success(summary);
+      else if (okLines.length === 0) toast.error(summary);
+      else toast.warning(summary);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not apply actions.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const toggleActionRow = (msgId: string, idx: number) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== msgId || !("actions" in x) || x.applied) return x;
+        const selected = x.selected.map((v, i) => (i === idx ? !v : v));
+        return { ...x, selected };
+      }),
+    );
   };
+
 
   const dismissDraft = (id: string) => {
     setMessages((m) => {
