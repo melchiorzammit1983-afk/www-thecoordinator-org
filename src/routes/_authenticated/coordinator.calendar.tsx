@@ -49,7 +49,6 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
-import { RouteThumb } from "@/components/coordinator/RouteThumb";
 import {
   listConnections,
   dispatchJobToPartner,
@@ -107,6 +106,7 @@ import {
 import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
 
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -1015,76 +1015,104 @@ function CalendarPage() {
           )}
         </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
-          {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
-            const active = trafficFilter.has(s);
-            const styles: Record<string, string> = {
-              light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
-              moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
-              heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
-              severe: "border-red-500/50 text-red-700 dark:text-red-300",
-            };
-            const activeBg: Record<string, string> = {
-              light: "bg-emerald-500/15",
-              moderate: "bg-amber-500/15",
-              heavy: "bg-orange-500/15",
-              severe: "bg-red-500/15",
-            };
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleTrafficFilter(s)}
-                className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
-                title={`Show only ${s} traffic trips`}
-              >
-                {active ? "● " : ""}
-                {s} · {severityCounts[s]}
-              </button>
-            );
-          })}
-          {trafficFilter.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setTrafficFilter(new Set())}
-              className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              clear
-            </button>
-          )}
-          <div className="flex rounded-md border overflow-hidden text-[11px]">
-            {(
-              [
-                { k: "none", label: "Default" },
-                { k: "leave_by", label: "Leave by ↑" },
-                { k: "severity", label: "Severity ↓" },
-              ] as const
-            ).map((o) => (
-              <button
-                key={o.k}
-                type="button"
-                onClick={() => setTrafficSort(o.k)}
-                className={`px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                title={`Sort by ${o.label}`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setAlertsOnly((v) => !v)}
-            className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
-              alertsOnly
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground hover:text-foreground"
-            }`}
-            title="Show only cards with unread messages, client changes, or SOS"
-          >
-            {alertsOnly ? "● " : ""}Only cards with alerts
-          </button>
-          <AutoRefreshToggle jobs={jobs ?? []} />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                More filters
+                {(trafficFilter.size > 0 || alertsOnly || trafficSort !== "none") && (
+                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                    {trafficFilter.size + (alertsOnly ? 1 : 0) + (trafficSort !== "none" ? 1 : 0)}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 space-y-3">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1.5">Traffic</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(["light", "moderate", "heavy", "severe"] as const).map((s) => {
+                    const active = trafficFilter.has(s);
+                    const styles: Record<string, string> = {
+                      light: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
+                      moderate: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+                      heavy: "border-orange-500/50 text-orange-800 dark:text-orange-300",
+                      severe: "border-red-500/50 text-red-700 dark:text-red-300",
+                    };
+                    const activeBg: Record<string, string> = {
+                      light: "bg-emerald-500/15",
+                      moderate: "bg-amber-500/15",
+                      heavy: "bg-orange-500/15",
+                      severe: "bg-red-500/15",
+                    };
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => toggleTrafficFilter(s)}
+                        className={`px-2 py-0.5 rounded-full border text-[11px] capitalize transition-colors ${styles[s]} ${active ? activeBg[s] : "bg-background hover:bg-muted"}`}
+                      >
+                        {active ? "● " : ""}
+                        {s} · {severityCounts[s]}
+                      </button>
+                    );
+                  })}
+                  {trafficFilter.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setTrafficFilter(new Set())}
+                      className="px-2 py-0.5 rounded-full border text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1.5">Sort</div>
+                <div className="flex rounded-md border overflow-hidden text-[11px] w-full">
+                  {(
+                    [
+                      { k: "none", label: "Default" },
+                      { k: "leave_by", label: "Leave by ↑" },
+                      { k: "severity", label: "Severity ↓" },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.k}
+                      type="button"
+                      onClick={() => setTrafficSort(o.k)}
+                      className={`flex-1 px-2 py-1 ${trafficSort === o.k ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAlertsOnly((v) => !v)}
+                  className={`flex-1 px-2.5 py-1 rounded-md border text-[11px] transition-colors ${
+                    alertsOnly
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {alertsOnly ? "● " : ""}Only cards with alerts
+                </button>
+              </div>
+
+              <div className="pt-1 border-t">
+                <AutoRefreshToggle jobs={jobs ?? []} />
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </header>
+
 
       {/* Drivers currently on waiting time */}
       <WaitingNowStrip
@@ -2313,6 +2341,37 @@ function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   );
 }
 
+function formatAgo(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function WaitTimerChip({ startedAt, pickupAt }: { startedAt: string; pickupAt: string | null }) {
+  // Charged wait clock is anchored to max(now, pickup_at) — mirror the display side.
+  const anchor = (() => {
+    const started = new Date(startedAt).getTime();
+    if (!pickupAt) return started;
+    const pickup = new Date(pickupAt).getTime();
+    return Math.max(started, pickup);
+  })();
+  const min = Math.max(0, Math.floor((Date.now() - anchor) / 60000));
+  if (min <= 0) return null;
+  const tone =
+    min >= 15
+      ? "bg-red-500/15 text-red-700 border-red-500/40"
+      : min >= 5
+        ? "bg-amber-500/15 text-amber-800 border-amber-500/40"
+        : "bg-muted text-foreground border-border";
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone} whitespace-nowrap`}>
+      Wait {min}m
+    </span>
+  );
+}
+
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
@@ -2637,18 +2696,31 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
                 <EtaChip point={livePoint} job={job} />
+                {livePoint?.wait_started_at && (
+                  <WaitTimerChip startedAt={livePoint.wait_started_at} pickupAt={job.pickup_at ?? null} />
+                )}
+                {livePoint && (
+                  <span
+                    className="text-[10px] text-muted-foreground"
+                    title={new Date(livePoint.captured_at).toLocaleTimeString()}
+                  >
+                    · updated {formatAgo(livePoint.captured_at)}
+                  </span>
+                )}
               </div>
             )}
-            <TrafficBadge
-              info={{
-                traffic_delay_minutes: job.traffic_delay_minutes,
-                traffic_severity: job.traffic_severity,
-                leave_by_at: job.leave_by_at,
-                pickup_shift_reason: job.pickup_shift_reason,
-              }}
-              compact
-              className="mt-1"
-            />
+            {(job.driver_id || (job.traffic_delay_minutes ?? 0) > 0) && (
+              <TrafficBadge
+                info={{
+                  traffic_delay_minutes: job.traffic_delay_minutes,
+                  traffic_severity: job.traffic_severity,
+                  leave_by_at: job.leave_by_at,
+                  pickup_shift_reason: job.pickup_shift_reason,
+                }}
+                compact
+                className="mt-1"
+              />
+            )}
             <div className="flex flex-wrap gap-1 mt-1">
               {paxCount > 0 &&
                 (() => {
@@ -2786,16 +2858,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               />
             </span>
           </div>
-          <RouteThumb
-            from={job.pickup_display_name || job.from_location}
-            to={job.dropoff_display_name || job.to_location}
-            jobId={job.id}
-            isLive={job.status !== "completed" && job.status !== "cancelled"}
-            className="hidden sm:block mr-6"
-          />
-
         </div>
       </button>
+
 
       {/* Top-right controls: drag (desktop) + menu */}
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">

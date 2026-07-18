@@ -1,90 +1,84 @@
-# Flight tracking robustness (LO673 case)
 
-## What's actually broken
+# Dispatch page redesign — split list + detail, tiered card density
 
-Confirmed against the live row:
+Goal: kill the "everything on top of each other" feel. Slim top bar, one prioritized list on the left, focused detail panel on the right. Cards stay minimal by default; **Active & Waiting** trips get a richer inline card so the coordinator can see what's happening without opening the panel.
 
-- Job `fa148a84`, pickup 2026-07-18 09:00 Malta.
-- `from_flight = "LO673"` (valid — IATA `LO` = LOT Polish Airlines flight 673).
-- `flight_status = "unknown"`, note `"Status unavailable"`, `flight_scheduled_at = null`, `flight_estimated_at = null`, `flight_status_confidence = null`.
-- `to_flight = "ASSO VENTICINCUE"` — a vessel name entered in a flight field.
+## Layout
 
-So two things are going wrong at once:
+Desktop (≥ md):
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  Sat 18 Jul  ‹ › Today   [Day|Week]        🔍  ⚙ Filters  + │
+├───────────────────────────┬──────────────────────────────────┤
+│ Needs action • Live •     │                                  │
+│   Scheduled • Done        │      TRIP DETAIL PANEL           │
+│                           │   (map, route, driver, timeline, │
+│  ▸ Unassigned (2)   [!]   │    contact, chat, actions)       │
+│  ▸ Live now (1)  ← rich   │                                  │
+│  ▸ Later today (3)        │                                  │
+│  ▸ Done (hidden)          │                                  │
+└───────────────────────────┴──────────────────────────────────┘
+```
 
-1. The Gemini grounding call in `fetchLiveStatusViaGemini` is returning "no grounding / no result" for `LO673`, and the job is quietly parked in `flight_status=unknown`. Nothing on the card tells the coordinator that the flight was never actually tracked.
-2. There is no basic sanity check on the code itself, so nonsense like `ASSO VENTICINCUE` in `to_flight` also silently sits.
+Mobile (< md):
+- Same segmented tabs. Full-width list. Tap card → full-screen detail sheet.
+- Sticky bottom bar: **+ New trip · Ask AI · Auto‑coordinate**.
+- Filter/sort behind one **Filters** button → bottom sheet.
 
-The user wants the AI to (a) recognise the mistake, (b) prompt them to fix it, and (c) show the flight time on the card.
+## Top bar (replaces the current toolbar wall)
 
-## Fix plan
+Only: Date + Prev/Next/Today, Day/Week toggle, Search, one **Filters** button. The Filters popover holds Status, Driver chips (light/moderate/heavy/severe), Sort, Only alerts, Hide completed, Auto‑refresh.
 
-### 1. Add a small flight/vessel code validator (new `src/lib/flight-code.ts`)
+## Left list
 
-Pure client+server utility, no network:
+- Segmented control: **Needs action · Live · Scheduled · Done** (Done off by default; "Needs action" = unassigned + conflict + tight ETA).
+- Collapsible sections: Unassigned, Live now, Later today, Done.
+- Ask AI + Auto‑coordinate sit in a compact toolbar above the list.
 
-- `parseFlightCode(input) → { ok, airline?, number?, iataAirline?, hint? }`.
-  - Regex: `^\s*([A-Z]{2}|[A-Z]\d|\d[A-Z])\s*0*([0-9]{1,4})[A-Z]?\s*$` (IATA carrier + 1–4 digits, optional space, optional operational suffix).
-  - Small built-in IATA→name map for the ~120 carriers we already see in bookings (LO=LOT Polish, LH=Lufthansa, KM=Air Malta, FR=Ryanair, U2=easyJet, W6=Wizz Air, etc.). Rest returns `airline=undefined` but still `ok=true`.
-- `looksLikeVessel(input) → boolean` — space-containing all-alpha strings, or IMO/MMSI patterns; used to catch data like `ASSO VENTICINCUE` sitting in a flight field.
-- `suggestCorrections(input)` — trivial fixes only (uppercase, strip spaces, remove leading zeros, `O`↔`0` in the numeric part) so the fix dialog can offer one-tap alternatives.
+## Card density — two tiers
 
-### 2. Server: make `fetchLiveStatusViaGemini` self-healing
+### Minimal card (Scheduled / Later / Done)
+- Trip # + time (large)
+- Route: From → To (single line, truncates)
+- Status pill
+- Driver avatar + name (or "Unassigned")
+- Conflict/ETA/traffic chip if present
+- Tap → detail panel. "⋯" for quick actions.
 
-Edit `src/lib/coordinator.functions.ts` (`fetchLiveStatusViaGemini` and `applyLiveStatusToJob`):
+**No route thumbnail on the card.** No flight code, notes, or map. Route thumb only appears in the detail panel.
 
-- Before calling Gemini, run `parseFlightCode`. If it fails, short-circuit with `{ ok:false, reason:"invalid_code" }` — no points spent.
-- If `parseFlightCode.ok` and we know the airline name, expand the grounded prompt from `flight "LO673"` to `flight "LO673" (LOT Polish Airlines flight 673)`. This is the single biggest reliability win for two-letter codes that Gemini otherwise doesn't disambiguate.
-- If the first grounded call returns no grounding chunks, retry once with an explicit airport hint derived from the trip (`from_location` / `to_location` — Malta MLA is almost always one endpoint here) instead of only bumping confidence to "low".
-- Persist `flight_scheduled_at` and `flight_estimated_at` **whenever Gemini returns anything parseable**, even at `low` confidence, so the card can always show a time.
-- Extend the persisted `flight_status_note` for the failure path so it names the reason ("Couldn't find LO673 for 2026-07-18 — check code") instead of generic `"Status unavailable"`.
+### Rich card (Active & Waiting: `accepted` / `on_the_way` / `arrived` / `waiting` / `in_progress`)
+Adds under the minimal header, inline:
+- **Live status strip**: current status + time since last update ("arrived · 3m ago")
+- **Live ETA / distance to next point** with traffic badge and freshness tooltip
+- **Leave-by** countdown (if not yet started)
+- **Wait timer** (if arrived/waiting) anchored to `max(now, pickup_at)`
+- **Progress bar**: pickup → dropoff, dot at current position
+- **Alert row** if flight delay / conflict / off-route
+- Inline quick actions: **Message driver**, **Open**, **Ask AI**
 
-Add a companion server fn `retryFlightTracking({ job_id })` that re-runs `applyLiveStatusToJob` on demand from the fix dialog (uses existing points/refund path, no schema change).
+Still **no route thumbnail** — the live map lives in the detail panel. Passenger contact, flight/vessel details, timeline, notes also stay in the panel.
 
-### 3. Card UI: always show the flight time, and flag when tracking failed
+## Detail panel (right side / full-screen sheet on mobile)
 
-Edit the trip card in `src/routes/_authenticated/coordinator.calendar.tsx` (the `flightMsg` block around lines 2260–2360) and mirror in `src/components/coordinator/TripDetailsSheet.tsx`:
+Single scroll: header (trip #, time, status, driver, primary action) → route map + ETA → passenger/contact/flight → timeline of map events → notes → footer actions (Ask AI, Group, Split, Duplicate, History). Reuses `TripDetailsSheet`, `TripEventsMap`, `TripRouteInsights`, `TripChatDialog`.
 
-- New chip whenever a code is present:
-  - Green `Flight 09:15 · LO673` when `flight_status ∈ {on_time, boarding, departed, landed}` and a scheduled/estimated time exists.
-  - Amber `DELAYED → 09:45 (was 09:15) · LO673` for `delayed`/`early`/`time_mismatch` (existing text kept, just always paired with the code).
-  - Red-outline "Not tracked · check code" chip when `flight_status="unknown"` OR (`confidence="low"` AND no `flight_scheduled_at`). Clicking opens the new fix dialog.
-- Chip is clickable everywhere → opens the fix dialog.
+## Behavior
 
-### 4. New "Fix flight code" dialog (`src/components/coordinator/FlightCodeFixDialog.tsx`)
+- Selecting a card highlights it and swaps the right panel.
+- Deep link `?trip=<id>` preserves selection on refresh.
+- Rich cards live-update on the same 60s ETA poll + Realtime status events already in place.
+- Auto-refresh unchanged.
 
-Small focused dialog opened from the untracked chip and from the AI Watchtower alert modal:
+## Files to touch
 
-- Shows current `from_flight`/`to_flight`, why we couldn't track ("No grounded result", "Invalid format", "Vessel name in flight field", etc.).
-- Renders `suggestCorrections()` output as one-tap buttons.
-- Free-text field to enter a corrected code; runs `parseFlightCode` inline and shows the resolved airline name in real time.
-- "Retry tracking" button → calls the new `retryFlightTracking` server fn, updates the card, closes on success.
-- "This is a vessel, not a flight" quick action → moves the value into the correct field and flips `tracking_kind` to `vessel`.
-- All writes go through the existing `updateJob` path; no new grants/policies.
-
-### 5. Watchtower: add a `flight_untracked` finding
-
-Edit `src/lib/watchtower.functions.ts` `detectFindings` (`wantFlight` block, lines 159–170):
-
-- New finding kind for jobs where a flight code is present, pickup is within the next 6 hours, and `flight_status ∈ {unknown, null}` or `flight_scheduled_at IS NULL` after at least one refresh attempt (`flight_status_updated_at` non-null).
-- Severity 4 (Serious) so it surfaces in the existing `CriticalAlertModal` (built last turn) with "Review job" navigating to the trip card, where the fix dialog is one click away.
-- Dedupe key: `flight-untracked:${job.id}:${flight_status_updated_at}`.
-
-### 6. Assistant awareness (light touch)
-
-Edit `src/lib/coordinator-assist.functions.ts` system prompt so when the assistant is drafting or editing a trip:
-
-- It calls `parseFlightCode` on the extracted `from_flight`/`to_flight`.
-- If the code fails validation OR looks like a vessel, it emits a `data_fix` response kind (existing card) with the suggested correction, instead of committing the trip with a bad code.
-- No new response kind, no new UI plumbing — reuses the diff card the coordinator already knows.
-
-## Technical notes (for reference)
-
-- `flight_status_confidence` column already exists; no migration needed.
-- No new tables, no new grants — everything reuses existing `jobs` writes, `watchtower_alerts`, and the existing points feature `flight_vessel_tracking`.
-- The 5-minute `liveStatusCache` in `coordinator.functions.ts` must be keyed by the *retry variant* too (append `":retry"` when the airport-hint retry runs) so a real retry can't be short-circuited by a stale "no result".
-- All UI changes are additive; nothing in the existing dispatch/driver flows is touched.
+- `src/routes/_authenticated/coordinator.calendar.tsx` — new split layout, segmented tabs, grouped sections, URL-synced selection. Remove `RouteThumb` usage from list cards.
+- `src/routes/_authenticated/coordinator.tsx` — drop the competing top toolbar chrome.
+- New `src/components/coordinator/DispatchFiltersSheet.tsx` — consolidated filter/sort.
+- New `src/components/coordinator/TripDetailPanel.tsx` — right panel; wraps in `ResponsiveDialog` on mobile. Route map lives here (existing `TripEventsMap` / `TripRouteInsights`).
+- New `TripCardMinimal.tsx` and `TripCardActive.tsx` (or one `TripCard` with a `variant` prop) for the two tiers. Reuse `TrafficBadge`, `TripConflictBadge`, `TripProgress`, wait-time helpers, `describeEtaFreshness`. **No `RouteThumb` in either card.**
 
 ## Out of scope
 
-- Real flight-provider integration (FlightAware/OAG). This plan keeps Gemini grounding as the source but makes it recover instead of silently failing.
-- Bulk backfill of historical `flight_status=unknown` rows — the Watchtower alert + one-click retry will drain them naturally.
+- No changes to scheduling, conflict math, AI assistant, or data model.
+- Kanban and Timeline-by-driver views not built now — can be added as extra tabs later.
