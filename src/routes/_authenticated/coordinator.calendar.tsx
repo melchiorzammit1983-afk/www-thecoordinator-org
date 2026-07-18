@@ -49,7 +49,6 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
-import { RouteThumb } from "@/components/coordinator/RouteThumb";
 import {
   listConnections,
   dispatchJobToPartner,
