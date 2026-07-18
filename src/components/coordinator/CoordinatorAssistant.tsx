@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest } from "@/lib/coordinator-assist.functions";
+import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
