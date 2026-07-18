@@ -2493,10 +2493,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   <span className="text-muted-foreground">
                     · arr{" "}
                     <span className="text-foreground font-medium">
-                      {new Date(
-                        new Date(job.pickup_at).getTime() +
-                          (job.route_duration_sec ?? 0) * 1000,
-                      ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatMaltaTime(
+                        new Date(
+                          new Date(job.pickup_at).getTime() +
+                            (job.route_duration_sec ?? 0) * 1000,
+                        ).toISOString(),
+                      )}
                     </span>
                   </span>
                 )}
