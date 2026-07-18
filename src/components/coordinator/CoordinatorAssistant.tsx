@@ -496,7 +496,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return item;
     },
     onSuccess: (item) => {
-      toast.success(`Sent to ${item.partner_name}.`);
+      const msg = `Sent to ${item.partner_name}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
