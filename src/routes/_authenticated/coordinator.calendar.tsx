@@ -315,6 +315,7 @@ function CalendarPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
+  const [flightFix, setFlightFix] = useState<{ jobId: string; code: string; side: "from" | "to" } | null>(null);
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
