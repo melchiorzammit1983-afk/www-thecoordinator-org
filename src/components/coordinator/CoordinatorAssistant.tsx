@@ -635,7 +635,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                           </dl>
                         )}
                         <div className="flex gap-2">
-                          <Button size="sm" disabled={busy} onClick={() => confirm.mutate(m.draft)}>
+                          <Button size="sm" disabled={busy} onClick={() => confirm.mutate({ draft: m.draft, rawMessage: m.rawMessage })}>
                             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                             Confirm
                           </Button>
