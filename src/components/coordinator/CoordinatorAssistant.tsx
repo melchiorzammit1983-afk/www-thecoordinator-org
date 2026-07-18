@@ -159,6 +159,22 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const meterFn = useServerFn(meterAssistantConfirm);
   const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
+  const auditFn = useServerFn(recordAiAuditAction);
+  const logAudit = useCallback(
+    (args: {
+      action_kind: "create" | "update" | "search_update" | "data_fix" | "group" | "ungroup" | "message" | "partner_suggest";
+      target_table: string;
+      target_id?: string | null;
+      target_ids?: string[] | null;
+      before_state?: unknown;
+      after_state?: unknown;
+      summary?: string | null;
+      raw_message?: string | null;
+    }) => {
+      void auditFn({ data: args }).catch(() => { /* silent — must not break confirm */ });
+    },
+    [auditFn],
+  );
   const lastUserMsgRef = useRef<string>("");
   const logLearning = useCallback(
     (args: {
