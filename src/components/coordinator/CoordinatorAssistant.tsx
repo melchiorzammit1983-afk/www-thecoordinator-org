@@ -608,20 +608,30 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           dropoff_display_name: (patched.dropoff_display_name ?? null) as string | null,
           tracking_kind: (patched.tracking_kind ?? "flight") as "flight" | "vessel",
         };
-        return updateFn({ data: payload });
+        await updateFn({ data: payload });
+        return { beforeVal: existing[fix.field] ?? null };
       }
       // driver
       const patch: { id: string; name?: string; phone?: string | null } = { id: fix.target_id };
       if (fix.field === "name") patch.name = fix.new_value;
       else if (fix.field === "phone") patch.phone = fix.new_value;
       else throw new Error(`Unsupported driver field: ${fix.field}`);
-      return updateDriverFn({ data: patch });
+      await updateDriverFn({ data: patch });
+      return { beforeVal: fix.old_value ?? null };
     },
-    onSuccess: (_res, fix) => {
+    onSuccess: (out, fix) => {
       const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "data_fix", outcome: "confirmed", proposed: fix });
+      logAudit({
+        action_kind: "data_fix",
+        target_table: fix.target === "trip" ? "jobs" : "drivers",
+        target_id: fix.target_id,
+        before_state: { id: fix.target_id, [fix.field]: out.beforeVal },
+        after_state: { id: fix.target_id, [fix.field]: fix.new_value },
+        summary: fix.summary,
+      });
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
