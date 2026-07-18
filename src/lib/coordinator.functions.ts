@@ -2230,7 +2230,9 @@ async function fetchLiveStatusViaGemini(
 }
 
 // Persist the live status onto a job row. Applies the 45-min "time_mismatch"
-// override identically for flights and vessels.
+// override identically for flights and vessels. When the first grounded call
+// returns nothing, retries once with an airport hint derived from the job's
+// endpoints before giving up.
 async function applyLiveStatusToJob(
   supabaseAdmin: any,
   job: {
@@ -2239,6 +2241,8 @@ async function applyLiveStatusToJob(
     driver_id?: string | null;
     from_flight: string | null;
     to_flight: string | null;
+    from_location?: string | null;
+    to_location?: string | null;
     pickup_at: string | null;
     tracking_kind?: string | null;
   },
@@ -2246,13 +2250,42 @@ async function applyLiveStatusToJob(
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
-  const result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+
+  let result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+
+  // Retry once with an airport hint if the first grounded pass produced
+  // nothing usable (no result / low confidence with no scheduled time).
+  const needsRetry =
+    (!result.ok && (result.reason === "no_result" || result.reason === "exception")) ||
+    (result.ok && result.confidence === "low" && !result.scheduled);
+  if (needsRetry) {
+    const hint = [job.from_location, job.to_location]
+      .filter(Boolean)
+      .map((s) => String(s).split(",")[0]?.trim())
+      .filter(Boolean)
+      .join(" / ");
+    if (hint) {
+      result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at, {
+        airportHint: hint,
+        variant: "hint",
+      });
+    }
+  }
+
   if (!result.ok) {
+    const reasonNote =
+      result.reason === "not_configured"
+        ? "Live status not configured"
+        : result.reason === "invalid_code"
+          ? `Couldn't recognise "${code}" as a flight code — check it`
+          : result.reason === "vessel_in_flight_field"
+            ? `"${code}" looks like a vessel — move it to the vessel field`
+            : `Couldn't find ${code} — please verify the code`;
     await supabaseAdmin
       .from("jobs")
       .update({
         flight_status: "unknown",
-        flight_status_note: result.reason === "not_configured" ? "Live status not configured" : "Status unavailable",
+        flight_status_note: reasonNote,
         flight_status_updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
@@ -2277,6 +2310,8 @@ async function applyLiveStatusToJob(
       flight_status_note: note,
       flight_status_confidence: result.confidence ?? null,
       flight_status_updated_at: new Date().toISOString(),
+      // Always persist any parseable time — even at low confidence — so the
+      // card can show "Flight 09:15" instead of a bare "Not tracked" chip.
       flight_scheduled_at: result.scheduled ?? null,
       flight_estimated_at: result.estimated ?? null,
     })
@@ -2284,6 +2319,7 @@ async function applyLiveStatusToJob(
 
   return { ...result, status, note };
 }
+
 
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
