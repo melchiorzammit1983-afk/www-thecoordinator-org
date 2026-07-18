@@ -123,6 +123,72 @@ function ReferPage() {
         </div>
       </section>
 
+      <section className="rounded-xl border bg-card p-4 space-y-3">
+        <div className="text-xs font-medium uppercase text-muted-foreground flex items-center gap-1.5">
+          <Link2 className="h-3.5 w-3.5" /> Referral status
+        </div>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Your code</dt>
+            <dd className="font-mono">{data?.code ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Your link</dt>
+            <dd className="truncate">
+              {link ? <span className="font-mono text-xs">{link}</span> : <span className="text-muted-foreground">—</span>}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Reward rate</dt>
+            <dd>{data?.percent ?? 5}% of every point they spend</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Attributed to</dt>
+            <dd>
+              {data?.attributed_to
+                ? <>{data.attributed_to.name ?? "Another company"}{data.attributed_to.credit_until ? <span className="text-muted-foreground"> · until {new Date(data.attributed_to.credit_until).toLocaleDateString()}</span> : null}</>
+                : <span className="text-muted-foreground">Not attributed — you signed up directly</span>}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="rounded-xl border bg-card">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <div className="text-sm font-medium flex items-center gap-1.5">
+            <Coins className="h-4 w-4 text-emerald-600" /> Credited kickbacks
+          </div>
+          <div className="text-sm font-semibold text-emerald-600">
+            +{(data?.total_credited ?? 0).toFixed(2)} pts
+          </div>
+        </div>
+        {isLoading ? (
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        ) : (data?.kickbacks ?? []).length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">
+            No kickbacks yet. You'll earn {data?.percent ?? 5}% every time a referred company spends points.
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {data!.kickbacks.map((k: any) => (
+              <li key={k.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm truncate">{k.note ?? "Referral kickback"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(k.created_at).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {k.feature_key ? <span> · {k.feature_key}</span> : null}
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-emerald-600 shrink-0">
+                  +{Math.abs(Number(k.points_deducted ?? 0)).toFixed(2)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+
       <section className="rounded-xl border bg-card">
         <div className="px-4 py-3 border-b text-sm font-medium">People who used your link</div>
         {isLoading ? (
