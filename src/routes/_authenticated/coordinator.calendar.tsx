@@ -2610,7 +2610,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
-            {!delayed && !flightEarly && hasFlightCode && schedTime && !flightMsg.startsWith("Not tracked") && (
+            {expanded && !delayed && !flightEarly && hasFlightCode && schedTime && !flightMsg.startsWith("Not tracked") && (
               <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
                 ✈ {flightCode} · {flightMsg}
               </div>
