@@ -173,6 +173,30 @@ function detectFindings(jobs: any[], kinds: WatchKind[], severityMin: number): F
       }
     }
 
+    // 1b) Flight code entered but never resolved — surface within 4h of pickup
+    // so the coordinator has time to fix the code before the trip starts.
+    if (
+      wantFlight &&
+      pickupMs &&
+      pickupMs > now &&
+      pickupMs - now < 4 * 3600_000 &&
+      (j.from_flight || j.to_flight) &&
+      (!j.flight_status || j.flight_status === "unknown") &&
+      !j.flight_scheduled_at
+    ) {
+      const code = String(j.from_flight ?? j.to_flight ?? "").trim();
+      found.push({
+        kind: "flight",
+        severity: 3,
+        title: `Flight ${code} not tracked`,
+        body: `We couldn't find status for "${code}". Verify it's a real IATA flight code (e.g. LO673) — or move it to the vessel field if it's a ship.`,
+        job_id: j.id,
+        dedupe_key: `untracked:${j.id}:${code.toUpperCase()}`,
+        suggested_actions: [{ label: "Fix flight code", href: `/coordinator/calendar` }],
+      });
+    }
+
+
     // 2) Execution issues: driver ETA past pickup, or trip stalled with no status
     if (wantExec && pickupMs) {
       if (j.driver_id && j.live_eta_sec != null && j.live_eta_updated_at) {
@@ -295,7 +319,7 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
     const { data: jobs } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, status, pickup_at, driver_id, from_location, to_location, pickup_display_name, dropoff_display_name, from_flight, to_flight, flight_status, flight_status_note, flight_estimated_at, live_eta_sec, live_eta_updated_at",
+        "id, status, pickup_at, driver_id, from_location, to_location, pickup_display_name, dropoff_display_name, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at, live_eta_sec, live_eta_updated_at",
       )
       .eq("company_id", companyId)
       .gte("pickup_at", fromIso)

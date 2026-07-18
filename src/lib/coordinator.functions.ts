@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
+import { parseFlightCode, describeFlight, looksLikeVessel } from "./flight-code";
 
 /**
  * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
@@ -2105,13 +2106,26 @@ async function fetchLiveStatusViaGemini(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
+  opts: { airportHint?: string | null; variant?: string } = {},
 ): Promise<LiveStatusResult> {
   const id = (identifier || "").trim();
   if (!id) return { ok: false, reason: "no_code" };
+
+  // Fail fast for obviously invalid flight codes so we don't burn a Gemini
+  // call (or points) on `ASSO VENTICINCUE` sitting in a flight field.
+  if (kind === "flight") {
+    const parsed = parseFlightCode(id);
+    if (!parsed.ok) {
+      if (looksLikeVessel(id)) return { ok: false, reason: "vessel_in_flight_field" };
+      return { ok: false, reason: "invalid_code" };
+    }
+  }
+
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
-  const cacheKey = `v2:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
+  const variant = opts.variant ? `:${opts.variant}` : "";
+  const cacheKey = `v3:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
@@ -2119,10 +2133,22 @@ async function fetchLiveStatusViaGemini(
     ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
     : `No specific pickup time was provided.`;
 
+  // Airline-name expansion is the single biggest reliability win for
+  // two-letter carrier codes that Gemini otherwise doesn't disambiguate.
+  const flightDescriptor =
+    kind === "flight"
+      ? (() => {
+          const parsed = parseFlightCode(id);
+          const airline = parsed.ok && parsed.airline ? ` (${describeFlight(parsed)})` : "";
+          const hint = opts.airportHint ? ` involving ${opts.airportHint}` : "";
+          return `flight "${id}"${airline}${hint}`;
+        })()
+      : `vessel "${id}"${opts.airportHint ? ` near ${opts.airportHint}` : ""}`;
+
   const groundedPrompt =
     kind === "flight"
-      ? `You are checking the current status of flight "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
-      : `You are checking the current status of the vessel "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
+      ? `You are checking the current status of ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
+      : `You are checking the current status of the ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
 
   // ---- Step 1: grounded free-text ----
   let groundedText = "";
@@ -2158,6 +2184,7 @@ async function fetchLiveStatusViaGemini(
   } catch (e) {
     return { ok: false, reason: "exception" };
   }
+
 
   // ---- Step 2: JSON extraction ----
   const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // FULL ISO8601 WITH TIMEZONE (e.g. "2026-07-18T08:15:00+02:00" for Malta summer, or "...Z" for UTC). If only a local wall-clock time is stated without a timezone, assume Europe/Malta and emit "+02:00" in summer / "+01:00" in winter. Null if not stated.\n  "estimated": string | null,       // Same rules as scheduled.\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose. Never emit a naive datetime without a timezone offset.\n\nTEXT:\n${groundedText}`;
@@ -2203,7 +2230,9 @@ async function fetchLiveStatusViaGemini(
 }
 
 // Persist the live status onto a job row. Applies the 45-min "time_mismatch"
-// override identically for flights and vessels.
+// override identically for flights and vessels. When the first grounded call
+// returns nothing, retries once with an airport hint derived from the job's
+// endpoints before giving up.
 async function applyLiveStatusToJob(
   supabaseAdmin: any,
   job: {
@@ -2212,6 +2241,8 @@ async function applyLiveStatusToJob(
     driver_id?: string | null;
     from_flight: string | null;
     to_flight: string | null;
+    from_location?: string | null;
+    to_location?: string | null;
     pickup_at: string | null;
     tracking_kind?: string | null;
   },
@@ -2219,13 +2250,42 @@ async function applyLiveStatusToJob(
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
-  const result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+
+  let result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+
+  // Retry once with an airport hint if the first grounded pass produced
+  // nothing usable (no result / low confidence with no scheduled time).
+  const needsRetry =
+    (!result.ok && (result.reason === "no_result" || result.reason === "exception")) ||
+    (result.ok && result.confidence === "low" && !result.scheduled);
+  if (needsRetry) {
+    const hint = [job.from_location, job.to_location]
+      .filter(Boolean)
+      .map((s) => String(s).split(",")[0]?.trim())
+      .filter(Boolean)
+      .join(" / ");
+    if (hint) {
+      result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at, {
+        airportHint: hint,
+        variant: "hint",
+      });
+    }
+  }
+
   if (!result.ok) {
+    const reasonNote =
+      result.reason === "not_configured"
+        ? "Live status not configured"
+        : result.reason === "invalid_code"
+          ? `Couldn't recognise "${code}" as a flight code — check it`
+          : result.reason === "vessel_in_flight_field"
+            ? `"${code}" looks like a vessel — move it to the vessel field`
+            : `Couldn't find ${code} — please verify the code`;
     await supabaseAdmin
       .from("jobs")
       .update({
         flight_status: "unknown",
-        flight_status_note: result.reason === "not_configured" ? "Live status not configured" : "Status unavailable",
+        flight_status_note: reasonNote,
         flight_status_updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
@@ -2250,6 +2310,8 @@ async function applyLiveStatusToJob(
       flight_status_note: note,
       flight_status_confidence: result.confidence ?? null,
       flight_status_updated_at: new Date().toISOString(),
+      // Always persist any parseable time — even at low confidence — so the
+      // card can show "Flight 09:15" instead of a bare "Not tracked" chip.
       flight_scheduled_at: result.scheduled ?? null,
       flight_estimated_at: result.estimated ?? null,
     })
@@ -2257,6 +2319,74 @@ async function applyLiveStatusToJob(
 
   return { ...result, status, note };
 }
+
+
+// Lightweight "fix this flight code" endpoint — used by the calendar's flight
+// chip when Gemini couldn't resolve a code. Applies a minimal patch to the
+// flight fields (no full job re-validation) and immediately retries the
+// live-status resolver so the chip refreshes to a real time or a clearer
+// error.
+export const updateJobFlightCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        job_id: z.string().uuid(),
+        from_flight: z.string().trim().max(16).nullable().optional(),
+        to_flight: z.string().trim().max(16).nullable().optional(),
+        // "flight" clears vessel-side tracking; "vessel" moves the value into
+        // the vessel tracking kind (used when the coordinator realises a
+        // ship name landed in the flight field).
+        move_to: z.enum(["flight", "vessel"]).optional(),
+        retry: z.boolean().default(true),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    await assertJobInCompany(context, data.job_id);
+    const supabaseAdmin = await getAdminClient();
+
+    const patch: Record<string, unknown> = {};
+    if (data.from_flight !== undefined)
+      patch.from_flight = (data.from_flight || "").toUpperCase().trim() || null;
+    if (data.to_flight !== undefined)
+      patch.to_flight = (data.to_flight || "").toUpperCase().trim() || null;
+    if (data.move_to === "vessel") patch.tracking_kind = "vessel";
+    if (data.move_to === "flight") patch.tracking_kind = "flight";
+    // Reset stale status so the chip doesn't keep showing the wrong value
+    // while the retry is in flight.
+    patch.flight_status = null;
+    patch.flight_status_note = null;
+    patch.flight_scheduled_at = null;
+    patch.flight_estimated_at = null;
+    patch.flight_status_updated_at = new Date().toISOString();
+
+    const { error: upErr } = await supabaseAdmin
+      .from("jobs")
+      .update(patch as any)
+      .eq("id", data.job_id)
+      .eq("company_id", c.id);
+    if (upErr) throw new Error(upErr.message);
+
+    if (!data.retry) return { ok: true, retried: false as const };
+
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind",
+      )
+      .eq("id", data.job_id)
+      .maybeSingle();
+    if (!job) return { ok: true, retried: false as const };
+
+    // Retry is free here — treat the fix as part of the previous paid attempt.
+    const result = await applyLiveStatusToJob(supabaseAdmin, job as any);
+    return { ok: true, retried: true as const, result };
+  });
+
+
+
 
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -2268,7 +2398,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .gte("pickup_at", fromIso)
@@ -2309,7 +2439,7 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);

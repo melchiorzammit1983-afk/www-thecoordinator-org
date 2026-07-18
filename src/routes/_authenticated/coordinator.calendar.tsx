@@ -141,6 +141,7 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
+import { FlightCodeFixDialog } from "@/components/coordinator/FlightCodeFixDialog";
 import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
 import {
   RouteOptimizationAlertBanner,
@@ -315,6 +316,7 @@ function CalendarPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editGroup, setEditGroup] = useState<{ groupId: string; jobs: Job[] } | null>(null);
+  const [flightFix, setFlightFix] = useState<{ jobId: string; code: string; side: "from" | "to" } | null>(null);
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -807,6 +809,7 @@ function CalendarPage() {
     onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
     urgency,
     nowTick,
+    openFlightFix: (arg) => setFlightFix(arg),
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
@@ -1209,6 +1212,18 @@ function CalendarPage() {
         />
       )}
 
+      {flightFix && (
+        <FlightCodeFixDialog
+          open={!!flightFix}
+          onOpenChange={(v: boolean) => !v && setFlightFix(null)}
+          jobId={flightFix.jobId}
+          currentCode={flightFix.code}
+          currentSide={flightFix.side}
+        />
+      )}
+
+
+
       {mergeTarget && (
         <MergeTripsDialog
           open={!!mergeTarget}
@@ -1265,6 +1280,7 @@ type CardCtx = {
   onOpenMerge?: (current: MergeCandidate, duplicates: MergeCandidate[]) => void;
   urgency: UrgencyThresholds;
   nowTick: number; // ms — bumped every minute so cards re-evaluate glow
+  openFlightFix?: (arg: { jobId: string; code: string; side: "from" | "to" }) => void;
 };
 
 /* --- deterministic per-group hue for a colored stripe --- */
@@ -2340,6 +2356,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       return "";
     }
   })();
+  const hasFlightCode = !!(job.from_flight || job.to_flight);
   const flightMsg =
     job.flight_status === "cancelled"
       ? "CANCELLED"
@@ -2351,7 +2368,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             ? newTime
               ? `EARLY → ${newTime}${schedTime ? ` (was ${schedTime})` : ""}`
               : job.flight_status_note || "EARLY"
-            : "";
+            : hasFlightCode && schedTime
+              ? `Flight ${schedTime}`
+              : hasFlightCode && (job.flight_status === "unknown" || !job.flight_status)
+                ? "Not tracked · check code"
+                : "";
+
   const labels = job.labels ?? [];
   const shownDriver = driverName ?? job.drivers?.name ?? null;
 
@@ -2532,6 +2554,29 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} {flightMsg}
               </div>
             )}
+            {!delayed && !flightEarly && hasFlightCode && schedTime && !flightMsg.startsWith("Not tracked") && (
+              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                ✈ {flightCode} · {flightMsg}
+              </div>
+            )}
+            {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.openFlightFix?.({
+                    jobId: job.id,
+                    code: job.from_flight || job.to_flight || "",
+                    side: job.from_flight ? "from" : "to",
+                  });
+                }}
+                className="text-[11px] font-medium text-amber-600 hover:underline mt-0.5 truncate text-left"
+                title="Click to fix the flight code"
+              >
+                ✈ {flightCode} · Not tracked · fix code
+              </button>
+            )}
+
             {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
