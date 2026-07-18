@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
-import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
+import { formatMaltaDateTime, formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import {
   Plus,
   Copy,
