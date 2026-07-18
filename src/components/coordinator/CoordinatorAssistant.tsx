@@ -47,6 +47,7 @@ export type AssistantScreen = {
 type AssistantCtx = {
   setScreen: (s: AssistantScreen | null) => void;
   screenRef: React.MutableRefObject<AssistantScreen | null>;
+  openPanel: (s?: AssistantScreen | null) => void;
 };
 const Ctx = createContext<AssistantCtx | null>(null);
 
@@ -66,6 +67,15 @@ export function useSetAssistantScreen(screen: AssistantScreen | null) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx, JSON.stringify(screen)]);
+}
+
+/**
+ * Open the assistant panel. Optionally passes a one-shot screen context
+ * (e.g. "this trip") so the coordinator can immediately ask about it.
+ */
+export function useOpenAssistant(): (screen?: AssistantScreen | null) => void {
+  const ctx = useContext(Ctx);
+  return ctx?.openPanel ?? (() => {});
 }
 
 // ---------------- Chat state ----------------
