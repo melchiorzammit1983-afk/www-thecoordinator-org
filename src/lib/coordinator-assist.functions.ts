@@ -113,18 +113,25 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       }
     }
 
-    // Meter (soft — block_on_empty=false in the ai_feature_costs row).
-    try {
-      await supabaseAdmin.rpc("spend_points", {
-        _company_id: company.id,
-        _feature_key: "ai_coordinator_assist",
-        _job_id: undefined as unknown as string,
-        _note: "coordinator assistant turn",
-        _cost_override: undefined as unknown as number,
-      });
-    } catch {
-      // never break the primary action on metering hiccups
-    }
+    // Per-action pricing (see ai_feature_costs rows: assistant_qa,
+    // assistant_trip_action, assistant_data_fix). We meter Q&A turns here
+    // once we know the response was an answer. Trip actions and data fixes
+    // are metered separately on Confirm via `meterAssistantConfirm` — one
+    // charge per confirmed trip, so a 3-trip batch = 3× assistant_trip_action.
+    // All soft-metered (block_on_empty=false).
+    const meter = async (featureKey: "assistant_qa", note: string) => {
+      try {
+        await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: featureKey,
+          _job_id: undefined as unknown as string,
+          _note: note,
+          _cost_override: undefined as unknown as number,
+        });
+      } catch {
+        // never break the primary action on metering hiccups
+      }
+    };
 
     // Load minimal roster for name→id mapping.
     const { data: driverRows } = await supabaseAdmin
