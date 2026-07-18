@@ -1,30 +1,26 @@
 ## Problem
 
-`refreshJobLiveStatus` (and other AI features) fails with "Out of points" even when the company has plenty of general points. Root cause confirmed in `supabase/migrations/20260717101824_*.sql` lines 95-146: `spend_points` still routes any feature flagged `is_ai` through a separate AI wallet cascade (subscription AI allowance → `companies.ai_points_balance` → optional fallback to general → `insufficient_ai_points`). The "fallback to general" only fires when `ai_fallback_to_general = true`, so most companies with an empty AI wallet get blocked even though the main pool has credit.
+Flight KM641 landed 08:15 Malta time but the app shows a different time. Root cause is timezone handling in `fetchLiveStatusViaGemini` (`src/lib/coordinator.functions.ts`):
 
-## Fix
+- Gemini often returns a naive time like `"2026-07-18T08:15:00"` (no timezone suffix).
+- JS `new Date("...")` on our Cloudflare Worker parses that as UTC.
+- Malta is UTC+2 in summer, so `formatMaltaTime` then displays `10:15` instead of `08:15`.
+- The `time_mismatch` note (line 2181) also uses `.toISOString().slice(11, 16)`, which is UTC hours — wrong for a Malta-facing note.
 
-Unify AI and non-AI spend into a single path against the main pool — restoring the pre-AI-wallet behavior the user wants.
+Display code in `TripDetailsSheet.tsx` and `coordinator.calendar.tsx` already uses `formatMaltaTime`, so the fix is at the ingest and note-formatting layer.
 
-### 1. New migration: rewrite `spend_points`
+## Changes (scoped to `src/lib/coordinator.functions.ts`)
 
-Replace the function body with a single branch (the existing non-AI branch):
+1. **Tell Gemini to be explicit.** Update the extractor prompt so `scheduled` / `estimated` MUST be full ISO8601 with an explicit offset or `Z`, and default to Europe/Malta local when only a wall-clock time is known (e.g. `2026-07-18T08:15:00+02:00`).
 
-- Keep entitlement gate (`enabled`, `expires_at`, `monthly_cap`) unchanged.
-- Delete the entire `IF _is_ai THEN … ELSE … END IF;` split.
-- Always deduct `_cost` from `company_subscriptions.points_remaining_this_period` first, then fall back to `companies.points_balance`.
-- When `_block` and neither source can cover it, raise `insufficient_points` (matches error strings already handled in `coordinator.functions.ts`).
-- Keep ledger insert and `usage_this_period` bump.
-- Leave `companies.ai_points_balance`, `ai_monthly_cap`, `ai_fallback_to_general`, and `company_subscriptions.ai_points_remaining_this_period` columns in place (no data loss; just unused by the RPC).
+2. **Add `normalizeMaltaIso(raw)` helper.** If Gemini returns a string with no `Z` and no `±HH:MM` offset, treat the wall-clock as Europe/Malta local and convert to a real UTC ISO using the existing `maltaWallTimeToUtcIso` from `src/lib/time.ts`. Return `null` for unparseable input. Apply it to `result.scheduled` and `result.estimated` before caching and before persisting in `applyLiveStatusToJob` / `_computeTripLiveStatus`.
 
-### 2. No frontend code changes required
+3. **Fix the mismatch note.** Replace the two `new Date(...).toISOString().slice(11, 16)` calls (lines 2181 and 2330) with `formatMaltaTime(...)` so the note reads Malta local time on both sides.
 
-`useMyBilling` / `usePointsRemaining` already sum only general balances. AI wallet UI was already removed in an earlier turn. Existing `catch` blocks in `coordinator.functions.ts` map `insufficient_points` → "Out of points — buy a top-up…", which is now the only failure mode.
+4. **Invalidate old cache entries.** Bump the `cacheKey` prefix (e.g. `v2:`) so users don't keep seeing the previously-mis-parsed values from the 5-minute in-memory cache.
 
-### 3. Verification
+No changes to display components, RLS, points, or unrelated logic.
 
-- Manually invoke `refreshJobLiveStatus` on a test job after the migration; expect success when `points_balance > flight_vessel_tracking cost`.
-- Confirm `points_ledger` records the deduction against the general pool.
-- Confirm entitlement caps still block when configured.
+## Verification
 
-Out of scope: removing the legacy AI columns/RPCs (`allocate_to_ai_wallet`, `admin_grant_ai_points`, `set_ai_monthly_cap`, `ai_points_balance`, etc.). They become dead code and can be dropped in a later cleanup — leaving them avoids touching unrelated admin/portal settings this turn.
+After edits, ask the user to hit Refresh on KM641 and confirm the Scheduled / Estimated chips and the mismatch note all show `08:15` Malta.

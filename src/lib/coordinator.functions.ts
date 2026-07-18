@@ -1,7 +1,34 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { maltaWallTimeToUtcIso, isoToMaltaDateTime } from "./time";
+import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
+
+/**
+ * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
+ * naive strings like "2026-07-18T08:15:00" (no timezone), which JS parses as
+ * UTC — wrong for Malta (UTC+2 in summer). If no explicit Z / ±HH:MM offset
+ * is present, interpret the wall-clock as Europe/Malta local time and convert
+ * to a real UTC ISO.
+ */
+function normalizeMaltaIso(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const s = raw.trim();
+  const hasTz = /(Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  if (hasTz) {
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/);
+  if (!m) {
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  try {
+    return maltaWallTimeToUtcIso(m[1], m[2]);
+  } catch {
+    return null;
+  }
+}
 
 type Ctx = { supabase: any; userId: string };
 
@@ -2050,7 +2077,7 @@ async function fetchLiveStatusViaGemini(
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
-  const cacheKey = `${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
+  const cacheKey = `v2:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
@@ -2099,7 +2126,7 @@ async function fetchLiveStatusViaGemini(
   }
 
   // ---- Step 2: JSON extraction ----
-  const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // ISO8601 or null if not stated\n  "estimated": string | null,       // ISO8601 or null if not stated\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose.\n\nTEXT:\n${groundedText}`;
+  const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // FULL ISO8601 WITH TIMEZONE (e.g. "2026-07-18T08:15:00+02:00" for Malta summer, or "...Z" for UTC). If only a local wall-clock time is stated without a timezone, assume Europe/Malta and emit "+02:00" in summer / "+01:00" in winter. Null if not stated.\n  "estimated": string | null,       // Same rules as scheduled.\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose. Never emit a naive datetime without a timezone offset.\n\nTEXT:\n${groundedText}`;
 
   let extracted: any = null;
   try {
@@ -2133,8 +2160,8 @@ async function fetchLiveStatusViaGemini(
     ok: true,
     status: String(extracted?.status ?? "unknown"),
     note: String(extracted?.note ?? "").slice(0, 160),
-    scheduled: extracted?.scheduled ?? null,
-    estimated: extracted?.estimated ?? null,
+    scheduled: normalizeMaltaIso(extracted?.scheduled),
+    estimated: normalizeMaltaIso(extracted?.estimated),
     confidence,
   };
   liveStatusCache.set(cacheKey, { at: Date.now(), value });
@@ -2178,7 +2205,7 @@ async function applyLiveStatusToJob(
     const p = new Date(job.pickup_at).getTime();
     if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
       status = "time_mismatch";
-      note = `Scheduled ${new Date(result.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(job.pickup_at).toISOString().slice(11, 16)}`;
+      note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
   }
 
@@ -2327,7 +2354,7 @@ async function _computeTripLiveStatus(data: {
         const p = new Date(pickupIso).getTime();
         if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
           status = "time_mismatch";
-          note = `Scheduled ${new Date(r.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(pickupIso).toISOString().slice(11, 16)}`;
+          note = `Scheduled ${formatMaltaTime(r.scheduled)} vs pickup ${formatMaltaTime(pickupIso)}`;
         }
       }
       flight = {
