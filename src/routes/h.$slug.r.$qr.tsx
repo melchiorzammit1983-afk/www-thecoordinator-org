@@ -26,7 +26,7 @@ export const Route = createFileRoute("/h/$slug/r/$qr")({
 
 function RoomLandingPage() {
   const { qr } = Route.useParams();
-  const nav = useNavigate();
+  
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
