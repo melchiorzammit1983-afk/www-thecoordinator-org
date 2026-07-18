@@ -10,7 +10,8 @@
  * table, no driver-conflict detection. Metered via the general points system.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
+import { Sparkles, X, Send, Loader2, Bot, User as UserIcon, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } from "@/hooks/use-voice";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -128,6 +129,15 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  useEffect(() => { mutedRef.current = muted; if (muted) cancelSpeak(); }, [muted]);
+  const ttsSupported = isSpeechSynthesisSupported();
+  const maybeSpeak = useCallback((t: string) => {
+    if (mutedRef.current) return;
+    speak(t);
+  }, []);
+
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
@@ -175,6 +185,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
+        maybeSpeak(result.text);
       }
     },
 
@@ -185,13 +196,22 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
   });
 
-  const send = () => {
-    const text = input.trim();
-    if (!text || ask.isPending) return;
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text }]);
+  const sendText = useCallback((text: string) => {
+    const t = text.trim();
+    if (!t || ask.isPending) return;
+    cancelSpeak();
+    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text: t }]);
     setInput("");
-    ask.mutate(text);
-  };
+    ask.mutate(t);
+  }, [ask]);
+
+  const send = () => sendText(input);
+
+  const voice = useSpeechRecognition({
+    onFinal: (t) => sendText(t),
+    onError: (msg) => toast.error(msg),
+  });
+
 
   const missingCreateFields = useCallback((f: AssistantDraft["fields"]): string[] => {
     const missing: string[] = [];
@@ -267,7 +287,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return createDraft(draft);
     },
     onSuccess: (_res, draft) => {
-      toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
+      const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
+      toast.success(msg);
+      maybeSpeak(msg);
       // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
       void meterFn({
         data: {
@@ -427,7 +449,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return updateDriverFn({ data: patch });
     },
     onSuccess: (_res, fix) => {
-      toast.success(`Fixed ${fix.field_label.toLowerCase()}.`);
+      const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
@@ -472,7 +496,9 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       return item;
     },
     onSuccess: (item) => {
-      toast.success(`Sent to ${item.partner_name}.`);
+      const msg = `Sent to ${item.partner_name}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["collab", "connections"] });
@@ -531,9 +557,22 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                 </div>
               </div>
             </div>
-            <Button size="icon" variant="ghost" onClick={() => setOpen(false)} aria-label="Close">
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {ttsSupported && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setMuted((v) => !v)}
+                  aria-label={muted ? "Unmute spoken replies" : "Mute spoken replies"}
+                  title={muted ? "Unmute spoken replies" : "Mute spoken replies"}
+                >
+                  {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+              )}
+              <Button size="icon" variant="ghost" onClick={() => { cancelSpeak(); setOpen(false); }} aria-label="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1">
@@ -795,11 +834,23 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                     send();
                   }
                 }}
-                placeholder="Ask about this trip, or say what to change…"
+                placeholder={voice.listening ? "Listening…" : "Ask about this trip, or say what to change…"}
                 rows={2}
                 className="min-h-[44px] resize-none"
                 disabled={ask.isPending}
               />
+              {voice.supported && (
+                <Button
+                  size="icon"
+                  variant={voice.listening ? "destructive" : "outline"}
+                  onClick={voice.toggle}
+                  disabled={ask.isPending}
+                  aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+                  title={voice.listening ? "Stop voice input" : "Start voice input"}
+                >
+                  {voice.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              )}
               <Button size="icon" onClick={send} disabled={ask.isPending || !input.trim()} aria-label="Send">
                 {ask.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
