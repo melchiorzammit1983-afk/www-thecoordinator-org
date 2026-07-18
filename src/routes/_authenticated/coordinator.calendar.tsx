@@ -2669,7 +2669,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   <Link2 className="h-3 w-3" /> Grouped{job.grouped_count ? ` · ${job.grouped_count}` : ""}
                 </Badge>
               )}
-              {flightCode && !delayed && !flightEarly && (
+              {expanded && flightCode && !delayed && !flightEarly && (
                 <Badge variant="outline" className="text-[10px]">
                   ✈ {flightCode}
                 </Badge>
