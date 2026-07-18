@@ -224,6 +224,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     const t = text.trim();
     if (!t || ask.isPending) return;
     cancelSpeak();
+    lastUserMsgRef.current = t;
     setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text: t }]);
     setInput("");
     ask.mutate(t);
