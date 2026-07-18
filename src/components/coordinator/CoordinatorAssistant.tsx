@@ -30,6 +30,7 @@ export type AssistantScreen = {
   path?: string | null;
   trip?: {
     id: string;
+    trip_no?: number | null;
     from_location?: string | null;
     to_location?: string | null;
     date?: string | null;
