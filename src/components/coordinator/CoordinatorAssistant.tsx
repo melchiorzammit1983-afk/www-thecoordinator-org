@@ -481,7 +481,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                         <div className="mb-3 space-y-2">
                           {m.batch.drafts.map((d, i) => {
                             const rows = draftFieldSummary(d.fields);
-                            const missing = missingCreateFields(d.fields);
+                            const missing = d.action === "update" ? [] : missingCreateFields(d.fields);
                             return (
                               <div key={i} className="rounded border bg-background p-2">
                                 <div className="mb-1 flex items-start justify-between gap-2">
