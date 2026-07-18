@@ -751,6 +751,9 @@ export const updateJob = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
     await syncJobLabels(context, c.id, data.id, data.label_ids);
+    // Refresh auto-estimate (no-op when a manual price is already set).
+    const { autoPriceJobBg } = await import("./auto-price.server");
+    autoPriceJobBg(data.id);
     return { ok: true };
   });
 
