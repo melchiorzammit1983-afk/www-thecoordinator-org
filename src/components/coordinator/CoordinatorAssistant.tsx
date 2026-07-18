@@ -14,8 +14,9 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest } from "@/lib/coordinator-assist.functions";
 import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
+import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
