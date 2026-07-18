@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
+import { parseFlightCode, describeFlight, looksLikeVessel } from "./flight-code";
 
 /**
  * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
