@@ -14,8 +14,8 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch } from "@/lib/coordinator-assist.functions";
-import { createJob, updateJob } from "@/lib/coordinator.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix } from "@/lib/coordinator-assist.functions";
+import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -71,7 +71,8 @@ type ChatMsg =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "assistant"; draft: AssistantDraft }
-  | { id: string; role: "assistant"; batch: AssistantBatch };
+  | { id: string; role: "assistant"; batch: AssistantBatch }
+  | { id: string; role: "assistant"; fix: AssistantDataFix };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -122,6 +123,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
+  const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
 
@@ -140,10 +142,13 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         .map((m) => {
           if ("text" in m) return { role: m.role, text: m.text };
           if ("draft" in m) return { role: "assistant" as const, text: m.draft.summary };
-          return {
-            role: "assistant" as const,
-            text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
-          };
+          if ("batch" in m) {
+            return {
+              role: "assistant" as const,
+              text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
+            };
+          }
+          return { role: "assistant" as const, text: m.fix.summary };
         });
       return (await askFn({
         data: {
@@ -161,10 +166,13 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
       } else if (result.kind === "batch") {
         setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
+      } else if (result.kind === "data_fix") {
+        setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
     },
+
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : "Assistant failed. Try again.";
       toast.error(msg);
@@ -377,6 +385,71 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     );
   };
 
+  const confirmFix = useMutation({
+    mutationFn: async (fix: AssistantDataFix) => {
+      if (fix.target === "trip") {
+        // Reuse existing updateJob: pull the current row, patch the single field.
+        const existing = (await getJobFn({ data: { id: fix.target_id } })) as Record<string, unknown>;
+        const patched: Record<string, unknown> = { ...existing, [fix.field]: fix.new_value };
+        const payload = {
+          id: fix.target_id,
+          from_location: (patched.from_location ?? "") as string,
+          to_location: (patched.to_location ?? "") as string,
+          date: patched.date as string,
+          time: patched.time as string,
+          flightorship: (patched.flightorship ?? "") as string,
+          from_flight: (patched.from_flight ?? "") as string,
+          to_flight: (patched.to_flight ?? "") as string,
+          clientcompanyname: (patched.clientcompanyname ?? "") as string,
+          qr_strict_mode: (patched.qr_strict_mode ?? false) as boolean,
+          tracking_enabled: (patched.tracking_enabled ?? false) as boolean,
+          vehicle: (patched.vehicle ?? "") as string,
+          contact_phone: (patched.contact_phone ?? "") as string,
+          driver_id: (patched.driver_id ?? null) as string | null,
+          pickup_place_id: (patched.pickup_place_id ?? null) as string | null,
+          dropoff_place_id: (patched.dropoff_place_id ?? null) as string | null,
+          pickup_display_name: (patched.pickup_display_name ?? null) as string | null,
+          dropoff_display_name: (patched.dropoff_display_name ?? null) as string | null,
+          tracking_kind: (patched.tracking_kind ?? "flight") as "flight" | "vessel",
+        };
+        return updateFn({ data: payload });
+      }
+      // driver
+      const patch: { id: string; name?: string; phone?: string | null } = { id: fix.target_id };
+      if (fix.field === "name") patch.name = fix.new_value;
+      else if (fix.field === "phone") patch.phone = fix.new_value;
+      else throw new Error(`Unsupported driver field: ${fix.field}`);
+      return updateDriverFn({ data: patch });
+    },
+    onSuccess: (_res, fix) => {
+      toast.success(`Fixed ${fix.field_label.toLowerCase()}.`);
+      void meterFn({
+        data: {
+          feature_key: "assistant_data_fix",
+          count: 1,
+          job_id: fix.target === "trip" ? fix.target_id : null,
+          note: `assistant data_fix: ${fix.summary}`.slice(0, 200),
+        },
+      }).catch(() => { /* soft */ });
+      if (fix.target === "trip") {
+        qc.invalidateQueries({ queryKey: ["jobs"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      } else {
+        qc.invalidateQueries({ queryKey: ["drivers"] });
+      }
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ ${fix.summary}` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not apply the fix.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
   };
@@ -534,6 +607,45 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                               Reply with the missing info and I'll update the list.
                             </span>
                           )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("fix" in m) {
+                  const busy = confirmFix.isPending;
+                  const fix = m.fix;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Proposed fix
+                        </div>
+                        <div className="mb-2 text-sm">{fix.summary}</div>
+                        <div className="mb-3 space-y-1 rounded border bg-background p-2 text-xs">
+                          <div className="text-[11px] text-muted-foreground">{fix.target_label}</div>
+                          <div className="text-[11px] text-muted-foreground">{fix.field_label}</div>
+                          <div className="flex items-center gap-2 pt-1">
+                            <span className="rounded bg-red-500/10 px-1.5 py-0.5 font-mono text-red-800 line-through dark:text-red-300">
+                              {fix.old_value ?? "(empty)"}
+                            </span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-emerald-800 dark:text-emerald-300">
+                              {fix.new_value}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" disabled={busy} onClick={() => confirmFix.mutate(fix)}>
+                            {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                            Confirm
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                            Cancel
+                          </Button>
                         </div>
                       </div>
                     </div>

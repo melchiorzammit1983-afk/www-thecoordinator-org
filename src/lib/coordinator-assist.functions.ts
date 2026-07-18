@@ -80,7 +80,30 @@ export type AssistantBatch = {
   clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch;
+/**
+ * Single-record data correction (typo fix) draft. Shown as an old→new diff
+ * card. On confirm the UI reuses the existing update function for the
+ * target record type (trip → updateJob, driver → updateDriverBasic) and
+ * meters via meterAssistantConfirm(assistant_data_fix).
+ *
+ * `field` for trips is one of the writable jobInput keys (from_location,
+ * to_location, contact_phone, clientcompanyname, from_flight, to_flight,
+ * vehicle). For drivers it's `name` or `phone`.
+ */
+export type AssistantDataFix = {
+  kind: "data_fix";
+  target: "trip" | "driver";
+  target_id: string;
+  target_label: string; // e.g. "Trip · Airport → Hilton · 10:00" or "Driver · John Doe"
+  field: string;
+  field_label: string;  // human label e.g. "From location", "Driver phone"
+  old_value: string | null;
+  new_value: string;
+  summary: string;
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix;
+
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -161,11 +184,12 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do FOUR things:
+You do FIVE things:
 1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) When the coordinator's message describes MULTIPLE NEW trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
 4) When the coordinator asks to EDIT MULTIPLE EXISTING trips matching some shared reference (e.g. "move all trips for Asso 25 to 19:00 instead of 11am", "reassign all of Hilton's trips to driver Y", "cancel all X's trips today"), return a SEARCH_UPDATE — the server will resolve which trips match and build the update batch.
+5) When the coordinator asks to FIX a small typo on a single existing record (spelling of a location on this trip, client company name, passenger contact phone, flight code, or a driver's name/phone), return a DATA_FIX (single record, single field). Use this for corrections — not for schedule or driver-assignment changes.
 
 Rules:
 - Return STRICT JSON only. No markdown. One of:
@@ -184,6 +208,12 @@ Rules:
     "date": "yyyy-mm-dd" | null,      // scope to this date if the user named one, else null
     "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
     "summary": "e.g. 'Move Asso 25 trips today from 11:00 to 19:00'" }
+  { "kind": "data_fix",
+    "target": "trip" | "driver",
+    "target_id": "<uuid — the trip or driver record being corrected>",
+    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (for trip);   name | phone   (for driver)>",
+    "new_value": "<corrected value>",
+    "summary": "one short sentence, e.g. 'Fix spelling: Cervinjano → Cervignano on this trip'" }
 - For "update" (single) or "search_update" (multi), only include fields that CHANGE.
 - For "create" (single or in a batch), omit target_trip_id (null).
 - In a "batch" of creates, each element MUST be action:"create".
@@ -191,6 +221,7 @@ Rules:
 - For a multi-trip CREATE batch, if any trip is missing pickup time / passenger count / exact pickup or drop-off / ambiguous driver, STILL include it and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
 - Use "batch" only when there are 2+ new trips. For 1 new trip use "draft".
 - Use "search_update" for ANY request that edits multiple existing trips by a shared reference. Do NOT tell the user this is unsupported and do NOT ask them to edit trips one by one.
+- Use "data_fix" ONLY for a small correction to a single existing record — spelling of an address/client/driver, wrong phone digits, wrong flight code. The target_id MUST be a real uuid: use the Currently open trip's id when the coordinator says "this trip", otherwise use a uuid from the roster (drivers). If you cannot confidently identify which record or which field, return kind:"answer" with ONE short clarifying question — do NOT guess. Never use data_fix to change pickup time, date, or driver assignment (those go through draft/update).
 - If a search_update reference is genuinely too vague to search reliably (e.g. "fix the trips"), return kind:"answer" asking one short clarifying question instead of guessing.
 - If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
 - Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
@@ -210,6 +241,7 @@ ${historyLines || "(none)"}
 ===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
 ${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
 `;
+
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -323,9 +355,74 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         clarify: `${summaryOf}. Uncheck any you don't want changed, then Confirm all.`,
       };
     }
+    if (p.kind === "data_fix") {
+      const target = p.target === "driver" ? "driver" : "trip";
+      const target_id = typeof p.target_id === "string" ? p.target_id : "";
+      const field = typeof p.field === "string" ? p.field : "";
+      const new_value = typeof p.new_value === "string" ? p.new_value.trim() : "";
+      const TRIP_FIELDS: Record<string, string> = {
+        from_location: "From location",
+        to_location: "To location",
+        contact_phone: "Passenger phone",
+        clientcompanyname: "Client / company",
+        from_flight: "From flight",
+        to_flight: "To flight",
+        vehicle: "Vehicle",
+      };
+      const DRIVER_FIELDS: Record<string, string> = { name: "Driver name", phone: "Driver phone" };
+      const allowed = target === "trip" ? TRIP_FIELDS : DRIVER_FIELDS;
+      if (!target_id || !allowed[field] || !new_value) {
+        return answer(
+          "Which record and which field should I fix, and what's the correct value? (e.g. 'fix spelling of Cervignano on this trip')",
+        );
+      }
+      // Verify the record exists and belongs to this company; capture old value.
+      if (target === "trip") {
+        const { data: row } = await supabaseAdmin
+          .from("jobs")
+          .select(`id, from_location, to_location, contact_phone, clientcompanyname, from_flight, to_flight, vehicle, date, time`)
+          .eq("id", target_id)
+          .eq("company_id", company.id)
+          .maybeSingle();
+        if (!row) return answer("I couldn't find that trip on your company's roster. Open the trip you want to fix and try again.");
+        const old_value = (row as Record<string, unknown>)[field];
+        const label = `Trip · ${row.from_location ?? "?"} → ${row.to_location ?? "?"}${row.date ? ` · ${row.date}${row.time ? " " + row.time.slice(0, 5) : ""}` : ""}`;
+        return {
+          kind: "data_fix",
+          target,
+          target_id,
+          target_label: label,
+          field,
+          field_label: allowed[field],
+          old_value: old_value == null ? null : String(old_value),
+          new_value,
+          summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
+        };
+      }
+      const { data: drv } = await supabaseAdmin
+        .from("drivers")
+        .select("id, name, phone")
+        .eq("id", target_id)
+        .eq("company_id", company.id)
+        .maybeSingle();
+      if (!drv) return answer("I couldn't find that driver on your roster.");
+      const old_value = (drv as Record<string, unknown>)[field];
+      return {
+        kind: "data_fix",
+        target,
+        target_id,
+        target_label: `Driver · ${drv.name ?? "(no name)"}`,
+        field,
+        field_label: allowed[field],
+        old_value: old_value == null ? null : String(old_value),
+        new_value,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
+      };
+    }
     if (p.kind === "draft") return toDraft(p);
     return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
+
 
 /**
  * Load the minimum fields required by `jobInput` so the client can merge an
