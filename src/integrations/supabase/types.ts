@@ -176,6 +176,57 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_action_audit: {
+        Row: {
+          action_kind: string
+          actor_user_id: string | null
+          after_state: Json | null
+          before_state: Json | null
+          company_id: string
+          created_at: string
+          id: string
+          raw_message: string | null
+          summary: string | null
+          target_id: string | null
+          target_ids: string[] | null
+          target_table: string
+          undo_note: string | null
+          undone_at: string | null
+        }
+        Insert: {
+          action_kind: string
+          actor_user_id?: string | null
+          after_state?: Json | null
+          before_state?: Json | null
+          company_id: string
+          created_at?: string
+          id?: string
+          raw_message?: string | null
+          summary?: string | null
+          target_id?: string | null
+          target_ids?: string[] | null
+          target_table: string
+          undo_note?: string | null
+          undone_at?: string | null
+        }
+        Update: {
+          action_kind?: string
+          actor_user_id?: string | null
+          after_state?: Json | null
+          before_state?: Json | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          raw_message?: string | null
+          summary?: string | null
+          target_id?: string | null
+          target_ids?: string[] | null
+          target_table?: string
+          undo_note?: string | null
+          undone_at?: string | null
+        }
+        Relationships: []
+      }
       ai_alerts: {
         Row: {
           company_id: string
@@ -5077,6 +5128,7 @@ export type Database = {
           pax_id: string | null
           read_by_coordinator_at: string | null
           read_by_driver_at: string | null
+          retracted_at: string | null
           sender_kind: string
           sender_label: string | null
           thread: string
@@ -5095,6 +5147,7 @@ export type Database = {
           pax_id?: string | null
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
+          retracted_at?: string | null
           sender_kind: string
           sender_label?: string | null
           thread?: string
@@ -5113,6 +5166,7 @@ export type Database = {
           pax_id?: string | null
           read_by_coordinator_at?: string | null
           read_by_driver_at?: string | null
+          retracted_at?: string | null
           sender_kind?: string
           sender_label?: string | null
           thread?: string
