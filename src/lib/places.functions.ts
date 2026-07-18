@@ -349,6 +349,8 @@ export const estimateRouteEta = createServerFn({ method: "POST" })
           route_distance_m: distanceM,
           route_computed_at: new Date().toISOString(),
         } as any).eq("id", data.job_id);
+        const { autoPriceJobBg } = await import("./auto-price.server");
+        autoPriceJobBg(data.job_id);
       }
 
       return {
