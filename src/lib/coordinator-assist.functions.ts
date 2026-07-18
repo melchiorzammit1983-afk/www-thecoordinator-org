@@ -17,6 +17,7 @@ const screenSchema = z
     trip: z
       .object({
         id: z.string().uuid(),
+        trip_no: z.number().int().nullable().optional(),
         from_location: z.string().nullable().optional(),
         to_location: z.string().nullable().optional(),
         date: z.string().nullable().optional(),
