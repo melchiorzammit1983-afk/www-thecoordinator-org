@@ -1,4 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Plane as PlaneIcon, Ship as ShipIcon, Building2, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+
+type EndpointKind = "airport" | "seaport" | "hotel" | "custom";
+
+function inferEndpointKind(loc: string, flightOrShip: string): EndpointKind {
+  const l = (loc ?? "").toLowerCase();
+  const f = (flightOrShip ?? "").trim();
+  if (f) {
+    if (/^[a-z]{2}\s?-?\d{1,4}$/i.test(f)) return "airport";
+    if (/\b(ship|vessel|berth|port|cruise|freeport|marina)\b/i.test(l)) return "seaport";
+    return "airport";
+  }
+  if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
+  if (/\b(seaport|berth|terminal|marina|freeport|cruise|vessel|ship)\b/i.test(l)) return "seaport";
+  if (/\b(hotel|inn|resort|hilton|marriott|radisson|hyatt|sheraton|westin|holiday inn|palace|suites|apartments|apart[- ]?hotel)\b/i.test(l)) return "hotel";
+  return "custom";
+}
+
+function placeholderForKind(kind: EndpointKind, hasCode: string): string {
+  if (kind === "airport") return hasCode ? "Airport (auto)" : "Airport / terminal";
+  if (kind === "seaport") return "Port, berth, terminal…";
+  if (kind === "hotel") return "Hotel or venue name";
+  return "Address or place";
+}
+
+function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange: (k: EndpointKind) => void }) {
+  const opts: { k: EndpointKind; label: string; Icon: typeof PlaneIcon }[] = [
+    { k: "airport", label: "Airport", Icon: PlaneIcon },
+    { k: "seaport", label: "Seaport", Icon: ShipIcon },
+    { k: "hotel",   label: "Hotel",   Icon: Building2 },
+    { k: "custom",  label: "Other",   Icon: MapPin },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {opts.map(({ k, label, Icon }) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onChange(k)}
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] ${value === k ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
+        >
+          <Icon className="h-3 w-3" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -144,19 +192,29 @@ function ManualForm({
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
-  const [trackingKind, setTrackingKind] = useState<"flight" | "vessel">(
-    (job?.tracking_kind as "flight" | "vessel") ?? "flight",
+  const [fromKind, setFromKind] = useState<EndpointKind>(() =>
+    inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
   );
+  const [toKind, setToKind] = useState<EndpointKind>(() =>
+    inferEndpointKind(job?.to_location ?? prefill?.to_location ?? "", job?.to_flight ?? prefill?.to_flight ?? ""),
+  );
+  const trackingKind: "flight" | "vessel" =
+    (fromKind === "seaport" && toKind !== "airport") || (toKind === "seaport" && fromKind !== "airport")
+      ? "vessel"
+      : "flight";
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [phone, setPhone] = useState(job?.contact_phone ?? "");
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
-  
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
   const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
+
 
   // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
   // and return the normalized code plus the remaining text with the match removed.
@@ -337,254 +395,302 @@ function ManualForm({
   }, [from, to, etaFn, job?.id]);
 
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
+    <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
       {prefill && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           Prefilled from paste — fill in any missing fields highlighted below.
         </div>
       )}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5 min-w-0">
-          <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
-          <AddressAutocomplete
-            value={from}
-            placeId={fromPlaceId}
-            onChange={(v) => {
-              setFrom(v.address);
-              setFromPlaceId(v.place_id);
-              setFromDisplayName(v.display_name ?? null);
-            }}
-            onBlur={() => handleLocationBlur("from")}
-            placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
-          />
-          <div className="flex items-center gap-1 text-[10px]">
-            <button type="button" onClick={() => setTrackingKind("flight")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
-              <Plane className="h-3 w-3" /> Flight
+      {isMobile && (
+        <div className="flex items-center justify-between gap-2 text-[11px] font-medium">
+          {[
+            { n: 1, label: "Who" },
+            { n: 2, label: "Where" },
+            { n: 3, label: "When" },
+          ].map((s) => (
+            <button
+              key={s.n}
+              type="button"
+              onClick={() => setStep(s.n as 1 | 2 | 3)}
+              className={`flex-1 rounded-md border px-2 py-1.5 ${step === s.n ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
+            >
+              {s.n}. {s.label}
             </button>
-            <button type="button" onClick={() => setTrackingKind("vessel")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
-              <Ship className="h-3 w-3" /> Vessel
-            </button>
-          </div>
-          <Input
-            value={fromFlight}
-            onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
-            onBlur={() => handleFlightBlur("from")}
-            placeholder={trackingKind === "vessel" ? "e.g. Asso Venticinque" : "e.g. EK109"}
-            className="text-xs"
-          />
-          {flightHint?.side === "from" && (
-            <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
-          )}
+          ))}
         </div>
-        <div className="space-y-1.5 min-w-0">
-          <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
-          <AddressAutocomplete
-            value={to}
-            placeId={toPlaceId}
-            onChange={(v) => {
-              setTo(v.address);
-              setToPlaceId(v.place_id);
-              setToDisplayName(v.display_name ?? null);
-            }}
-            onBlur={() => handleLocationBlur("to")}
-            placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
-          />
-          <div className="flex items-center gap-1 text-[10px]">
-            <button type="button" onClick={() => setTrackingKind("flight")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
-              <Plane className="h-3 w-3" /> Flight
-            </button>
-            <button type="button" onClick={() => setTrackingKind("vessel")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
-              <Ship className="h-3 w-3" /> Vessel
-            </button>
+      )}
+      <div className={isMobile ? "wizard-mobile space-y-3" : "space-y-3"} data-active-step={step}>
+        {/* STEP 1 — WHO */}
+        <section data-step="1" className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5"><Label>Client / company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Hilton Malta" /></div>
+            <div className="space-y-1.5"><Label>Contact phone</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
           </div>
-          <Input
-            value={toFlight}
-            onChange={(e) => setToFlight(e.target.value.toUpperCase())}
-            onBlur={() => handleFlightBlur("to")}
-            placeholder={trackingKind === "vessel" ? "e.g. Asso Venticinque" : "e.g. EK109"}
-            className="text-xs"
-          />
-          {flightHint?.side === "to" && (
-            <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
+          {!job && (
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (one per line, optional)</Label>
+              <Textarea
+                rows={4} value={paxText}
+                onChange={(e) => setPaxText(e.target.value)}
+                placeholder={"ELMER CLEMENTE AGUINALDO\nNIXON KALATHILAPARAMBIL VINCENT"}
+              />
+            </div>
           )}
-        </div>
-        <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
-        <div className="space-y-1.5">
-          <Label>Time</Label>
-          <div className="flex items-center gap-1.5">
-            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
-            <div className="flex items-center gap-0.5">
-              {[-15, -5, 5, 15].map((delta) => (
-                <Button
-                  key={delta}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-1.5 text-[10px] font-mono tabular-nums"
-                  onClick={() => setTime(shiftTime(time, delta))}
-                  disabled={!time}
-                  title={`Shift ${delta > 0 ? "+" : ""}${delta} min`}
-                >
-                  {delta > 0 ? `+${delta}` : delta}
-                </Button>
-              ))}
+          {job && <PaxEditor jobId={job.id} />}
+        </section>
+
+        {/* STEP 2 — WHERE */}
+        <section data-step="2" className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 min-w-0">
+              <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
+              <EndpointKindChips value={fromKind} onChange={setFromKind} />
+              <AddressAutocomplete
+                value={from}
+                placeId={fromPlaceId}
+                onChange={(v) => {
+                  setFrom(v.address);
+                  setFromPlaceId(v.place_id);
+                  setFromDisplayName(v.display_name ?? null);
+                }}
+                onBlur={() => handleLocationBlur("from")}
+                placeholder={placeholderForKind(fromKind, fromFlight)}
+              />
+              {(fromKind === "airport" || fromKind === "seaport") && (
+                <Input
+                  value={fromFlight}
+                  onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
+                  onBlur={() => handleFlightBlur("from")}
+                  placeholder={fromKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
+                  className="text-xs"
+                />
+              )}
+              {flightHint?.side === "from" && (
+                <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
+              )}
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
+              <EndpointKindChips value={toKind} onChange={setToKind} />
+              <AddressAutocomplete
+                value={to}
+                placeId={toPlaceId}
+                onChange={(v) => {
+                  setTo(v.address);
+                  setToPlaceId(v.place_id);
+                  setToDisplayName(v.display_name ?? null);
+                }}
+                onBlur={() => handleLocationBlur("to")}
+                placeholder={placeholderForKind(toKind, toFlight)}
+              />
+              {(toKind === "airport" || toKind === "seaport") && (
+                <Input
+                  value={toFlight}
+                  onChange={(e) => setToFlight(e.target.value.toUpperCase())}
+                  onBlur={() => handleFlightBlur("to")}
+                  placeholder={toKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
+                  className="text-xs"
+                />
+              )}
+              {flightHint?.side === "to" && (
+                <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
+              )}
             </div>
           </div>
-          <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
-        </div>
-        <div className="space-y-1.5"><Label>Client company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Phone number</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
-        <div className="space-y-1.5 col-span-2">
-          <Label>Driver</Label>
-          <Select value={driverId} onValueChange={setDriverId}>
-            <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">Unassigned</SelectItem>
-              {drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <DriverAssignmentConflictHint
-            driverId={driverId === "__none__" ? null : driverId}
-            jobId={job?.id ?? null}
-            drivers={drivers}
-            onPickDriver={(id) => setDriverId(id)}
-            candidate={
-              job
-                ? null
-                : {
-                    pickup_at: makeIsoOrNull(date, time),
-                    from_location: from || (fromFlight ? "Airport" : ""),
-                    to_location: to || (toFlight ? "Airport" : ""),
-                    pickup_display_name: fromDisplayName ?? null,
-                    dropoff_display_name: toDisplayName ?? null,
-                    route_duration_sec: etaResult && "duration_sec" in etaResult ? etaResult.duration_sec : null,
-                  }
-            }
-          />
-        </div>
-      </div>
-      {/* Live from → to ETA (from Google, billed via `route_eta` feature) */}
-      {(from.trim().length >= 3 && to.trim().length >= 3) && (
-        <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
-          <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          {etaLoading ? (
-            <span className="text-muted-foreground">Estimating drive time…</span>
-          ) : etaResult && "duration_sec" in etaResult ? (
-            <>
-              <span className="font-semibold text-foreground">
-                {formatEta(etaResult.duration_sec) ?? etaResult.duration_text}
-              </span>
-              {etaResult.distance_text && (
-                <span className="text-muted-foreground">· {etaResult.distance_text}</span>
+          {(from.trim().length >= 3 && to.trim().length >= 3) && (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {etaLoading ? (
+                <span className="text-muted-foreground">Estimating drive time…</span>
+              ) : etaResult && "duration_sec" in etaResult ? (
+                <>
+                  <span className="font-semibold text-foreground">
+                    {formatEta(etaResult.duration_sec) ?? etaResult.duration_text}
+                  </span>
+                  {etaResult.distance_text && (
+                    <span className="text-muted-foreground">· {etaResult.distance_text}</span>
+                  )}
+                  <span className="ml-auto text-[10px] text-muted-foreground">estimated drive time</span>
+                </>
+              ) : etaResult && "error" in etaResult ? (
+                <span className="text-muted-foreground">ETA unavailable</span>
+              ) : (
+                <span className="text-muted-foreground">Estimated drive time will show here</span>
               )}
-              <span className="ml-auto text-[10px] text-muted-foreground">estimated drive time</span>
-            </>
-          ) : etaResult && "error" in etaResult ? (
-            <span className="text-muted-foreground">ETA unavailable</span>
-          ) : (
-            <span className="text-muted-foreground">Estimated drive time will show here</span>
+            </div>
           )}
-        </div>
-      )}
-      {!job && (
-        <div className="space-y-1.5">
-          <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (one per line, optional)</Label>
-          <Textarea
-            rows={4} value={paxText}
-            onChange={(e) => setPaxText(e.target.value)}
-            placeholder={"ELMER CLEMENTE AGUINALDO\nNIXON KALATHILAPARAMBIL VINCENT"}
+        </section>
+
+        {/* STEP 3 — WHEN */}
+        <section data-step="3" className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
+            <div className="space-y-1.5">
+              <Label>Time</Label>
+              <div className="flex items-center gap-1.5">
+                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
+                <div className="flex items-center gap-0.5">
+                  {[-15, -5, 5, 15].map((delta) => (
+                    <Button
+                      key={delta}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-1.5 text-[10px] font-mono tabular-nums"
+                      onClick={() => setTime(shiftTime(time, delta))}
+                      disabled={!time}
+                      title={`Shift ${delta > 0 ? "+" : ""}${delta} min`}
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Driver</Label>
+            <Select value={driverId} onValueChange={setDriverId}>
+              <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Unassigned</SelectItem>
+                {drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <DriverAssignmentConflictHint
+              driverId={driverId === "__none__" ? null : driverId}
+              jobId={job?.id ?? null}
+              drivers={drivers}
+              onPickDriver={(id) => setDriverId(id)}
+              candidate={
+                job
+                  ? null
+                  : {
+                      pickup_at: makeIsoOrNull(date, time),
+                      from_location: from || (fromFlight ? "Airport" : ""),
+                      to_location: to || (toFlight ? "Airport" : ""),
+                      pickup_display_name: fromDisplayName ?? null,
+                      dropoff_display_name: toDisplayName ?? null,
+                      route_duration_sec: etaResult && "duration_sec" in etaResult ? etaResult.duration_sec : null,
+                    }
+              }
+            />
+          </div>
+          <LabelPicker value={labelIds} onChange={setLabelIds} />
+          <ToggleRow
+            label="Enable Live Tracking" hint="GPS updates from driver device"
+            checked={track} onChange={setTrack}
           />
-        </div>
-      )}
-      {job && <PaxEditor jobId={job.id} />}
-      <LabelPicker value={labelIds} onChange={setLabelIds} />
-      <ToggleRow
-        label="Enable Live Tracking" hint="GPS updates from driver device"
-        checked={track} onChange={setTrack}
-      />
-      <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-medium text-muted-foreground">Live status preview</div>
-          <Button
-            type="button" size="sm" variant="outline"
-            disabled={!canPreview || previewMut.isPending}
-            onClick={() => previewMut.mutate()}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${previewMut.isPending ? "animate-spin" : ""}`} />
-            {previewMut.isPending ? "Checking…" : preview ? "Refresh" : "Check traffic & flight"}
-          </Button>
-        </div>
-        {!preview && !previewMut.isPending && (
-          <div className="text-[11px] text-muted-foreground">
-            Fill from/to and date/time (and optional flight) then check for real-time delays before saving. Preview only — no points spent.
-          </div>
-        )}
-        {preview && (
-          <div className="space-y-2 text-xs">
-            {preview.traffic ? (
-              preview.traffic.ok ? (
-                <div className="space-y-1">
-                  <TrafficBadge info={{
-                    traffic_delay_minutes: preview.traffic.delay_minutes ?? 0,
-                    traffic_severity: preview.traffic.severity ?? null,
-                    leave_by_at: preview.traffic.leave_by_at ?? null,
-                  }} />
-                  <div className="text-[11px] text-muted-foreground">
-                    {preview.traffic.duration_text}
-                    {preview.traffic.distance_text ? ` · ${preview.traffic.distance_text}` : ""}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[11px] text-muted-foreground">
-                  Traffic unavailable ({preview.traffic.reason ?? "error"}).
-                </div>
-              )
-            ) : (
-              <div className="text-[11px] text-muted-foreground">Traffic: need both From and To to estimate.</div>
+          <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-muted-foreground">Live status preview</div>
+              <Button
+                type="button" size="sm" variant="outline"
+                disabled={!canPreview || previewMut.isPending}
+                onClick={() => previewMut.mutate()}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 mr-1 ${previewMut.isPending ? "animate-spin" : ""}`} />
+                {previewMut.isPending ? "Checking…" : preview ? "Refresh" : "Check traffic & flight"}
+              </Button>
+            </div>
+            {!preview && !previewMut.isPending && (
+              <div className="text-[11px] text-muted-foreground">
+                Fill from/to and date/time (and optional flight) then check for real-time delays before saving. Preview only — no points spent.
+              </div>
             )}
-            {preview.flight ? (
-              preview.flight.ok ? (
-                <div className="flex items-start gap-2">
-                  {trackingKind === "vessel"
-                    ? <Ship className="h-3.5 w-3.5 mt-0.5 text-primary" />
-                    : <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />}
-                  <div>
-                    <div className="font-medium">
-                      {preview.flight.code} · {preview.flight.status}
-                      {preview.flight.confidence === "low" && (
-                        <span className="ml-1 text-[10px] text-amber-600">(unconfirmed)</span>
-                      )}
+            {preview && (
+              <div className="space-y-2 text-xs">
+                {preview.traffic ? (
+                  preview.traffic.ok ? (
+                    <div className="space-y-1">
+                      <TrafficBadge info={{
+                        traffic_delay_minutes: preview.traffic.delay_minutes ?? 0,
+                        traffic_severity: preview.traffic.severity ?? null,
+                        leave_by_at: preview.traffic.leave_by_at ?? null,
+                      }} />
+                      <div className="text-[11px] text-muted-foreground">
+                        {preview.traffic.duration_text}
+                        {preview.traffic.distance_text ? ` · ${preview.traffic.distance_text}` : ""}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-muted-foreground">{preview.flight.note}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  {trackingKind === "vessel"
-                    ? <Ship className="h-3.5 w-3.5" />
-                    : <Plane className="h-3.5 w-3.5" />}
-                  {trackingKind === "vessel" ? "Vessel" : "Flight"} {preview.flight.code}: {preview.flight.reason === "not_configured" ? "live lookup not configured" : preview.flight.reason === "no_result" ? "no confident match found" : "check failed"}
-                </div>
-              )
-            ) : (
-              (fromFlight || toFlight) ? null : (
-                <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
-              )
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">
+                      Traffic unavailable ({preview.traffic.reason ?? "error"}).
+                    </div>
+                  )
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">Traffic: need both From and To to estimate.</div>
+                )}
+                {preview.flight ? (
+                  preview.flight.ok ? (
+                    <div className="flex items-start gap-2">
+                      {trackingKind === "vessel"
+                        ? <Ship className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                        : <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />}
+                      <div>
+                        <div className="font-medium">
+                          {preview.flight.code} · {preview.flight.status}
+                          {preview.flight.confidence === "low" && (
+                            <span className="ml-1 text-[10px] text-amber-600">(unconfirmed)</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{preview.flight.note}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      {trackingKind === "vessel"
+                        ? <Ship className="h-3.5 w-3.5" />
+                        : <Plane className="h-3.5 w-3.5" />}
+                      {trackingKind === "vessel" ? "Vessel" : "Flight"} {preview.flight.code}: {preview.flight.reason === "not_configured" ? "live lookup not configured" : preview.flight.reason === "no_result" ? "no confident match found" : "check failed"}
+                    </div>
+                  )
+                ) : (
+                  (fromFlight || toFlight) ? null : (
+                    <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
+                  )
+                )}
+              </div>
             )}
           </div>
-        )}
+        </section>
       </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
-      </DialogFooter>
+      {isMobile ? (
+        <div className="sticky bottom-0 -mx-1 flex items-center gap-2 border-t bg-background/95 px-1 pb-1 pt-2 backdrop-blur">
+          <Button type="button" variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button
+            type="button" variant="ghost" size="sm"
+            disabled={step === 1}
+            onClick={() => setStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3) : s))}
+          >
+            <ChevronLeft className="h-4 w-4" /> Back
+          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {step < 3 ? (
+              <Button
+                type="button" size="sm"
+                onClick={() => setStep((s) => (s < 3 ? ((s + 1) as 1 | 2 | 3) : s))}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button type="submit" size="sm" disabled={mut.isPending}>
+                {mut.isPending ? "Saving…" : job ? "Save" : "Create"}
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={mut.isPending}>{mut.isPending ? "Saving…" : job ? "Save" : "Create"}</Button>
+        </DialogFooter>
+      )}
     </form>
   );
 }
+
 
 type AiRow = {
   pickupDate: string; pickupTime: string;

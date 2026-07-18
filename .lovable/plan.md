@@ -1,26 +1,80 @@
-## Problem
+## Goal
 
-Flight KM641 landed 08:15 Malta time but the app shows a different time. Root cause is timezone handling in `fetchLiveStatusViaGemini` (`src/lib/coordinator.functions.ts`):
+Support any combination of Airport / Seaport / Hotel on either side of a trip (e.g. airport→vessel, vessel→hotel), have the AI validate the trip *before* it creates it (flight code, vessel name, hotel resolution, missing fields), and simplify the mobile New Trip form into a step-by-step wizard.
 
-- Gemini often returns a naive time like `"2026-07-18T08:15:00"` (no timezone suffix).
-- JS `new Date("...")` on our Cloudflare Worker parses that as UTC.
-- Malta is UTC+2 in summer, so `formatMaltaTime` then displays `10:15` instead of `08:15`.
-- The `time_mismatch` note (line 2181) also uses `.toISOString().slice(11, 16)`, which is UTC hours — wrong for a Malta-facing note.
+---
 
-Display code in `TripDetailsSheet.tsx` and `coordinator.calendar.tsx` already uses `formatMaltaTime`, so the fix is at the ingest and note-formatting layer.
+## 1. Airport ↔ Vessel: per-side tracking
 
-## Changes (scoped to `src/lib/coordinator.functions.ts`)
+Today `tracking_kind` is a single value per trip ("flight" OR "vessel") even though `from_flight` and `to_flight` are separate strings. That prevents `airport → vessel` (flight code on the pickup side, ship name on the drop-off side).
 
-1. **Tell Gemini to be explicit.** Update the extractor prompt so `scheduled` / `estimated` MUST be full ISO8601 with an explicit offset or `Z`, and default to Europe/Malta local when only a wall-clock time is known (e.g. `2026-07-18T08:15:00+02:00`).
+**Changes**
+- Introduce **per-side "endpoint type"** in the form: each side (From / To) is one of `airport | seaport | hotel | custom`.
+- Reuse the existing `from_flight` / `to_flight` string columns:
+  - `airport` side → holds the flight code (e.g. `KM123`)
+  - `seaport` side → holds the vessel name (e.g. `MSC World Europa`)
+  - `hotel` / `custom` → left blank
+- Keep the existing `tracking_kind` column but derive it: if either side is `seaport` and no `airport` side, `vessel`; else `flight`. Both sides can carry a code; live-status refresh will run per side (small extension to `refreshFlightStatus` to accept `side: "from" | "to"`). Backwards compatible — old trips keep working.
+- Address input on each side stays `AddressAutocomplete`, but with a **type chip row** above it (Airport / Seaport / Hotel / Custom) that biases the Google Places query (`types=airport` / `types=port,marina` / `types=lodging`) and swaps the flight-vs-vessel input label + placeholder.
 
-2. **Add `normalizeMaltaIso(raw)` helper.** If Gemini returns a string with no `Z` and no `±HH:MM` offset, treat the wall-clock as Europe/Malta local and convert to a real UTC ISO using the existing `maltaWallTimeToUtcIso` from `src/lib/time.ts`. Return `null` for unparseable input. Apply it to `result.scheduled` and `result.estimated` before caching and before persisting in `applyLiveStatusToJob` / `_computeTripLiveStatus`.
+---
 
-3. **Fix the mismatch note.** Replace the two `new Date(...).toISOString().slice(11, 16)` calls (lines 2181 and 2330) with `formatMaltaTime(...)` so the note reads Malta local time on both sides.
+## 2. AI pre-validation before creating a trip
 
-4. **Invalidate old cache entries.** Bump the `cacheKey` prefix (e.g. `v2:`) so users don't keep seeing the previously-mis-parsed values from the 5-minute in-memory cache.
+Runs inside the assistant's existing draft/batch flow, before the confirm card is shown. Each check attaches a colored chip to the affected field on the draft card. Coordinator can still edit and confirm.
 
-No changes to display components, RLS, points, or unrelated logic.
+**Checks**
+1. **Flight lookup** — for any `airport` side with a flight code, call the existing `refreshFlightStatus` path and compare scheduled arrival/departure to the booked time. Warn if delta > 30 min. Surface terminal + status.
+2. **Vessel lookup** — for any `seaport` side with a vessel name + date, call the existing Gemini vessel-lookup path (same infra used by `refreshFlightStatus` with `tracking_kind = "vessel"`). Warn if no confident match, or ETA/ETD mismatches the booked time.
+3. **Hotel / venue resolution** — for `hotel` sides, run one `resolveAddresses` pass. If Places returns >1 candidate with similar score, mark **ambiguous** and let the AI ask a short inline follow-up ("Which Hilton — St Julian's or Malta Airport?"). If clearly resolved, silently attach `place_id / lat / lng / display_name`.
+4. **Missing-field prompts** — if `pax_count`, `contact_phone`, or `clientcompanyname` is missing, AI asks *one* short follow-up in chat before drafting.
 
-## Verification
+**Ambiguity policy** (per your answer): AI **asks inline in chat only when truly ambiguous** (multiple equally-good matches, or flight code returns nothing on that date). Otherwise it drafts with a **yellow "check this" chip** on the guessed field, so the coordinator can approve or fix in one tap.
 
-After edits, ask the user to hit Refresh on KM641 and confirm the Scheduled / Estimated chips and the mismatch note all show `08:15` Malta.
+**Where it lives**: extend `parseAndDraftFromText` / `parseAndDraftBatch` in `src/lib/coordinator-assist.functions.ts` to run the validators after parsing and return `warnings: [{field, level: "ambiguous"|"mismatch"|"unresolved", message}]` on the draft/batch payload. Render those chips on the draft cards in `CoordinatorAssistant.tsx`.
+
+---
+
+## 3. Mobile New Trip form — 3-step wizard
+
+Current form is one long screen — too many fields for a 375px viewport. Split into a stepper:
+
+```text
+Step 1 — WHO       Step 2 — WHERE          Step 3 — WHEN
+─────────────      ────────────────────    ─────────────
+Passenger name(s)  From: [type chips]      Date
+Pax count (+/-)    From: address           Time
+Phone              From: flight/vessel #   Vehicle
+Client company     To:   [type chips]      Notes
+                   To:   address
+                   To:   flight/vessel #
+```
+
+- Sticky bottom bar with **Back / Next**; step 3 button is **Create trip**.
+- Progress dots at the top (1 / 2 / 3).
+- Bigger tap targets (min 44px), full-width native date/time inputs, `+` / `−` buttons for pax count.
+- Address field opens a **full-screen sheet** on mobile (already how `AddressAutocomplete` behaves; we'll just enlarge the trigger).
+- On desktop the form stays a single scrolling panel — the wizard is a mobile-only layout swap keyed off `useIsMobile()`. All existing single-trip business logic in `JobFormDialog.tsx` stays; only the render layout changes.
+
+---
+
+## Technical details
+
+**Files touched**
+- `src/components/coordinator/JobFormDialog.tsx` — add `EndpointType` state per side, type-chip row, mobile wizard layout, per-side vessel/flight input label swap.
+- `src/lib/coordinator-assist.functions.ts` — validator pipeline after parse: flight check, vessel check, hotel resolve, missing-field detector. Attach `warnings` to draft/batch payloads.
+- `src/components/coordinator/CoordinatorAssistant.tsx` — render warning chips on draft / batch cards; support inline clarifying-question turn.
+- `src/lib/parse-trips.ts` — infer endpoint type per side from parsed hints (flight code → airport, "MSC/Costa/..." + "berth/port" → seaport, else hotel/custom).
+- `src/lib/coordinator.functions.ts` — accept an optional `from_endpoint_type` / `to_endpoint_type` on create/update (stored as-is for later use; not required by DB). No migration needed if we derive `tracking_kind` from the two sides at save time.
+
+**No DB migration required** for step 1 — we reuse `from_flight` / `to_flight` / `tracking_kind`. If you later want per-side tracking kind persisted, we'd add two nullable text columns; skipped for this pass to keep it small.
+
+**Reused infra**
+- `AddressAutocomplete` + `resolveAddresses` for hotel/venue resolution.
+- Existing `refreshFlightStatus` (Gemini + Google search grounding) for both flight and vessel checks — already supports `tracking_kind: "flight" | "vessel"`.
+- Existing meter `assistant_trip_action` for confirms; validation reads are free (no extra points) except when flight/vessel live lookup fires — those already meter under `flight_vessel_tracking`.
+
+**Out of scope for this pass** (call out if you want them added)
+- Persisting per-side endpoint type as its own DB columns.
+- Vessel port/berth as a structured field separate from the address.
+- A "recent places" quick-pick list in the mobile address sheet.
