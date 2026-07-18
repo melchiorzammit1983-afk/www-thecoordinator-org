@@ -87,6 +87,12 @@ function PortalPage() {
             <ChatPanel token={token} bookings={boot.bookings} />
           </TabsContent>
 
+          {boot.portal.kind === "hotel" && (
+            <TabsContent value="manage" className="mt-4">
+              <HotelManagePanel token={token} portal={boot.portal as any} />
+            </TabsContent>
+          )}
+
           <TabsContent value="settings" className="mt-4">
             <SettingsPanel token={token} portal={boot.portal} onSaved={reload} />
           </TabsContent>
