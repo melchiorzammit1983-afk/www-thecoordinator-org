@@ -116,7 +116,7 @@ export const Route = createFileRoute("/api/public/hooks/summarize-learning")({
 
         const url = process.env.SUPABASE_URL!;
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-        const admin = createClient(url, serviceKey, {
+        const admin = createClient<any>(url, serviceKey, {
           auth: { autoRefreshToken: false, persistSession: false },
         });
 
