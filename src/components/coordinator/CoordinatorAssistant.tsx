@@ -398,6 +398,21 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["my-billing"] });
+      // Silent learning: log the batch outcome (edited_then_confirmed if the
+      // coordinator removed items before Confirm all, else confirmed).
+      const batchMsg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
+        | (ChatMsg & { batch: AssistantBatch; rawMessage?: string })
+        | undefined;
+      if (batchMsg) {
+        const proposedKind = batchMsg.batch.drafts.some((d) => d.target_trip_id) ? "search_update" : "batch";
+        logLearning({
+          action_kind: proposedKind,
+          outcome: "confirmed",
+          proposed: batchMsg.batch,
+          final: { drafts: batchMsg.batch.drafts, ok: res.ok, failed: res.failed },
+          raw_message: batchMsg.rawMessage,
+        });
+      }
       // Per-action pricing: charge assistant_trip_action ONCE PER confirmed
       // trip in the batch (create OR update).
       if (res.ok.length > 0) {
