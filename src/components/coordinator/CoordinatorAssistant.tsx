@@ -185,6 +185,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
+        maybeSpeak(result.text);
       }
     },
 
