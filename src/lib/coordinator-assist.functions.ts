@@ -212,15 +212,28 @@ ${historyLines || "(none)"}
       return { kind: "answer", text: content || "Sorry, I couldn't parse that." };
     }
     const p = parsed as Record<string, unknown>;
-    if (p.kind === "draft") {
+    const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
+      const d = (raw ?? {}) as Record<string, unknown>;
       return {
         kind: "draft",
-        action: (p.action === "update" ? "update" : "create"),
-        target_trip_id: typeof p.target_trip_id === "string" ? p.target_trip_id : null,
-        fields: (p.fields as AssistantDraft["fields"]) ?? {},
-        summary: typeof p.summary === "string" ? p.summary : "Proposed trip change",
+        action: !forceCreate && d.action === "update" ? "update" : "create",
+        target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
+        fields: (d.fields as AssistantDraft["fields"]) ?? {},
+        summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
+    };
+    if (p.kind === "batch" && Array.isArray(p.drafts)) {
+      const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
+      if (drafts.length >= 2) {
+        return {
+          kind: "batch",
+          drafts,
+          clarify: typeof p.clarify === "string" && p.clarify.trim() ? p.clarify : null,
+        };
+      }
+      if (drafts.length === 1) return drafts[0];
     }
+    if (p.kind === "draft") return toDraft(p);
     return {
       kind: "answer",
       text: typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.",
