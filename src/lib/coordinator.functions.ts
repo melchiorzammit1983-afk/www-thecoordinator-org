@@ -2364,7 +2364,7 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
 
     const { error: upErr } = await supabaseAdmin
       .from("jobs")
-      .update(patch)
+      .update(patch as any)
       .eq("id", data.job_id)
       .eq("company_id", c.id);
     if (upErr) throw new Error(upErr.message);
