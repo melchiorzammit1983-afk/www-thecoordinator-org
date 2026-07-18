@@ -6,7 +6,7 @@
  * The QR token is opaque and single-purpose; it only unlocks session
  * creation via the public API, not the hotel dashboard.
  */
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
