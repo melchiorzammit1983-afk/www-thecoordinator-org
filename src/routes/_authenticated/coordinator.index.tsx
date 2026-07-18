@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
+import { WatchtowerToggle } from "@/components/coordinator/WatchtowerToggle";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
@@ -71,6 +72,7 @@ function DashboardPage() {
           <h1 className="text-2xl font-semibold truncate">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Live summary of your operations.</p>
         </div>
+        <WatchtowerToggle />
       </div>
 
       {/* Quick actions */}

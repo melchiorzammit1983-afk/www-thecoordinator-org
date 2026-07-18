@@ -25,7 +25,8 @@ export type FeatureKey =
   | "address_name_resolve"
   | "route_eta"
   | "availability_autoforward"
-  | "ai_coordinator_assist";
+  | "ai_coordinator_assist"
+  | "ai_watchtower";
 
 export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: string; isAi?: boolean }[] = [
   { key: "dispatch",        label: "Dispatch calendar", description: "Main calendar / dispatch board" },
@@ -55,6 +56,7 @@ export const FEATURE_CATALOG: { key: FeatureKey; label: string; description: str
   { key: "route_eta",        label: "From → To ETA",      description: "Estimate driving time & distance between pickup and dropoff. Shown in the trip form, on calendar cards, and in the client portal." },
   { key: "availability_autoforward", label: "Availability & auto-forward", description: "Set opening hours for the company and each driver. Off-hours or unanswered trips auto-jump to the next available partner in your network. Admin charges a small per-forward fee." },
   { key: "ai_coordinator_assist", label: "AI coordinator assistant", description: "Floating chat that answers questions about your dispatch and drafts a single trip create/edit for one-tap confirmation.", isAi: true },
+  { key: "ai_watchtower",   label: "AI Watchtower",     description: "Opt-in background scans that watch flights, driver ETAs, schedule conflicts and trip data — alerts you when something needs attention. Each scan costs points.", isAi: true },
 ];
 
 export const FEATURE_KEYS = FEATURE_CATALOG.map((f) => f.key) as FeatureKey[];

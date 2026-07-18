@@ -5148,6 +5148,105 @@ export type Database = {
         }
         Relationships: []
       }
+      watchtower_alerts: {
+        Row: {
+          body: string | null
+          company_id: string
+          created_at: string
+          dedupe_key: string
+          id: string
+          job_id: string | null
+          kind: string
+          resolved_at: string | null
+          severity: number
+          status: string
+          suggested_actions: Json
+          title: string
+        }
+        Insert: {
+          body?: string | null
+          company_id: string
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          job_id?: string | null
+          kind: string
+          resolved_at?: string | null
+          severity?: number
+          status?: string
+          suggested_actions?: Json
+          title: string
+        }
+        Update: {
+          body?: string | null
+          company_id?: string
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          job_id?: string | null
+          kind?: string
+          resolved_at?: string | null
+          severity?: number
+          status?: string
+          suggested_actions?: Json
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watchtower_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "watchtower_alerts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      watchtower_settings: {
+        Row: {
+          daily_scan_cap: number
+          enabled: boolean
+          interval_sec: number
+          kinds: string[]
+          last_scan_at: string | null
+          scans_reset_on: string
+          scans_today: number
+          severity_min: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          daily_scan_cap?: number
+          enabled?: boolean
+          interval_sec?: number
+          kinds?: string[]
+          last_scan_at?: string | null
+          scans_reset_on?: string
+          scans_today?: number
+          severity_min?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          daily_scan_cap?: number
+          enabled?: boolean
+          interval_sec?: number
+          kinds?: string[]
+          last_scan_at?: string | null
+          scans_reset_on?: string
+          scans_today?: number
+          severity_min?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       webauthn_credentials: {
         Row: {
           created_at: string
