@@ -3270,6 +3270,7 @@ export type Database = {
           flight_gate: string | null
           flight_scheduled_at: string | null
           flight_status: string | null
+          flight_status_confidence: string | null
           flight_status_note: string | null
           flight_status_updated_at: string | null
           flight_terminal: string | null
@@ -3328,6 +3329,7 @@ export type Database = {
           to_flight: string | null
           to_location: string
           tracking_enabled: boolean
+          tracking_kind: string | null
           traffic_delay_minutes: number | null
           traffic_severity: string | null
           traffic_updated_at: string | null
@@ -3397,6 +3399,7 @@ export type Database = {
           flight_gate?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
+          flight_status_confidence?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flight_terminal?: string | null
@@ -3455,6 +3458,7 @@ export type Database = {
           to_flight?: string | null
           to_location: string
           tracking_enabled?: boolean
+          tracking_kind?: string | null
           traffic_delay_minutes?: number | null
           traffic_severity?: string | null
           traffic_updated_at?: string | null
@@ -3524,6 +3528,7 @@ export type Database = {
           flight_gate?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
+          flight_status_confidence?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flight_terminal?: string | null
@@ -3582,6 +3587,7 @@ export type Database = {
           to_flight?: string | null
           to_location?: string
           tracking_enabled?: boolean
+          tracking_kind?: string | null
           traffic_delay_minutes?: number | null
           traffic_severity?: string | null
           traffic_updated_at?: string | null

@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
-import { Plane, RefreshCw } from "lucide-react";
+import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv, SHEET_HEADERS } from "@/lib/sheet-template";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -44,6 +44,8 @@ type Job = {
   flightorship: string | null;
   from_flight: string | null;
   to_flight: string | null;
+  tracking_kind?: string | null;
+  flight_status_confidence?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   vehicle: string | null;
   contact_phone: string | null;
@@ -139,6 +141,9 @@ function ManualForm({
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
+  const [trackingKind, setTrackingKind] = useState<"flight" | "vessel">(
+    (job?.tracking_kind as "flight" | "vessel") ?? "flight",
+  );
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
@@ -217,6 +222,7 @@ function ManualForm({
         date, time,
         from_flight: fromFlight || undefined,
         to_flight: toFlight || undefined,
+        tracking_kind: trackingKind,
       } });
     },
     onSuccess: () => {
@@ -235,6 +241,7 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
+        tracking_kind: trackingKind,
         clientcompanyname: client, contact_phone: phone,
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: false, tracking_enabled: track,
@@ -251,6 +258,7 @@ function ManualForm({
           from_location: effFrom, to_location: effTo, date, time,
           flightorship: fromFlight || toFlight || "",
           from_flight: fromFlight, to_flight: toFlight,
+          tracking_kind: trackingKind,
           clientcompanyname: client, pax,
         }], label_ids: labelIds } });
       } else {
@@ -346,11 +354,21 @@ function ManualForm({
             onBlur={() => handleLocationBlur("from")}
             placeholder={fromFlight ? "Airport (auto)" : "Hotel, address…"}
           />
+          <div className="flex items-center gap-1 text-[10px]">
+            <button type="button" onClick={() => setTrackingKind("flight")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Plane className="h-3 w-3" /> Flight
+            </button>
+            <button type="button" onClick={() => setTrackingKind("vessel")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Ship className="h-3 w-3" /> Vessel
+            </button>
+          </div>
           <Input
             value={fromFlight}
             onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
             onBlur={() => handleFlightBlur("from")}
-            placeholder="Flight / Ship (e.g. EK109)"
+            placeholder={trackingKind === "vessel" ? "e.g. Asso Venticinque" : "e.g. EK109"}
             className="text-xs"
           />
           {flightHint?.side === "from" && (
@@ -370,11 +388,21 @@ function ManualForm({
             onBlur={() => handleLocationBlur("to")}
             placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
+          <div className="flex items-center gap-1 text-[10px]">
+            <button type="button" onClick={() => setTrackingKind("flight")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Plane className="h-3 w-3" /> Flight
+            </button>
+            <button type="button" onClick={() => setTrackingKind("vessel")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Ship className="h-3 w-3" /> Vessel
+            </button>
+          </div>
           <Input
             value={toFlight}
             onChange={(e) => setToFlight(e.target.value.toUpperCase())}
             onBlur={() => handleFlightBlur("to")}
-            placeholder="Flight / Ship (e.g. EK109)"
+            placeholder={trackingKind === "vessel" ? "e.g. Asso Venticinque" : "e.g. EK109"}
             className="text-xs"
           />
           {flightHint?.side === "to" && (
@@ -518,21 +546,30 @@ function ManualForm({
             {preview.flight ? (
               preview.flight.ok ? (
                 <div className="flex items-start gap-2">
-                  <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                  {trackingKind === "vessel"
+                    ? <Ship className="h-3.5 w-3.5 mt-0.5 text-primary" />
+                    : <Plane className="h-3.5 w-3.5 mt-0.5 text-primary" />}
                   <div>
-                    <div className="font-medium">{preview.flight.code} · {preview.flight.status}</div>
+                    <div className="font-medium">
+                      {preview.flight.code} · {preview.flight.status}
+                      {preview.flight.confidence === "low" && (
+                        <span className="ml-1 text-[10px] text-amber-600">(unconfirmed)</span>
+                      )}
+                    </div>
                     <div className="text-[11px] text-muted-foreground">{preview.flight.note}</div>
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Plane className="h-3.5 w-3.5" />
-                  Flight {preview.flight.code}: {preview.flight.reason === "not_found" ? "not on Malta board" : preview.flight.reason === "not_configured" ? "flight lookup not configured" : "check failed"}
+                  {trackingKind === "vessel"
+                    ? <Ship className="h-3.5 w-3.5" />
+                    : <Plane className="h-3.5 w-3.5" />}
+                  {trackingKind === "vessel" ? "Vessel" : "Flight"} {preview.flight.code}: {preview.flight.reason === "not_configured" ? "live lookup not configured" : preview.flight.reason === "no_result" ? "no confident match found" : "check failed"}
                 </div>
               )
             ) : (
               (fromFlight || toFlight) ? null : (
-                <div className="text-[11px] text-muted-foreground">Add a flight code to see arrival/departure status.</div>
+                <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
               )
             )}
           </div>

@@ -545,6 +545,7 @@ const jobInput = z.object({
   dropoff_place_id: z.string().trim().max(200).optional().nullable(),
   pickup_display_name: z.string().trim().max(200).optional().nullable(),
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
+  tracking_kind: z.enum(["flight", "vessel"]).optional(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
@@ -595,6 +596,7 @@ export const createJob = createServerFn({ method: "POST" })
         dropoff_place_id: data.dropoff_place_id || null,
         pickup_display_name: data.pickup_display_name || null,
         dropoff_display_name: data.dropoff_display_name || null,
+        tracking_kind: data.tracking_kind ?? "flight",
       } as any)
       .select()
       .single();
@@ -690,6 +692,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
+    if (data.tracking_kind !== undefined) patch.tracking_kind = data.tracking_kind;
     if (fromChanged) {
       patch.pickup_display_name = data.pickup_display_name || null;
       patch.pickup_place_id = data.pickup_place_id || null;
@@ -1904,6 +1907,7 @@ const bulkTripInput = z.object({
         to_flight: z.string().trim().max(40).optional().default(""),
         clientcompanyname: z.string().trim().max(200).optional().default(""),
         contact_phone: z.string().trim().max(40).optional().default(""),
+        tracking_kind: z.enum(["flight", "vessel"]).optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
       }),
     )
@@ -1972,6 +1976,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           tracking_enabled: false,
           vehicle: null,
           driver_id: null,
+          tracking_kind: t.tracking_kind ?? "flight",
         })
         .select("id")
         .single();
@@ -2007,123 +2012,138 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     };
   });
 
-// ---------- FLIGHT STATUS ----------
-// ---------- MALTA AIRPORT FLIGHT STATUS ----------
-// Scrapes maltairport.com arrivals/departures via Firecrawl and persists status
-// on the job. Cards go red when status === 'delayed' / 'cancelled' / 'time_mismatch'.
+// ---------- FLIGHT / VESSEL LIVE STATUS (Gemini + Google Search grounding) ----------
+// Two-step call:
+//   1) gemini-2.5-flash + google_search grounding → free-text current status
+//   2) gemini-2.5-flash-lite (JSON) → structured {status, scheduled, estimated,
+//      delay_minutes, note, confidence}
+// If step 1 didn't actually ground (no groundingChunks) we force confidence "low".
+// In-memory cache keyed by `${kind}:${identifier}:${date}` for 5 minutes to avoid
+// re-spending points on rapid refreshes.
 
-type MaltaFlightRow = {
-  flight?: string | null;
-  airline?: string | null;
-  origin?: string | null;
-  destination?: string | null;
+type LiveStatusResult = {
+  ok: boolean;
+  status?: string;
+  note?: string;
   scheduled?: string | null;
   estimated?: string | null;
-  status?: string | null;
-  gate?: string | null;
-  terminal?: string | null;
+  confidence?: "high" | "low";
+  reason?: string;
 };
 
-const maltaCache = new Map<string, { at: number; rows: MaltaFlightRow[] }>();
-const MALTA_TTL_MS = 60_000;
+const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
+const LIVE_STATUS_TTL_MS = 5 * 60_000;
 
-async function fetchMaltaBoard(kind: "arrivals" | "departures"): Promise<MaltaFlightRow[]> {
-  const url = `https://maltairport.com/flights/${kind}/`;
-  const cached = maltaCache.get(url);
-  if (cached && Date.now() - cached.at < MALTA_TTL_MS) return cached.rows;
-  const apiKey = process.env.FIRECRAWL_API_KEY;
-  if (!apiKey) throw new Error("FIRECRAWL_API_KEY not configured");
-  const { default: Firecrawl } = await import("@mendable/firecrawl-js");
-  const fc = new Firecrawl({ apiKey });
-  const schema = {
-    type: "object",
-    properties: {
-      rows: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            flight: { type: "string" },
-            airline: { type: "string" },
-            origin: { type: "string" },
-            destination: { type: "string" },
-            scheduled: { type: "string" },
-            estimated: { type: "string" },
-            status: { type: "string" },
-            gate: { type: "string" },
-            terminal: { type: "string" },
-          },
-          required: ["flight"],
-        },
-      },
-    },
-    required: ["rows"],
-  };
-  const prompt =
-    `Extract every flight row from the Malta International Airport ${kind} board. ` +
-    `Return { rows: [...] } where each row has: flight (code like "KM643" or "KM 643"), ` +
-    `airline, ${kind === "arrivals" ? "origin (city or airport)" : "destination (city or airport)"}, ` +
-    `scheduled (HH:MM local), estimated (HH:MM local if shown), status (label shown such as "On time", "Delayed", "Landed", "Cancelled", "Boarding", "Departed"), gate, terminal.`;
-  const result: any = await fc.scrape(url, {
-    onlyMainContent: true,
-    formats: [{ type: "json", schema, prompt } as any],
-  });
-  const json = (result?.json ?? result?.data?.json ?? {}) as { rows?: MaltaFlightRow[] };
-  const rows = Array.isArray(json.rows) ? json.rows : [];
-  maltaCache.set(url, { at: Date.now(), rows });
-  return rows;
+function isoToDayKey(iso: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return d.toISOString().slice(0, 10);
 }
 
-function normalizeFlightCode(c: string) {
-  return c.replace(/\s+/g, "").toUpperCase();
-}
+async function fetchLiveStatusViaGemini(
+  kind: "flight" | "vessel",
+  identifier: string,
+  pickupIso: string | null,
+): Promise<LiveStatusResult> {
+  const id = (identifier || "").trim();
+  if (!id) return { ok: false, reason: "no_code" };
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return { ok: false, reason: "not_configured" };
 
-function mapMaltaStatus(raw: string | null | undefined) {
-  const s = String(raw ?? "")
-    .trim()
-    .toLowerCase();
-  if (!s) return "scheduled";
-  if (s.includes("cancel")) return "cancelled";
-  if (s.includes("divert")) return "diverted";
-  if (s.includes("delay")) return "delayed";
-  if (s.includes("land") || s.includes("arrived")) return "landed";
-  if (
-    s.includes("depart") ||
-    s.includes("airborne") ||
-    s.includes("en route") ||
-    s.includes("en-route") ||
-    s.includes("board")
-  )
-    return "active";
-  return "scheduled";
-}
+  const cacheKey = `${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}`;
+  const cached = liveStatusCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
-function combineDateAndTime(baseIso: string | null, hhmm: string | null | undefined): string | null {
-  if (!hhmm) return null;
-  const m = /(\d{1,2}):(\d{2})/.exec(hhmm.trim());
-  if (!m) return null;
-  const base = baseIso ? new Date(baseIso) : new Date();
-  if (Number.isNaN(base.getTime())) return null;
-  // Board shows Malta local time — anchor to the pickup's Malta calendar date
-  // and combine with the HH:MM as Malta wall-clock, then store as UTC ISO.
-  const maltaParts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Malta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(base);
-  const get = (t: string) => maltaParts.find((p) => p.type === t)!.value;
-  const dateStr = `${get("year")}-${get("month")}-${get("day")}`;
-  const hh = String(Number(m[1])).padStart(2, "0");
-  const mm = String(Number(m[2])).padStart(2, "0");
+  const pickupLine = pickupIso
+    ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
+    : `No specific pickup time was provided.`;
+
+  const groundedPrompt =
+    kind === "flight"
+      ? `You are checking the current status of flight "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
+      : `You are checking the current status of the vessel "${id}" for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
+
+  // ---- Step 1: grounded free-text ----
+  let groundedText = "";
+  let hadGrounding = false;
   try {
-    return maltaWallTimeToUtcIso(dateStr, `${hh}:${mm}`);
-  } catch {
-    return null;
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: groundedPrompt }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 600 },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const value: LiveStatusResult = { ok: false, reason: `gemini_${res.status}` };
+      liveStatusCache.set(cacheKey, { at: Date.now(), value });
+      return value;
+    }
+    const json = (await res.json()) as any;
+    const cand = json?.candidates?.[0];
+    groundedText = cand?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    const chunks = cand?.groundingMetadata?.groundingChunks;
+    hadGrounding = Array.isArray(chunks) && chunks.length > 0;
+    if (!groundedText.trim()) {
+      const value: LiveStatusResult = { ok: false, reason: "no_result" };
+      liveStatusCache.set(cacheKey, { at: Date.now(), value });
+      return value;
+    }
+  } catch (e) {
+    return { ok: false, reason: "exception" };
   }
+
+  // ---- Step 2: JSON extraction ----
+  const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // ISO8601 or null if not stated\n  "estimated": string | null,       // ISO8601 or null if not stated\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose.\n\nTEXT:\n${groundedText}`;
+
+  let extracted: any = null;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${encodeURIComponent(key)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: extractPrompt }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0, maxOutputTokens: 400 },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const value: LiveStatusResult = { ok: false, reason: `gemini_${res.status}` };
+      liveStatusCache.set(cacheKey, { at: Date.now(), value });
+      return value;
+    }
+    const json = (await res.json()) as any;
+    const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    extracted = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "no_result" };
+  }
+
+  let confidence: "high" | "low" = extracted?.confidence === "high" ? "high" : "low";
+  if (!hadGrounding) confidence = "low";
+
+  const value: LiveStatusResult = {
+    ok: true,
+    status: String(extracted?.status ?? "unknown"),
+    note: String(extracted?.note ?? "").slice(0, 160),
+    scheduled: extracted?.scheduled ?? null,
+    estimated: extracted?.estimated ?? null,
+    confidence,
+  };
+  liveStatusCache.set(cacheKey, { at: Date.now(), value });
+  return value;
 }
 
-async function refreshMaltaFlightForJob(
+// Persist the live status onto a job row. Applies the 45-min "time_mismatch"
+// override identically for flights and vessels.
+async function applyLiveStatusToJob(
   supabaseAdmin: any,
   job: {
     id: string;
@@ -2132,113 +2152,49 @@ async function refreshMaltaFlightForJob(
     from_flight: string | null;
     to_flight: string | null;
     pickup_at: string | null;
-    flight_status?: string | null;
+    tracking_kind?: string | null;
   },
-) {
+): Promise<LiveStatusResult> {
   const code = job.from_flight || job.to_flight;
-  if (!code) return { ok: false as const, reason: "no_code" };
-  const kind: "arrivals" | "departures" = job.from_flight ? "arrivals" : "departures";
-  const rows = await fetchMaltaBoard(kind);
-  const norm = normalizeFlightCode(code);
-  const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
-  if (!row) {
+  if (!code) return { ok: false, reason: "no_code" };
+  const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
+  const result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+  if (!result.ok) {
     await supabaseAdmin
       .from("jobs")
       .update({
         flight_status: "unknown",
-        flight_status_note: "Not on Malta Airport board",
+        flight_status_note: result.reason === "not_configured" ? "Live status not configured" : "Status unavailable",
         flight_status_updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
-    return { ok: false as const, reason: "not_found" };
-  }
-  const scheduledIso = combineDateAndTime(job.pickup_at, row.scheduled ?? null);
-  const estimatedIso = combineDateAndTime(job.pickup_at, row.estimated ?? null);
-  let mapped = mapMaltaStatus(row.status);
-  const shownTime = (row.estimated || row.scheduled || "").trim();
-  const pickTime = job.pickup_at ? isoToMaltaDateTime(job.pickup_at).time : "";
-  const schedTime = scheduledIso ? isoToMaltaDateTime(scheduledIso).time : "";
-  const estTime = estimatedIso ? isoToMaltaDateTime(estimatedIso).time : "";
-
-  // Early-flight detection: estimated is 5+ min before scheduled and the board
-  // hasn't flagged the flight as delayed/cancelled/etc. Green, not red.
-  if (mapped === "on_time" && scheduledIso && estimatedIso) {
-    const s = new Date(scheduledIso).getTime();
-    const e = new Date(estimatedIso).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(e) && s - e >= 5 * 60_000) {
-      mapped = "early" as any;
-    }
+    return result;
   }
 
-  if (scheduledIso && job.pickup_at) {
-    const s = new Date(scheduledIso).getTime();
+  let status = result.status ?? "unknown";
+  let note = result.note ?? "";
+  if (result.scheduled && job.pickup_at) {
+    const s = new Date(result.scheduled).getTime();
     const p = new Date(job.pickup_at).getTime();
     if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
-      mapped = "time_mismatch";
+      status = "time_mismatch";
+      note = `Scheduled ${new Date(result.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(job.pickup_at).toISOString().slice(11, 16)}`;
     }
   }
-  let note: string;
-  switch (mapped) {
-    case "cancelled":
-      note = "CANCELLED";
-      break;
-    case "diverted":
-      note = "DIVERTED";
-      break;
-    case "time_mismatch":
-      note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`;
-      break;
-    case "delayed":
-      note = `Delayed → ${row.estimated || shownTime || "?"}`;
-      break;
-    case "early" as any:
-      note = `EARLY → ${estTime || shownTime || "?"}${schedTime ? ` (was ${schedTime})` : ""}`;
-      break;
-    case "landed":
-      note = `Landed ${row.estimated || shownTime || ""}`.trim();
-      break;
-    case "active":
-      note = row.status || "In progress";
-      break;
-    default:
-      note = `On time · ${shownTime || "?"}`;
-      break;
-  }
-  if (row.gate) note += ` · Gate ${row.gate}`;
-  if (row.terminal) note += ` · T${row.terminal}`;
+
   await supabaseAdmin
     .from("jobs")
     .update({
-      flight_status: mapped,
+      flight_status: status,
       flight_status_note: note,
+      flight_status_confidence: result.confidence ?? null,
       flight_status_updated_at: new Date().toISOString(),
-      flight_scheduled_at: scheduledIso,
-      flight_estimated_at: estimatedIso,
-      flight_terminal: row.terminal ?? null,
-      flight_gate: row.gate ?? null,
-      flight_baggage_belt: (row as any).baggage_belt ?? (row as any).belt ?? null,
+      flight_scheduled_at: result.scheduled ?? null,
+      flight_estimated_at: result.estimated ?? null,
     })
     .eq("id", job.id);
 
-  // Notify assigned driver on transition INTO the early state (once).
-  if ((mapped as any) === "early" && job.flight_status !== "early" && job.driver_id && job.company_id) {
-    try {
-      await supabaseAdmin.from("trip_messages").insert([
-        {
-          job_id: job.id,
-          company_id: job.company_id,
-          sender_kind: "system",
-          sender_label: "System",
-          body: `⏫ Flight ${code} is EARLIER: now ${estTime || "?"}${schedTime ? ` (was ${schedTime})` : ""}. Pickup still ${pickTime || "?"} — coordinator will confirm.`,
-          thread_kind: "driver_coord",
-          driver_id: job.driver_id,
-        } as never,
-      ]);
-    } catch {
-      /* non-fatal */
-    }
-  }
-  return { ok: true as const, status: mapped, note };
+  return { ...result, status, note };
 }
 
 export const checkFlightStatus = createServerFn({ method: "POST" })
@@ -2246,25 +2202,38 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const configured = !!process.env.FIRECRAWL_API_KEY;
+    const configured = !!process.env.GEMINI_API_KEY;
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status")
+      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
     if (error) throw new Error(error.message);
     if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
+    await assertFeatureEnabled(c.id, "flight_vessel_tracking");
     let updated = 0;
     for (const j of jobs) {
       try {
-        const r = await refreshMaltaFlightForJob(supabaseAdmin, j as any);
+        const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+          _company_id: c.id,
+          _feature_key: "flight_vessel_tracking",
+          _job_id: (j as any).id,
+          _note: "flight/vessel status refresh (bulk)",
+          _cost_override: undefined as unknown as number,
+        });
+        if (spendErr) {
+          // Stop the loop on billing errors — reporting once is enough.
+          break;
+        }
+        const r = await applyLiveStatusToJob(supabaseAdmin, j as any);
         if (r.ok) updated++;
+        else await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", (j as any).id);
       } catch {
-        /* ignore per-flight errors */
+        await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", (j as any).id);
       }
     }
     return { checked: jobs.length, updated, configured };
@@ -2274,24 +2243,45 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status")
+      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
     if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+
+    await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+      _company_id: c.id,
+      _feature_key: "flight_vessel_tracking",
+      _job_id: data.job_id,
+      _note: "flight/vessel status refresh",
+      _cost_override: undefined as unknown as number,
+    });
+    if (spendErr) {
+      const msg = spendErr.message || "";
+      if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
+      if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+      if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
+      throw new Error(msg);
+    }
+
     try {
-      return await refreshMaltaFlightForJob(supabaseAdmin, job as any);
+      const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
+      if (!r.ok) await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+      return r;
     } catch (e: any) {
-      return { ok: false as const, reason: "scrape_failed", error: String(e?.message ?? e) };
+      await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", data.job_id);
+      return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
 
-// Shared compute for traffic + flight status. Used by both previewTripStatus
+// Shared compute for traffic + flight/vessel status. Used by both previewTripStatus
 // (read-only preview for the trip dialog) and refreshJobLiveStatus (persists
 // the result on the trip row so cards + client portal reflect it).
 async function _computeTripLiveStatus(data: {
@@ -2301,6 +2291,7 @@ async function _computeTripLiveStatus(data: {
   time?: string;
   from_flight?: string;
   to_flight?: string;
+  tracking_kind?: "flight" | "vessel";
 }) {
   let pickupIso: string | null = null;
   if (data.date && data.time) {
@@ -2311,83 +2302,43 @@ async function _computeTripLiveStatus(data: {
     }
   }
 
-  // ---- FLIGHT ----
+  // ---- FLIGHT / VESSEL ----
   let flight: {
     ok: boolean;
     status?: string;
     note?: string;
     scheduled?: string | null;
     estimated?: string | null;
-    terminal?: string | null;
-    gate?: string | null;
+    confidence?: "high" | "low";
     code?: string;
     reason?: string;
   } | null = null;
-  const flightCode = (data.from_flight || data.to_flight || "").trim();
-  if (flightCode) {
-    const kind: "arrivals" | "departures" = data.from_flight ? "arrivals" : "departures";
-    if (!process.env.FIRECRAWL_API_KEY) {
-      flight = { ok: false, code: flightCode, reason: "not_configured" };
+  const code = (data.from_flight || data.to_flight || "").trim();
+  const kind: "flight" | "vessel" = data.tracking_kind === "vessel" ? "vessel" : "flight";
+  if (code) {
+    const r = await fetchLiveStatusViaGemini(kind, code, pickupIso);
+    if (!r.ok) {
+      flight = { ok: false, code, reason: r.reason ?? "no_result" };
     } else {
-      try {
-        const rows = await fetchMaltaBoard(kind);
-        const norm = normalizeFlightCode(flightCode);
-        const row = rows.find((r) => normalizeFlightCode(String(r.flight ?? "")) === norm) ?? null;
-        if (!row) {
-          flight = { ok: false, code: flightCode, reason: "not_found" };
-        } else {
-          const scheduledIso = combineDateAndTime(pickupIso, row.scheduled ?? null);
-          const estimatedIso = combineDateAndTime(pickupIso, row.estimated ?? null);
-          let mapped = mapMaltaStatus(row.status);
-          const shownTime = (row.estimated || row.scheduled || "").trim();
-          const pickTime = pickupIso ? new Date(pickupIso).toISOString().slice(11, 16) : "";
-          if (scheduledIso && pickupIso) {
-            const s = new Date(scheduledIso).getTime();
-            const p = new Date(pickupIso).getTime();
-            if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
-              mapped = "time_mismatch";
-            }
-          }
-          let note: string;
-          switch (mapped) {
-            case "cancelled":
-              note = "CANCELLED";
-              break;
-            case "diverted":
-              note = "DIVERTED";
-              break;
-            case "time_mismatch":
-              note = `Flight ${shownTime || "?"} vs pickup ${pickTime || "?"}`;
-              break;
-            case "delayed":
-              note = `Delayed → ${row.estimated || shownTime || "?"}`;
-              break;
-            case "landed":
-              note = `Landed ${row.estimated || shownTime || ""}`.trim();
-              break;
-            case "active":
-              note = row.status || "In progress";
-              break;
-            default:
-              note = `On time · ${shownTime || "?"}`;
-              break;
-          }
-          if (row.gate) note += ` · Gate ${row.gate}`;
-          if (row.terminal) note += ` · T${row.terminal}`;
-          flight = {
-            ok: true,
-            code: flightCode,
-            status: mapped,
-            note,
-            scheduled: scheduledIso,
-            estimated: estimatedIso,
-            terminal: row.terminal ?? null,
-            gate: row.gate ?? null,
-          };
+      let status = r.status ?? "unknown";
+      let note = r.note ?? "";
+      if (r.scheduled && pickupIso) {
+        const s = new Date(r.scheduled).getTime();
+        const p = new Date(pickupIso).getTime();
+        if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+          status = "time_mismatch";
+          note = `Scheduled ${new Date(r.scheduled).toISOString().slice(11, 16)} vs pickup ${new Date(pickupIso).toISOString().slice(11, 16)}`;
         }
-      } catch {
-        flight = { ok: false, code: flightCode, reason: "scrape_failed" };
       }
+      flight = {
+        ok: true,
+        code,
+        status,
+        note,
+        scheduled: r.scheduled ?? null,
+        estimated: r.estimated ?? null,
+        confidence: r.confidence,
+      };
     }
   }
 
@@ -2414,9 +2365,6 @@ async function _computeTripLiveStatus(data: {
         const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
         const departureTime =
           pickupMs > nowMs + 60_000 ? new Date(pickupMs).toISOString() : undefined;
-        // Routes API v2 (computeRouteMatrix) via the Lovable Google Maps
-        // connector gateway. The legacy Distance Matrix endpoint has been
-        // removed from the connector and now returns REQUEST_DENIED.
         const body: Record<string, unknown> = {
           origins: [{ waypoint: { address: data.from_location } }],
           destinations: [{ waypoint: { address: data.to_location } }],
@@ -2444,7 +2392,6 @@ async function _computeTripLiveStatus(data: {
           traffic = { ok: false, reason: `routes_${rmRes.status}` };
         } else {
           const rmJson: any = await rmRes.json();
-          // Response is either a JSON array of elements or a single element.
           const el = Array.isArray(rmJson) ? rmJson[0] : rmJson;
           const elStatus = el?.status?.code;
           if (!el || (elStatus != null && elStatus !== 0) || el?.condition === "ROUTE_NOT_FOUND") {
@@ -2506,7 +2453,7 @@ async function _computeTripLiveStatus(data: {
   return { pickup_at: pickupIso, flight, traffic };
 }
 
-// Preview traffic + flight status for a trip that hasn't been saved yet.
+// Preview traffic + flight/vessel status for a trip that hasn't been saved yet.
 // Read-only; does NOT deduct points or write any DB rows.
 export const previewTripStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -2523,8 +2470,9 @@ export const previewTripStatus = createServerFn({ method: "POST" })
           .string()
           .regex(/^\d{2}:\d{2}$/)
           .optional(),
-        from_flight: z.string().trim().max(20).optional(),
-        to_flight: z.string().trim().max(20).optional(),
+        from_flight: z.string().trim().max(40).optional(),
+        to_flight: z.string().trim().max(40).optional(),
+        tracking_kind: z.enum(["flight", "vessel"]).optional(),
       })
       .parse(i),
   )
@@ -2533,9 +2481,6 @@ export const previewTripStatus = createServerFn({ method: "POST" })
   });
 
 // Persist a fresh live-status snapshot on the trip row. Coordinator-only.
-// Reuses the same compute as previewTripStatus, then writes traffic_* /
-// flight_* columns so the calendar card and client portal reflect the new
-// values without any extra client-side plumbing.
 export const refreshJobLiveStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
@@ -2544,20 +2489,51 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight")
+      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error || !job) throw new Error("Trip not found");
     if ((job as any).company_id !== c.id) throw new Error("Not allowed");
 
-    const preview = await _computeTripLiveStatus({
-      from_location: (job as any).from_location ?? undefined,
-      to_location: (job as any).to_location ?? undefined,
-      date: (job as any).date ?? undefined,
-      time: ((job as any).time ?? "").slice(0, 5) || undefined,
-      from_flight: (job as any).from_flight ?? undefined,
-      to_flight: (job as any).to_flight ?? undefined,
-    });
+    // Only meter when a flight/vessel identifier is actually attached.
+    const hasCode = !!((job as any).from_flight || (job as any).to_flight);
+    if (hasCode) {
+      await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+        _company_id: c.id,
+        _feature_key: "flight_vessel_tracking",
+        _job_id: data.job_id,
+        _note: "flight/vessel status refresh",
+        _cost_override: undefined as unknown as number,
+      });
+      if (spendErr) {
+        const msg = spendErr.message || "";
+        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
+        if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
+        throw new Error(msg);
+      }
+    }
+
+    let preview;
+    try {
+      preview = await _computeTripLiveStatus({
+        from_location: (job as any).from_location ?? undefined,
+        to_location: (job as any).to_location ?? undefined,
+        date: (job as any).date ?? undefined,
+        time: ((job as any).time ?? "").slice(0, 5) || undefined,
+        from_flight: (job as any).from_flight ?? undefined,
+        to_flight: (job as any).to_flight ?? undefined,
+        tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
+      });
+    } catch (e) {
+      if (hasCode) await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+      throw e;
+    }
+
+    if (hasCode && !preview.flight?.ok) {
+      await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+    }
 
     const patch: Record<string, any> = {};
     if (preview.traffic?.ok) {
@@ -2568,6 +2544,7 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     if (preview.flight?.ok) {
       patch.flight_status = preview.flight.status ?? null;
       patch.flight_status_note = preview.flight.note ?? null;
+      patch.flight_status_confidence = preview.flight.confidence ?? null;
       patch.flight_status_updated_at = new Date().toISOString();
       patch.flight_scheduled_at = preview.flight.scheduled ?? null;
       patch.flight_estimated_at = preview.flight.estimated ?? null;
