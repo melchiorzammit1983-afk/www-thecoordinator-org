@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
-import { Copy, Check, Share2, Users, Gift } from "lucide-react";
+import { Copy, Check, Share2, Users, Gift, Coins, Link2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { listMyReferrals } from "@/lib/coordinator.functions";
