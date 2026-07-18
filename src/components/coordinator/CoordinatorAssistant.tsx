@@ -494,6 +494,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const msg = `Fixed ${fix.field_label.toLowerCase()}.`;
       toast.success(msg);
       maybeSpeak(msg);
+      logLearning({ action_kind: "data_fix", outcome: "confirmed", proposed: fix });
       void meterFn({
         data: {
           feature_key: "assistant_data_fix",
