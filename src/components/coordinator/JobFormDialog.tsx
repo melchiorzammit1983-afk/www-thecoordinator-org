@@ -388,11 +388,21 @@ function ManualForm({
             onBlur={() => handleLocationBlur("to")}
             placeholder={toFlight ? "Airport (auto)" : "Airport, address…"}
           />
+          <div className="flex items-center gap-1 text-[10px]">
+            <button type="button" onClick={() => setTrackingKind("flight")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Plane className="h-3 w-3" /> Flight
+            </button>
+            <button type="button" onClick={() => setTrackingKind("vessel")}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${trackingKind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}>
+              <Ship className="h-3 w-3" /> Vessel
+            </button>
+          </div>
           <Input
             value={toFlight}
             onChange={(e) => setToFlight(e.target.value.toUpperCase())}
             onBlur={() => handleFlightBlur("to")}
-            placeholder="Flight / Ship (e.g. EK109)"
+            placeholder={trackingKind === "vessel" ? "e.g. Asso Venticinque" : "e.g. EK109"}
             className="text-xs"
           />
           {flightHint?.side === "to" && (
