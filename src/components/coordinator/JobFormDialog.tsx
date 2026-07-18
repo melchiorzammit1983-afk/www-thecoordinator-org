@@ -1,4 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Plane as PlaneIcon, Ship as ShipIcon, Building2, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+
+type EndpointKind = "airport" | "seaport" | "hotel" | "custom";
+
+function inferEndpointKind(loc: string, flightOrShip: string): EndpointKind {
+  const l = (loc ?? "").toLowerCase();
+  const f = (flightOrShip ?? "").trim();
+  if (f) {
+    if (/^[a-z]{2}\s?-?\d{1,4}$/i.test(f)) return "airport";
+    if (/\b(ship|vessel|berth|port|cruise|freeport|marina)\b/i.test(l)) return "seaport";
+    return "airport";
+  }
+  if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
+  if (/\b(seaport|berth|terminal|marina|freeport|cruise|vessel|ship)\b/i.test(l)) return "seaport";
+  if (/\b(hotel|inn|resort|hilton|marriott|radisson|hyatt|sheraton|westin|holiday inn|palace|suites|apartments|apart[- ]?hotel)\b/i.test(l)) return "hotel";
+  return "custom";
+}
+
+function placeholderForKind(kind: EndpointKind, hasCode: string): string {
+  if (kind === "airport") return hasCode ? "Airport (auto)" : "Airport / terminal";
+  if (kind === "seaport") return "Port, berth, terminal…";
+  if (kind === "hotel") return "Hotel or venue name";
+  return "Address or place";
+}
+
+function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange: (k: EndpointKind) => void }) {
+  const opts: { k: EndpointKind; label: string; Icon: typeof PlaneIcon }[] = [
+    { k: "airport", label: "Airport", Icon: PlaneIcon },
+    { k: "seaport", label: "Seaport", Icon: ShipIcon },
+    { k: "hotel",   label: "Hotel",   Icon: Building2 },
+    { k: "custom",  label: "Other",   Icon: MapPin },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {opts.map(({ k, label, Icon }) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onChange(k)}
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] ${value === k ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
+        >
+          <Icon className="h-3 w-3" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
