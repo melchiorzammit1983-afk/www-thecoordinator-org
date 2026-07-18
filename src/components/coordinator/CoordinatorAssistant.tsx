@@ -475,8 +475,40 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
       const failed: { summary: string; error: string }[] = [];
       for (const d of drafts) {
         try {
-          if (d.action === "update") await updateExisting(d);
-          else await createDraft(d);
+          if (d.action === "update") {
+            const id = d.target_trip_id!;
+            const before = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+            await updateExisting(d);
+            const f = d.fields as Record<string, unknown>;
+            const beforeSnap: Record<string, unknown> = { id };
+            const afterSnap: Record<string, unknown> = { id };
+            for (const k of Object.keys(f)) {
+              if (k in before) beforeSnap[k] = before[k];
+              afterSnap[k] = f[k];
+            }
+            logAudit({
+              action_kind: "search_update",
+              target_table: "jobs",
+              target_id: id,
+              before_state: beforeSnap,
+              after_state: afterSnap,
+              summary: d.summary,
+              raw_message: msg.rawMessage ?? null,
+            });
+          } else {
+            const created = (await createDraft(d)) as Record<string, unknown> & { id?: string };
+            if (created?.id) {
+              logAudit({
+                action_kind: "create",
+                target_table: "jobs",
+                target_id: created.id,
+                before_state: null,
+                after_state: created,
+                summary: d.summary,
+                raw_message: msg.rawMessage ?? null,
+              });
+            }
+          }
           ok.push(d.summary);
         } catch (e) {
           failed.push({ summary: d.summary, error: e instanceof Error ? e.message : "failed" });
