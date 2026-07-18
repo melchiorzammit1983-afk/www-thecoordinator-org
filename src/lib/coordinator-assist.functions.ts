@@ -76,7 +76,7 @@ export type AssistantAnswer = {
 
 export type AssistantBatch = {
   kind: "batch";
-  drafts: AssistantDraft[]; // all action:"create"
+  drafts: AssistantDraft[]; // mixed action: all "create" (multi-trip create) OR all "update" (multi-trip edit)
   clarify?: string | null; // question to ask coordinator about missing/ambiguous bits
 };
 
@@ -161,10 +161,11 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do THREE things:
+You do FOUR things:
 1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
-3) When the coordinator's message describes MULTIPLE trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
+3) When the coordinator's message describes MULTIPLE NEW trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
+4) When the coordinator asks to EDIT MULTIPLE EXISTING trips matching some shared reference (e.g. "move all trips for Asso 25 to 19:00 instead of 11am", "reassign all of Hilton's trips to driver Y", "cancel all X's trips today"), return a SEARCH_UPDATE — the server will resolve which trips match and build the update batch.
 
 Rules:
 - Return STRICT JSON only. No markdown. One of:
@@ -177,13 +178,20 @@ Rules:
   { "kind": "batch",
     "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
     "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
-- For "update", set target_trip_id when the user says "this trip" etc. Only include changed fields.
+  { "kind": "search_update",
+    "criteria": "short human phrase describing which trips to match, e.g. 'Asso 25 trips today'",
+    "criteria_terms": ["asso 25"],   // 1-3 lowercase tokens matched (ILIKE) against clientcompanyname, group_name, from_flight, to_flight, from_location, to_location
+    "date": "yyyy-mm-dd" | null,      // scope to this date if the user named one, else null
+    "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
+    "summary": "e.g. 'Move Asso 25 trips today from 11:00 to 19:00'" }
+- For "update" (single) or "search_update" (multi), only include fields that CHANGE.
 - For "create" (single or in a batch), omit target_trip_id (null).
-- For "batch", each element MUST be action:"create".
+- In a "batch" of creates, each element MUST be action:"create".
 - Times are Malta local, 24h.
-- If any trip in a batch is missing pickup time, passenger count, exact pickup/drop-off location, or is ambiguous about which driver, STILL include it in "drafts" with the fields you do know, and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
-- Only use "batch" when there are 2+ trips. For 1 trip use "draft".
-- For "update" requests that touch multiple existing trips (e.g. "move all Smith trips to 7pm"), DO NOT batch — answer that this is not supported yet and to edit them individually.
+- For a multi-trip CREATE batch, if any trip is missing pickup time / passenger count / exact pickup or drop-off / ambiguous driver, STILL include it and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
+- Use "batch" only when there are 2+ new trips. For 1 new trip use "draft".
+- Use "search_update" for ANY request that edits multiple existing trips by a shared reference. Do NOT tell the user this is unsupported and do NOT ask them to edit trips one by one.
+- If a search_update reference is genuinely too vague to search reliably (e.g. "fix the trips"), return kind:"answer" asking one short clarifying question instead of guessing.
 - If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
 - Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
 
@@ -260,6 +268,60 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         };
       }
       if (drafts.length === 1) return drafts[0];
+    }
+    if (p.kind === "search_update") {
+      const rawTerms = Array.isArray(p.criteria_terms)
+        ? (p.criteria_terms as unknown[]).map((t) => String(t).trim().toLowerCase()).filter(Boolean)
+        : [];
+      const terms = rawTerms.slice(0, 3);
+      const changes = (p.changes as AssistantDraft["fields"]) ?? {};
+      const criteria = typeof p.criteria === "string" ? p.criteria : "";
+      const dateScope = typeof p.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : null;
+      if (terms.length === 0 || Object.keys(changes).length === 0) {
+        return answer("Which trips should I edit, and what should change? Give me a shared reference (e.g. group name, flight, hotel) and the new value.");
+      }
+      // Match ILIKE across the fields most likely to carry the shared reference.
+      const searchable = [
+        "clientcompanyname",
+        "group_name",
+        "from_flight",
+        "to_flight",
+        "from_location",
+        "to_location",
+      ] as const;
+      let q = supabaseAdmin
+        .from("jobs")
+        .select("id, from_location, to_location, date, time, clientcompanyname, from_flight, to_flight, driver_id")
+        .eq("company_id", company.id)
+        .not("status", "in", "(completed,cancelled)")
+        .limit(50);
+      if (dateScope) q = q.eq("date", dateScope);
+      // Require every term to appear in ANY of the searchable fields.
+      for (const term of terms) {
+        const escaped = term.replace(/[%_,()]/g, " ");
+        const or = searchable.map((c) => `${c}.ilike.%${escaped}%`).join(",");
+        q = q.or(or);
+      }
+      const { data: matches, error } = await q;
+      if (error) return answer(`Couldn't search trips: ${error.message}`);
+      const rows = matches ?? [];
+      if (rows.length === 0) {
+        return answer(`I couldn't find any active trips matching "${criteria || terms.join(" ")}"${dateScope ? ` on ${dateScope}` : ""}. Try a different reference (client, flight, hotel, group).`);
+      }
+      const summaryOf = typeof p.summary === "string" && p.summary.trim() ? p.summary : `Edit ${rows.length} matched trips`;
+      const drafts: AssistantDraft[] = rows.map((r) => ({
+        kind: "draft",
+        action: "update",
+        target_trip_id: r.id as string,
+        fields: changes,
+        summary: `${r.date ?? ""} ${r.time ?? ""} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.clientcompanyname ? ` · ${r.clientcompanyname}` : ""}`.trim(),
+      }));
+      if (drafts.length === 1) return drafts[0];
+      return {
+        kind: "batch",
+        drafts,
+        clarify: `${summaryOf}. Uncheck any you don't want changed, then Confirm all.`,
+      };
     }
     if (p.kind === "draft") return toDraft(p);
     return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");

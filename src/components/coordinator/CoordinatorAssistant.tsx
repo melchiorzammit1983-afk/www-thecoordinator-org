@@ -279,6 +279,38 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
   });
 
+  const updateExisting = useCallback(
+    async (draft: AssistantDraft) => {
+      const id = draft.target_trip_id;
+      if (!id) throw new Error("No trip id on update draft.");
+      const f = draft.fields;
+      const existing = (await getJobFn({ data: { id } })) as Record<string, unknown>;
+      const payload = {
+        id,
+        from_location: (f.from_location ?? existing.from_location) as string,
+        to_location: (f.to_location ?? existing.to_location) as string,
+        date: (f.date ?? existing.date) as string,
+        time: (f.time ?? existing.time) as string,
+        flightorship: (existing.flightorship ?? "") as string,
+        from_flight: (f.from_flight ?? existing.from_flight ?? "") as string,
+        to_flight: (f.to_flight ?? existing.to_flight ?? "") as string,
+        clientcompanyname: (f.clientcompanyname ?? existing.clientcompanyname ?? "") as string,
+        qr_strict_mode: (existing.qr_strict_mode ?? false) as boolean,
+        tracking_enabled: (existing.tracking_enabled ?? false) as boolean,
+        vehicle: (f.vehicle ?? existing.vehicle ?? "") as string,
+        contact_phone: (f.contact_phone ?? existing.contact_phone ?? "") as string,
+        driver_id: (f.driver_id ?? (existing.driver_id as string | null)) as string | null,
+        pickup_place_id: (existing.pickup_place_id ?? null) as string | null,
+        dropoff_place_id: (existing.dropoff_place_id ?? null) as string | null,
+        pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
+        dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
+        tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+      };
+      return updateFn({ data: payload });
+    },
+    [getJobFn, updateFn],
+  );
+
   const confirmBatch = useMutation({
     mutationFn: async (batchMsgId: string) => {
       const msg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
@@ -290,32 +322,35 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       const failed: { summary: string; error: string }[] = [];
       for (const d of drafts) {
         try {
-          await createDraft(d);
+          if (d.action === "update") await updateExisting(d);
+          else await createDraft(d);
           ok.push(d.summary);
         } catch (e) {
           failed.push({ summary: d.summary, error: e instanceof Error ? e.message : "failed" });
         }
       }
-      return { ok, failed };
+      const isUpdateBatch = drafts.every((d) => d.action === "update");
+      return { ok, failed, isUpdateBatch };
     },
     onSuccess: (res, batchMsgId) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
       qc.invalidateQueries({ queryKey: ["my-billing"] });
       // Per-action pricing: charge assistant_trip_action ONCE PER confirmed
-      // trip in the batch (so 3 trips = 3× the single-trip cost).
+      // trip in the batch (create OR update).
       if (res.ok.length > 0) {
         void meterFn({
           data: {
             feature_key: "assistant_trip_action",
             count: res.ok.length,
-            note: `assistant batch confirm: ${res.ok.length} trips`,
+            note: `assistant batch ${res.isUpdateBatch ? "edit" : "create"}: ${res.ok.length} trips`,
           },
         }).catch(() => { /* soft */ });
       }
-      if (res.ok.length && !res.failed.length) toast.success(`Created ${res.ok.length} trips.`);
-      else if (res.ok.length && res.failed.length) toast.warning(`Created ${res.ok.length}, ${res.failed.length} need more info.`);
-      else toast.error("No trips created.");
+      const verb = res.isUpdateBatch ? "Updated" : "Created";
+      if (res.ok.length && !res.failed.length) toast.success(`${verb} ${res.ok.length} trips.`);
+      else if (res.ok.length && res.failed.length) toast.warning(`${verb} ${res.ok.length}, ${res.failed.length} failed.`);
+      else toast.error(res.isUpdateBatch ? "No trips updated." : "No trips created.");
       const lines = [
         ...res.ok.map((s) => `✔ ${s}`),
         ...res.failed.map((f) => `⚠ ${f.summary} — ${f.error}`),
@@ -425,7 +460,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                 }
                 if ("batch" in m) {
                   const busy = confirmBatch.isPending;
-                  const anyMissing = m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
+                  const isUpdateBatch = m.batch.drafts.every((d) => d.action === "update");
+                  const anyMissing = !isUpdateBatch && m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
                   return (
                     <div key={m.id} className="flex gap-2">
                       <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
@@ -434,7 +470,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                       <div className="flex-1 rounded-md border bg-muted/30 p-3">
                         <div className="mb-2 flex items-center justify-between">
                           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {m.batch.drafts.length} new trips
+                            {isUpdateBatch ? `${m.batch.drafts.length} trip edits` : `${m.batch.drafts.length} new trips`}
                           </div>
                         </div>
                         {m.batch.clarify && (
@@ -445,7 +481,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                         <div className="mb-3 space-y-2">
                           {m.batch.drafts.map((d, i) => {
                             const rows = draftFieldSummary(d.fields);
-                            const missing = missingCreateFields(d.fields);
+                            const missing = d.action === "update" ? [] : missingCreateFields(d.fields);
                             return (
                               <div key={i} className="rounded border bg-background p-2">
                                 <div className="mb-1 flex items-start justify-between gap-2">
