@@ -467,7 +467,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const confirmBatch = useMutation({
     mutationFn: async (batchMsgId: string) => {
       const msg = messages.find((x) => x.id === batchMsgId && "batch" in x) as
-        | (ChatMsg & { batch: AssistantBatch })
+        | (ChatMsg & { batch: AssistantBatch; rawMessage?: string })
         | undefined;
       if (!msg) throw new Error("Batch no longer available.");
       const drafts = msg.batch.drafts;
