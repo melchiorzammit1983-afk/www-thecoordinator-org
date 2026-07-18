@@ -141,6 +141,7 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
+import { FlightCodeFixDialog } from "@/components/coordinator/FlightCodeFixDialog";
 import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
 import {
   RouteOptimizationAlertBanner,
