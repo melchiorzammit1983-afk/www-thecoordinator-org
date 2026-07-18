@@ -269,6 +269,60 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
       }
       if (drafts.length === 1) return drafts[0];
     }
+    if (p.kind === "search_update") {
+      const rawTerms = Array.isArray(p.criteria_terms)
+        ? (p.criteria_terms as unknown[]).map((t) => String(t).trim().toLowerCase()).filter(Boolean)
+        : [];
+      const terms = rawTerms.slice(0, 3);
+      const changes = (p.changes as AssistantDraft["fields"]) ?? {};
+      const criteria = typeof p.criteria === "string" ? p.criteria : "";
+      const dateScope = typeof p.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : null;
+      if (terms.length === 0 || Object.keys(changes).length === 0) {
+        return answer("Which trips should I edit, and what should change? Give me a shared reference (e.g. group name, flight, hotel) and the new value.");
+      }
+      // Match ILIKE across the fields most likely to carry the shared reference.
+      const searchable = [
+        "clientcompanyname",
+        "group_name",
+        "from_flight",
+        "to_flight",
+        "from_location",
+        "to_location",
+      ] as const;
+      let q = supabaseAdmin
+        .from("jobs")
+        .select("id, from_location, to_location, date, time, clientcompanyname, from_flight, to_flight, driver_id")
+        .eq("company_id", company.id)
+        .not("status", "in", "(completed,cancelled)")
+        .limit(50);
+      if (dateScope) q = q.eq("date", dateScope);
+      // Require every term to appear in ANY of the searchable fields.
+      for (const term of terms) {
+        const escaped = term.replace(/[%_,()]/g, " ");
+        const or = searchable.map((c) => `${c}.ilike.%${escaped}%`).join(",");
+        q = q.or(or);
+      }
+      const { data: matches, error } = await q;
+      if (error) return answer(`Couldn't search trips: ${error.message}`);
+      const rows = matches ?? [];
+      if (rows.length === 0) {
+        return answer(`I couldn't find any active trips matching "${criteria || terms.join(" ")}"${dateScope ? ` on ${dateScope}` : ""}. Try a different reference (client, flight, hotel, group).`);
+      }
+      const summaryOf = typeof p.summary === "string" && p.summary.trim() ? p.summary : `Edit ${rows.length} matched trips`;
+      const drafts: AssistantDraft[] = rows.map((r) => ({
+        kind: "draft",
+        action: "update",
+        target_trip_id: r.id as string,
+        fields: changes,
+        summary: `${r.date ?? ""} ${r.time ?? ""} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.clientcompanyname ? ` · ${r.clientcompanyname}` : ""}`.trim(),
+      }));
+      if (drafts.length === 1) return drafts[0];
+      return {
+        kind: "batch",
+        drafts,
+        clarify: `${summaryOf}. Uncheck any you don't want changed, then Confirm all.`,
+      };
+    }
     if (p.kind === "draft") return toDraft(p);
     return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
