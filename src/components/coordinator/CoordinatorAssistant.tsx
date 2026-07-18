@@ -14,7 +14,7 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, type AssistantResult, type AssistantDraft, type AssistantBatch } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch } from "@/lib/coordinator-assist.functions";
 import { createJob, updateJob } from "@/lib/coordinator.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
+  const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -254,8 +255,18 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
     onSuccess: (_res, draft) => {
       toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
+      // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
+      void meterFn({
+        data: {
+          feature_key: "assistant_trip_action",
+          count: 1,
+          job_id: draft.action === "update" ? draft.target_trip_id ?? null : null,
+          note: `assistant ${draft.action}: ${draft.summary}`.slice(0, 200),
+        },
+      }).catch(() => { /* soft */ });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
       setMessages((m) => [
         ...m,
         { id: crypto.randomUUID(), role: "assistant", text: `✔ Done — ${draft.summary}` },
@@ -290,6 +301,18 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     onSuccess: (res, batchMsgId) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
+      // Per-action pricing: charge assistant_trip_action ONCE PER confirmed
+      // trip in the batch (so 3 trips = 3× the single-trip cost).
+      if (res.ok.length > 0) {
+        void meterFn({
+          data: {
+            feature_key: "assistant_trip_action",
+            count: res.ok.length,
+            note: `assistant batch confirm: ${res.ok.length} trips`,
+          },
+        }).catch(() => { /* soft */ });
+      }
       if (res.ok.length && !res.failed.length) toast.success(`Created ${res.ok.length} trips.`);
       else if (res.ok.length && res.failed.length) toast.warning(`Created ${res.ok.length}, ${res.failed.length} need more info.`);
       else toast.error("No trips created.");

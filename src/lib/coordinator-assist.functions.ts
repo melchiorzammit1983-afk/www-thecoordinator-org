@@ -113,18 +113,25 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       }
     }
 
-    // Meter (soft — block_on_empty=false in the ai_feature_costs row).
-    try {
-      await supabaseAdmin.rpc("spend_points", {
-        _company_id: company.id,
-        _feature_key: "ai_coordinator_assist",
-        _job_id: undefined as unknown as string,
-        _note: "coordinator assistant turn",
-        _cost_override: undefined as unknown as number,
-      });
-    } catch {
-      // never break the primary action on metering hiccups
-    }
+    // Per-action pricing (see ai_feature_costs rows: assistant_qa,
+    // assistant_trip_action, assistant_data_fix). We meter Q&A turns here
+    // once we know the response was an answer. Trip actions and data fixes
+    // are metered separately on Confirm via `meterAssistantConfirm` — one
+    // charge per confirmed trip, so a 3-trip batch = 3× assistant_trip_action.
+    // All soft-metered (block_on_empty=false).
+    const meter = async (featureKey: "assistant_qa", note: string) => {
+      try {
+        await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: featureKey,
+          _job_id: undefined as unknown as string,
+          _note: note,
+          _cost_override: undefined as unknown as number,
+        });
+      } catch {
+        // never break the primary action on metering hiccups
+      }
+    };
 
     // Load minimal roster for name→id mapping.
     const { data: driverRows } = await supabaseAdmin
@@ -141,10 +148,21 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .map((m) => `${m.role.toUpperCase()}: ${m.text}`)
       .join("\n");
 
-    const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta.
+    // Fold the retired "Ask the Guide" coach knowledge (live facts, event
+    // catalog, visual signals, help article index) into this unified
+    // assistant so nothing is lost when kind:"answer" is returned.
+    let guideKnowledge = "";
+    try {
+      const { buildSystemPrompt } = await import("@/lib/help-ai.server");
+      guideKnowledge = buildSystemPrompt({ mode: "coach" });
+    } catch {
+      /* non-fatal — assistant still works without the folded guide */
+    }
+
+    const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
 You do THREE things:
-1) ANSWER short, on-topic questions about the current screen or workflow.
+1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) When the coordinator's message describes MULTIPLE trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
 
@@ -166,8 +184,8 @@ Rules:
 - If any trip in a batch is missing pickup time, passenger count, exact pickup/drop-off location, or is ambiguous about which driver, STILL include it in "drafts" with the fields you do know, and put ONE targeted question in "clarify" naming which trip(s) and what you need. Do NOT guess or silently fill gaps. Do NOT tell the user to "use bulk entry" — just batch it here.
 - Only use "batch" when there are 2+ trips. For 1 trip use "draft".
 - For "update" requests that touch multiple existing trips (e.g. "move all Smith trips to 7pm"), DO NOT batch — answer that this is not supported yet and to edit them individually.
-- If the request is not about trips, use kind:"answer".
-- Never mention how the system is built, database names, or model names.
+- If the request is a how-to / product / troubleshooting question (not a trip create/edit), use kind:"answer" and lean on the FOLDED GUIDE KNOWLEDGE below. Keep the confidentiality rules in that section — never reveal how the system is built.
+- Answers are plain text (no markdown) so they render cleanly inside the JSON "text" field.
 
 Today's date (Malta): ${today}
 Company: ${company.name}
@@ -180,6 +198,9 @@ Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
 Recent conversation:
 ${historyLines || "(none)"}
+
+===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
+${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
 `;
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -205,11 +226,16 @@ ${historyLines || "(none)"}
     }
     const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = json.choices?.[0]?.message?.content ?? "";
+    const answer = async (text: string): Promise<AssistantAnswer> => {
+      await meter("assistant_qa", "assistant Q&A turn");
+      return { kind: "answer", text };
+    };
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(content);
     } catch {
-      return { kind: "answer", text: content || "Sorry, I couldn't parse that." };
+      return answer(content || "Sorry, I couldn't parse that.");
     }
     const p = parsed as Record<string, unknown>;
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
@@ -224,6 +250,8 @@ ${historyLines || "(none)"}
     };
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
       const drafts = (p.drafts as unknown[]).map((d) => toDraft(d, true));
+      // Drafts/batches are NOT metered here — assistant_trip_action is charged
+      // on Confirm (once per trip) via meterAssistantConfirm.
       if (drafts.length >= 2) {
         return {
           kind: "batch",
@@ -234,10 +262,7 @@ ${historyLines || "(none)"}
       if (drafts.length === 1) return drafts[0];
     }
     if (p.kind === "draft") return toDraft(p);
-    return {
-      kind: "answer",
-      text: typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.",
-    };
+    return answer(typeof p.text === "string" ? p.text : "Sorry, I couldn't answer that.");
   });
 
 /**
@@ -268,4 +293,52 @@ export const getJobForAssistant = createServerFn({ method: "POST" })
     if (!row) throw new Error("Trip not found.");
     return row;
   });
+
+/**
+ * Per-action metering for confirmed assistant actions. Called by the client
+ * AFTER the user hits Confirm on a proposal. One RPC call per unit charged
+ * — so a 3-trip batch confirm should invoke this three times (or pass
+ * count=3) so it costs 3× the configured `assistant_trip_action` rate.
+ *
+ * Soft-metering: mirrors the existing pattern — logs a warning on failure
+ * but never blocks the primary action (the trip has already been written).
+ */
+export const meterAssistantConfirm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        feature_key: z.enum(["assistant_trip_action", "assistant_data_fix"]),
+        count: z.number().int().min(1).max(50).default(1),
+        job_id: z.string().uuid().nullable().optional(),
+        note: z.string().max(200).optional(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) return { charged: 0 };
+    let charged = 0;
+    for (let i = 0; i < data.count; i++) {
+      try {
+        const { error } = await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: data.feature_key,
+          _job_id: (data.job_id ?? undefined) as unknown as string,
+          _note: data.note ?? `assistant confirm (${data.feature_key})`,
+          _cost_override: undefined as unknown as number,
+        });
+        if (!error) charged += 1;
+      } catch {
+        /* soft — do not throw */
+      }
+    }
+    return { charged };
+  });
+
 
