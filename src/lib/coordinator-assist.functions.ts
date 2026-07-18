@@ -123,7 +123,56 @@ export type AssistantPartnerSuggest = {
   summary: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix | AssistantPartnerSuggest;
+/**
+ * Structured multi-action proposal (group/ungroup trips, send a driver or
+ * client message, and future kinds handled by the OLD Command Bar's execution
+ * layer). The assistant returns a validated list; the client stages it into
+ * `ai_command_log` via `stageAssistantActions` and applies confirmed items
+ * with the existing `applyAiCommandActions` server function — no
+ * reimplementation of the underlying writes.
+ *
+ * `type` mirrors ai_command_log action shapes: assign | unassign | reschedule
+ * | status | group | ungroup | message | dispatch | note. We limit the
+ * assistant to `group | ungroup | message` for now (create/update trips still
+ * go through draft/batch cards, so those write-paths keep their existing
+ * verification UI).
+ */
+export type AssistantCommandActions = {
+  kind: "command_actions";
+  actions: Array<{
+    type: "group" | "ungroup" | "message";
+    job_id?: string | null;
+    job_ids?: string[] | null;
+    group_name?: string | null;
+    thread?: "driver" | "client" | "group" | null;
+    body?: string | null;
+    label: string; // human-readable, e.g. "Group 2 trips as 'Asso 25'"
+  }>;
+  summary: string;
+};
+
+/**
+ * Trigger card for the existing AI Auto-Coordinate flow. The server fn
+ * `aiAutoCoordinate` is invoked on Confirm from the client and its proposals
+ * are then applied one-by-one via `applyAutoCoordinateProposal` — the SAME
+ * pathway the AI Auto-Coordinate button used before. No new metering, no
+ * duplicate logic.
+ */
+export type AssistantAutoCoordinate = {
+  kind: "auto_coordinate";
+  intro: string; // one-line preamble to show above the run button
+};
+
+export type AssistantResult =
+  | AssistantAnswer
+  | AssistantDraft
+  | AssistantBatch
+  | AssistantDataFix
+  | AssistantPartnerSuggest
+  | AssistantCommandActions
+  | AssistantAutoCoordinate;
+
+
 
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
