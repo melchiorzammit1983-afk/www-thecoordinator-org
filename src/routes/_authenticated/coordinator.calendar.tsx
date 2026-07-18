@@ -141,6 +141,7 @@ import { ChainTimeline } from "@/components/coordinator/ChainTimeline";
 import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
+import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
 import {
   RouteOptimizationAlertBanner,
   useRouteOptimizationAlerts,
@@ -2520,6 +2521,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 {assignedPending && <span className="ml-1 text-amber-600">• pending</span>}
               </div>
             )}
+            <TripConflictBadge jobId={job.id} driverId={job.driver_id} date={job.date} />
             {delayed && (
               <div className="text-[11px] font-medium text-destructive mt-0.5 truncate">
                 ✈ {flightCode} {flightMsg}
