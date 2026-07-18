@@ -150,7 +150,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
               text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
             };
           }
-          return { role: "assistant" as const, text: m.fix.summary };
+          if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
+          return { role: "assistant" as const, text: m.suggest.summary };
         });
       return (await askFn({
         data: {
@@ -170,6 +171,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
       } else if (result.kind === "data_fix") {
         setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
+      } else if (result.kind === "partner_suggest") {
+        setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
