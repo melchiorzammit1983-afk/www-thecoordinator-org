@@ -208,6 +208,7 @@ function RootComponent() {
         <InstallPrompt />
         <UpdatePrompt />
         <AskGuidePanel />
+        {isMarketingPath(pathname) && <SalesChatbot />}
       </AskGuideProvider>
     </QueryClientProvider>
   );
