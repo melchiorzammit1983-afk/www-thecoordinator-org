@@ -28,6 +28,8 @@ import {
   getPricingSettings, updatePricingSettings,
   listServiceAreas, upsertServiceArea, deleteServiceArea,
 } from "@/lib/pricing.functions";
+import { Calculator } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/pricing")({
   head: () => ({ meta: [{ title: "Pricing — Coordinator" }] }),
@@ -50,12 +52,15 @@ function PricingPage() {
           <TabsTrigger value="wait">Waiting time</TabsTrigger>
           <TabsTrigger value="areas">Service areas</TabsTrigger>
           <TabsTrigger value="drivers">Driver defaults</TabsTrigger>
+          <TabsTrigger value="preview">Price preview</TabsTrigger>
         </TabsList>
         <TabsContent value="rates" className="mt-4"><BaseRatesTab /></TabsContent>
         <TabsContent value="wait" className="mt-4"><WaitingTab /></TabsContent>
         <TabsContent value="areas" className="mt-4"><AreasTab /></TabsContent>
         <TabsContent value="drivers" className="mt-4"><DriverDefaultsTab /></TabsContent>
+        <TabsContent value="preview" className="mt-4"><PricePreviewTab /></TabsContent>
       </Tabs>
+
     </div>
   );
 }
