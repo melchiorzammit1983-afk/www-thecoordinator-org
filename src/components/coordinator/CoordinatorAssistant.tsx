@@ -73,10 +73,10 @@ export function useSetAssistantScreen(screen: AssistantScreen | null) {
 type ChatMsg =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
-  | { id: string; role: "assistant"; draft: AssistantDraft }
-  | { id: string; role: "assistant"; batch: AssistantBatch }
-  | { id: string; role: "assistant"; fix: AssistantDataFix }
-  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest };
+  | { id: string; role: "assistant"; draft: AssistantDraft; rawMessage?: string }
+  | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
+  | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
