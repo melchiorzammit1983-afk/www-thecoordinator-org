@@ -76,7 +76,16 @@ type ChatMsg =
   | { id: string; role: "assistant"; draft: AssistantDraft; rawMessage?: string }
   | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
-  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string };
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
+  | {
+      id: string;
+      role: "assistant";
+      actions: AssistantCommandActions;
+      rawMessage?: string;
+      selected: boolean[]; // per action
+      applied?: boolean;
+      results?: Array<{ index: number; ok: boolean; message: string }>;
+    };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
