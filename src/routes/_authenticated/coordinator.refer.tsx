@@ -77,7 +77,8 @@ function ReferPage() {
           <Gift className="h-5 w-5 text-primary" /> Refer & earn
         </h1>
         <p className="text-sm text-muted-foreground">
-          Share your personal link. When someone signs up through it, we'll credit the referral to your account.
+          Share your personal link. When someone signs up through it, you earn{" "}
+          <span className="font-semibold text-foreground">{data?.percent ?? 5}%</span> of every point they spend for 12 months — credited straight to your balance.
         </p>
       </header>
 
