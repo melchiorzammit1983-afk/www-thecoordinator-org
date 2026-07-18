@@ -1054,6 +1054,10 @@ function TrustStrip() {
 function FaqSection() {
   const faqs = [
     {
+      q: "Can I really just talk to it?",
+      a: "Yes. Type or tap the mic and speak — the assistant works in plain language, and it can also read short replies back to you. Every action it takes is drafted first so you see exactly what will change, and nothing runs without your approval. Change your mind? Any AI action can be undone with one click.",
+    },
+    {
       q: "How much does it cost?",
       a: "Pay-as-you-go with points. A trip costs ~1.5 pts, dispatching to a partner ~0.5 pts, sending a client tracking SMS ~0.25 pts. Top up whenever you need to — no monthly subscription required.",
     },
