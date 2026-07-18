@@ -1004,7 +1004,7 @@ export const stageAssistantActions = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Failed to stage actions.");
-    return { id: (row as { id: string }).id, actions: stored };
+    return { id: (row as { id: string }).id };
   });
 
 
