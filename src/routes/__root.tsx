@@ -184,12 +184,20 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/*
+        AskGuideProvider + AskGuidePanel stay mounted so /help pages
+        (HelpArticle, ExplainThis, help.index) can still trigger the guide
+        panel via useAskGuide(). The floating <AskGuideFab /> has been
+        retired in favour of the unified AI dispatch assistant — its Q&A
+        capability is folded into that assistant (see
+        src/lib/coordinator-assist.functions.ts). Restore <AskGuideFab />
+        here if you ever need the standalone entry point back.
+      */}
       <AskGuideProvider>
         <Outlet />
         <Toaster />
         <InstallPrompt />
         <UpdatePrompt />
-        <AskGuideFab />
         <AskGuidePanel />
       </AskGuideProvider>
     </QueryClientProvider>
