@@ -390,6 +390,23 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       /* non-fatal — assistant still works without the folded guide */
     }
 
+    // Billing agent context — points balance, recent point-spend history,
+    // and the per-feature price list. Reuses the same tables the coordinator
+    // billing dashboard reads (`companies.points_balance`, `points_ledger`,
+    // `ai_feature_costs`). Q&A only — no top-up initiation from chat.
+    const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
+      supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
+      supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(15),
+      supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
+    ]);
+    const pointsBalance = Number(balRow?.points_balance ?? 0);
+    const ledgerBlock = (recentLedger ?? []).length
+      ? (recentLedger ?? []).map((l: { points_deducted: number | string; note: string | null; feature_key: string | null; created_at: string }) => `${l.created_at.slice(0, 16).replace("T", " ")}  -${l.points_deducted}  ${l.feature_key ?? "-"}  ${l.note ?? ""}`).join("\n")
+      : "(no ledger entries yet)";
+    const featureCostBlock = (featureCostRows ?? []).length
+      ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
+      : "(no priced features)";
+
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
 You do NINE things:
@@ -402,6 +419,7 @@ You do NINE things:
 7) SUGGEST PARTNER HAND-OFF → kind:"partner_suggest" (see below).
 8) STRUCTURED ACTIONS on existing trips — group / ungroup / send a message to the driver or client on a trip. Return kind:"command_actions" with an array. This is the same execution layer as the old Command Bar, so the writes are trusted and audited. Use this when the coordinator says things like "group these two trips", "ungroup that trip", "message the driver that pickup is delayed 10 minutes", "tell the client we're 5 min away". Do NOT use command_actions for creating/updating trip content — those still go through draft / batch / search_update / data_fix.
 9) COORDINATE THE BACKLOG — when the coordinator says things like "coordinate my backlog", "review unassigned trips", "auto-coordinate", "sort out today", return kind:"auto_coordinate" with a one-line intro. The client then runs the existing AI Auto-Coordinate engine and presents its proposals for per-item approval.
+10) BILLING Q&A — when the coordinator asks about their points balance ("how many points do I have"), a specific charge ("why did that cost me points", "why was I charged"), the price of a feature ("how much does X cost"), or top-up options, ANSWER in kind:"answer" using the BILLING CONTEXT block below. Quote real numbers from BILLING CONTEXT — never invent. You cannot start a top-up from chat; if they want to buy points, tell them to open the Billing page and use "Request top-up".
 
 
 Rules:
@@ -486,6 +504,15 @@ Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
 Recent conversation:
 ${historyLines || "(none)"}
+
+===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================
+Current points balance: ${pointsBalance}
+
+Feature price list (points per action):
+${featureCostBlock}
+
+Most recent point-spend entries (newest first):
+${ledgerBlock}
 
 ===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
 ${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}

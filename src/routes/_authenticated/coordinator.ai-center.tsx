@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Sparkles, Send, Plus, Trash2, Pencil, Loader2, Bot } from "lucide-react";
+import { Bot, Plus, Trash2, Pencil, Loader2, Undo2, Sparkles, MessageSquare, Receipt } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,23 +14,164 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  getAiConfig, saveAiConfig,
-  listAiRules, upsertAiRule, deleteAiRule,
-  runAiCommand, listAiCommandHistory, applyAiCommandActions,
-} from "@/lib/coordinator.functions";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import { listAiRules, upsertAiRule, deleteAiRule } from "@/lib/coordinator.functions";
+import { listMyLessons, archiveMyLesson } from "@/lib/ai-lessons.functions";
+import { listAiAuditActions, upsertGlossaryTerm, undoAssistantAction } from "@/lib/ai-audit.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
-  component: AiCenterPage,
+  component: AiBrainPage,
 });
 
-type AiConfig = {
-  auto_assign_enabled: boolean;
-  auto_extract_bulk: boolean;
-  auto_reply_drafts: boolean;
-  ai_command_enabled: boolean;
-  voice_to_trip_enabled: boolean;
-  auto_coordinate_enabled: boolean;
+function AiBrainPage() {
+  return (
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <Bot className="h-6 w-6 text-primary" />
+        <div>
+          <h1 className="text-2xl font-semibold">AI Brain</h1>
+          <p className="text-sm text-muted-foreground">
+            Everything the AI knows, does, and has done — in one place.
+          </p>
+        </div>
+      </div>
+
+      <Tabs defaultValue="knowledge">
+        <TabsList className="grid grid-cols-3 w-full max-w-lg">
+          <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
+          <TabsTrigger value="agents">Agents</TabsTrigger>
+          <TabsTrigger value="activity">Activity &amp; Rollback</TabsTrigger>
+        </TabsList>
+        <TabsContent value="knowledge" className="mt-4 space-y-4"><KnowledgeTab /></TabsContent>
+        <TabsContent value="agents" className="mt-4 space-y-4"><AgentsTab /></TabsContent>
+        <TabsContent value="activity" className="mt-4"><ActivityTab /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------- */
+/* TAB 1 · Knowledge                                              */
+/* -------------------------------------------------------------- */
+
+type Lesson = {
+  id: string;
+  kind: string;
+  title: string;
+  rule_text: string;
+  status: string;
+  scope: string;
 };
+
+function KnowledgeTab() {
+  return (
+    <>
+      <GlossarySection />
+      <RulesSection />
+      <LearnedBiasSection />
+    </>
+  );
+}
+
+function GlossarySection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listMyLessons);
+  const upsertFn = useServerFn(upsertGlossaryTerm);
+  const archiveFn = useServerFn(archiveMyLesson);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["ai-lessons-mine"],
+    queryFn: () => listFn() as Promise<Lesson[]>,
+  });
+  const glossary = (data ?? []).filter((l) => l.kind === "glossary" && l.status === "approved");
+
+  const [edit, setEdit] = useState<{ id?: string; term: string; meaning: string } | null>(null);
+
+  const save = useMutation({
+    mutationFn: (v: { id?: string; term: string; meaning: string }) =>
+      upsertFn({ data: v }) as Promise<{ ok: boolean }>,
+    onSuccess: () => {
+      toast.success("Saved");
+      qc.invalidateQueries({ queryKey: ["ai-lessons-mine"] });
+      setEdit(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const archive = useMutation({
+    mutationFn: (id: string) => archiveFn({ data: { id } }) as Promise<{ ok: boolean }>,
+    onSuccess: () => {
+      toast.success("Archived");
+      qc.invalidateQueries({ queryKey: ["ai-lessons-mine"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Glossary — shorthand &amp; aliases</CardTitle>
+        <CardDescription>
+          Short forms the assistant should expand before deciding anything (e.g. <em>MSV = Medserv Freeport</em>).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button size="sm" onClick={() => setEdit({ term: "", meaning: "" })}>
+          <Plus className="h-4 w-4 mr-1" /> New term
+        </Button>
+        {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
+        {!isLoading && glossary.length === 0 && (
+          <div className="text-xs text-muted-foreground">No terms yet.</div>
+        )}
+        {glossary.map((g) => (
+          <div key={g.id} className="rounded-md border p-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-medium text-sm">{g.title}</div>
+              <div className="text-xs text-muted-foreground whitespace-pre-wrap">{g.rule_text}</div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => setEdit({ id: g.id, term: g.title, meaning: g.rule_text })}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => archive.mutate(g.id)} title="Archive">
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          </div>
+        ))}
+        {edit && (
+          <div className="rounded-md border p-3 space-y-2">
+            <div className="space-y-1.5">
+              <Label>Shorthand</Label>
+              <Input value={edit.term} onChange={(e) => setEdit({ ...edit, term: e.target.value })} placeholder="MSV" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Meaning</Label>
+              <Textarea rows={2} value={edit.meaning} onChange={(e) => setEdit({ ...edit, meaning: e.target.value })} placeholder="Medserv Freeport" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button>
+              <Button
+                disabled={save.isPending || edit.term.trim().length === 0 || edit.meaning.trim().length === 0}
+                onClick={() => save.mutate({ id: edit.id, term: edit.term.trim(), meaning: edit.meaning.trim() })}
+              >
+                {save.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 type AiRule = {
   id: string;
@@ -40,278 +181,6 @@ type AiRule = {
   sort_order: number;
 };
 
-function AiCenterPage() {
-  return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Bot className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-semibold">AI Control & Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage, talk to, and train the AI that runs behind the scenes.
-          </p>
-        </div>
-      </div>
-
-      <Tabs defaultValue="toggles">
-        <TabsList className="grid grid-cols-3 w-full max-w-md">
-          <TabsTrigger value="toggles">Toggles</TabsTrigger>
-          <TabsTrigger value="command">Command Bar</TabsTrigger>
-          <TabsTrigger value="rules">Rules</TabsTrigger>
-        </TabsList>
-        <TabsContent value="toggles" className="mt-4"><TogglesSection /></TabsContent>
-        <TabsContent value="command" className="mt-4"><CommandSection /></TabsContent>
-        <TabsContent value="rules" className="mt-4"><RulesSection /></TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-// -------- 1. Toggles --------
-function TogglesSection() {
-  const qc = useQueryClient();
-  const getCfg = useServerFn(getAiConfig);
-  const saveCfg = useServerFn(saveAiConfig);
-  const { data, isLoading } = useQuery({ queryKey: ["ai-config"], queryFn: () => getCfg() as Promise<AiConfig> });
-  const [local, setLocal] = useState<AiConfig | null>(null);
-  const cfg = local ?? data ?? null;
-
-  const mut = useMutation({
-    mutationFn: (v: AiConfig) => saveCfg({ data: v }) as Promise<{ ok: boolean }>,
-    onSuccess: () => { toast.success("AI settings saved"); qc.invalidateQueries({ queryKey: ["ai-config"] }); setLocal(null); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  if (isLoading || !cfg) return <div className="text-sm text-muted-foreground">Loading…</div>;
-
-  const rows: { key: keyof AiConfig; label: string; desc: string }[] = [
-    { key: "auto_coordinate_enabled", label: "AI Auto-Coordinate", desc: "AI reviews the whole unassigned backlog and proposes groupings + driver assignments. Nothing runs without your approval." },
-    { key: "auto_assign_enabled", label: "Auto-assign drivers", desc: "New trips are matched to a free driver instantly." },
-    { key: "auto_extract_bulk", label: "Bulk-paste AI extraction", desc: "Turn pasted text into structured trips automatically." },
-    { key: "voice_to_trip_enabled", label: "Voice → trip", desc: "Record or upload a voice note to create trips." },
-    { key: "auto_reply_drafts", label: "AI reply drafts in chat", desc: "Suggest polite replies when clients message you." },
-    { key: "ai_command_enabled", label: "AI Command Bar", desc: "Ask the AI to answer questions and act on trips." },
-  ];
-
-  const update = (k: keyof AiConfig, v: boolean) => setLocal((prev) => ({ ...(prev ?? cfg), [k]: v }));
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Automation feature toggles</CardTitle>
-        <CardDescription>Turn each AI workflow on or off for your company.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {rows.map((r) => (
-          <div key={r.key} className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0">
-            <div className="min-w-0">
-              <div className="font-medium text-sm">{r.label}</div>
-              <div className="text-xs text-muted-foreground">{r.desc}</div>
-            </div>
-            <Switch checked={cfg[r.key]} onCheckedChange={(v) => update(r.key, !!v)} />
-          </div>
-        ))}
-        <div className="flex justify-end pt-2">
-          <Button disabled={!local || mut.isPending} onClick={() => local && mut.mutate(local)}>
-            {mut.isPending ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// -------- 2. Command Bar --------
-type HistoryRow = {
-  id: string; mode: string; prompt: string; response: string;
-  actions: any[]; status: string; created_at: string;
-  applied_at: string | null; executed_actions: Array<{ index: number; ok: boolean; message: string }> | null;
-  affected_count: number; requires_confirmation: boolean;
-};
-
-function describeAction(a: any): string {
-  if (!a || typeof a !== "object") return "invalid";
-  const short = (s?: string) => (s ? String(s).slice(0, 8) : "");
-  switch (a.type) {
-    case "assign": return `Assign driver ${short(a.driver_id)} → trip ${short(a.job_id)}`;
-    case "unassign": return `Unassign driver from trip ${short(a.job_id)}`;
-    case "reschedule": return `Reschedule ${short(a.job_id)} → ${a.date ?? ""} ${a.time ?? ""}`.trim();
-    case "status": return `Set status of ${short(a.job_id)} → ${a.new_status}`;
-    case "group": return `Group ${Array.isArray(a.job_ids) ? a.job_ids.length : 0} trips${a.group_name ? ` as "${a.group_name}"` : ""}`;
-    case "ungroup": return `Ungroup trip ${short(a.job_id)}`;
-    case "message": return `Message (${a.thread}) on ${short(a.job_id)}: ${String(a.body ?? "").slice(0, 80)}`;
-    case "dispatch": return `Dispatch ${short(a.job_id)} → partner ${short(a.partner_company_id)}`;
-    case "note": return `Note on ${short(a.job_id)}: ${String(a.note ?? "").slice(0, 80)}`;
-    default: return String(a.type);
-  }
-}
-
-function HistoryEntry({ h }: { h: HistoryRow }) {
-  const qc = useQueryClient();
-  const applyFn = useServerFn(applyAiCommandActions);
-  const initial = new Set((h.actions ?? []).map((_, i) => i));
-  const [selected, setSelected] = useState<Set<number>>(initial);
-
-  const apply = useMutation({
-    mutationFn: () => applyFn({ data: { command_log_id: h.id, action_indices: Array.from(selected).sort((a, b) => a - b) } }) as Promise<{
-      ok: boolean; affected: number; results: Array<{ index: number; ok: boolean; message: string }>;
-    }>,
-    onSuccess: (res) => {
-      toast.success(`Applied ${res.affected} action(s)`);
-      qc.invalidateQueries({ queryKey: ["ai-cmd-history"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const toggle = (i: number) => {
-    const next = new Set(selected);
-    next.has(i) ? next.delete(i) : next.add(i);
-    setSelected(next);
-  };
-
-  const applied = !!h.applied_at;
-  const acts = h.actions ?? [];
-
-  return (
-    <div className="rounded-md border p-3 text-sm space-y-2">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="outline" className="capitalize">{h.mode}</Badge>
-        <Badge variant={applied ? "secondary" : h.status === "awaiting_confirm" ? "default" : h.status === "ok" ? "secondary" : "destructive"} className="capitalize">
-          {applied ? "applied" : h.status.replace("_", " ")}
-        </Badge>
-        <span>{new Date(h.created_at).toLocaleString()}</span>
-      </div>
-      <div className="font-medium">{h.prompt}</div>
-      {h.response && <div className="text-foreground/80 whitespace-pre-wrap">{h.response}</div>}
-      {acts.length > 0 && (
-        <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
-          <div className="text-xs font-medium">Proposed actions ({acts.length}) — needs your approval</div>
-          {acts.map((a, i) => {
-            const result = h.executed_actions?.find((r) => r.index === i);
-            return (
-              <label key={i} className="flex items-start gap-2 text-xs">
-                {!applied && (
-                  <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="mt-0.5" />
-                )}
-                <span className="flex-1">{describeAction(a)}</span>
-                {result && (
-                  <span className={result.ok ? "text-emerald-600" : "text-destructive"}>
-                    {result.ok ? "✓" : "✗"} {result.message}
-                  </span>
-                )}
-              </label>
-            );
-          })}
-          {!applied && (
-            <div className="flex justify-end pt-1">
-              <Button size="sm" disabled={selected.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
-                {apply.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : null}
-                Approve {selected.size} of {acts.length}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CommandSection() {
-  const qc = useQueryClient();
-  const runFn = useServerFn(runAiCommand);
-  const historyFn = useServerFn(listAiCommandHistory);
-  const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState<"read" | "execute">("execute");
-  const [readCards, setReadCards] = useState(true);
-
-  const { data: history } = useQuery({
-    queryKey: ["ai-cmd-history"],
-    queryFn: () => historyFn() as Promise<HistoryRow[]>,
-  });
-
-  const mut = useMutation({
-    mutationFn: () => runFn({ data: { prompt: prompt.trim(), mode, scope: readCards ? "board" : "owned" } }) as Promise<{
-      id: string | null; response: string; actions: any[]; status: string;
-    }>,
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ["ai-cmd-history"] });
-      setPrompt("");
-      if (res.actions.length > 0) {
-        toast.warning(`AI proposed ${res.actions.length} action(s) — review and approve below.`);
-      } else {
-        toast.success("AI responded");
-      }
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Talk to the AI agent</CardTitle>
-          <CardDescription>Ask questions or issue commands. The agent proposes actions — you approve before anything runs.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g. Move tomorrow's Malta trips to Wednesday — or — Message the driver on trip #a1b2 that pickup is delayed 10 min"
-            rows={3}
-          />
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 text-xs">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setMode("read")}
-                  className={`px-2 py-1 rounded border ${mode === "read" ? "bg-primary text-primary-foreground border-primary" : ""}`}
-                >Read</button>
-                <button
-                  type="button"
-                  onClick={() => setMode("execute")}
-                  className={`px-2 py-1 rounded border ${mode === "execute" ? "bg-primary text-primary-foreground border-primary" : ""}`}
-                >Agent</button>
-              </div>
-              <label className="flex items-center gap-1.5 text-muted-foreground">
-                <Switch checked={readCards} onCheckedChange={(v) => setReadCards(!!v)} />
-                Read all dispatch board cards
-              </label>
-              <span className="text-muted-foreground">
-                {mode === "read" ? "Q&A only." : "Proposes actions for your approval."}
-              </span>
-            </div>
-            <Button
-              onClick={() => mut.mutate()}
-              disabled={mut.isPending || prompt.trim().length < 2}
-            >
-              {mut.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
-              Send
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Sparkles className="h-4 w-4" /> Recent commands
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {(history ?? []).length === 0 && (
-            <div className="text-xs text-muted-foreground">No commands yet.</div>
-          )}
-          {(history ?? []).map((h) => (
-            <HistoryEntry key={h.id} h={h} />
-          ))}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// -------- 3. Rules --------
 function RulesSection() {
   const qc = useQueryClient();
   const listFn = useServerFn(listAiRules);
@@ -323,12 +192,11 @@ function RulesSection() {
     queryFn: () => listFn() as Promise<AiRule[]>,
   });
 
-  const [editing, setEditing] = useState<{ id?: string; title: string; rule_text: string; enabled: boolean } | null>(null);
-
-  const upsert = useMutation({
+  const [edit, setEdit] = useState<{ id?: string; title: string; rule_text: string; enabled: boolean } | null>(null);
+  const save = useMutation({
     mutationFn: (v: { id?: string; title: string; rule_text: string; enabled: boolean; sort_order: number }) =>
       upsertFn({ data: v }) as Promise<{ ok: boolean }>,
-    onSuccess: () => { toast.success("Rule saved"); qc.invalidateQueries({ queryKey: ["ai-rules"] }); setEditing(null); },
+    onSuccess: () => { toast.success("Rule saved"); qc.invalidateQueries({ queryKey: ["ai-rules"] }); setEdit(null); },
     onError: (e: Error) => toast.error(e.message),
   });
   const del = useMutation({
@@ -336,89 +204,307 @@ function RulesSection() {
     onSuccess: () => { toast.success("Rule deleted"); qc.invalidateQueries({ queryKey: ["ai-rules"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
-  const toggle = (r: AiRule) => upsert.mutate({ id: r.id, title: r.title, rule_text: r.rule_text, enabled: !r.enabled, sort_order: r.sort_order });
+  const toggle = (r: AiRule) =>
+    save.mutate({ id: r.id, title: r.title, rule_text: r.rule_text, enabled: !r.enabled, sort_order: r.sort_order });
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Your custom AI rules</CardTitle>
-          <CardDescription>
-            Plain-English rules that every AI action follows. Example: "If a flight is delayed more than 60 minutes, unassign the driver and alert me."
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button size="sm" onClick={() => setEditing({ title: "", rule_text: "", enabled: true })}>
-            <Plus className="h-4 w-4 mr-1" /> New rule
-          </Button>
-          {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
-          {(data ?? []).length === 0 && !isLoading && (
-            <div className="text-xs text-muted-foreground">No rules yet — add your first one above.</div>
-          )}
-          {(data ?? []).map((r) => (
-            <div key={r.id} className="rounded-md border p-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <div className="font-medium text-sm truncate">{r.title || "(untitled)"}</div>
-                  {!r.enabled && <Badge variant="outline">Off</Badge>}
-                </div>
-                <div className="text-xs text-muted-foreground whitespace-pre-wrap mt-0.5">{r.rule_text}</div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Business rules</CardTitle>
+        <CardDescription>
+          Hard rules the AI must apply to every proposal (e.g. "always ask before assigning drivers on Sundays").
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button size="sm" onClick={() => setEdit({ title: "", rule_text: "", enabled: true })}>
+          <Plus className="h-4 w-4 mr-1" /> New rule
+        </Button>
+        {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
+        {!isLoading && (data ?? []).length === 0 && (
+          <div className="text-xs text-muted-foreground">No rules yet.</div>
+        )}
+        {(data ?? []).map((r) => (
+          <div key={r.id} className="rounded-md border p-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="font-medium text-sm truncate">{r.title || "(untitled)"}</div>
+                {!r.enabled && <Badge variant="outline">Off</Badge>}
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Switch checked={r.enabled} onCheckedChange={() => toggle(r)} />
-                <Button variant="ghost" size="icon" onClick={() => setEditing({ id: r.id, title: r.title, rule_text: r.rule_text, enabled: r.enabled })}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => del.mutate(r.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
+              <div className="text-xs text-muted-foreground whitespace-pre-wrap mt-0.5">{r.rule_text}</div>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {editing && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{editing.id ? "Edit rule" : "New rule"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            <div className="flex items-center gap-1 shrink-0">
+              <Switch checked={r.enabled} onCheckedChange={() => toggle(r)} />
+              <Button variant="ghost" size="icon" onClick={() => setEdit({ id: r.id, title: r.title, rule_text: r.rule_text, enabled: r.enabled })}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => del.mutate(r.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          </div>
+        ))}
+        {edit && (
+          <div className="rounded-md border p-3 space-y-2">
             <div className="space-y-1.5">
               <Label>Title</Label>
-              <Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} placeholder="e.g. Flight delay handling" />
+              <Input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label>Rule</Label>
-              <Textarea
-                rows={4}
-                value={editing.rule_text}
-                onChange={(e) => setEditing({ ...editing, rule_text: e.target.value })}
-                placeholder="If a flight is delayed by more than 60 minutes, unassign the driver and alert me."
-              />
+              <Textarea rows={3} value={edit.rule_text} onChange={(e) => setEdit({ ...edit, rule_text: e.target.value })} />
             </div>
             <div className="flex items-center gap-2">
-              <Switch checked={editing.enabled} onCheckedChange={(v) => setEditing({ ...editing, enabled: !!v })} />
+              <Switch checked={edit.enabled} onCheckedChange={(v) => setEdit({ ...edit, enabled: !!v })} />
               <span className="text-sm">Enabled</span>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button>
               <Button
-                onClick={() => upsert.mutate({
-                  id: editing.id,
-                  title: editing.title.trim(),
-                  rule_text: editing.rule_text.trim(),
-                  enabled: editing.enabled,
+                onClick={() => save.mutate({
+                  id: edit.id,
+                  title: edit.title.trim(),
+                  rule_text: edit.rule_text.trim(),
+                  enabled: edit.enabled,
                   sort_order: 0,
                 })}
-                disabled={upsert.isPending || editing.title.trim().length === 0 || editing.rule_text.trim().length < 3}
+                disabled={save.isPending || edit.title.trim().length === 0 || edit.rule_text.trim().length < 3}
               >
-                {upsert.isPending ? "Saving…" : "Save"}
+                {save.isPending ? "Saving…" : "Save"}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearnedBiasSection() {
+  const listFn = useServerFn(listMyLessons);
+  const { data } = useQuery({
+    queryKey: ["ai-lessons-mine"],
+    queryFn: () => listFn() as Promise<Lesson[]>,
+  });
+  const biases = (data ?? []).filter((l) => l.kind === "suggestion_rule" && l.status === "approved");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" /> Learned preferences
+        </CardTitle>
+        <CardDescription>
+          Soft biases the AI has picked up from your past choices. Updates automatically — read-only here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {biases.length === 0 && (
+          <div className="text-xs text-muted-foreground">Nothing learned yet — I'll start noting patterns as you use the assistant.</div>
+        )}
+        {biases.map((b) => (
+          <div key={b.id} className="rounded-md border p-2.5 text-sm">
+            <div className="font-medium">{b.title}</div>
+            <div className="text-xs text-muted-foreground whitespace-pre-wrap">{b.rule_text}</div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------- */
+/* TAB 2 · Agents registry                                        */
+/* -------------------------------------------------------------- */
+
+function AgentsTab() {
+  const listFn = useServerFn(listAiAuditActions);
+  const { data } = useQuery({
+    queryKey: ["ai-audit", 0],
+    queryFn: () => listFn({ data: { limit: 1, offset: 0 } }) as Promise<{
+      rows: Array<{ created_at: string }>;
+    }>,
+  });
+  const lastActive = data?.rows?.[0]?.created_at ?? null;
+
+  return (
+    <>
+      <AgentCard
+        icon={<MessageSquare className="h-4 w-4" />}
+        name="Dispatch"
+        description="Handles trip creation & edits (single, batch, and by shared reference), typo fixes, grouping/ungrouping, driver &amp; client messages, conflict detection, backlog auto-coordinate, and partner hand-off suggestions. Everything runs confirm-first."
+        lastActive={lastActive}
+      />
+      <AgentCard
+        icon={<Receipt className="h-4 w-4" />}
+        name="Billing"
+        description="Answers billing questions in the same chat: your current points balance, recent point-spend history, and per-feature pricing. Q&amp;A only — top-ups still go through the Billing page."
+        lastActive={null}
+        note="Always on. Ask the assistant anything about points or feature costs."
+      />
+    </>
+  );
+}
+
+function AgentCard(props: {
+  icon: React.ReactNode;
+  name: string;
+  description: string;
+  lastActive: string | null;
+  note?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-primary">{props.icon}</span>
+          <CardTitle className="text-base">{props.name}</CardTitle>
+          <Badge variant="outline" className="ml-auto">confirm-first</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        <p className="text-sm">{props.description}</p>
+        {props.lastActive && (
+          <p className="text-xs text-muted-foreground">Last active: {new Date(props.lastActive).toLocaleString()}</p>
+        )}
+        {props.note && <p className="text-xs text-muted-foreground">{props.note}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------- */
+/* TAB 3 · Activity & Rollback                                    */
+/* -------------------------------------------------------------- */
+
+type AuditRow = {
+  id: string;
+  action_kind: string;
+  target_table: string;
+  target_id: string | null;
+  summary: string | null;
+  raw_message: string | null;
+  created_at: string;
+  undone_at: string | null;
+  undo_note: string | null;
+  actor_email: string | null;
+};
+
+const PAGE_SIZE = 50;
+
+function ActivityTab() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listAiAuditActions);
+  const undoFn = useServerFn(undoAssistantAction);
+  const [page, setPage] = useState(0);
+  const [confirmRow, setConfirmRow] = useState<AuditRow | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["ai-audit", page],
+    queryFn: () => listFn({ data: { limit: PAGE_SIZE, offset: page * PAGE_SIZE } }) as Promise<{
+      rows: AuditRow[]; total: number;
+    }>,
+  });
+
+  const undo = useMutation({
+    mutationFn: (id: string) => undoFn({ data: { audit_id: id } }) as Promise<{ ok: boolean; kind: string }>,
+    onSuccess: (res) => {
+      toast.success(`Undone (${res.kind})`);
+      qc.invalidateQueries({ queryKey: ["ai-audit"] });
+      setConfirmRow(null);
+    },
+    onError: (e: Error) => {
+      toast.error(`Undo failed: ${e.message}`);
+      setConfirmRow(null);
+    },
+  });
+
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Recent AI actions</CardTitle>
+        <CardDescription>
+          Every confirmed AI action with one-click rollback. Rollbacks are free.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
+        {!isLoading && rows.length === 0 && (
+          <div className="text-xs text-muted-foreground">No AI actions logged yet.</div>
+        )}
+        {rows.map((r) => {
+          const undone = !!r.undone_at;
+          return (
+            <div key={r.id} className={`rounded-md border p-3 text-sm ${undone ? "opacity-60" : ""}`}>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                <Badge variant="outline" className="capitalize">{r.action_kind.replace("_", " ")}</Badge>
+                <span>{new Date(r.created_at).toLocaleString()}</span>
+                {r.actor_email && <span>· {r.actor_email}</span>}
+                <span className="ml-auto">
+                  {undone ? (
+                    <Badge variant="secondary">Undone{r.undo_note ? ` — ${r.undo_note}` : ""}</Badge>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setConfirmRow(r)} disabled={undo.isPending}>
+                      {undo.isPending && undo.variables === r.id ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Undo2 className="h-3 w-3 mr-1" />
+                      )}
+                      Undo
+                    </Button>
+                  )}
+                </span>
+              </div>
+              <div className="mt-1 font-medium">{r.summary || `${r.action_kind} on ${r.target_table}`}</div>
+              {r.raw_message && (
+                <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">"{r.raw_message}"</div>
+              )}
+            </div>
+          );
+        })}
+
+        {pageCount > 1 && (
+          <div className="flex items-center justify-between pt-2">
+            <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </Button>
+            <div className="text-xs text-muted-foreground">Page {page + 1} of {pageCount}</div>
+            <Button size="sm" variant="ghost" disabled={page + 1 >= pageCount} onClick={() => setPage((p) => p + 1)}>
+              Next
+            </Button>
+          </div>
+        )}
+      </CardContent>
+
+      <AlertDialog open={!!confirmRow} onOpenChange={(o) => !o && setConfirmRow(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Undo this AI action?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmRow?.summary || `${confirmRow?.action_kind} on ${confirmRow?.target_table}`}
+              <br />
+              <span className="text-xs">
+                If the row has changed since, the undo may be rejected. This is not billable.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={undo.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={undo.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (confirmRow) undo.mutate(confirmRow.id);
+              }}
+            >
+              {undo.isPending ? "Undoing…" : "Undo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
   );
 }
