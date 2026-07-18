@@ -396,12 +396,12 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     // `ai_feature_costs`). Q&A only — no top-up initiation from chat.
     const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
       supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
-      supabaseAdmin.from("points_ledger").select("delta, reason, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(15),
+      supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(15),
       supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
     ]);
     const pointsBalance = Number(balRow?.points_balance ?? 0);
     const ledgerBlock = (recentLedger ?? []).length
-      ? (recentLedger ?? []).map((l: { delta: number | string; reason: string | null; feature_key: string | null; created_at: string }) => `${l.created_at.slice(0, 16).replace("T", " ")}  ${Number(l.delta) > 0 ? "+" : ""}${l.delta}  ${l.feature_key ?? "-"}  ${l.reason ?? ""}`).join("\n")
+      ? (recentLedger ?? []).map((l: { points_deducted: number | string; note: string | null; feature_key: string | null; created_at: string }) => `${l.created_at.slice(0, 16).replace("T", " ")}  -${l.points_deducted}  ${l.feature_key ?? "-"}  ${l.note ?? ""}`).join("\n")
       : "(no ledger entries yet)";
     const featureCostBlock = (featureCostRows ?? []).length
       ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
