@@ -83,7 +83,7 @@ function DashboardPage() {
           <Plus className="h-5 w-5" />
           <span className="text-left leading-tight">
             <span className="block font-semibold">New trip</span>
-            <span className="block text-[11px] font-normal opacity-80">Add or bulk paste</span>
+            <span className="block text-[11px] font-normal opacity-80">Schedule a transfer</span>
           </span>
         </Button>
         <Button
