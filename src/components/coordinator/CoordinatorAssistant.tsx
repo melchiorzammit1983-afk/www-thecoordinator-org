@@ -551,9 +551,22 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                 </div>
               </div>
             </div>
-            <Button size="icon" variant="ghost" onClick={() => setOpen(false)} aria-label="Close">
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {ttsSupported && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setMuted((v) => !v)}
+                  aria-label={muted ? "Unmute spoken replies" : "Mute spoken replies"}
+                  title={muted ? "Unmute spoken replies" : "Mute spoken replies"}
+                >
+                  {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+              )}
+              <Button size="icon" variant="ghost" onClick={() => { cancelSpeak(); setOpen(false); }} aria-label="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1">
