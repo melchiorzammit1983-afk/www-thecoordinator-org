@@ -255,6 +255,45 @@ type Job = {
   route_distance_m?: number | null;
 };
 
+function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI" }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string }) {
+  const openAi = useOpenAssistant();
+  return (
+    <Button
+      size="sm"
+      variant={variant}
+      className={size === "xs" ? "h-6 px-2 text-[10px]" : ""}
+      onClick={(e) => {
+        e.stopPropagation();
+        openAi(
+          trip
+            ? {
+                path: typeof window !== "undefined" ? window.location.pathname : null,
+                trip: {
+                  id: trip.id,
+                  trip_no: trip.trip_no ?? null,
+                  from_location: trip.from_location,
+                  to_location: trip.to_location,
+                  date: trip.date,
+                  time: trip.time,
+                  driver_id: trip.driver_id,
+                  driver_name: trip.drivers?.name ?? null,
+                  from_flight: trip.from_flight,
+                  to_flight: trip.to_flight,
+                  vehicle: trip.vehicle,
+                  contact_phone: trip.contact_phone,
+                  clientcompanyname: trip.clientcompanyname,
+                },
+              }
+            : null,
+        );
+      }}
+    >
+      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-3.5 w-3.5 mr-1"} />
+      {label}
+    </Button>
+  );
+}
+
 type Driver = { id: string; name: string; vehicle: string | null };
 
 type TripFlagInfo = {
