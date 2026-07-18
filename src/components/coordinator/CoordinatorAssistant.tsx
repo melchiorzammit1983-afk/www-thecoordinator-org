@@ -255,8 +255,18 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
     onSuccess: (_res, draft) => {
       toast.success(draft.action === "create" ? "Trip created." : "Trip updated.");
+      // Per-action pricing: single confirmed trip → 1× assistant_trip_action.
+      void meterFn({
+        data: {
+          feature_key: "assistant_trip_action",
+          count: 1,
+          job_id: draft.action === "update" ? draft.target_trip_id ?? null : null,
+          note: `assistant ${draft.action}: ${draft.summary}`.slice(0, 200),
+        },
+      }).catch(() => { /* soft */ });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["my-billing"] });
       setMessages((m) => [
         ...m,
         { id: crypto.randomUUID(), role: "assistant", text: `✔ Done — ${draft.summary}` },
