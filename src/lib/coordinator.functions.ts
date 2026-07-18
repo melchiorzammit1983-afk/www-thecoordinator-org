@@ -2331,7 +2331,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .gte("pickup_at", fromIso)
@@ -2372,7 +2372,7 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
