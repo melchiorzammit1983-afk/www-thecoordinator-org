@@ -27,6 +27,7 @@ import {
 import { listAiRules, upsertAiRule, deleteAiRule } from "@/lib/coordinator.functions";
 import { listMyLessons, archiveMyLesson } from "@/lib/ai-lessons.functions";
 import { listAiAuditActions, upsertGlossaryTerm, undoAssistantAction } from "@/lib/ai-audit.functions";
+import { AiLearningTab } from "@/components/coordinator/AiLearningTab";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
   component: AiBrainPage,
