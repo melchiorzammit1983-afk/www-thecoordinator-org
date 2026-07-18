@@ -14,8 +14,8 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch } from "@/lib/coordinator-assist.functions";
-import { createJob, updateJob } from "@/lib/coordinator.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix } from "@/lib/coordinator-assist.functions";
+import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -71,7 +71,8 @@ type ChatMsg =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "assistant"; draft: AssistantDraft }
-  | { id: string; role: "assistant"; batch: AssistantBatch };
+  | { id: string; role: "assistant"; batch: AssistantBatch }
+  | { id: string; role: "assistant"; fix: AssistantDataFix };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
