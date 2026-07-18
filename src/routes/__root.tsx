@@ -19,7 +19,9 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
 import { AskGuideProvider } from "@/components/help/AskGuideProvider";
 import { AskGuidePanel } from "@/components/help/AskGuidePanel";
-import { AskGuideFab } from "@/components/help/AskGuideFab";
+// AskGuideFab intentionally not imported — the standalone floating "Ask the Guide"
+// entry point is retired in favour of the unified AI dispatch assistant. The Guide
+// panel is still available on /help pages via useAskGuide().
 
 
 function NotFoundComponent() {
