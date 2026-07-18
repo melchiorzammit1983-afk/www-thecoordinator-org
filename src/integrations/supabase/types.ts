@@ -1638,6 +1638,32 @@ export type Database = {
           },
         ]
       }
+      company_trip_counters: {
+        Row: {
+          company_id: string
+          last_no: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          last_no?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          last_no?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_trip_counters_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connection_invites: {
         Row: {
           code: string
@@ -3441,6 +3467,7 @@ export type Database = {
           traffic_delay_minutes: number | null
           traffic_severity: string | null
           traffic_updated_at: string | null
+          trip_no: number | null
           updated_at: string
           vehicle: string | null
         }
@@ -3570,6 +3597,7 @@ export type Database = {
           traffic_delay_minutes?: number | null
           traffic_severity?: string | null
           traffic_updated_at?: string | null
+          trip_no?: number | null
           updated_at?: string
           vehicle?: string | null
         }
@@ -3699,6 +3727,7 @@ export type Database = {
           traffic_delay_minutes?: number | null
           traffic_severity?: string | null
           traffic_updated_at?: string | null
+          trip_no?: number | null
           updated_at?: string
           vehicle?: string | null
         }
