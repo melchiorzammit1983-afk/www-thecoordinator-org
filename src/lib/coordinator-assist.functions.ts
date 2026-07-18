@@ -102,7 +102,28 @@ export type AssistantDataFix = {
   summary: string;
 };
 
-export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix;
+/**
+ * Suggest handing off one or more trips to partner companies in the
+ * coordinator's existing Collaborate network. SUGGESTION ONLY — the client
+ * renders Confirm/Cancel per item and only then calls the existing
+ * `dispatchJobToPartner` server function. The assistant never triggers the
+ * hand-off itself, and it never accesses any cross-company data beyond
+ * partner company id/name (which the coordinator already sees in the
+ * Collaborate UI via `listConnections`).
+ */
+export type AssistantPartnerSuggest = {
+  kind: "partner_suggest";
+  items: {
+    job_id: string;
+    job_label: string;        // "10:00 · Hilton → Airport"
+    partner_company_id: string;
+    partner_name: string;
+    reason?: string | null;   // short "why this partner" line, from model
+  }[];
+  summary: string;
+};
+
+export type AssistantResult = AssistantAnswer | AssistantDraft | AssistantBatch | AssistantDataFix | AssistantPartnerSuggest;
 
 
 export const askCoordinatorAssistant = createServerFn({ method: "POST" })
@@ -179,6 +200,57 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")
       : "(empty — nothing taught yet)";
 
+    // Active Collaborate partners (same source the Collaborate UI reads via
+    // listConnections). We only surface {company_id, company_name} to the
+    // model — the exact information the coordinator already sees when
+    // dispatching a trip manually. No cross-company internal data.
+    const { data: connRows } = await supabaseAdmin
+      .from("coordinator_connections")
+      .select("owner_company_id, partner_company_id, status")
+      .or(`owner_company_id.eq.${company.id},partner_company_id.eq.${company.id}`)
+      .eq("status", "active");
+    const partnerIds = Array.from(
+      new Set(
+        (connRows ?? [])
+          .map((r: any) => (r.owner_company_id === company.id ? r.partner_company_id : r.owner_company_id))
+          .filter((id: string) => id && id !== company.id),
+      ),
+    );
+    let partners: { id: string; name: string }[] = [];
+    if (partnerIds.length > 0) {
+      const { data: partnerRows } = await supabaseAdmin
+        .from("companies")
+        .select("id, name")
+        .in("id", partnerIds);
+      partners = (partnerRows ?? []).map((p: any) => ({ id: p.id, name: p.name ?? "Unknown" }));
+    }
+    const partnersBlock = partners.length
+      ? partners.map((p) => `${p.id} — ${p.name}`).join("\n")
+      : "(no active Collaborate partners)";
+
+    // Upcoming trips this company is currently the executor for. Used so the
+    // assistant can point at real trip IDs when the coordinator asks to hand
+    // work off (e.g. "close for the day, cover these"). Scoped to next 48h
+    // and to trips NOT already dispatched out to a partner.
+    const nowIso = new Date().toISOString();
+    const soonIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    const { data: upcomingRows } = await supabaseAdmin
+      .from("jobs")
+      .select("id, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
+      .eq("executor_company_id", company.id)
+      .not("status", "in", "(completed,cancelled)")
+      .gte("pickup_at", nowIso)
+      .lte("pickup_at", soonIso)
+      .order("pickup_at", { ascending: true })
+      .limit(40);
+    const upcoming = (upcomingRows ?? []) as any[];
+    const upcomingBlock = upcoming.length
+      ? upcoming
+          .map((r) => `${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
+          .join("\n")
+      : "(none in the next 48h)";
+
+
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
     const historyLines = (data.history ?? [])
@@ -199,7 +271,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do SIX things:
+You do SEVEN things:
 1) ANSWER on-topic questions (how-to, troubleshooting, "what does this badge mean", product questions) using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) When the coordinator's message describes MULTIPLE NEW trips (a list, a pasted booking email with several trips, "make me 3 trips: ..."), return a BATCH of create drafts — one per trip you can identify.
@@ -209,6 +281,8 @@ You do SIX things:
    - Teaching: statements like "MSV means Medserv, based at Freeport", "Asso 25 = Asso Venticinque", "when I say WE I mean Waters Edge Hotel" → kind:"glossary_save".
    - Listing: "what do you know?", "show me the glossary", "list my shortcuts" → kind:"glossary_list".
    - Deleting: "forget MSV", "delete the WE shortcut", "remove Asso 25" → kind:"glossary_delete" with the term to remove.
+7) SUGGEST PARTNER HAND-OFF via the coordinator's existing Collaborate network — when they say things like "I'm closing for the day, cover my trips", "I can't cover this", "who can take this one", "hand this off", or ask about an upcoming trip with no available driver, return kind:"partner_suggest" listing one item per trip that should be handed to a partner. Choose partners ONLY from the ACTIVE PARTNERS list below (by their UUID). Choose trips ONLY from the UPCOMING TRIPS list below (by their UUID), or from the currently open trip if the coordinator says "this trip". This is SUGGEST-ONLY: the client shows a Confirm/Cancel card per item and only then triggers the existing hand-off. Never invent partner names, never guess IDs, and never expose any information about the partner beyond their name — you have no other data about them. If there are no active partners, return kind:"answer" saying so plainly. If no trip clearly matches, return kind:"answer" asking one short clarifying question.
+
 
 Rules:
 - Return STRICT JSON only. No markdown. One of:
@@ -236,6 +310,9 @@ Rules:
   { "kind": "glossary_save", "term": "<short shorthand as the coordinator uses it, e.g. 'MSV'>", "meaning": "<full meaning, e.g. 'Medserv, based at Freeport'>" }
   { "kind": "glossary_list" }
   { "kind": "glossary_delete", "term": "<the shorthand to remove, exactly as stored>" }
+  { "kind": "partner_suggest",
+    "items": [ { "job_id": "<uuid from UPCOMING TRIPS>", "partner_company_id": "<uuid from ACTIVE PARTNERS>", "reason": "one short line, or null" } ],
+    "summary": "e.g. 'Suggest forwarding 2 trips to Malta Cabs'" }
 - For "update" (single) or "search_update" (multi), only include fields that CHANGE.
 - For "create" (single or in a batch), omit target_trip_id (null).
 - In a "batch" of creates, each element MUST be action:"create".
@@ -258,6 +335,12 @@ ${glossaryBlock}
 
 Driver roster (id — name), pick by fuzzy name match when the user names a driver:
 ${drivers.map((d) => `${d.id} — ${d.name ?? "(no name)"}`).join("\n") || "(no drivers yet)"}
+
+ACTIVE PARTNERS in your Collaborate network (id — name). These are the ONLY companies you can suggest handing trips to. Do not invent names or IDs. Only the partner NAME will ever be shown — you have no other information about them.
+${partnersBlock}
+
+UPCOMING TRIPS your company is currently the executor for (next 48h). Use these IDs when suggesting hand-offs:
+${upcomingBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
@@ -488,6 +571,64 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         old_value: old_value == null ? null : String(old_value),
         new_value,
         summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Fix ${allowed[field].toLowerCase()}`,
+      };
+    }
+    if (p.kind === "partner_suggest") {
+      if (partners.length === 0) {
+        return answer(
+          "You don't have any active Collaborate partners yet. Open Collaborate to invite another company or accept an invite, and I'll be able to suggest hand-offs.",
+        );
+      }
+      const rawItems = Array.isArray(p.items) ? (p.items as unknown[]) : [];
+      const partnerById = new Map(partners.map((x) => [x.id, x.name]));
+      const upcomingById = new Map(upcoming.map((r: any) => [r.id, r]));
+      const openTripId = trip?.id ?? null;
+      const items: AssistantPartnerSuggest["items"] = [];
+      for (const raw of rawItems.slice(0, 20)) {
+        const it = (raw ?? {}) as Record<string, unknown>;
+        const job_id = typeof it.job_id === "string" ? it.job_id : "";
+        const partner_company_id = typeof it.partner_company_id === "string" ? it.partner_company_id : "";
+        const reason = typeof it.reason === "string" && it.reason.trim() ? it.reason.trim().slice(0, 200) : null;
+        if (!job_id || !partner_company_id) continue;
+        if (!partnerById.has(partner_company_id)) continue;
+        // Trip must be either the currently open trip OR one of the upcoming trips we surfaced.
+        const row = upcomingById.get(job_id) ?? (openTripId === job_id ? trip : null);
+        if (!row) continue;
+        // Cross-check ownership on the currently-open trip since it wasn't in the pre-loaded list.
+        if (!upcomingById.has(job_id)) {
+          const { data: check } = await supabaseAdmin
+            .from("jobs")
+            .select("id, executor_company_id, dispatch_status, from_location, to_location, date, time")
+            .eq("id", job_id)
+            .eq("executor_company_id", company.id)
+            .maybeSingle();
+          if (!check) continue;
+          if (check.dispatch_status === "pending") continue;
+          items.push({
+            job_id,
+            job_label: `${(check.time ?? "").slice(0, 5)} · ${check.from_location ?? "?"} → ${check.to_location ?? "?"}`.trim(),
+            partner_company_id,
+            partner_name: partnerById.get(partner_company_id)!,
+            reason,
+          });
+          continue;
+        }
+        if (row.dispatch_status === "pending") continue;
+        items.push({
+          job_id,
+          job_label: `${(row.time ?? "").slice(0, 5)} · ${row.from_location ?? "?"} → ${row.to_location ?? "?"}`.trim(),
+          partner_company_id,
+          partner_name: partnerById.get(partner_company_id)!,
+          reason,
+        });
+      }
+      if (items.length === 0) {
+        return answer("I couldn't match your request to a specific trip and partner. Open the trip you want to hand off and try again, or name the trip and partner.");
+      }
+      return {
+        kind: "partner_suggest",
+        items,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `Suggest forwarding ${items.length} trip${items.length === 1 ? "" : "s"} to your partners`,
       };
     }
     if (p.kind === "draft") return toDraft(p);

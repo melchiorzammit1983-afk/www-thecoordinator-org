@@ -14,8 +14,9 @@ import { Sparkles, X, Send, Loader2, Bot, User as UserIcon } from "lucide-react"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest } from "@/lib/coordinator-assist.functions";
 import { createJob, updateJob, updateDriverBasic } from "@/lib/coordinator.functions";
+import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,7 +73,8 @@ type ChatMsg =
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "assistant"; draft: AssistantDraft }
   | { id: string; role: "assistant"; batch: AssistantBatch }
-  | { id: string; role: "assistant"; fix: AssistantDataFix };
+  | { id: string; role: "assistant"; fix: AssistantDataFix }
+  | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -148,7 +150,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
               text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
             };
           }
-          return { role: "assistant" as const, text: m.fix.summary };
+          if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
+          return { role: "assistant" as const, text: m.suggest.summary };
         });
       return (await askFn({
         data: {
@@ -168,6 +171,8 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
       } else if (result.kind === "data_fix") {
         setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
+      } else if (result.kind === "partner_suggest") {
+        setMessages((m) => [...m, { id, role: "assistant", suggest: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
@@ -450,6 +455,51 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
     },
   });
 
+  // Confirm ONE partner suggestion — reuses the existing Collaborate
+  // dispatchJobToPartner function (same call the manual Collaborate UI makes).
+  // The assistant never triggers this itself; the coordinator must click
+  // Confirm on the specific suggestion card.
+  const dispatchPartnerFn = useServerFn(dispatchJobToPartner);
+  const confirmSuggest = useMutation({
+    mutationFn: async (item: AssistantPartnerSuggest["items"][number]) => {
+      await dispatchPartnerFn({
+        data: {
+          job_id: item.job_id,
+          partner_company_id: item.partner_company_id,
+          note: "Suggested by AI assistant",
+        },
+      });
+      return item;
+    },
+    onSuccess: (item) => {
+      toast.success(`Sent to ${item.partner_name}.`);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      qc.invalidateQueries({ queryKey: ["collab", "connections"] });
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ Forwarded ${item.job_label} to ${item.partner_name}. They can accept or decline in their inbox.` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not forward the trip.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
+  const removeSuggestItem = (msgId: string, idx: number) => {
+    setMessages((m) =>
+      m
+        .map((x) => {
+          if (x.id !== msgId || !("suggest" in x)) return x;
+          const items = x.suggest.items.filter((_, i) => i !== idx);
+          return { ...x, suggest: { ...x.suggest, items } };
+        })
+        .filter((x) => !("suggest" in x) || x.suggest.items.length > 0),
+    );
+  };
+
   const dismissDraft = (id: string) => {
     setMessages((m) => m.filter((x) => x.id !== id));
   };
@@ -645,6 +695,65 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                           </Button>
                           <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
                             Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("suggest" in m) {
+                  const busyItem = confirmSuggest.isPending ? confirmSuggest.variables?.job_id : null;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Suggested hand-off
+                        </div>
+                        <div className="mb-2 text-sm">{m.suggest.summary}</div>
+                        <div className="mb-2 rounded border border-dashed p-2 text-[11px] text-muted-foreground">
+                          I only share what Collaborate already shares with your partner (the trip details you send). Nothing else about your company is exposed. Each item needs your Confirm.
+                        </div>
+                        <div className="mb-2 space-y-2">
+                          {m.suggest.items.map((it, i) => {
+                            const busy = busyItem === it.job_id;
+                            return (
+                              <div key={i} className="rounded border bg-background p-2">
+                                <div className="mb-1 flex items-start justify-between gap-2">
+                                  <div className="text-sm">
+                                    <div className="font-medium">{it.job_label}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      → Forward to <span className="font-medium text-foreground">{it.partner_name}</span>
+                                    </div>
+                                    {it.reason && (
+                                      <div className="mt-0.5 text-[11px] text-muted-foreground italic">{it.reason}</div>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeSuggestItem(m.id, i)}
+                                    disabled={busy}
+                                    aria-label={`Skip trip ${i + 1}`}
+                                  >
+                                    Skip
+                                  </button>
+                                </div>
+                                <div className="mt-2 flex gap-2">
+                                  <Button size="sm" disabled={busy} onClick={() => confirmSuggest.mutate(it)}>
+                                    {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                                    Send to {it.partner_name}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => dismissDraft(m.id)}>
+                            Dismiss all
                           </Button>
                         </div>
                       </div>
