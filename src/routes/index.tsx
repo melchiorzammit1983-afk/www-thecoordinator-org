@@ -784,6 +784,33 @@ function PhoneLinkVisual() {
   );
 }
 
+function AssistantVisual() {
+  return (
+    <div className="pointer-events-none absolute right-3 bottom-3 w-[62%] max-w-[300px] rounded-xl border shadow-2xl overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b" style={{ borderColor: `${COLORS.yellow}55`, backgroundColor: "#0A0A0A" }}>
+        <div className="grid h-5 w-5 place-items-center rounded" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
+          <Sparkles className="h-3 w-3" />
+        </div>
+        <div className="text-[10px] font-semibold" style={{ color: COLORS.white }}>Assistant</div>
+        <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>drafting</span>
+      </div>
+      <div className="p-2 space-y-1.5 text-[9px] leading-snug">
+        <div className="rounded-lg px-2 py-1.5 ml-6" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
+          "Andrei 14:20 MLA→Le Meridien, KM110, 2 pax"
+        </div>
+        <div className="rounded-lg px-2 py-1.5 mr-6 border" style={{ backgroundColor: "#0A0A0A", borderColor: `${COLORS.yellow}40`, color: COLORS.greyLight }}>
+          <div className="font-semibold" style={{ color: COLORS.white }}>Draft trip · confirm?</div>
+          <div className="mt-0.5">MLA → Le Meridien · 14:20 · Andrei</div>
+          <div className="mt-1 flex gap-1">
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>Confirm</span>
+            <span className="px-1.5 py-0.5 rounded text-[8px]" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.yellow }}>Undo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AIVisual() {
   return (
     <div className="pointer-events-none absolute right-3 bottom-3 rounded-lg border px-2.5 py-2 shadow-md" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
