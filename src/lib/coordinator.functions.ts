@@ -6023,6 +6023,12 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
         } else if (a.type === "group") {
           if (!Array.isArray(a.job_ids) || a.job_ids.length < 2) throw new Error("need 2+ trips");
           const gid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          // Snapshot before-state (group_id, group_name per job) for undo.
+          const { data: beforeRows } = await sb
+            .from("jobs")
+            .select("id, group_id, group_name, grouped_count, grouped_at")
+            .in("id", a.job_ids)
+            .eq("company_id", c.id);
           const { error } = await sb
             .from("jobs")
             .update({
@@ -6034,18 +6040,47 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
             .in("id", a.job_ids)
             .eq("company_id", c.id);
           if (error) throw error;
+          await sb.from("ai_action_audit").insert({
+            company_id: c.id,
+            actor_user_id: context.userId,
+            action_kind: "group",
+            target_table: "jobs",
+            target_ids: a.job_ids,
+            before_state: (beforeRows ?? []) as never,
+            after_state: {
+              group_id: gid,
+              group_name: a.group_name ?? null,
+              grouped_count: a.job_ids.length,
+            } as never,
+            summary: `Grouped ${a.job_ids.length} trips`,
+          } as never);
           affected++;
           results.push({ index: idx, ok: true, message: `grouped ${a.job_ids.length}` });
         } else if (a.type === "ungroup") {
           const { data: row } = await sb.from("jobs").select("group_id, company_id").eq("id", a.job_id).maybeSingle();
           const gid = (row as any)?.group_id;
           if (!gid) throw new Error("not in a group");
+          const { data: beforeRows } = await sb
+            .from("jobs")
+            .select("id, group_id, group_name, grouped_count, grouped_at")
+            .eq("group_id" as any, gid)
+            .eq("company_id", c.id);
           const { error, count } = await sb
             .from("jobs")
             .update({ group_id: null, grouped_count: null, grouped_at: null } as never, { count: "exact" })
             .eq("group_id" as any, gid)
             .eq("company_id", c.id);
           if (error) throw error;
+          await sb.from("ai_action_audit").insert({
+            company_id: c.id,
+            actor_user_id: context.userId,
+            action_kind: "ungroup",
+            target_table: "jobs",
+            target_ids: (beforeRows ?? []).map((r: any) => r.id),
+            before_state: (beforeRows ?? []) as never,
+            after_state: { group_id: null } as never,
+            summary: `Ungrouped ${count ?? 0} trips`,
+          } as never);
           affected++;
           results.push({ index: idx, ok: true, message: `ungrouped ${count ?? 0}` });
         } else if (a.type === "message") {
@@ -6061,7 +6096,7 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           } else if (a.thread === "client") {
             thread_kind = "private";
           }
-          const { error } = await sb.from("trip_messages").insert({
+          const { data: inserted, error } = await sb.from("trip_messages").insert({
             job_id: a.job_id,
             company_id: c.id,
             sender_kind: "coordinator",
@@ -6069,8 +6104,26 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
             body,
             thread_kind,
             ...extra,
-          } as any);
+          } as any).select("id").single();
           if (error) throw error;
+          const messageId = (inserted as { id: string } | null)?.id ?? null;
+          if (messageId) {
+            await sb.from("ai_action_audit").insert({
+              company_id: c.id,
+              actor_user_id: context.userId,
+              action_kind: "message",
+              target_table: "trip_messages",
+              target_id: messageId,
+              before_state: null,
+              after_state: {
+                job_id: a.job_id,
+                thread_kind,
+                thread: a.thread ?? null,
+                body,
+              } as never,
+              summary: `Message on trip ${String(a.job_id).slice(0, 8)}`,
+            } as never);
+          }
           affected++;
           results.push({ index: idx, ok: true, message: `message sent (${a.thread})` });
         } else if (a.type === "dispatch") {
