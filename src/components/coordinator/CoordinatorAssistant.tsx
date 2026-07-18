@@ -447,6 +447,10 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
       m
         .map((x) => {
           if (x.id !== batchId || !("batch" in x)) return x;
+          const skipped = x.batch.drafts[idx];
+          if (skipped) {
+            logLearning({ action_kind: "batch", outcome: "skipped", proposed: skipped, raw_message: x.rawMessage });
+          }
           const drafts = x.batch.drafts.filter((_, i) => i !== idx);
           return { ...x, batch: { ...x.batch, drafts } };
         })
