@@ -17,6 +17,98 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+/** List recent AI audit rows for the caller's company. Paginated. */
+export const listAiAuditActions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      limit: z.number().int().min(1).max(100).default(50),
+      offset: z.number().int().min(0).default(0),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const companyId = await resolveCompanyId(context.userId);
+    if (!companyId) return { rows: [], total: 0 };
+    const sb = await admin();
+    const { data: rows, count } = await sb
+      .from("ai_action_audit")
+      .select(
+        "id, action_kind, target_table, target_id, summary, raw_message, created_at, undone_at, undo_note, actor_user_id",
+        { count: "exact" },
+      )
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .range(data.offset, data.offset + data.limit - 1);
+    const list = (rows ?? []) as Array<{
+      id: string; action_kind: string; target_table: string; target_id: string | null;
+      summary: string | null; raw_message: string | null; created_at: string;
+      undone_at: string | null; undo_note: string | null; actor_user_id: string | null;
+    }>;
+    const userIds = Array.from(new Set(list.map((r) => r.actor_user_id).filter(Boolean) as string[]));
+    const actorMap = new Map<string, string>();
+    for (const uid of userIds) {
+      const { data: u } = await sb.auth.admin.getUserById(uid);
+      const email = u.user?.email;
+      if (email) actorMap.set(uid, email);
+    }
+    return {
+      rows: list.map((r) => ({
+        ...r,
+        actor_email: r.actor_user_id ? (actorMap.get(r.actor_user_id) ?? null) : null,
+      })),
+      total: count ?? 0,
+    };
+  });
+
+/** Add / edit a company glossary term (stored in ai_lessons kind='glossary'). */
+export const upsertGlossaryTerm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      term: z.string().trim().min(1).max(80),
+      meaning: z.string().trim().min(1).max(400),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const companyId = await resolveCompanyId(context.userId);
+    if (!companyId) throw new Error("No company for user.");
+    const { redactPii } = await import("@/lib/ai-pii.server");
+    const r = redactPii(data.meaning);
+    if (!r.safe) throw new Error(`Rejected: ${r.reason}`);
+    const sb = await admin();
+    if (data.id) {
+      const { error } = await sb
+        .from("ai_lessons")
+        .update({
+          title: data.term,
+          rule_text: r.text,
+          example_input_redacted: data.term,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", data.id)
+        .eq("company_id", companyId);
+      if (error) throw new Error(error.message);
+      return { ok: true, id: data.id };
+    }
+    const { data: row, error } = await sb
+      .from("ai_lessons")
+      .insert({
+        kind: "glossary",
+        scope: "company",
+        company_id: companyId,
+        title: data.term,
+        rule_text: r.text,
+        example_input_redacted: data.term,
+        status: "approved",
+        submitted_by: context.userId,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { ok: true, id: row.id };
+  });
+
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
