@@ -31,17 +31,17 @@ import logoAsset from "@/assets/coordinators-logo.png.asset.json";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "The Coordinators — Malta's Transport Network Hub" },
+      { title: "The Coordinators — Your AI dispatcher, on call 24/7" },
       {
         name: "description",
         content:
-          "Stop manually dispatching. The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips, track flights, and share jobs instantly.",
+          "Just tell it what you need. Type or talk to your AI dispatcher — create trips, catch driver conflicts automatically, and undo any AI action with one click. Built for Malta's hotels, shipping agents, and fleet owners.",
       },
-      { property: "og:title", content: "The Coordinators — Malta's Transport Network Hub" },
+      { property: "og:title", content: "The Coordinators — Your AI dispatcher, on call 24/7" },
       {
         property: "og:description",
         content:
-          "Drag-and-drop dispatching, AI-powered bulk uploads, and instant live tracking links. Zero-friction driver web links — no app downloads required.",
+          "Type or talk to an AI dispatcher that drafts every action before running it. Automatic conflict detection, one-click undo, no driver app required.",
       },
       { property: "og:type", content: "website" },
     ],
@@ -264,15 +264,14 @@ function Hero() {
 
             {/* Main Heading */}
             <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-              <span style={{ color: COLORS.white }}>Stop manually dispatching.</span>
+              <span style={{ color: COLORS.white }}>Just tell it</span>
               <br />
-              <span style={{ color: COLORS.yellow }}>Start collaborating.</span>
+              <span style={{ color: COLORS.yellow }}>what you need.</span>
             </h1>
 
             {/* Description */}
             <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
-              The all-in-one transport network for Malta's hotels, shipping agents, and fleet owners. Dispatch trips,
-              track flights, and share jobs instantly—without forcing your drivers to download an app.
+              Your AI dispatcher, on call 24/7. Type or talk to it in plain language — create trips, move them, paste in a whole email of bookings. It catches driver schedule conflicts before they happen, and every action can be undone with one click.
             </p>
 
             {/* CTA Buttons */}
@@ -302,7 +301,7 @@ function Hero() {
 
             {/* Features List */}
             <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs">
-              {["Pay as you go", "No driver app required", "Live flight tracking"].map((feature) => (
+              {["Pay as you go", "No driver app required", "Undo any AI action"].map((feature) => (
                 <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.yellow }}>
                   <Check className="h-3.5 w-3.5" /> {feature}
                 </span>
@@ -475,26 +474,26 @@ function HowItWorks() {
   const steps = [
     {
       n: "01",
-      title: "Paste your bookings",
-      body: "Drop a WhatsApp block or a hotel's daily sheet straight into the Pending screen. No formatting needed.",
+      title: "Tell the assistant",
+      body: "Type or talk. Paste a full email of bookings, describe a change, or just say what you need — plain language works.",
       visual: <StepPasteVisual />,
     },
     {
       n: "02",
-      title: "AI parses in seconds",
-      body: "Names, flights, times and pax are pulled out automatically. Review, tweak, approve.",
+      title: "See the draft first",
+      body: "It shows you exactly what will happen — the trip, the driver, the times — before touching a thing. Nothing runs without you.",
       visual: <StepAIVisual />,
     },
     {
       n: "03",
-      title: "Send driver a web link",
-      body: "One tap sends a secure WhatsApp link. Your driver opens the trip — no login, no download.",
+      title: "Confirm and it's done",
+      body: "One tap. Trips get created, drivers get their web link, runs get grouped, messages go out — whatever was needed.",
       visual: <StepDriverVisual />,
     },
     {
       n: "04",
-      title: "Track live & collaborate",
-      body: "Watch flights, driver status and client ETA. Overflow? Jump the trip to a partner in one tap.",
+      title: "It keeps watch",
+      body: "The assistant flags driver schedule collisions automatically, so overlaps don't sneak into your day. Undo any AI action with one click.",
       visual: <StepTrackVisual />,
     },
   ];
@@ -667,31 +666,31 @@ function Bento() {
 
       <div className="mt-10 grid grid-cols-1 md:grid-cols-6 gap-4 md:auto-rows-[220px]">
         <BentoCard
-          className="md:col-span-3"
-          icon={<Network className="h-5 w-5" />}
-          title="Trip 'Jumping'"
-          body="Overbooked? Pass trips seamlessly between trusted partner companies while keeping total tracking control of your client."
-          visual={<JumpingVisual />}
-        />
-        <BentoCard
-          className="md:col-span-3"
-          icon={<Smartphone className="h-5 w-5" />}
-          title="Zero-Friction Drivers"
-          body="No app downloads. No account creation. Just send a secure, time-limited web link to your driver's phone, and they are ready to go."
-          visual={<PhoneLinkVisual />}
+          className="md:col-span-4 md:row-span-2"
+          icon={<Sparkles className="h-5 w-5" />}
+          title="Your AI dispatcher"
+          body="Type it, paste a whole email, or just say it out loud — the assistant creates trips, moves them, groups runs, and messages drivers. It drafts every action first so you see exactly what will change, catches driver schedule conflicts before they happen, and lets you undo anything with one click."
+          visual={<AssistantVisual />}
         />
         <BentoCard
           className="md:col-span-2"
-          icon={<Sparkles className="h-5 w-5" />}
-          title="AI Bulk Uploads"
-          body="Paste a list of bookings and let AI format them instantly. Built-in flight tracking alerts you to delays before the driver even leaves."
-          visual={<AIVisual />}
+          icon={<Network className="h-5 w-5" />}
+          title="Trip 'Jumping'"
+          body="Overbooked? Pass trips to trusted partner companies while keeping full tracking control of your client."
+          visual={<JumpingVisual />}
         />
         <BentoCard
-          className="md:col-span-4"
+          className="md:col-span-2"
+          icon={<Smartphone className="h-5 w-5" />}
+          title="Zero-Friction Drivers"
+          body="No app downloads. No account creation. Just a secure, time-limited web link — and they're ready to drive."
+          visual={<PhoneLinkVisual />}
+        />
+        <BentoCard
+          className="md:col-span-6"
           icon={<Megaphone className="h-5 w-5" />}
           title="Your Own Ad Network"
-          body="Turn your client and driver tracking screens into revenue. Display targeted ads for local partner services, or your own brand."
+          body="Turn client and driver tracking screens into revenue with targeted ads for partner services or your own brand."
           visual={<AdVisual />}
         />
       </div>
@@ -779,6 +778,33 @@ function PhoneLinkVisual() {
         </div>
         <div className="mt-1.5 h-12 rounded grid place-items-center" style={{ backgroundColor: "#F0F0F0" }}>
           <MapPin className="h-3.5 w-3.5" style={{ color: COLORS.greyMed }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssistantVisual() {
+  return (
+    <div className="pointer-events-none absolute right-3 bottom-3 w-[62%] max-w-[300px] rounded-xl border shadow-2xl overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b" style={{ borderColor: `${COLORS.yellow}55`, backgroundColor: "#0A0A0A" }}>
+        <div className="grid h-5 w-5 place-items-center rounded" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
+          <Sparkles className="h-3 w-3" />
+        </div>
+        <div className="text-[10px] font-semibold" style={{ color: COLORS.white }}>Assistant</div>
+        <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>drafting</span>
+      </div>
+      <div className="p-2 space-y-1.5 text-[9px] leading-snug">
+        <div className="rounded-lg px-2 py-1.5 ml-6" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
+          "Andrei 14:20 MLA→Le Meridien, KM110, 2 pax"
+        </div>
+        <div className="rounded-lg px-2 py-1.5 mr-6 border" style={{ backgroundColor: "#0A0A0A", borderColor: `${COLORS.yellow}40`, color: COLORS.greyLight }}>
+          <div className="font-semibold" style={{ color: COLORS.white }}>Draft trip · confirm?</div>
+          <div className="mt-0.5">MLA → Le Meridien · 14:20 · Andrei</div>
+          <div className="mt-1 flex gap-1">
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>Confirm</span>
+            <span className="px-1.5 py-0.5 rounded text-[8px]" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.yellow }}>Undo</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1027,6 +1053,10 @@ function TrustStrip() {
 /* ============================ FAQ ============================ */
 function FaqSection() {
   const faqs = [
+    {
+      q: "Can I really just talk to it?",
+      a: "Yes. Type or tap the mic and speak — the assistant works in plain language, and it can also read short replies back to you. Every action it takes is drafted first so you see exactly what will change, and nothing runs without your approval. Change your mind? Any AI action can be undone with one click.",
+    },
     {
       q: "How much does it cost?",
       a: "Pay-as-you-go with points. A trip costs ~1.5 pts, dispatching to a partner ~0.5 pts, sending a client tracking SMS ~0.25 pts. Top up whenever you need to — no monthly subscription required.",
