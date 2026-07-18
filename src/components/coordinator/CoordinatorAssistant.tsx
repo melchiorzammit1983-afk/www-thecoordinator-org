@@ -400,6 +400,86 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
                     </div>
                   );
                 }
+                if ("batch" in m) {
+                  const busy = confirmBatch.isPending;
+                  const anyMissing = m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {m.batch.drafts.length} new trips
+                          </div>
+                        </div>
+                        {m.batch.clarify && (
+                          <div className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                            {m.batch.clarify}
+                          </div>
+                        )}
+                        <div className="mb-3 space-y-2">
+                          {m.batch.drafts.map((d, i) => {
+                            const rows = draftFieldSummary(d.fields);
+                            const missing = missingCreateFields(d.fields);
+                            return (
+                              <div key={i} className="rounded border bg-background p-2">
+                                <div className="mb-1 flex items-start justify-between gap-2">
+                                  <div className="text-sm font-medium">
+                                    {i + 1}. {d.summary}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeBatchItem(m.id, i)}
+                                    disabled={busy}
+                                    aria-label={`Remove trip ${i + 1}`}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                                {rows.length > 0 && (
+                                  <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
+                                    {rows.map((r) => (
+                                      <div key={r.label} className="contents">
+                                        <dt className="text-muted-foreground">{r.label}</dt>
+                                        <dd className="font-medium">{r.value}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                )}
+                                {missing.length > 0 && (
+                                  <div className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                                    Needs: {missing.join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            disabled={busy || anyMissing}
+                            onClick={() => confirmBatch.mutate(m.id)}
+                          >
+                            {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                            Confirm all
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                            Cancel
+                          </Button>
+                          {anyMissing && (
+                            <span className="text-[11px] text-muted-foreground">
+                              Reply with the missing info and I'll update the list.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
