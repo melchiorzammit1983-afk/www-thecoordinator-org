@@ -2729,6 +2729,62 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 })}
               </div>
             )}
+
+            {expanded && (
+              <div className="mt-1.5 rounded-sm border border-border/60 bg-muted/30 px-2 py-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                {job.contact_phone && (
+                  <div className="truncate">
+                    <span className="opacity-70">Phone:</span>{" "}
+                    <a
+                      href={`tel:${job.contact_phone}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-foreground hover:underline"
+                    >
+                      {job.contact_phone}
+                    </a>
+                  </div>
+                )}
+                {job.vehicle && (
+                  <div className="truncate">
+                    <span className="opacity-70">Vehicle:</span>{" "}
+                    <span className="text-foreground">{job.vehicle}</span>
+                  </div>
+                )}
+                {job.group_note && (
+                  <div className="whitespace-pre-wrap">
+                    <span className="opacity-70">Note:</span>{" "}
+                    <span className="text-foreground">{job.group_note}</span>
+                  </div>
+                )}
+                {!job.contact_phone && !job.vehicle && !job.group_note && !job.clientcompanyname && !hasFlightCode && (
+                  <div className="italic opacity-70">No extra details</div>
+                )}
+              </div>
+            )}
+
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setExpanded((v) => !v);
+                }
+              }}
+              className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer select-none"
+              aria-expanded={expanded}
+              aria-label={expanded ? "Hide details" : "Show more details"}
+            >
+              {expanded ? "Less" : "More"}
+              <ChevronRight
+                className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+              />
+            </span>
           </div>
           <RouteThumb
             from={job.pickup_display_name || job.from_location}
