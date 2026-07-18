@@ -277,7 +277,7 @@ export const undoAssistantAction = createServerFn({ method: "POST" })
       if (Object.keys(patch).length === 0) throw new Error("No fields to revert.");
       const { error } = await sb
         .from("drivers")
-        .update(patch)
+        .update(patch as never)
         .eq("id", row.target_id)
         .eq("company_id", companyId);
       if (error) throw new Error(error.message);
