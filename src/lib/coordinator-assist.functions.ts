@@ -510,7 +510,11 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
-    // ---- Glossary management (server-side, no UI card required) ----
+    // ---- Glossary management via the shared ai_lessons store ----
+    // Writes go through the same table the AI Learning page reads/manages, so
+    // coordinators can see and curate them there too. Company-scope + status
+    // 'approved' means they're immediately usable, and PII redaction still
+    // applies (the shared submit path enforces that policy).
     if (p.kind === "glossary_save") {
       const term = typeof p.term === "string" ? p.term.trim() : "";
       const meaning = typeof p.meaning === "string" ? p.meaning.trim() : "";
@@ -520,36 +524,120 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
       if (term.length > 80 || meaning.length > 400) {
         return answer("Please keep the shorthand under 80 characters and the meaning under 400.");
       }
-      const { error } = await supabaseAdmin
-        .from("assistant_glossary")
-        .upsert(
-          { company_id: company.id, term, meaning, updated_at: new Date().toISOString() },
-          { onConflict: "company_id,term" },
-        );
-      if (error) return answer(`Couldn't save that: ${error.message}`);
-      return answer(`Got it — ${term} = ${meaning}. I'll use this from now on. Say "forget ${term}" to remove it.`);
+      // Redact PII from the meaning before storage (matches submitLesson).
+      const { redactPii } = await import("@/lib/ai-pii.server");
+      const meaningR = redactPii(meaning);
+      if (!meaningR.safe) return answer(`I can't store that shortcut — ${meaningR.reason}. Try again without personal contact details.`);
+      // Upsert by case-insensitive title match against the caller's own rows.
+      const existing = glossary.find((g) => g.owned && g.term.toLowerCase() === term.toLowerCase());
+      if (existing) {
+        const { error } = await supabaseAdmin
+          .from("ai_lessons")
+          .update({ rule_text: meaningR.text, example_input_redacted: term, updated_at: new Date().toISOString() })
+          .eq("id", existing.id)
+          .eq("company_id", company.id);
+        if (error) return answer(`Couldn't save that: ${error.message}`);
+      } else {
+        const { error } = await supabaseAdmin.from("ai_lessons").insert({
+          kind: "glossary",
+          scope: "company",
+          company_id: company.id,
+          title: term,
+          example_input_redacted: term,
+          rule_text: meaningR.text,
+          status: "approved",
+          submitted_by: context.userId,
+        });
+        if (error) return answer(`Couldn't save that: ${error.message}`);
+      }
+      return answer(`Got it — ${term} = ${meaningR.text}. Manage all shortcuts on the AI Learning page. Say "forget ${term}" to remove it.`);
     }
     if (p.kind === "glossary_list") {
       if (glossary.length === 0) {
         return answer("No shortcuts saved yet. Teach me one with something like: \"MSV means Medserv, based at Freeport\".");
       }
-      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}`).join("\n");
-      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one.`);
+      const lines = glossary.map((g) => `• ${g.term} = ${g.meaning}${g.owned ? "" : "  (shared)"}`).join("\n");
+      return answer(`Here's what I know for ${company.name}:\n${lines}\n\nSay "forget <term>" to remove one, or open AI Learning to edit.`);
     }
     if (p.kind === "glossary_delete") {
       const rawTerm = typeof p.term === "string" ? p.term.trim() : "";
       if (!rawTerm) return answer("Which shortcut should I forget?");
-      // Case-insensitive match — find the actual stored row so we can confirm the exact term.
-      const target = glossary.find((g) => g.term.toLowerCase() === rawTerm.toLowerCase());
-      if (!target) return answer(`I don't have a shortcut for "${rawTerm}". Say "show me the glossary" to see what's saved.`);
+      const target = glossary.find((g) => g.owned && g.term.toLowerCase() === rawTerm.toLowerCase());
+      if (!target) return answer(`I don't have a company shortcut for "${rawTerm}". Shared/global entries can only be removed by an admin.`);
+      // Archive (not delete) to match how the AI Learning page manages lessons.
       const { error } = await supabaseAdmin
-        .from("assistant_glossary")
-        .delete()
+        .from("ai_lessons")
+        .update({ status: "archived" })
         .eq("id", target.id)
         .eq("company_id", company.id);
       if (error) return answer(`Couldn't remove that: ${error.message}`);
       return answer(`Forgotten — ${target.term} is no longer a shortcut.`);
     }
+
+    // ---- Structured multi-action proposals (group / ungroup / message) ----
+    // We validate here to avoid staging bad ids into ai_command_log later. The
+    // client stages the returned actions and applies them via the EXISTING
+    // applyAiCommandActions server function.
+    if (p.kind === "command_actions") {
+      const rawActions = Array.isArray(p.actions) ? (p.actions as unknown[]) : [];
+      const upcomingIds = new Set(upcoming.map((r: any) => r.id as string));
+      const openId = trip?.id ?? null;
+      const validJobId = (id: unknown): id is string =>
+        typeof id === "string" && (upcomingIds.has(id) || id === openId);
+      const cleaned: AssistantCommandActions["actions"] = [];
+      for (const raw of rawActions.slice(0, 20)) {
+        const it = (raw ?? {}) as Record<string, unknown>;
+        const type = it.type as string;
+        if (type === "group") {
+          const ids = Array.isArray(it.job_ids)
+            ? (it.job_ids as unknown[]).filter(validJobId).slice(0, 20)
+            : [];
+          if (ids.length < 2) continue;
+          const group_name = typeof it.group_name === "string" && it.group_name.trim() ? it.group_name.trim().slice(0, 80) : null;
+          cleaned.push({
+            type: "group",
+            job_ids: ids,
+            group_name,
+            label: `Group ${ids.length} trips${group_name ? ` as "${group_name}"` : ""}`,
+          });
+        } else if (type === "ungroup") {
+          if (!validJobId(it.job_id)) continue;
+          cleaned.push({
+            type: "ungroup",
+            job_id: it.job_id,
+            label: `Ungroup trip ${(it.job_id as string).slice(0, 8)}`,
+          });
+        } else if (type === "message") {
+          if (!validJobId(it.job_id)) continue;
+          const body = typeof it.body === "string" ? it.body.trim().slice(0, 800) : "";
+          if (!body) continue;
+          const thread = (it.thread === "driver" || it.thread === "client" || it.thread === "group") ? it.thread : "driver";
+          cleaned.push({
+            type: "message",
+            job_id: it.job_id,
+            thread,
+            body,
+            label: `Message (${thread}) on ${(it.job_id as string).slice(0, 8)}: ${body.slice(0, 80)}`,
+          });
+        }
+      }
+      if (cleaned.length === 0) {
+        return answer("I couldn't line up any actions on trips I can see. Open the trip(s) you mean and try again.");
+      }
+      return {
+        kind: "command_actions",
+        actions: cleaned,
+        summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `${cleaned.length} action${cleaned.length === 1 ? "" : "s"} pending your approval`,
+      };
+    }
+
+    // ---- Auto-coordinate trigger ----
+    if (p.kind === "auto_coordinate") {
+      const intro = typeof p.intro === "string" && p.intro.trim() ? p.intro.trim().slice(0, 240) : "Reviewing your unassigned backlog and grouping opportunities.";
+      return { kind: "auto_coordinate", intro };
+    }
+
+
 
     if (p.kind === "batch" && Array.isArray(p.drafts)) {
 
