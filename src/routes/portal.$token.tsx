@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
