@@ -2312,6 +2312,37 @@ function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   );
 }
 
+function formatAgo(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function WaitTimerChip({ startedAt, pickupAt }: { startedAt: string; pickupAt: string | null }) {
+  // Charged wait clock is anchored to max(now, pickup_at) — mirror the display side.
+  const anchor = (() => {
+    const started = new Date(startedAt).getTime();
+    if (!pickupAt) return started;
+    const pickup = new Date(pickupAt).getTime();
+    return Math.max(started, pickup);
+  })();
+  const min = Math.max(0, Math.floor((Date.now() - anchor) / 60000));
+  if (min <= 0) return null;
+  const tone =
+    min >= 15
+      ? "bg-red-500/15 text-red-700 border-red-500/40"
+      : min >= 5
+        ? "bg-amber-500/15 text-amber-800 border-amber-500/40"
+        : "bg-muted text-foreground border-border";
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone} whitespace-nowrap`}>
+      Wait {min}m
+    </span>
+  );
+}
+
+
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
   const [openClone, setOpenClone] = useState(false);
