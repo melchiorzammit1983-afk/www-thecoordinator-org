@@ -28,6 +28,8 @@ import {
   getPricingSettings, updatePricingSettings,
   listServiceAreas, upsertServiceArea, deleteServiceArea,
 } from "@/lib/pricing.functions";
+import { Calculator } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/pricing")({
   head: () => ({ meta: [{ title: "Pricing — Coordinator" }] }),
