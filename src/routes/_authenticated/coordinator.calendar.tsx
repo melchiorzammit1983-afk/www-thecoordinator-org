@@ -808,6 +808,7 @@ function CalendarPage() {
     onOpenMerge: (current, duplicates) => setMergeTarget({ current, duplicates }),
     urgency,
     nowTick,
+    openFlightFix: (arg) => setFlightFix(arg),
   };
 
   function handleAccepted(res: { id: string; date: string | null }) {
