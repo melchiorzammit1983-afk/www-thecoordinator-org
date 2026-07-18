@@ -1309,15 +1309,23 @@ export type Database = {
           auto_next_job_enabled: boolean
           coordinator_phone: string | null
           created_at: string
+          currency: string
           custom_link: string
+          default_driver_commission_pct: number
+          default_driver_pay_per_hour: number
+          default_driver_pay_per_km: number
+          default_driver_wait_share_pct: number
           email: string
           free_wait_minutes: number
           id: string
           logo_url: string | null
+          minimum_fare: number
           name: string
           owner_user_id: string | null
           phone: string | null
           points_balance: number
+          price_per_hour: number
+          price_per_km: number
           referral_code: string
           referral_credit_until: string | null
           referral_percent: number
@@ -1345,15 +1353,23 @@ export type Database = {
           auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
           created_at?: string
+          currency?: string
           custom_link?: string
+          default_driver_commission_pct?: number
+          default_driver_pay_per_hour?: number
+          default_driver_pay_per_km?: number
+          default_driver_wait_share_pct?: number
           email: string
           free_wait_minutes?: number
           id?: string
           logo_url?: string | null
+          minimum_fare?: number
           name: string
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
+          price_per_hour?: number
+          price_per_km?: number
           referral_code?: string
           referral_credit_until?: string | null
           referral_percent?: number
@@ -1381,15 +1397,23 @@ export type Database = {
           auto_next_job_enabled?: boolean
           coordinator_phone?: string | null
           created_at?: string
+          currency?: string
           custom_link?: string
+          default_driver_commission_pct?: number
+          default_driver_pay_per_hour?: number
+          default_driver_pay_per_km?: number
+          default_driver_wait_share_pct?: number
           email?: string
           free_wait_minutes?: number
           id?: string
           logo_url?: string | null
+          minimum_fare?: number
           name?: string
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
+          price_per_hour?: number
+          price_per_km?: number
           referral_code?: string
           referral_credit_until?: string | null
           referral_percent?: number
@@ -2110,6 +2134,7 @@ export type Database = {
         Row: {
           availability_note: string | null
           car_make_model: string | null
+          commission_pct: number | null
           company_id: string
           created_at: string
           email: string | null
@@ -2119,6 +2144,8 @@ export type Database = {
           linked_user_id: string | null
           name: string
           onboarded_at: string | null
+          pay_per_hour: number | null
+          pay_per_km: number | null
           phone: string | null
           plate: string | null
           profile_updated_at: string | null
@@ -2128,10 +2155,12 @@ export type Database = {
           trust_updated_at: string | null
           updated_at: string
           vehicle: string | null
+          wait_share_pct: number | null
         }
         Insert: {
           availability_note?: string | null
           car_make_model?: string | null
+          commission_pct?: number | null
           company_id: string
           created_at?: string
           email?: string | null
@@ -2141,6 +2170,8 @@ export type Database = {
           linked_user_id?: string | null
           name: string
           onboarded_at?: string | null
+          pay_per_hour?: number | null
+          pay_per_km?: number | null
           phone?: string | null
           plate?: string | null
           profile_updated_at?: string | null
@@ -2150,10 +2181,12 @@ export type Database = {
           trust_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
+          wait_share_pct?: number | null
         }
         Update: {
           availability_note?: string | null
           car_make_model?: string | null
+          commission_pct?: number | null
           company_id?: string
           created_at?: string
           email?: string | null
@@ -2163,6 +2196,8 @@ export type Database = {
           linked_user_id?: string | null
           name?: string
           onboarded_at?: string | null
+          pay_per_hour?: number | null
+          pay_per_km?: number | null
           phone?: string | null
           plate?: string | null
           profile_updated_at?: string | null
@@ -2172,6 +2207,7 @@ export type Database = {
           trust_updated_at?: string | null
           updated_at?: string
           vehicle?: string | null
+          wait_share_pct?: number | null
         }
         Relationships: [
           {
@@ -5141,6 +5177,68 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "push_devices_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_areas: {
+        Row: {
+          active: boolean
+          base_price: number
+          company_id: string
+          created_at: string
+          currency: string | null
+          free_wait_minutes: number | null
+          id: string
+          minimum_fare: number
+          name: string
+          notes: string | null
+          price_per_hour: number
+          price_per_km: number
+          sort_order: number
+          updated_at: string
+          waiting_rate_per_minute: number | null
+        }
+        Insert: {
+          active?: boolean
+          base_price?: number
+          company_id: string
+          created_at?: string
+          currency?: string | null
+          free_wait_minutes?: number | null
+          id?: string
+          minimum_fare?: number
+          name: string
+          notes?: string | null
+          price_per_hour?: number
+          price_per_km?: number
+          sort_order?: number
+          updated_at?: string
+          waiting_rate_per_minute?: number | null
+        }
+        Update: {
+          active?: boolean
+          base_price?: number
+          company_id?: string
+          created_at?: string
+          currency?: string | null
+          free_wait_minutes?: number | null
+          id?: string
+          minimum_fare?: number
+          name?: string
+          notes?: string | null
+          price_per_hour?: number
+          price_per_km?: number
+          sort_order?: number
+          updated_at?: string
+          waiting_rate_per_minute?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_areas_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
