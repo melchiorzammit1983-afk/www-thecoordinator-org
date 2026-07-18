@@ -49,6 +49,14 @@ export const submitClientBooking = createServerFn({ method: "POST" })
     if (!company || company.status !== "approved") {
       throw new Error("This booking link is not active.");
     }
+    const { data: allowed, error: rlErr } = await supabaseAdmin.rpc(
+      "register_client_booking_attempt" as any,
+      { _company_id: company.id, _limit: 20 } as any,
+    );
+    if (rlErr) throw new Error(rlErr.message);
+    if (allowed === false) {
+      throw new Error("Too many booking submissions. Please try again in a minute.");
+    }
     const { error } = await supabaseAdmin.from("client_bookings").insert({
       company_id: company.id,
       name: data.name,

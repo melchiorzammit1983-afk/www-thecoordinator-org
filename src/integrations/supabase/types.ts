@@ -852,6 +852,24 @@ export type Database = {
           },
         ]
       }
+      client_booking_rate_limits: {
+        Row: {
+          company_id: string
+          count: number
+          window_start: string
+        }
+        Insert: {
+          company_id: string
+          count?: number
+          window_start: string
+        }
+        Update: {
+          company_id?: string
+          count?: number
+          window_start?: string
+        }
+        Relationships: []
+      }
       client_bookings: {
         Row: {
           client_email: string
@@ -5174,6 +5192,10 @@ export type Database = {
           _stop_id?: string
         }
         Returns: string
+      }
+      register_client_booking_attempt: {
+        Args: { _company_id: string; _limit?: number }
+        Returns: boolean
       }
       rollover_subscriptions: { Args: never; Returns: number }
       set_ai_fallback: {
