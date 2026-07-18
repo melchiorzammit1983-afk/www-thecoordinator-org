@@ -18,6 +18,7 @@ import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTop
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
 import { CoordinatorAssistant } from "@/components/coordinator/CoordinatorAssistant";
+import { CriticalAlertModal } from "@/components/coordinator/CriticalAlertModal";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator")({
@@ -253,6 +254,7 @@ function CoordinatorLayout() {
       {showChangePw && !mustChangePw && (
         <ChangePasswordDialog mode="voluntary" onDone={() => setShowChangePw(false)} onCancel={() => setShowChangePw(false)} />
       )}
+      <CriticalAlertModal />
     </div>
 
   );
