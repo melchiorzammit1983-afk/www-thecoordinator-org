@@ -121,23 +121,30 @@ export function CoordinatorAssistant({ children }: { children: ReactNode }) {
   const enabled = useFeature("ai_coordinator_assist");
   const [screen, setScreenState] = useState<AssistantScreen | null>(null);
   const screenRef = useRef<AssistantScreen | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const setScreen = useCallback((s: AssistantScreen | null) => {
     screenRef.current = s;
     setScreenState(s);
   }, []);
+  const openPanel = useCallback((s?: AssistantScreen | null) => {
+    if (s !== undefined) {
+      screenRef.current = s;
+      setScreenState(s);
+    }
+    setPanelOpen(true);
+  }, []);
 
-  const ctxValue = useMemo<AssistantCtx>(() => ({ setScreen, screenRef }), [setScreen]);
+  const ctxValue = useMemo<AssistantCtx>(() => ({ setScreen, screenRef, openPanel }), [setScreen, openPanel]);
 
   return (
     <Ctx.Provider value={ctxValue}>
       {children}
-      {enabled ? <AssistantSurface screen={screen} /> : null}
+      {enabled ? <AssistantSurface screen={screen} open={panelOpen} setOpen={setPanelOpen} /> : null}
     </Ctx.Provider>
   );
 }
 
-function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
-  const [open, setOpen] = useState(false);
+function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen | null; open: boolean; setOpen: (v: boolean) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
