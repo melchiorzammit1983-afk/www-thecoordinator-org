@@ -123,6 +123,7 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
+  const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
   const qc = useQueryClient();
 
@@ -141,10 +142,13 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         .map((m) => {
           if ("text" in m) return { role: m.role, text: m.text };
           if ("draft" in m) return { role: "assistant" as const, text: m.draft.summary };
-          return {
-            role: "assistant" as const,
-            text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
-          };
+          if ("batch" in m) {
+            return {
+              role: "assistant" as const,
+              text: `Batch of ${m.batch.drafts.length} trips: ${m.batch.drafts.map((d) => d.summary).join("; ")}`,
+            };
+          }
+          return { role: "assistant" as const, text: m.fix.summary };
         });
       return (await askFn({
         data: {
@@ -162,10 +166,13 @@ function AssistantSurface({ screen }: { screen: AssistantScreen | null }) {
         setMessages((m) => [...m, { id, role: "assistant", draft: result }]);
       } else if (result.kind === "batch") {
         setMessages((m) => [...m, { id, role: "assistant", batch: result }]);
+      } else if (result.kind === "data_fix") {
+        setMessages((m) => [...m, { id, role: "assistant", fix: result }]);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
       }
     },
+
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : "Assistant failed. Try again.";
       toast.error(msg);
