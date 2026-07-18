@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
-import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
+import { formatMaltaDateTime, formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import {
   Plus,
   Copy,
@@ -1670,7 +1670,7 @@ function PendingPortalBookings() {
                   const t = payload.time
                     ? String(payload.time).slice(0, 5)
                     : payload.pickup_at
-                      ? new Date(payload.pickup_at).toISOString().slice(11, 16)
+                      ? formatMaltaTime(String(payload.pickup_at))
                       : null;
                   return (
                     <div className="text-[11px] font-semibold text-foreground">
@@ -2493,10 +2493,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   <span className="text-muted-foreground">
                     · arr{" "}
                     <span className="text-foreground font-medium">
-                      {new Date(
-                        new Date(job.pickup_at).getTime() +
-                          (job.route_duration_sec ?? 0) * 1000,
-                      ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatMaltaTime(
+                        new Date(
+                          new Date(job.pickup_at).getTime() +
+                            (job.route_duration_sec ?? 0) * 1000,
+                        ).toISOString(),
+                      )}
                     </span>
                   </span>
                 )}
@@ -3365,7 +3367,7 @@ function DispatchTripList({
           const status = toSimpleStatus(job);
           const pickup =
             job.pickup_at
-              ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              ? formatMaltaTime(String(job.pickup_at))
               : job.time?.slice(0, 5) ?? null;
           const paxCount = job.pax?.length ?? 0;
           const flight = job.from_flight || job.to_flight;
@@ -3676,7 +3678,9 @@ function GroupedRunRow({
     .filter(Boolean)
     .sort()[0] as string | null;
   const pickup = earliest
-    ? new Date(earliest).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? (earliest.includes("T") && !earliest.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(earliest)
+        ? earliest.slice(11, 16)
+        : formatMaltaTime(earliest))
     : orderedJobs[0]?.time?.slice(0, 5) ?? null;
   const driverName =
     orderedJobs.find((j) => j.drivers?.name)?.drivers?.name ??
