@@ -2914,6 +2914,33 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         </div>
       </button>
 
+      {/* Action bar — large tap targets, well spaced from top-right kebab */}
+      <div className="mt-2 flex items-stretch gap-1.5 border-t border-border/60 pt-2">
+        <AskAiInlineButton trip={job} label="Ask AI" />
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-h-11"
+          onClick={(e) => { e.stopPropagation(); ctx.onChat(job); }}
+          aria-label="Open trip chat"
+        >
+          <MessagesSquare className="h-4 w-4 mr-1.5" />
+          Message
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-h-11"
+          onClick={(e) => { e.stopPropagation(); ctx.onOpenDetails(job); }}
+          aria-label="Open trip details"
+        >
+          <Info className="h-4 w-4 mr-1.5" />
+          Details
+        </Button>
+      </div>
+
+
+
 
       {/* Top-right controls: drag (desktop) + menu */}
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
