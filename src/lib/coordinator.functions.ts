@@ -2623,22 +2623,33 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
+      .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
     if (error) throw new Error(error.message);
     if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    const freshCutoffMs = Date.now() - 5 * 60_000;
     let updated = 0;
+    let skippedFresh = 0;
     for (const j of jobs) {
+      // Skip trips whose live status was refreshed within the last 5 min —
+      // the AeroDataBox cache would return the same value and this would
+      // just burn extra-lookup points for no new information.
+      const last = (j as any).flight_status_updated_at as string | null;
+      if (last && new Date(last).getTime() > freshCutoffMs) {
+        skippedFresh++;
+        continue;
+      }
       try {
         const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
           _company_id: c.id,
-          _feature_key: "flight_vessel_tracking",
+          _feature_key: "flight_status_extra_lookup",
           _job_id: (j as any).id,
-          _note: "flight/vessel status refresh (bulk)",
+          _note: "flight status extra lookup (bulk refresh)",
           _cost_override: undefined as unknown as number,
         });
         if (spendErr) {
@@ -2647,12 +2658,12 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
         }
         const r = await applyLiveStatusToJob(supabaseAdmin, j as any);
         if (r.ok) updated++;
-        else await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", (j as any).id);
+        else await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", (j as any).id);
       } catch {
-        await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", (j as any).id);
+        await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", (j as any).id);
       }
     }
-    return { checked: jobs.length, updated, configured };
+    return { checked: jobs.length, updated, configured, skippedFresh };
   });
 
 export const getFlightTrackingConfig = createServerFn({ method: "GET" })
