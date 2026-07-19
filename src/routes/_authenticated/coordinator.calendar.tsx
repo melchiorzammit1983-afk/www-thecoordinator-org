@@ -1991,7 +1991,9 @@ function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]
             <div key={key} className="rounded-md border p-2 min-h-[220px]">
               <div className="text-sm font-medium">{format(d, "EEE")}</div>
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
+              <SelectAllInLane jobs={dayJobs} ctx={ctx} label="Select all this day" />
               <div className="space-y-2">{renderItems(items, ctx, driverName)}</div>
+
             </div>
           );
         })}
