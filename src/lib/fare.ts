@@ -131,24 +131,28 @@ export function computeFareBreakdown(input: FareInput): FareBreakdown {
     });
   }
 
-  // Adjustment lines — surface WHY the fare differs from base rates
+  // Adjustment lines — informational only. The delta is already reflected in
+  // the Distance / Time lines above (which use the effective post-area rate),
+  // so these carry amount 0 to keep the visible line items summing to `fare`.
   if (area) {
     if (area.price_per_km != null && perKm !== baseKm && km > 0) {
       const delta = km * (perKm - baseKm);
       lines.push({
         key: "adj-km",
-        label: `Zone adjustment · km rate (${area.name})`,
-        amount: delta,
+        label: `Zone adjustment · km rate (${area.name}) · ${delta >= 0 ? "+" : ""}${currency} ${delta.toFixed(2)} vs base`,
+        amount: 0,
         adjustment: true,
+        muted: true,
       });
     }
     if (area.price_per_hour != null && perHr !== baseHr && mins > 0) {
       const delta = (mins / 60) * (perHr - baseHr);
       lines.push({
         key: "adj-hr",
-        label: `Zone adjustment · hourly rate (${area.name})`,
-        amount: delta,
+        label: `Zone adjustment · hourly rate (${area.name}) · ${delta >= 0 ? "+" : ""}${currency} ${delta.toFixed(2)} vs base`,
+        amount: 0,
         adjustment: true,
+        muted: true,
       });
     }
     if (basePrice > 0) {
@@ -161,6 +165,7 @@ export function computeFareBreakdown(input: FareInput): FareBreakdown {
       });
     }
   }
+
 
   if (minimumApplied) {
     lines.push({
