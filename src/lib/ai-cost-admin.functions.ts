@@ -13,13 +13,13 @@ const rangeSchema = z.object({
 
 async function assertAdmin(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (error || !data) throw new Error("Forbidden — admins only.");
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (userError) throw new Error(userError.message);
+  const email = userData.user?.email?.toLowerCase();
+  if (!email) throw new Error("Forbidden — admins only.");
+  const { data: adminRows } = await supabaseAdmin.from("admin_emails").select("email");
+  const isAdmin = (adminRows ?? []).some((row) => row.email?.toLowerCase() === email);
+  if (!isAdmin) throw new Error("Forbidden — admins only.");
 }
 
 export type AiCostSummary = {
