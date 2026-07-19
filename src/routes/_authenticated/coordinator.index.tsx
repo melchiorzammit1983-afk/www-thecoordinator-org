@@ -26,6 +26,7 @@ import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
+import { IfFeature } from "@/components/billing/IfFeature";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
