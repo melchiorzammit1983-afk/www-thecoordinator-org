@@ -1007,6 +1007,13 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                             ))}
                           </dl>
                         )}
+                        {m.draft.warnings?.length ? (
+                          <ul className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                            {m.draft.warnings.map((w, i) => (
+                              <li key={i}>⚠ {paxWarningLabel(w)}</li>
+                            ))}
+                          </ul>
+                        ) : null}
                         <div className="flex gap-2">
                           <Button size="sm" disabled={busy} onClick={() => confirm.mutate({ draft: m.draft, rawMessage: m.rawMessage })}>
                             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -1024,6 +1031,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                   const busy = confirmBatch.isPending;
                   const isUpdateBatch = m.batch.drafts.every((d) => d.action === "update");
                   const anyMissing = !isUpdateBatch && m.batch.drafts.some((d) => missingCreateFields(d.fields).length > 0);
+                  const anyBlockingWarn = m.batch.drafts.some((d) => hasBlockingPaxWarning(d.warnings));
                   return (
                     <div key={m.id} className="flex gap-2">
                       <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
