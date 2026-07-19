@@ -807,19 +807,22 @@ export function TripDetailsSheet({
                     {formatMaltaTime(job.flight_estimated_at)}
                   </span></div>
                 )}
-                <div className="text-[10px] text-muted-foreground pt-1 border-t flex items-center justify-between">
+                <div className="text-[10px] text-muted-foreground pt-1 border-t flex items-center justify-between gap-2">
                   <span>
                     {job.flight_status_updated_at
                       ? `Updated ${formatMaltaTime(job.flight_status_updated_at)}`
                       : "Not checked yet"}
                   </span>
-                  <a
-                    href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    Malta Airport
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <FlightRefreshButton jobId={job.id} hasCode={!!(job.from_flight || job.to_flight)} />
+                    <a
+                      href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      Malta Airport
+                    </a>
+                  </div>
                 </div>
               </div>
             </section>
