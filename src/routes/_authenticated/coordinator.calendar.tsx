@@ -2702,6 +2702,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} · Not tracked · fix code
               </button>
             )}
+            {hasFlightCode && (
+              <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-1 align-middle" />
+            )}
 
             {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
