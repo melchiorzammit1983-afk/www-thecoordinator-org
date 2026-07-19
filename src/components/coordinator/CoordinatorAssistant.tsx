@@ -407,7 +407,9 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     },
     onSuccess: (out, vars) => {
       const { draft, rawMessage } = vars;
-      const msg = draft.action === "create" ? "Trip created." : "Trip updated.";
+      const paxN = (draft.fields.pax ?? []).filter((n) => n && n.trim()).length;
+      const paxSuffix = paxN > 0 ? ` · ${paxN} passenger${paxN === 1 ? "" : "s"}` : "";
+      const msg = (draft.action === "create" ? "Trip created." : "Trip updated.") + paxSuffix;
       toast.success(msg);
       maybeSpeak(msg);
       logLearning({ action_kind: "draft", outcome: "confirmed", proposed: draft, raw_message: rawMessage });
