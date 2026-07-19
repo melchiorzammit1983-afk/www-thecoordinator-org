@@ -47,6 +47,7 @@ import {
   Clock,
   Plane,
   User as UserIcon,
+  Info,
 } from "lucide-react";
 import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
 import {
