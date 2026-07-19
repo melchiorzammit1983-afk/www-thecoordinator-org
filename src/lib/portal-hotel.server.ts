@@ -243,6 +243,7 @@ export const GuestBookingInput = z.object({
   to_location: z.string().min(1).max(200),
   pickup_at: z.string().datetime(),
   pax_count: z.number().int().min(1).max(20).default(1),
+  pax_names: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
   flight_number: z.string().max(20).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
   promo_code: z.string().max(40).optional().nullable(),
