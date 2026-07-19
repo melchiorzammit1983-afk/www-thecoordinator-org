@@ -1117,11 +1117,10 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                             </span>
                           )}
                         </div>
-
-                        </div>
                       </div>
                     </div>
                   );
+
                 }
                 if ("fix" in m) {
                   const busy = confirmFix.isPending;
