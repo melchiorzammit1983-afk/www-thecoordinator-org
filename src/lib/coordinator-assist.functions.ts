@@ -564,7 +564,7 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
     const content = json.choices?.[0]?.message?.content ?? "";
     const answer = async (text: string): Promise<AssistantAnswer> => {
       await meter("assistant_qa", "assistant Q&A turn");
-      return { kind: "answer", text };
+      return { kind: "answer", text: text + overageNotice };
     };
 
     let parsed: unknown;
