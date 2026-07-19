@@ -1020,7 +1020,7 @@ export const logDriverAction = createServerFn({ method: "POST" })
       lng: z.number().gte(-180).lte(180).optional(),
       accuracy_m: z.number().nonnegative().optional(),
       notes: z.string().max(400).optional(),
-      meta: z.record(z.any()).optional(),
+      meta: z.record(z.string(), z.any()).optional(),
     }).parse(i),
   )
   .handler(async ({ data }) => {

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RequestAccessRouteImport } from './routes/request-access'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as InstallRouteImport } from './routes/install'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as DemoRouteImport } from './routes/demo'
@@ -30,6 +31,8 @@ import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
@@ -64,6 +67,8 @@ import { Route as AuthenticatedAdminAiLessonsRouteImport } from './routes/_authe
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
 import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
+import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
@@ -95,6 +100,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const RequestAccessRoute = RequestAccessRouteImport.update({
   id: '/request-access',
   path: '/request-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstallRoute = InstallRouteImport.update({
@@ -192,6 +202,18 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Char91DotmcpChar93ListToolsRoute =
+  Char91DotmcpChar93ListToolsRouteImport.update({
+    id: '/.mcp/list-tools',
+    path: '/.mcp/list-tools',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedCoordinatorIndexRoute =
   AuthenticatedCoordinatorIndexRouteImport.update({
     id: '/',
@@ -393,6 +415,17 @@ const AuthenticatedAdminActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const Char91DotmcpChar93InvokeToolToolRoute =
+  Char91DotmcpChar93InvokeToolToolRouteImport.update({
+    id: '/.mcp/invoke-tool/$tool',
+    path: '/.mcp/invoke-tool/$tool',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LovableEmailQueueProcessRoute =
   LovableEmailQueueProcessRouteImport.update({
     id: '/lovable/email/queue/process',
@@ -531,8 +564,11 @@ export interface FileRoutesByFullPath {
   '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
+  '/mcp': typeof McpRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
@@ -545,6 +581,8 @@ export interface FileRoutesByFullPath {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
@@ -608,8 +646,11 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/install': typeof InstallRoute
+  '/mcp': typeof McpRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
@@ -620,6 +661,8 @@ export interface FileRoutesByTo {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/help': typeof HelpIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
@@ -686,8 +729,11 @@ export interface FileRoutesById {
   '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
+  '/mcp': typeof McpRoute
   '/request-access': typeof RequestAccessRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
@@ -700,6 +746,8 @@ export interface FileRoutesById {
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/help/': typeof HelpIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
@@ -766,8 +814,11 @@ export interface FileRouteTypes {
     | '/demo'
     | '/help'
     | '/install'
+    | '/mcp'
     | '/request-access'
     | '/sitemap.xml'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/admin'
     | '/coordinator'
     | '/my-tickets'
@@ -780,6 +831,8 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/help/'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
     | '/admin/ai-activity'
     | '/admin/ai-insights'
@@ -843,8 +896,11 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/install'
+    | '/mcp'
     | '/request-access'
     | '/sitemap.xml'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/my-tickets'
     | '/api/help-chat'
     | '/c/$token'
@@ -855,6 +911,8 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/help'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
     | '/admin/ai-activity'
     | '/admin/ai-insights'
@@ -920,8 +978,11 @@ export interface FileRouteTypes {
     | '/demo'
     | '/help'
     | '/install'
+    | '/mcp'
     | '/request-access'
     | '/sitemap.xml'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/_authenticated/my-tickets'
@@ -934,6 +995,8 @@ export interface FileRouteTypes {
     | '/t/$token'
     | '/track/$token'
     | '/help/'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/ai-activity'
     | '/_authenticated/admin/ai-insights'
@@ -1000,8 +1063,11 @@ export interface RootRouteChildren {
   DemoRoute: typeof DemoRoute
   HelpRoute: typeof HelpRouteWithChildren
   InstallRoute: typeof InstallRoute
+  McpRoute: typeof McpRoute
   RequestAccessRoute: typeof RequestAccessRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiHelpChatRoute: typeof ApiHelpChatRoute
   CTokenRoute: typeof CTokenRoute
   GSessionRoute: typeof GSessionRoute
@@ -1009,6 +1075,8 @@ export interface RootRouteChildren {
   PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
+  DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
+  Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
@@ -1046,6 +1114,13 @@ declare module '@tanstack/react-router' {
       path: '/request-access'
       fullPath: '/request-access'
       preLoaderRoute: typeof RequestAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/install': {
@@ -1180,6 +1255,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/list-tools': {
+      id: '/.mcp/list-tools'
+      path: '/.mcp/list-tools'
+      fullPath: '/.mcp/list-tools'
+      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/coordinator/': {
       id: '/_authenticated/coordinator/'
@@ -1418,6 +1507,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/activity'
       preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/.mcp/invoke-tool/$tool': {
+      id: '/.mcp/invoke-tool/$tool'
+      path: '/.mcp/invoke-tool/$tool'
+      fullPath: '/.mcp/invoke-tool/$tool'
+      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/lovable/email/queue/process': {
       id: '/lovable/email/queue/process'
@@ -1746,8 +1849,12 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRoute: DemoRoute,
   HelpRoute: HelpRouteWithChildren,
   InstallRoute: InstallRoute,
+  McpRoute: McpRoute,
   RequestAccessRoute: RequestAccessRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiHelpChatRoute: ApiHelpChatRoute,
   CTokenRoute: CTokenRoute,
   GSessionRoute: GSessionRoute,
@@ -1755,6 +1862,8 @@ const rootRouteChildren: RootRouteChildren = {
   PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
   TrackTokenRoute: TrackTokenRoute,
+  DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
+  Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
