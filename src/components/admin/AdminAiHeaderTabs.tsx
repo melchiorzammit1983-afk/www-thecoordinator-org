@@ -1,18 +1,20 @@
 import { Link } from "@tanstack/react-router";
-import { Settings2, BarChart3, Activity } from "lucide-react";
+import { Settings2, BarChart3, Activity, DollarSign } from "lucide-react";
 
 const TABS = [
-  { to: "/admin/ai-settings", label: "Settings", icon: Settings2 },
-  { to: "/admin/ai-insights", label: "Insights", icon: BarChart3 },
-  { to: "/admin/ai-activity", label: "Activity", icon: Activity },
+  { key: "settings",  to: "/admin/ai-settings",  label: "Settings",  icon: Settings2 },
+  { key: "insights",  to: "/admin/ai-insights",  label: "Insights",  icon: BarChart3 },
+  { key: "activity",  to: "/admin/ai-activity",  label: "Activity",  icon: Activity },
+  { key: "costs",     to: "/admin/ai-costs",     label: "Real cost", icon: DollarSign },
 ] as const;
 
-export function AdminAiHeaderTabs({ active }: { active: "settings" | "insights" | "activity" }) {
+type TabKey = typeof TABS[number]["key"];
+
+export function AdminAiHeaderTabs({ active }: { active: TabKey }) {
   return (
     <div className="flex items-center gap-1 border-b -mx-1 px-1 overflow-x-auto">
       {TABS.map((t) => {
-        const key = t.to.split("-").pop() as "settings" | "insights" | "activity";
-        const isActive = key === active;
+        const isActive = t.key === active;
         const Icon = t.icon;
         return (
           <Link
@@ -31,3 +33,4 @@ export function AdminAiHeaderTabs({ active }: { active: "settings" | "insights" 
     </div>
   );
 }
+

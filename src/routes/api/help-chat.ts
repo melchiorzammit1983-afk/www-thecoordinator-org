@@ -171,7 +171,9 @@ export const Route = createFileRoute("/api/help-chat")({
         // Sales mode gets the cheapest model; coach mode gets flash for
         // slightly stronger step-by-step task guidance.
         const gateway = createLovableAiGatewayProvider(key);
-        const model = gateway(mode === "sales" ? "google/gemini-3.1-flash-lite" : "google/gemini-3.5-flash");
+        const modelId = mode === "sales" ? "google/gemini-3.1-flash-lite" : "google/gemini-3.5-flash";
+        const model = gateway(modelId);
+        const startedAt = Date.now();
 
         try {
           const result = streamText({
@@ -179,6 +181,22 @@ export const Route = createFileRoute("/api/help-chat")({
             system,
             messages: convertToModelMessages(uiMessages),
             maxOutputTokens: mode === "sales" ? PUBLIC_AI_LIMITS.MAX_OUTPUT_TOKENS : 800,
+            onFinish: async ({ usage }) => {
+              try {
+                const { recordAiCost } = await import("@/lib/ai-cost.server");
+                await recordAiCost({
+                  feature_key: mode === "sales" ? "sales_bot" : "ai_guide_chat",
+                  model: modelId,
+                  usage: {
+                    input_tokens: usage?.inputTokens ?? 0,
+                    output_tokens: usage?.outputTokens ?? 0,
+                  },
+                  actor_user_id: userId ?? null,
+                  surface: mode === "sales" ? "public_sales_chat" : "public_help_chat",
+                  duration_ms: Date.now() - startedAt,
+                });
+              } catch { /* noop */ }
+            },
           });
           if (mode === "sales") {
             // Best-effort — count the public model call. Fire-and-forget.
