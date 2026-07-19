@@ -2463,13 +2463,14 @@ async function applyLiveStatusToJob(
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
 
-  let result = await fetchLiveStatusViaGemini(kind, code, job.pickup_at);
+  let result = await fetchLiveStatus(kind, code, job.pickup_at);
 
-  // Retry once with an airport hint if the first grounded pass produced
-  // nothing usable (no result / low confidence with no scheduled time).
+  // Retry once with an airport hint if the first pass produced nothing usable.
+  // AeroDataBox doesn't accept airport hints, but the Gemini vessel path does.
   const needsRetry =
-    (!result.ok && (result.reason === "no_result" || result.reason === "exception")) ||
-    (result.ok && result.confidence === "low" && !result.scheduled);
+    kind === "vessel" &&
+    ((!result.ok && (result.reason === "no_result" || result.reason === "exception")) ||
+      (result.ok && result.confidence === "low" && !result.scheduled));
   if (needsRetry) {
     const hint = [job.from_location, job.to_location]
       .filter(Boolean)
