@@ -549,6 +549,9 @@ ${upcomingBlock}
 TRIPS REFERENCED BY SERIAL NUMBER in the current message (resolve any bare "#N" / "card N" / "trip N" to these UUIDs before choosing an action):
 ${referencedBlock}
 
+CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
+${clientNotesBlock}
+
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
