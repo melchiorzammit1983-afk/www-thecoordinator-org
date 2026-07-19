@@ -748,12 +748,14 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         if (pax.length === 0) pax = null;
       }
       const fields = { ...(rawFields as AssistantDraft["fields"]), pax };
+      const warnings = computePaxWarnings(data.message, rawFields, pax);
       return {
         kind: "draft",
         action: !forceCreate && d.action === "update" ? "update" : "create",
         target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
         fields,
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
+        warnings: warnings.length ? warnings : undefined,
       };
     };
     // ---- Glossary management via the shared ai_lessons store ----
