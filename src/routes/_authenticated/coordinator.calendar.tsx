@@ -142,6 +142,7 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { FlightCodeFixDialog } from "@/components/coordinator/FlightCodeFixDialog";
+import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
 import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
 import {
   RouteOptimizationAlertBanner,
@@ -871,9 +872,12 @@ function CalendarPage() {
       <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg sm:text-xl font-semibold truncate">Dispatch board</h1>
-          <Button size="sm" onClick={() => setOpenNew(true)}>
-            <Plus className="h-4 w-4 mr-1" /> New
-          </Button>
+          <div className="flex items-center gap-2">
+            <FlightTrackingIndicator />
+            <Button size="sm" onClick={() => setOpenNew(true)}>
+              <Plus className="h-4 w-4 mr-1" /> New
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md border overflow-hidden">
