@@ -392,6 +392,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
         referencedBlock = refRows
           .map((r: any) => `#${r.trip_no} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"} · status:${r.status}${r.driver_id ? " · (driver assigned)" : ""}`)
           .join("\n");
+      }
     }
 
     // Client notes (per-company coordinator memory keyed by normalized client name).
@@ -405,7 +406,6 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const clientNotesBlock = clientNotes.length
       ? clientNotes.map((n) => `- ${n.client_display}: ${n.note.slice(0, 200)}`).join("\n")
       : "(no client notes saved)";
-    }
 
 
     const today = new Date().toISOString().slice(0, 10);
