@@ -14,6 +14,6 @@ export function useMyCompany() {
   return useQuery({
     queryKey: ["my-company"],
     queryFn: () => fn() as Promise<Company>,
-    staleTime: 15_000,
+    staleTime: 5 * 60_000,
   });
 }
