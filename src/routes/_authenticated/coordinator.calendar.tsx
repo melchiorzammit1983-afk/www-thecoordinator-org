@@ -1372,7 +1372,35 @@ function groupStripeStyle(gid: string | null | undefined): React.CSSProperties |
   return { boxShadow: `inset 4px 0 0 hsl(${groupHue(gid)} 70% 50%)` };
 }
 
+/* ------------------------------ Lane select-all chip ------------------------------ */
+
+function SelectAllInLane({ jobs, ctx, label = "Select all here" }: { jobs: Job[]; ctx: CardCtx; label?: string }) {
+  if (jobs.length < 2) return null;
+  const ids = jobs.map((j) => j.id);
+  const selectedHere = ids.filter((id) => ctx.selected.has(id)).length;
+  if (selectedHere === 0) return null; // only surface once user has started selecting
+  const allHere = selectedHere === ids.length;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        // If all selected → deselect this lane. Otherwise select the rest.
+        for (const id of ids) {
+          const isSel = ctx.selected.has(id);
+          if (!allHere && !isSel) ctx.onToggleSelect(id);
+          if (allHere && isSel) ctx.onToggleSelect(id);
+        }
+      }}
+      className="mb-2 inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+    >
+      {allHere ? `Deselect all here (${selectedHere})` : `Select all here (${ids.length})`}
+    </button>
+  );
+}
+
 /* ------------------------------ Grouping helpers ------------------------------ */
+
+
 
 type RenderItem = { kind: "single"; job: Job } | { kind: "group"; group_id: string; jobs: Job[] };
 
@@ -1679,6 +1707,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
           ))}
         </div>
       )}
+      <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">
         <PendingPortalBookings />
         {jobs.length === 0 && (
@@ -1686,6 +1715,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
         )}
         {renderItems(items, ctx)}
       </div>
+
     </div>
   );
 }
@@ -1918,6 +1948,7 @@ function PartnerLane({
         <PlaneTakeoff className="h-3.5 w-3.5" style={{ color }} /> Partner · {partnerName}
       </div>
       <div className="text-xs text-muted-foreground mb-2 truncate">Drop a trip here to send</div>
+      <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">
         {jobs.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-6">No trips at this partner</div>
@@ -1925,6 +1956,7 @@ function PartnerLane({
           renderItems(items, ctx)
         )}
       </div>
+
     </div>
   );
 }
@@ -1939,7 +1971,9 @@ function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: C
     >
       <div className="text-sm font-medium truncate">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2 truncate">{driver.vehicle ?? "—"}</div>
+      <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">{renderItems(items, ctx)}</div>
+
     </div>
   );
 }
@@ -1957,7 +1991,9 @@ function WeekGrid({ drivers, jobs, days, ctx }: { drivers: Driver[]; jobs: Job[]
             <div key={key} className="rounded-md border p-2 min-h-[220px]">
               <div className="text-sm font-medium">{format(d, "EEE")}</div>
               <div className="text-xs text-muted-foreground mb-2">{format(d, "d MMM")}</div>
+              <SelectAllInLane jobs={dayJobs} ctx={ctx} label="Select all this day" />
               <div className="space-y-2">{renderItems(items, ctx, driverName)}</div>
+
             </div>
           );
         })}
