@@ -32,8 +32,8 @@ export const submitLesson = createServerFn({ method: "POST" })
     z.object({
       kind: LessonKind,
       title: z.string().min(3).max(140),
-      example_input: z.string().min(1).max(4000),
-      rule_text: z.string().min(3).max(2000),
+      example_input: z.string().min(1).max(40000),
+      rule_text: z.string().min(3).max(20000),
       propose_global: z.boolean().default(false),
     }).parse(d),
   )
