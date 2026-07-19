@@ -275,6 +275,15 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
   const [loading, setLoading] = useState(false);
   const whoAmIFn = useServerFn(whoAmI);
 
+  function safeNext(): string | null {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("next");
+    if (!raw) return null;
+    // Same-origin relative path only.
+    if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+    return raw;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const parsed = credsSchema.safeParse({ phone: phone.trim(), password });
@@ -287,6 +296,11 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
     if (error) return toast.error("Invalid phone number or password");
 
     toast.success("Signed in");
+    const next = safeNext();
+    if (next) {
+      window.location.assign(next);
+      return;
+    }
     try {
       const identity = await whoAmIFn();
       window.location.assign(identity?.isAdmin ? "/admin" : "/coordinator");
@@ -294,6 +308,7 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
       window.location.assign("/coordinator");
     }
   }
+
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 pt-4">
