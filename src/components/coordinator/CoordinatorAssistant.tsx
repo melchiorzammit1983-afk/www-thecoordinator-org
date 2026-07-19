@@ -320,6 +320,30 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
       const f = draft.fields;
       const missing = missingCreateFields(f);
       if (missing.length) throw new Error(`Missing ${missing.join(", ")} for "${draft.summary}".`);
+      const pax = (f.pax ?? []).map((n) => n.trim()).filter(Boolean);
+      if (pax.length > 0) {
+        // Route to bulkFn so the passenger list is actually persisted; single
+        // trip inside the batch, keeps the driver assignment via clarify.
+        return bulkFn({
+          data: {
+            trips: [
+              {
+                from_location: f.from_location!,
+                to_location: f.to_location!,
+                date: f.date!,
+                time: f.time!,
+                flightorship: "",
+                from_flight: f.from_flight ?? "",
+                to_flight: f.to_flight ?? "",
+                tracking_kind: "flight",
+                clientcompanyname: f.clientcompanyname ?? "",
+                contact_phone: f.contact_phone ?? "",
+                pax,
+              },
+            ],
+          },
+        });
+      }
       return createFn({
         data: {
           from_location: f.from_location!,
@@ -344,7 +368,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
         },
       });
     },
-    [createFn, missingCreateFields],
+    [createFn, bulkFn, missingCreateFields],
   );
 
   const confirm = useMutation({
