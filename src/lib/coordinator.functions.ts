@@ -2109,6 +2109,7 @@ type LiveStatusResult = {
   confidence?: "high" | "low";
   reason?: string;
 };
+type FlightSide = "arr" | "dep";
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const LIVE_STATUS_TTL_MS = 20 * 60_000;
@@ -2130,6 +2131,16 @@ type AeroEndpoint = {
 };
 type AeroFlight = { status?: string; departure?: AeroEndpoint; arrival?: AeroEndpoint };
 
+function aeroIso(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
+function aeroScheduledTime(e?: AeroEndpoint): string | null {
+  return aeroIso(e?.scheduledTime?.utc);
+}
+
 function aeroPickTime(e?: AeroEndpoint): string | null {
   const t =
     e?.actualTime?.utc ??
@@ -2138,10 +2149,72 @@ function aeroPickTime(e?: AeroEndpoint): string | null {
     e?.predictedTime?.utc ??
     e?.scheduledTime?.utc ??
     null;
-  return t ? new Date(t).toISOString() : null;
+  return aeroIso(t);
 }
 function aeroAirportCode(e?: AeroEndpoint): string {
   return (e?.airport?.iata || e?.airport?.icao || e?.airport?.municipalityName || "").toUpperCase();
+}
+
+function aeroEndpointTimeForMatch(e?: AeroEndpoint): string | null {
+  return aeroScheduledTime(e) ?? aeroPickTime(e);
+}
+
+function isMaltaAeroEndpoint(e?: AeroEndpoint): boolean {
+  const a = e?.airport;
+  const code = `${a?.iata ?? ""} ${a?.icao ?? ""}`.toUpperCase();
+  const text = `${a?.name ?? ""} ${a?.municipalityName ?? ""}`.toLowerCase();
+  return /\b(MLA|LMML)\b/.test(code) || /\b(malta|luqa)\b/.test(text);
+}
+
+function pickAeroEndpoint(f: AeroFlight, side: FlightSide): AeroEndpoint | undefined {
+  return side === "arr" ? f.arrival : f.departure;
+}
+
+function endpointDeltaMs(endpoint: AeroEndpoint | undefined, pickupMs: number | null): number {
+  if (!pickupMs) return Number.MAX_SAFE_INTEGER;
+  const iso = aeroEndpointTimeForMatch(endpoint);
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isFinite(t) ? Math.abs(t - pickupMs) : Number.MAX_SAFE_INTEGER;
+}
+
+function pickAeroFlight(flights: AeroFlight[], pickupIso: string | null, side?: FlightSide): AeroFlight {
+  const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
+  const safePickupMs = pickupMs && Number.isFinite(pickupMs) ? pickupMs : null;
+
+  if (side) {
+    const hasMaltaSide = flights.some((f) => isMaltaAeroEndpoint(pickAeroEndpoint(f, side)));
+    return flights
+      .map((f, index) => {
+        const endpoint = pickAeroEndpoint(f, side);
+        const hasSideTime = !!aeroEndpointTimeForMatch(endpoint);
+        const matchesMalta = isMaltaAeroEndpoint(endpoint);
+        const sideDelta = endpointDeltaMs(endpoint, safePickupMs);
+        const anyDelta = Math.min(endpointDeltaMs(f.arrival, safePickupMs), endpointDeltaMs(f.departure, safePickupMs));
+        return {
+          f,
+          index,
+          maltaPenalty: hasMaltaSide && !matchesMalta ? 1 : 0,
+          timePenalty: hasSideTime ? 0 : 1,
+          sideDelta,
+          anyDelta,
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.maltaPenalty - b.maltaPenalty ||
+          a.timePenalty - b.timePenalty ||
+          a.sideDelta - b.sideDelta ||
+          a.anyDelta - b.anyDelta ||
+          a.index - b.index,
+      )[0].f;
+  }
+
+  return flights
+    .map((f, index) => {
+      const bestDelta = Math.min(endpointDeltaMs(f.arrival, safePickupMs), endpointDeltaMs(f.departure, safePickupMs));
+      return { f, index, bestDelta };
+    })
+    .sort((a, b) => a.bestDelta - b.bestDelta || a.index - b.index)[0].f;
 }
 function mapAeroStatus(s: string | undefined): string {
   const v = (s ?? "").toLowerCase();
@@ -2166,7 +2239,7 @@ function fmtHm(iso: string | null): string {
 async function fetchLiveStatusViaAeroDataBox(
   identifier: string,
   pickupIso: string | null,
-  side?: "arr" | "dep",
+  side?: FlightSide,
 ): Promise<LiveStatusResult> {
   const raw = (identifier || "").trim();
   if (!raw) return { ok: false, reason: "no_code" };
@@ -2182,7 +2255,7 @@ async function fetchLiveStatusViaAeroDataBox(
   if (!key) return { ok: false, reason: "not_configured" };
 
   const day = isoToDayKey(pickupIso);
-  const cacheKey = `adb:v2:${canonical}:${day}:${side ?? "auto"}`;
+  const cacheKey = `adb:v3:${canonical}:${day}:${side ?? "auto"}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
 
@@ -2217,24 +2290,16 @@ async function fetchLiveStatusViaAeroDataBox(
       liveStatusCache.set(cacheKey, { at: Date.now(), value });
       return value;
     }
-    // Pick the flight whose scheduled time is closest to the trip's pickup.
-    const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
-    const chosen = flights
-      .map((f) => {
-        const best = f.arrival?.scheduledTime?.utc ?? f.departure?.scheduledTime?.utc ?? null;
-        const bestMs = best ? new Date(best).getTime() : null;
-        const delta = pickupMs && bestMs ? Math.abs(bestMs - pickupMs) : Number.MAX_SAFE_INTEGER;
-        return { f, delta };
-      })
-      .sort((a, b) => a.delta - b.delta)[0].f;
+    const chosen = pickAeroFlight(flights, pickupIso, side);
 
     const status = mapAeroStatus(chosen.status);
-    const depSched = chosen.departure?.scheduledTime?.utc ? new Date(chosen.departure.scheduledTime.utc).toISOString() : null;
+    const depSched = aeroScheduledTime(chosen.departure);
     const depActual = aeroPickTime(chosen.departure);
-    const arrSched = chosen.arrival?.scheduledTime?.utc ? new Date(chosen.arrival.scheduledTime.utc).toISOString() : null;
+    const arrSched = aeroScheduledTime(chosen.arrival);
     const arrActual = aeroPickTime(chosen.arrival);
     const depCode = aeroAirportCode(chosen.departure);
     const arrCode = aeroAirportCode(chosen.arrival);
+    const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
 
     // Template-based note (no LLM): "MLA 08:15 → IST 12:30" with drift.
     const parts: string[] = [];
@@ -2248,13 +2313,12 @@ async function fetchLiveStatusViaAeroDataBox(
     if (status === "cancelled") note = `CANCELLED · ${note}`.trim();
     else if (status === "diverted") note = `Diverted · ${note}`.trim();
 
-    // Anchor persisted times to whichever side (dep vs arr) is closer to pickup.
-    // Anchor selection: prefer the semantic side (arr for inbound / from_flight,
-    // dep for outbound / to_flight). Fall back to whichever side is closer to
-    // pickup_at when the requested side has no scheduled time.
-    const anchor: "arr" | "dep" = (() => {
-      if (side === "arr" && arrSched) return "arr";
-      if (side === "dep" && depSched) return "dep";
+    // Anchor persisted times to the semantic side: from_flight means passenger
+    // arriving in Malta, to_flight means departing Malta. Only fall back to the
+    // other side when the provider genuinely has no time for the requested side.
+    const anchor: FlightSide = (() => {
+      if (side === "arr" && (arrSched || arrActual)) return "arr";
+      if (side === "dep" && (depSched || depActual)) return "dep";
       if (!pickupMs) return arrSched ? "arr" : "dep";
       const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
       const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
@@ -2262,10 +2326,11 @@ async function fetchLiveStatusViaAeroDataBox(
     })();
     const scheduled = anchor === "arr" ? arrSched : depSched;
     const estimated = anchor === "arr" ? arrActual : depActual;
+    const confidence: "high" | "low" = side && anchor !== side ? "low" : "high";
 
     const value: LiveStatusResult = {
       ok: true, status, note: note.slice(0, 160),
-      scheduled, estimated, confidence: "high",
+      scheduled, estimated, confidence,
     };
     liveStatusCache.set(cacheKey, { at: Date.now(), value });
     return value;
@@ -2279,7 +2344,7 @@ async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
-  side?: "arr" | "dep",
+  side?: FlightSide,
 ): Promise<LiveStatusResult> {
   if (kind === "flight") {
     const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
@@ -2470,7 +2535,7 @@ export async function applyLiveStatusToJob(
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
-  const side: "arr" | "dep" | undefined =
+  const side: FlightSide | undefined =
     kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
 
   let result = await fetchLiveStatus(kind, code, job.pickup_at, side);
@@ -2628,7 +2693,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const configured = !!process.env.GEMINI_API_KEY;
+    const configured = !!(process.env.AERODATABOX_API_KEY || process.env.GEMINI_API_KEY);
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
@@ -2768,7 +2833,9 @@ async function _computeTripLiveStatus(data: {
   const code = (data.from_flight || data.to_flight || "").trim();
   const kind: "flight" | "vessel" = data.tracking_kind === "vessel" ? "vessel" : "flight";
   if (code) {
-    const r = await fetchLiveStatus(kind, code, pickupIso);
+    const side: FlightSide | undefined =
+      kind === "flight" ? (data.from_flight ? "arr" : data.to_flight ? "dep" : undefined) : undefined;
+    const r = await fetchLiveStatus(kind, code, pickupIso, side);
     if (!r.ok) {
       flight = { ok: false, code, reason: r.reason ?? "no_result" };
     } else {
