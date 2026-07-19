@@ -50,6 +50,7 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
   const listFn = useServerFn(listFeatureEntitlements);
   const setFn = useServerFn(setFeatureEntitlement);
   const clearFn = useServerFn(clearFeatureEntitlement);
+  const bulkFn = useServerFn(bulkSetFeatureEntitlements);
 
   const { data, isLoading } = useQuery({
     queryKey: ["feature-entitlements", company.id],
@@ -58,6 +59,13 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["feature-entitlements", company.id] });
+
+  const bulkMut = useMutation({
+    mutationFn: (v: { enabled: boolean; features?: FeatureKey[]; label: string }) =>
+      bulkFn({ data: { company_id: company.id, enabled: v.enabled, features: v.features } }),
+    onSuccess: (_r, v) => { toast.success(v.label); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -73,6 +81,25 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
             Toggle features per coordinator. Set a duration for temporary access; leave as Permanent for no expiry. Features default to enabled.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex flex-wrap gap-2 py-2 border-y">
+          <span className="text-xs font-medium text-muted-foreground self-center mr-1">Master switches:</span>
+          <Button size="sm" variant="outline" disabled={bulkMut.isPending}
+            onClick={() => bulkMut.mutate({ enabled: false, features: AI_FEATURE_KEYS as FeatureKey[], label: "All AI turned off" })}>
+            Turn all AI OFF
+          </Button>
+          <Button size="sm" variant="outline" disabled={bulkMut.isPending}
+            onClick={() => bulkMut.mutate({ enabled: true, features: AI_FEATURE_KEYS as FeatureKey[], label: "All AI turned on" })}>
+            Turn all AI ON
+          </Button>
+          <Button size="sm" variant="destructive" disabled={bulkMut.isPending}
+            onClick={() => { if (confirm("Disable EVERY feature for this workspace? Only Help Guide will remain.")) bulkMut.mutate({ enabled: false, label: "Workspace paused (all features off)" }); }}>
+            Kill switch (all off)
+          </Button>
+          <Button size="sm" variant="secondary" disabled={bulkMut.isPending}
+            onClick={() => bulkMut.mutate({ enabled: true, label: "All features enabled" })}>
+            Enable everything
+          </Button>
+        </div>
         <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6 divide-y">
           {isLoading || !data ? (
             <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>
