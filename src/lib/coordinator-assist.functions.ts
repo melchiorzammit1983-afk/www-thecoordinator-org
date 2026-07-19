@@ -259,9 +259,6 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const glossary = ((glossRows ?? []) as Array<{ id: string; title: string; rule_text: string; company_id: string | null; scope: string }>).map(
       (g) => ({ id: g.id, term: g.title, meaning: g.rule_text, owned: g.company_id === company.id }),
     );
-    const glossaryBlock = glossary.length
-      ? glossary.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
-      : "(empty — nothing taught yet)";
 
     // Coordinator-authored business rules from the AI Center → Rules tab.
     // These are HARD company rules and should be applied before soft biases.
@@ -274,14 +271,8 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .order("created_at", { ascending: true })
       .limit(50);
     const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
-    const rulesBlock = rules.length
-      ? rules.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
-      : "(no custom rules configured)";
 
-    // Silent-learning bias summary. CANONICAL SOURCE: `ai_lessons` with
-    // kind='suggestion_rule' (either the "AI learned bias" row written by
-    // the summarize-learning cron, or any suggestion rules a coordinator
-    // saved manually via the AI Learning page). Company-scoped only.
+    // Silent-learning bias summary (see AI Learning page).
     const { data: biasRows } = await supabaseAdmin
       .from("ai_lessons")
       .select("title, rule_text")
@@ -290,8 +281,39 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .eq("company_id", company.id)
       .order("updated_at", { ascending: false })
       .limit(20);
-    const learnedBlock = biasRows && biasRows.length
-      ? biasRows.map((r) => `• ${r.rule_text}`).join("\n")
+    const biases = (biasRows ?? []) as { title: string; rule_text: string }[];
+
+    // ---- Relevance pre-filter (cost optimisation) ----
+    // Only inject glossary/rules/biases whose keywords plausibly match this
+    // turn. Falls back to a small top-N when nothing scores, so brand-new
+    // coordinators still get some context.
+    const msgLower = data.message.toLowerCase();
+    const historyLower = (data.history ?? []).slice(-4).map((m) => (m.text ?? "").toLowerCase()).join(" ");
+    const haystack = `${msgLower}\n${historyLower}`;
+    const tokenize = (s: string): string[] => Array.from(new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []));
+    const msgTokens = new Set(tokenize(haystack));
+    const scoreText = (t: string): number => {
+      let score = 0;
+      for (const w of tokenize(t)) if (msgTokens.has(w)) score += 1;
+      return score;
+    };
+    const pickTop = <T,>(items: T[], score: (x: T) => number, cap: number, fallback: number): T[] => {
+      const hits = items.map((x) => ({ x, s: score(x) })).filter((r) => r.s > 0)
+        .sort((a, b) => b.s - a.s).slice(0, cap).map((r) => r.x);
+      return hits.length > 0 ? hits : items.slice(0, fallback);
+    };
+    const glossaryPick = pickTop(glossary, (g) => scoreText(g.term) * 2 + scoreText(g.meaning), 15, Math.min(6, glossary.length));
+    const rulesPick = pickTop(rules, (r) => scoreText(r.title) * 2 + scoreText(r.rule_text), 10, Math.min(6, rules.length));
+    const biasesPick = pickTop(biases, (r) => scoreText(r.title) + scoreText(r.rule_text), 8, Math.min(4, biases.length));
+
+    const glossaryBlock = glossaryPick.length
+      ? glossaryPick.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
+      : "(empty — nothing taught yet)";
+    const rulesBlock = rulesPick.length
+      ? rulesPick.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
+      : "(no custom rules configured)";
+    const learnedBlock = biasesPick.length
+      ? biasesPick.map((r) => `• ${r.rule_text}`).join("\n")
       : "(no learned preferences yet)";
 
 
