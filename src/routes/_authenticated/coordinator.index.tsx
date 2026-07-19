@@ -24,6 +24,7 @@ import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActiv
 import { WatchtowerToggle } from "@/components/coordinator/WatchtowerToggle";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
+import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
