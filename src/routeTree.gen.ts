@@ -53,6 +53,7 @@ import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
+import { Route as AuthenticatedCoordinatorAiOverageRouteImport } from './routes/_authenticated/coordinator.ai-overage'
 import { Route as AuthenticatedCoordinatorAiLearningRouteImport } from './routes/_authenticated/coordinator.ai-learning'
 import { Route as AuthenticatedCoordinatorAiCenterRouteImport } from './routes/_authenticated/coordinator.ai-center'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
@@ -332,6 +333,12 @@ const AuthenticatedCoordinatorAvailabilityRoute =
     path: '/availability',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorAiOverageRoute =
+  AuthenticatedCoordinatorAiOverageRouteImport.update({
+    id: '/ai-overage',
+    path: '/ai-overage',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorAiLearningRoute =
   AuthenticatedCoordinatorAiLearningRouteImport.update({
     id: '/ai-learning',
@@ -603,6 +610,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
+  '/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -684,6 +692,7 @@ export interface FileRoutesByTo {
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
+  '/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -770,6 +779,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/_authenticated/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
   '/_authenticated/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
+  '/_authenticated/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -856,6 +866,7 @@ export interface FileRouteTypes {
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
     | '/coordinator/ai-learning'
+    | '/coordinator/ai-overage'
     | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
@@ -937,6 +948,7 @@ export interface FileRouteTypes {
     | '/coordinator/address-settings'
     | '/coordinator/ai-center'
     | '/coordinator/ai-learning'
+    | '/coordinator/ai-overage'
     | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
@@ -1022,6 +1034,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/address-settings'
     | '/_authenticated/coordinator/ai-center'
     | '/_authenticated/coordinator/ai-learning'
+    | '/_authenticated/coordinator/ai-overage'
     | '/_authenticated/coordinator/availability'
     | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/board-creator'
@@ -1423,6 +1436,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/ai-overage': {
+      id: '/_authenticated/coordinator/ai-overage'
+      path: '/ai-overage'
+      fullPath: '/coordinator/ai-overage'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAiOverageRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/ai-learning': {
       id: '/_authenticated/coordinator/ai-learning'
       path: '/ai-learning'
@@ -1751,6 +1771,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
   AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
   AuthenticatedCoordinatorAiLearningRoute: typeof AuthenticatedCoordinatorAiLearningRoute
+  AuthenticatedCoordinatorAiOverageRoute: typeof AuthenticatedCoordinatorAiOverageRoute
   AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -1778,6 +1799,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorAiCenterRoute,
     AuthenticatedCoordinatorAiLearningRoute:
       AuthenticatedCoordinatorAiLearningRoute,
+    AuthenticatedCoordinatorAiOverageRoute:
+      AuthenticatedCoordinatorAiOverageRoute,
     AuthenticatedCoordinatorAvailabilityRoute:
       AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
