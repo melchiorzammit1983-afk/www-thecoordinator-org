@@ -2182,7 +2182,7 @@ async function fetchLiveStatusViaAeroDataBox(
   if (!key) return { ok: false, reason: "not_configured" };
 
   const day = isoToDayKey(pickupIso);
-  const cacheKey = `adb:v1:${canonical}:${day}`;
+  const cacheKey = `adb:v2:${canonical}:${day}:${side ?? "auto"}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
 
