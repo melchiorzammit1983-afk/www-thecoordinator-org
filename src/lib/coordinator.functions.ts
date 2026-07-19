@@ -2234,6 +2234,23 @@ async function fetchLiveStatusViaGemini(
   let confidence: "high" | "low" = extracted?.confidence === "high" ? "high" : "low";
   if (!hadGrounding) confidence = "low";
 
+  // Anti-hallucination guard: if the model didn't actually consult real
+  // search results (no groundingChunks) or self-reported low confidence,
+  // return status_unknown WITHOUT specific times or notes. A plausible-
+  // sounding invented gate/delay is worse than "not tracked".
+  if (confidence === "low") {
+    const value: LiveStatusResult = {
+      ok: true,
+      status: "unknown",
+      note: "",
+      scheduled: null,
+      estimated: null,
+      confidence: "low",
+    };
+    liveStatusCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+  }
+
   const value: LiveStatusResult = {
     ok: true,
     status: String(extracted?.status ?? "unknown"),
@@ -2245,6 +2262,7 @@ async function fetchLiveStatusViaGemini(
   liveStatusCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
+
 
 // Persist the live status onto a job row. Applies the 45-min "time_mismatch"
 // override identically for flights and vessels. When the first grounded call
