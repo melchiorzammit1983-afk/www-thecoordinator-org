@@ -68,6 +68,7 @@ import { Route as AuthenticatedAdminAiSettingsRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminAiOverageRouteImport } from './routes/_authenticated/admin.ai-overage'
 import { Route as AuthenticatedAdminAiLessonsRouteImport } from './routes/_authenticated/admin.ai-lessons'
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
+import { Route as AuthenticatedAdminAiCostsRouteImport } from './routes/_authenticated/admin.ai-costs'
 import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
@@ -424,6 +425,12 @@ const AuthenticatedAdminAiInsightsRoute =
     path: '/ai-insights',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminAiCostsRoute =
+  AuthenticatedAdminAiCostsRouteImport.update({
+    id: '/ai-costs',
+    path: '/ai-costs',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminAiActivityRoute =
   AuthenticatedAdminAiActivityRouteImport.update({
     id: '/ai-activity',
@@ -611,6 +618,7 @@ export interface FileRoutesByFullPath {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
+  '/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
   '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
@@ -694,6 +702,7 @@ export interface FileRoutesByTo {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
+  '/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
   '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
@@ -783,6 +792,7 @@ export interface FileRoutesById {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
   '/_authenticated/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
+  '/_authenticated/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/_authenticated/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
   '/_authenticated/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
@@ -872,6 +882,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
     | '/admin/ai-activity'
+    | '/admin/ai-costs'
     | '/admin/ai-insights'
     | '/admin/ai-lessons'
     | '/admin/ai-overage'
@@ -955,6 +966,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
     | '/admin/ai-activity'
+    | '/admin/ai-costs'
     | '/admin/ai-insights'
     | '/admin/ai-lessons'
     | '/admin/ai-overage'
@@ -1043,6 +1055,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/_authenticated/admin/activity'
     | '/_authenticated/admin/ai-activity'
+    | '/_authenticated/admin/ai-costs'
     | '/_authenticated/admin/ai-insights'
     | '/_authenticated/admin/ai-lessons'
     | '/_authenticated/admin/ai-overage'
@@ -1564,6 +1577,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/ai-costs': {
+      id: '/_authenticated/admin/ai-costs'
+      path: '/ai-costs'
+      fullPath: '/admin/ai-costs'
+      preLoaderRoute: typeof AuthenticatedAdminAiCostsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/ai-activity': {
       id: '/_authenticated/admin/ai-activity'
       path: '/ai-activity'
@@ -1759,6 +1779,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
   AuthenticatedAdminAiActivityRoute: typeof AuthenticatedAdminAiActivityRoute
+  AuthenticatedAdminAiCostsRoute: typeof AuthenticatedAdminAiCostsRoute
   AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
   AuthenticatedAdminAiLessonsRoute: typeof AuthenticatedAdminAiLessonsRoute
   AuthenticatedAdminAiOverageRoute: typeof AuthenticatedAdminAiOverageRoute
@@ -1775,6 +1796,7 @@ interface AuthenticatedAdminRouteChildren {
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
   AuthenticatedAdminAiActivityRoute: AuthenticatedAdminAiActivityRoute,
+  AuthenticatedAdminAiCostsRoute: AuthenticatedAdminAiCostsRoute,
   AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
   AuthenticatedAdminAiLessonsRoute: AuthenticatedAdminAiLessonsRoute,
   AuthenticatedAdminAiOverageRoute: AuthenticatedAdminAiOverageRoute,
