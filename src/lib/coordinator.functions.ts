@@ -658,7 +658,15 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
-    await syncJobPax(row.id, data.pax);
+    // If the caller didn't send explicit passenger names, try to auto-fill
+    // from the client/company field (e.g. "MV Ocean Pioneer (John, Jane)").
+    let paxToSync = data.pax;
+    if (!paxToSync || paxToSync.length === 0) {
+      const { extractPaxNames } = await import("./pax-extract");
+      const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
+      if (auto.length) paxToSync = auto;
+    }
+    await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
     // Auto-estimate the fare from company pricing + service areas. Route
@@ -782,7 +790,19 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
-    await syncJobPax(data.id, data.pax);
+    // Auto-fill from client/company parentheses only when caller passed
+    // no explicit pax array AND the trip has no existing passenger rows.
+    let paxToSync = data.pax;
+    if (!paxToSync || paxToSync.length === 0) {
+      const { count: existingCount } = await supabaseAdmin
+        .from("pax").select("id", { count: "exact", head: true }).eq("job_id", data.id);
+      if ((existingCount ?? 0) === 0) {
+        const { extractPaxNames } = await import("./pax-extract");
+        const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
+        if (auto.length) paxToSync = auto;
+      }
+    }
+    await syncJobPax(data.id, paxToSync);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
