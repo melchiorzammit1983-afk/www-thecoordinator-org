@@ -3766,10 +3766,12 @@ const statementInput = z.object({
   from: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .or(z.literal(""))
     .optional(),
   to: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .or(z.literal(""))
     .optional(),
   status: z.array(z.string()).optional(),
   payment_status: z.array(z.string()).optional(),
