@@ -64,8 +64,9 @@ Extract soft preference bullets.`;
       method: "POST",
       headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
       body: JSON.stringify({
-        model: "google/gemini-3.5-flash",
+        model: "google/gemini-3.1-flash-lite",
         response_format: { type: "json_object" },
+        max_tokens: 600,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
