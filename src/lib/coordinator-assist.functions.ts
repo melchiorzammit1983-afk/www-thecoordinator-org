@@ -374,9 +374,26 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
-    const historyLines = (data.history ?? [])
-      .slice(-8)
-      .map((m) => `${m.role.toUpperCase()}: ${m.text}`)
+
+    // Character-overage billing. Anything past the free threshold is billed
+    // via `ai_char_overage`; if the wallet is empty the input is truncated
+    // (oldest history first, then message tail) so the call still succeeds.
+    const { chargeCharOverage } = await import("@/lib/ai-overage.functions");
+    const historyForBilling = (data.history ?? []).slice(-8);
+    const billed = await chargeCharOverage(
+      company.id,
+      data.message,
+      historyForBilling,
+      "AI assistant characters",
+    );
+    const effectiveMessage = billed.message;
+    const effectiveHistory = billed.history;
+    const overageNotice = billed.truncated
+      ? `\n\n[Notice: your message was shortened to the free limit of ${billed.settings.free_char_threshold} characters because your points balance is empty. Top up to send longer prompts.]`
+      : "";
+
+    const historyLines = effectiveHistory
+      .map((m) => `${(m.role ?? "user").toUpperCase()}: ${m.text}`)
       .join("\n");
 
     // Fold the retired "Ask the Guide" coach knowledge (live facts, event
