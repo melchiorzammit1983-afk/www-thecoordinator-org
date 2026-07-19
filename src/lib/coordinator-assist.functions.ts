@@ -66,6 +66,8 @@ export type AssistantDraft = {
     from_flight?: string | null;
     to_flight?: string | null;
     clientcompanyname?: string | null;
+    /** Passenger / crew names extracted for this trip (max 200, ≤200 chars each). */
+    pax?: string[] | null;
   };
   summary: string;
 };
