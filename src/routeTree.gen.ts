@@ -28,6 +28,7 @@ import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as GSessionRouteImport } from './routes/g.$session'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -190,6 +191,11 @@ const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
   id: '/api/help-chat',
   path: '/api/help-chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMyTicketsRoute = AuthenticatedMyTicketsRouteImport.update({
   id: '/my-tickets',
@@ -605,6 +611,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
@@ -690,6 +697,7 @@ export interface FileRoutesByTo {
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
@@ -779,6 +787,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
@@ -869,6 +878,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/coordinator'
     | '/my-tickets'
+    | '/settings'
     | '/api/help-chat'
     | '/c/$token'
     | '/g/$session'
@@ -954,6 +964,7 @@ export interface FileRouteTypes {
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/my-tickets'
+    | '/settings'
     | '/api/help-chat'
     | '/c/$token'
     | '/g/$session'
@@ -1042,6 +1053,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/coordinator'
     | '/_authenticated/my-tickets'
+    | '/_authenticated/settings'
     | '/api/help-chat'
     | '/c/$token'
     | '/g/$session'
@@ -1296,6 +1308,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/help-chat'
       preLoaderRoute: typeof ApiHelpChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/my-tickets': {
       id: '/_authenticated/my-tickets'
@@ -1900,12 +1919,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRouteWithChildren
   AuthenticatedMyTicketsRoute: typeof AuthenticatedMyTicketsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRouteWithChildren,
   AuthenticatedMyTicketsRoute: AuthenticatedMyTicketsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
