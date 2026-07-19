@@ -2166,6 +2166,7 @@ function fmtHm(iso: string | null): string {
 async function fetchLiveStatusViaAeroDataBox(
   identifier: string,
   pickupIso: string | null,
+  side?: "arr" | "dep",
 ): Promise<LiveStatusResult> {
   const raw = (identifier || "").trim();
   if (!raw) return { ok: false, reason: "no_code" };
@@ -2181,7 +2182,7 @@ async function fetchLiveStatusViaAeroDataBox(
   if (!key) return { ok: false, reason: "not_configured" };
 
   const day = isoToDayKey(pickupIso);
-  const cacheKey = `adb:v1:${canonical}:${day}`;
+  const cacheKey = `adb:v2:${canonical}:${day}:${side ?? "auto"}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
 
@@ -2248,7 +2249,12 @@ async function fetchLiveStatusViaAeroDataBox(
     else if (status === "diverted") note = `Diverted · ${note}`.trim();
 
     // Anchor persisted times to whichever side (dep vs arr) is closer to pickup.
+    // Anchor selection: prefer the semantic side (arr for inbound / from_flight,
+    // dep for outbound / to_flight). Fall back to whichever side is closer to
+    // pickup_at when the requested side has no scheduled time.
     const anchor: "arr" | "dep" = (() => {
+      if (side === "arr" && arrSched) return "arr";
+      if (side === "dep" && depSched) return "dep";
       if (!pickupMs) return arrSched ? "arr" : "dep";
       const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
       const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
@@ -2273,9 +2279,10 @@ async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
+  side?: "arr" | "dep",
 ): Promise<LiveStatusResult> {
   if (kind === "flight") {
-    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso);
+    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
     if (!r.ok && r.reason === "not_configured") {
       return { ok: true, status: "unknown", note: "Live flight tracking not configured", scheduled: null, estimated: null, confidence: "low" };
     }
@@ -2462,8 +2469,11 @@ export async function applyLiveStatusToJob(
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
+  // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
+  const side: "arr" | "dep" | undefined =
+    kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
 
-  let result = await fetchLiveStatus(kind, code, job.pickup_at);
+  let result = await fetchLiveStatus(kind, code, job.pickup_at, side);
 
   // Retry once with an airport hint if the first pass produced nothing usable.
   // AeroDataBox doesn't accept airport hints, but the Gemini vessel path does.
