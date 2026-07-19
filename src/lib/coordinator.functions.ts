@@ -613,6 +613,15 @@ async function syncJobPax(jobId: string, names: string[] | undefined) {
     .from("pax")
     .insert(clean.map((name) => ({ job_id: jobId, name })));
   if (insertErr) throw new Error(insertErr.message);
+  // Verify: re-read the row count so a silent RLS/constraint drop is caught.
+  const { count, error: countErr } = await supabaseAdmin
+    .from("pax")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", jobId);
+  if (countErr) throw new Error(`Passenger sync verification failed: ${countErr.message}`);
+  if ((count ?? 0) !== clean.length) {
+    throw new Error(`Passenger sync mismatch: expected ${clean.length} row(s) stored, found ${count ?? 0}.`);
+  }
 }
 
 export const createJob = createServerFn({ method: "POST" })
