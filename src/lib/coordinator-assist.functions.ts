@@ -70,6 +70,8 @@ export type AssistantDraft = {
     pax?: string[] | null;
   };
   summary: string;
+  /** Parse-time warnings surfaced to the UI so silent extraction gaps are visible. */
+  warnings?: string[];
 };
 
 export type AssistantAnswer = {
@@ -188,6 +190,45 @@ export type AssistantResult =
   | AssistantCommandActions
   | AssistantMergeTrips
   | AssistantAutoCoordinate;
+
+/**
+ * Detect silent passenger-parsing failures so the UI can warn the coordinator
+ * before they confirm a trip with an empty/mismatched passenger list.
+ *
+ * Codes:
+ *  - no_pax_extracted : user message mentions passengers but nothing was parsed
+ *  - count_mismatch   : message says "N pax" (or similar) but parsed count differs
+ *  - single_blob      : one entry likely still contains multiple unsplit names
+ */
+export function computePaxWarnings(
+  userMessage: string,
+  rawFields: Record<string, unknown>,
+  pax: string[] | null,
+): string[] {
+  const warnings: string[] = [];
+  const msg = (userMessage ?? "").toLowerCase();
+  const mentionsPax =
+    /\bpax\b|\bpassenger|\bguest|\bcrew\b|\bjoiner|\bsign[- ]?off|\bnames?\s*[:：]/i.test(msg);
+  const count = pax?.length ?? 0;
+  if (mentionsPax && count === 0) {
+    warnings.push("no_pax_extracted: No passenger names were detected — the driver will see an empty list.");
+  }
+  // Compare against explicit numeric hints in the message or a pax_count field.
+  const numMatch = msg.match(/\b(\d{1,3})\s*(pax|passengers?|persons?|adults?|guests?|crew)\b/i);
+  const stated = numMatch ? Number(numMatch[1]) : (typeof (rawFields as { pax_count?: unknown }).pax_count === "number"
+    ? (rawFields as { pax_count: number }).pax_count
+    : null);
+  if (stated != null && Number.isFinite(stated) && stated > 0 && count !== stated) {
+    warnings.push(`count_mismatch: Expected ${stated} passenger${stated === 1 ? "" : "s"}, parsed ${count}.`);
+  }
+  if (count === 1 && pax && (pax[0].length > 60 || (pax[0].match(/[,;&]|\band\b/gi)?.length ?? 0) >= 2)) {
+    warnings.push("single_blob: Passenger entry may contain multiple unsplit names — please review.");
+  }
+  return warnings;
+}
+
+
+
 
 
 
@@ -746,12 +787,14 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         if (pax.length === 0) pax = null;
       }
       const fields = { ...(rawFields as AssistantDraft["fields"]), pax };
+      const warnings = computePaxWarnings(data.message, rawFields, pax);
       return {
         kind: "draft",
         action: !forceCreate && d.action === "update" ? "update" : "create",
         target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
         fields,
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
+        warnings: warnings.length ? warnings : undefined,
       };
     };
     // ---- Glossary management via the shared ai_lessons store ----
