@@ -498,6 +498,43 @@ export const clearFeatureEntitlement = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Batch-set entitlements: used by the admin "master switches" (Turn all AI
+ * off, Kill switch, Enable everything) so a single click updates many rows
+ * at once. Pass a specific list of feature keys to scope the change (e.g.
+ * only AI features), or omit for all catalog features.
+ */
+export const bulkSetFeatureEntitlements = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        company_id: z.string().uuid(),
+        enabled: z.boolean(),
+        features: z
+          .array(z.enum(FEATURE_KEYS as [FeatureKey, ...FeatureKey[]]))
+          .min(1)
+          .optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await assertAdmin(context);
+    const keys = (data.features ?? FEATURE_KEYS) as FeatureKey[];
+    const rows = keys.map((f) => ({
+      company_id: data.company_id,
+      feature: f,
+      enabled: data.enabled,
+      expires_at: null,
+      created_by: context.userId,
+    }));
+    const { error } = await supabaseAdmin
+      .from("company_feature_entitlements")
+      .upsert(rows, { onConflict: "company_id,feature" });
+    if (error) throw new Error(error.message);
+    return { ok: true, count: rows.length };
+  });
+
 
 // ---------- ACTIVITY LOG ----------
 
