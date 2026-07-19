@@ -123,7 +123,8 @@ export function tryFaqAnswer(userMessage: string): string | null {
 
 export async function checkDailyCap(): Promise<{ allowed: boolean; count: number }> {
   try {
-    const { data, error } = await (supabaseAdmin.rpc as (fn: string) => Promise<{ data: unknown; error: unknown }>)("get_public_ai_daily_count");
+    const rpc = supabaseAdmin.rpc as unknown as (fn: string) => Promise<{ data: unknown; error: unknown }>;
+    const { data, error } = await rpc("get_public_ai_daily_count");
     if (error) return { allowed: true, count: 0 }; // fail-open on infra error
     const count = typeof data === "number" ? data : 0;
     return { allowed: count < PUBLIC_AI_LIMITS.DAILY_MODEL_CALL_CAP, count };
