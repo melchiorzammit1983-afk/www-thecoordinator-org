@@ -135,7 +135,8 @@ export async function checkDailyCap(): Promise<{ allowed: boolean; count: number
 
 export async function bumpDailyCounter(): Promise<void> {
   try {
-    await supabaseAdmin.rpc("bump_public_ai_daily_count");
+    const rpc = supabaseAdmin.rpc as unknown as (fn: string) => Promise<{ data: unknown; error: unknown }>;
+    await rpc("bump_public_ai_daily_count");
   } catch {
     /* non-fatal — worst case one extra call slips through */
   }
