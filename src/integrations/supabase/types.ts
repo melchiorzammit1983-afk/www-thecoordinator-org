@@ -5199,6 +5199,24 @@ export type Database = {
           },
         ]
       }
+      public_ai_daily_counters: {
+        Row: {
+          count: number
+          day: string
+          updated_at: string
+        }
+        Insert: {
+          count?: number
+          day: string
+          updated_at?: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       push_devices: {
         Row: {
           auth: string | null
@@ -5967,6 +5985,7 @@ export type Database = {
           score: number
         }[]
       }
+      bump_public_ai_daily_count: { Args: never; Returns: number }
       canonical_jsonb: { Args: { _j: Json }; Returns: string }
       charge_extra_logos_weekly: { Args: never; Returns: number }
       delete_email: {
@@ -6000,6 +6019,7 @@ export type Database = {
         Args: { _company_id: string; _feature_key: string }
         Returns: boolean
       }
+      get_public_ai_daily_count: { Args: never; Returns: number }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       match_ai_lessons: {
         Args: {
