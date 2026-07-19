@@ -2643,6 +2643,18 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     return { checked: jobs.length, updated, configured };
   });
 
+export const getFlightTrackingConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const key = process.env.AERODATABOX_API_KEY;
+    const configured = !!key && key.length > 0;
+    return {
+      configured,
+      provider: configured ? "AeroDataBox (RapidAPI)" : null,
+      feature: "flight_vessel_tracking",
+    };
+  });
+
 export const getMaltaFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
