@@ -327,7 +327,7 @@ function TripRow({
             </span>
           );
         })()}
-        {job && (job.from_flight || job.to_flight) && (
+        {job?.id && (job.from_flight || job.to_flight) && (
           <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-0.5" />
         )}
         {meta && <span>· {meta}</span>}
