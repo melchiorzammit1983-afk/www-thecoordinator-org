@@ -48,6 +48,16 @@ export type AssistantScreen = {
   } | null;
 };
 
+// ---- Passenger-parse warning helpers (mirror server-side codes) ----
+function paxWarningLabel(w: string): string {
+  const [, ...rest] = w.split(":");
+  return rest.join(":").trim() || w;
+}
+function hasBlockingPaxWarning(warnings?: string[] | null): boolean {
+  if (!warnings?.length) return false;
+  return warnings.some((w) => w.startsWith("no_pax_extracted") || w.startsWith("count_mismatch"));
+}
+
 type AssistantCtx = {
   setScreen: (s: AssistantScreen | null) => void;
   screenRef: React.MutableRefObject<AssistantScreen | null>;
