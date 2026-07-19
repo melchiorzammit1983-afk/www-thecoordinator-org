@@ -217,9 +217,26 @@ export function parseTrips(raw: string): ParsedTrip[] {
       const maybeTime = parseTime(line);
       if (maybeTime && !trip.time) trip.time = maybeTime;
 
-      if (line.includes("👤") || /^names?\s*[:\-]?\s*$/i.test(stripEmoji(line).trim())) {
-        inNames = true;
-        continue;
+      {
+        const noE = stripEmoji(line).trim();
+        const namesHeader = /^(names?|passengers?|pax|guests?|customers?)\s*[:\-]\s*(.*)$/i.exec(noE);
+        if (line.includes("👤") || namesHeader) {
+          const rest = namesHeader ? namesHeader[2].trim() : "";
+          if (rest) {
+            // Inline: "Passengers: John Smith, Maria Rossi & Ali / +35699…"
+            for (const part of rest.split(/\s*(?:,|;|\/| & | \+ | and )\s*/i)) {
+              const rawName = cleanName(stripLeadingBullets(part));
+              if (!rawName) continue;
+              const { cleanName: cn, phone } = extractPhoneFromName(rawName);
+              if (phone && !trip.contact_phone) trip.contact_phone = phone;
+              if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
+            }
+            inNames = false;
+          } else {
+            inNames = true;
+          }
+          continue;
+        }
       }
       if (line.includes("🏢") || /^(client|company)\s*[:\-]/i.test(stripEmoji(line).trim())) {
         trip.clientcompanyname = cleanName(line.replace(/🏢/g, "").replace(/^(client|company)\s*[:\-]/i, ""));
