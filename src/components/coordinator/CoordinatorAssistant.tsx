@@ -1207,6 +1207,25 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                                     ))}
                                   </ul>
                                 ) : null}
+                                {editingPax === `batch:${m.id}:${i}` ? (
+                                  <PaxInlineEditor
+                                    initial={d.fields.pax ?? []}
+                                    disabled={busy}
+                                    onCancel={() => setEditingPax(null)}
+                                    onSave={(pax) => { updateBatchItemPax(m.id, i, pax); setEditingPax(null); }}
+                                  />
+                                ) : (
+                                  (d.warnings?.some((w) => w.startsWith("no_pax_extracted") || w.startsWith("count_mismatch")) || (d.fields.pax ?? []).length > 0) && (
+                                    <button
+                                      type="button"
+                                      className="mt-1 text-[11px] font-medium text-primary hover:underline"
+                                      onClick={() => setEditingPax(`batch:${m.id}:${i}`)}
+                                      disabled={busy}
+                                    >
+                                      {(d.fields.pax ?? []).length > 0 ? "Edit passengers" : "Add passengers"}
+                                    </button>
+                                  )
+                                )}
                               </div>
                             );
                           })}
