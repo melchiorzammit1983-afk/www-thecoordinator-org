@@ -92,6 +92,7 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
   const [to, setTo] = useState("");
   const [pickup, setPickup] = useState("");
   const [pax, setPax] = useState("1");
+  const [paxNames, setPaxNames] = useState("");
   const [flight, setFlight] = useState("");
   const [notes, setNotes] = useState("");
   const [promo, setPromo] = useState("");
@@ -107,6 +108,11 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
   const addonsTotal = boot.addons.filter((a) => selectedAddons.has(a.id)).reduce((n, a) => n + (Number(a.price) || 0), 0);
   const priceHint = currentFare ? Number(currentFare.price) + addonsTotal : null;
 
+  const parsedPaxNames = paxNames
+    .split(/\r?\n|,|;/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+
   async function submit() {
     if (!from.trim() || !to.trim() || !pickup) { toast.error("Please fill from, to and pickup time"); return; }
     setBusy(true);
@@ -114,6 +120,7 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       from_location: from.trim(), to_location: to.trim(),
       pickup_at: new Date(pickup).toISOString(),
       pax_count: Number(pax) || 1,
+      pax_names: parsedPaxNames.length ? parsedPaxNames : undefined,
       flight_number: flight.trim() || null,
       notes: notes.trim() || null,
       promo_code: promo.trim() || null,
@@ -126,7 +133,7 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
     setBusy(false);
     if (!r.ok) { toast.error("Could not submit — please try again."); return; }
     toast.success("Booking sent to reception & dispatch");
-    setFrom(""); setTo(""); setPickup(""); setPax("1"); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
+    setFrom(""); setTo(""); setPickup(""); setPax("1"); setPaxNames(""); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
     onCreated();
   }
 
@@ -170,6 +177,21 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
         <div className="grid grid-cols-2 gap-2">
           <div><Label className="text-xs">Pickup time</Label><Input type="datetime-local" value={pickup} onChange={(e) => setPickup(e.target.value)} /></div>
           <div><Label className="text-xs">Pax</Label><Input type="number" min={1} value={pax} onChange={(e) => setPax(e.target.value)} /></div>
+        </div>
+        <div>
+          <Label className="text-xs">Passenger names (optional, one per line)</Label>
+          <Textarea
+            value={paxNames}
+            onChange={(e) => setPaxNames(e.target.value)}
+            rows={Math.min(6, Math.max(2, (Number(pax) || 1)))}
+            placeholder={`${boot.guest.name}\nSecond passenger name`}
+          />
+          <div className="text-[11px] text-muted-foreground mt-1">
+            {parsedPaxNames.length} of {Number(pax) || 1} named
+            {parsedPaxNames.length < (Number(pax) || 1)
+              ? ` · remaining slots will show as "Guest ${parsedPaxNames.length + 1}"…`
+              : ""}
+          </div>
         </div>
         <div><Label className="text-xs">Flight (optional)</Label><Input value={flight} onChange={(e) => setFlight(e.target.value)} placeholder="KM123" /></div>
         <div><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Extra luggage, child seat, …" /></div>

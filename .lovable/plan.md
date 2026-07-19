@@ -1,36 +1,38 @@
-## Goal
-Catch silent passenger-parsing failures in the AI trip flow, tell the coordinator what happened, and verify the `pax` rows actually landed in the database.
+# Fix: passenger names missing on portal-created trips
 
-## Problem
-Right now `toDraft` in `src/lib/coordinator-assist.functions.ts` accepts whatever the model returns. If it yields `[]`, one merged string, or a passenger count that disagrees with the trip's stated `pax_count`, the draft confirms silently and the driver sees an empty passenger list. There is also no post-save assertion that `syncJobPax` wrote the rows.
+## Root cause (verified against trip #140)
 
-## Changes
+- The guest QR portal booking form (`GuestBookingInput` in `src/lib/portal-hotel.server.ts`) only captures the primary guest name + `pax_count`. Trip #140's `portal_bookings.payload` shows `pax_count: 2` but no names for the 2nd passenger.
+- `acceptPortalBooking` in `src/lib/portal.functions.ts` writes only `clientcompanyname = "melchior zammit"` on the job and never inserts into `public.pax`. Result: driver sees 0 passengers to verify.
 
-### 1. Parse-time validation (`src/lib/coordinator-assist.functions.ts`)
-- After `toDraft` builds `pax`, compute `parseWarnings` per draft:
-  - `no_pax_extracted` — message text contains passenger cues (regex: `pax|passenger|guest|name[s]?[:：]|\b\d+\s*(pax|pers|adult)`) but `pax.length === 0`.
-  - `count_mismatch` — `fields.pax_count` set and `pax.length !== pax_count`.
-  - `single_blob` — exactly one entry longer than 60 chars or containing 3+ separators (likely unsplit).
-- Return `warnings: string[]` on each draft in the assistant response payload.
+## What to change
 
-### 2. Confirmation UI (`src/components/coordinator/CoordinatorAssistant.tsx`)
-- Render an amber warning strip on trip cards with `warnings.length > 0`, listing human-readable messages ("No passenger names detected — driver will see an empty list", "Expected 3 passengers, parsed 2", etc.).
-- Add an inline "Edit passengers" affordance that opens the existing pax editor before confirming.
-- Block one-click "Confirm all" when any card has `no_pax_extracted` or `count_mismatch`; require per-card confirm so the coordinator sees the warning.
+### 1. Portal guest booking form — collect names
+- **`src/lib/portal-hotel.server.ts`**
+  - Extend `GuestBookingInput` with `pax_names: z.array(z.string().min(1).max(120)).max(20).optional()`.
+  - Persist `pax_names` into `payload.pax_names` on `portal_bookings` insert.
+- **`src/routes/g.$session.tsx`** (guest mini-portal booking sheet)
+  - Add a "Passenger names (one per line)" textarea. Placeholder pre-fills the primary guest name. Auto-grows with `pax_count`.
+  - On submit, split textarea by newlines/commas, trim, and send as `pax_names`.
 
-### 3. Post-save verification (`src/lib/coordinator.functions.ts`)
-- After `syncJobPax` in `createJob`/`updateJob`, re-select `count(*) from pax where job_id = ?` and compare to the requested list length.
-- On mismatch, throw a typed error so the assistant surfaces "Saved trip but passenger sync failed (expected N, stored M)" instead of a silent success.
+### 2. Accept flow — seed pax rows with placeholder fallback
+- **`src/lib/portal.functions.ts` → `acceptPortalBooking`**
+  - After job insert, build the passenger list:
+    1. Start with `payload.pax_names` (if any).
+    2. If length < `payload.pax_count`, pad with the primary guest name (slot 0) and `"Guest 2"`, `"Guest 3"`, … so `list.length === pax_count`.
+    3. If `pax_count` missing, use just the primary name.
+  - Insert one row per name into `public.pax` with `job_id`, `name`, `status: 'pending'`.
+  - Reuse the existing `syncJobPax` helper from `src/lib/coordinator.functions.ts` if it accepts an explicit list; otherwise inline the insert (mirrors `syncJobPax` shape).
 
-### 4. Toast feedback
-- `CoordinatorAssistant` surfaces `sonner` success toast including passenger count ("Trip #123 saved · 3 passengers") so the coordinator gets immediate confirmation the names persisted.
+### 3. Backfill existing portal jobs
+- Migration (data-only, run once via `supabase--insert`):
+  - For every `jobs` row where `source LIKE 'portal:%'` and no rows in `pax` for that `job_id`, insert `pax` rows derived from the linked `portal_bookings.payload` — primary name + placeholders up to `pax_count`.
 
-### 5. DB spot-check
-- After deploying, run a read query against `pax` for the last ~20 AI-created jobs to confirm rows exist and match `jobs.pax_count`; report any drift.
+## Non-goals
+- No change to non-portal creation paths (AI assistant, manual form, client portal) — those already flow through `syncJobPax`.
+- No change to fare/pricing.
 
-## Out of scope
-- No changes to the AI prompt itself or to manual (non-AI) trip creation beyond the shared verification in `createJob`.
-- No new tables or migrations.
-
-## Question before I build
-Should the "Confirm all" button be **blocked** on warnings (safer, forces review) or just **flagged** with a confirm-anyway dialog (faster)? Default in the plan above is blocked for `no_pax_extracted` / `count_mismatch` only.
+## Test plan
+1. Create a new guest booking with `pax_count=3` and 2 names entered → accept → job has 3 pax rows (2 real + `"Guest 3"`).
+2. Trip #140 after backfill: shows `melchior zammit` + `Guest 2` in the driver's passenger list.
+3. Guest booking with 0 names entered + `pax_count=2` → 2 pax rows (primary + `Guest 2`).
