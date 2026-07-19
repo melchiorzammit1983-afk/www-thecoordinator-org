@@ -731,8 +731,11 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         d.passenger_names ??
         d.names;
       let pax: string[] | null = null;
-      if (Array.isArray(rawPax)) {
-        pax = rawPax
+      if (Array.isArray(rawPax) || typeof rawPax === "string") {
+        const rawNames = Array.isArray(rawPax)
+          ? rawPax
+          : rawPax.split(/\r?\n|;|,(?=\s*[A-ZÀ-ÖØ-Þ])/).map((name) => name.replace(/^[-•\d.)\s]+/, ""));
+        pax = rawNames
           .map((n) => {
             if (typeof n === "string") return n.trim();
             if (n && typeof n === "object" && "name" in n) return String((n as { name?: unknown }).name ?? "").trim();
