@@ -2105,7 +2105,8 @@ type LiveStatusResult = {
 };
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
-const LIVE_STATUS_TTL_MS = 5 * 60_000;
+const LIVE_STATUS_TTL_MS = 20 * 60_000;
+
 
 function isoToDayKey(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
@@ -2124,21 +2125,26 @@ async function fetchLiveStatusViaGemini(
 
   // Fail fast for obviously invalid flight codes so we don't burn a Gemini
   // call (or points) on `ASSO VENTICINCUE` sitting in a flight field.
+  // Also compute the canonical normalized code — used as the cache key so
+  // "LO673", "lo 673" and "LO0673" all resolve to the same cached result.
+  let canonical = id.toUpperCase().replace(/\s+/g, "");
   if (kind === "flight") {
     const parsed = parseFlightCode(id);
     if (!parsed.ok) {
       if (looksLikeVessel(id)) return { ok: false, reason: "vessel_in_flight_field" };
       return { ok: false, reason: "invalid_code" };
     }
+    canonical = parsed.normalized ?? canonical;
   }
 
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
   const variant = opts.variant ? `:${opts.variant}` : "";
-  const cacheKey = `v3:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}${variant}`;
+  const cacheKey = `v4:${kind}:${canonical}:${isoToDayKey(pickupIso)}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
+
 
   const pickupLine = pickupIso
     ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
@@ -2228,6 +2234,23 @@ async function fetchLiveStatusViaGemini(
   let confidence: "high" | "low" = extracted?.confidence === "high" ? "high" : "low";
   if (!hadGrounding) confidence = "low";
 
+  // Anti-hallucination guard: if the model didn't actually consult real
+  // search results (no groundingChunks) or self-reported low confidence,
+  // return status_unknown WITHOUT specific times or notes. A plausible-
+  // sounding invented gate/delay is worse than "not tracked".
+  if (confidence === "low") {
+    const value: LiveStatusResult = {
+      ok: true,
+      status: "unknown",
+      note: "",
+      scheduled: null,
+      estimated: null,
+      confidence: "low",
+    };
+    liveStatusCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+  }
+
   const value: LiveStatusResult = {
     ok: true,
     status: String(extracted?.status ?? "unknown"),
@@ -2239,6 +2262,7 @@ async function fetchLiveStatusViaGemini(
   liveStatusCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
+
 
 // Persist the live status onto a job row. Applies the 45-min "time_mismatch"
 // override identically for flights and vessels. When the first grounded call
