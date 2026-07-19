@@ -632,11 +632,22 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     const p = parsed as Record<string, unknown>;
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
       const d = (raw ?? {}) as Record<string, unknown>;
+      const rawFields = (d.fields ?? {}) as Record<string, unknown>;
+      const rawPax = rawFields.pax ?? rawFields.passengers;
+      let pax: string[] | null = null;
+      if (Array.isArray(rawPax)) {
+        pax = rawPax
+          .map((n) => (typeof n === "string" ? n.trim() : ""))
+          .filter((n) => n.length > 0 && n.length <= 200)
+          .slice(0, 200);
+        if (pax.length === 0) pax = null;
+      }
+      const fields = { ...(rawFields as AssistantDraft["fields"]), pax };
       return {
         kind: "draft",
         action: !forceCreate && d.action === "update" ? "update" : "create",
         target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
-        fields: (d.fields as AssistantDraft["fields"]) ?? {},
+        fields,
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
