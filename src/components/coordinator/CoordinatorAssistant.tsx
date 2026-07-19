@@ -674,7 +674,33 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     );
   };
 
-  const confirmFix = useMutation({
+  const updateDraftPax = (msgId: string, pax: string[]) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== msgId || !("draft" in x)) return x;
+        const nextFields = { ...x.draft.fields, pax: pax.length ? pax : null };
+        const nextWarnings = stripResolvedPaxWarnings(x.draft.warnings, pax);
+        return { ...x, draft: { ...x.draft, fields: nextFields, warnings: nextWarnings } };
+      }),
+    );
+  };
+
+  const updateBatchItemPax = (batchId: string, idx: number, pax: string[]) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== batchId || !("batch" in x)) return x;
+        const drafts = x.batch.drafts.map((d, i) => {
+          if (i !== idx) return d;
+          const nextFields = { ...d.fields, pax: pax.length ? pax : null };
+          const nextWarnings = stripResolvedPaxWarnings(d.warnings, pax);
+          return { ...d, fields: nextFields, warnings: nextWarnings };
+        });
+        return { ...x, batch: { ...x.batch, drafts } };
+      }),
+    );
+  };
+
+
     mutationFn: async (fix: AssistantDataFix) => {
       if (fix.target === "trip") {
         // Reuse existing updateJob: pull the current row, patch the single field.
