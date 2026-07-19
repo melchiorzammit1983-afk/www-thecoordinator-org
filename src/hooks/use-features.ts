@@ -27,9 +27,9 @@ export function useFeatures() {
   return useQuery({
     queryKey: ["my-features"],
     queryFn: () => fn() as Promise<Record<string, boolean>>,
-    staleTime: 0,
-    refetchInterval: 30_000,
-    refetchOnMount: "always",
+    // Realtime channel above invalidates this query when entitlements change,
+    // so we don't need aggressive polling. 5 min staleTime + focus refetch is plenty.
+    staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -50,7 +50,7 @@ export function useMyBilling() {
       costs: { feature_key: string; points_cost: number; label: string | null; min_plan_code: string | null; is_addon: boolean; category: string | null; enabled: boolean; block_on_empty: boolean }[];
       recent: { id: string; feature_key: string | null; points_deducted: number; created_at: string; note: string | null }[];
     } | null>,
-    staleTime: 15_000,
+    staleTime: 60_000,
   });
 }
 
