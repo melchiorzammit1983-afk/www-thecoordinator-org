@@ -74,6 +74,7 @@ import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
 import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
 import { Route as ApiPublicHooksSummarizeLearningRouteImport } from './routes/api/public/hooks/summarize-learning'
 import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
+import { Route as ApiPublicCronFlightT30RouteImport } from './routes/api/public/cron/flight-t30'
 import { Route as ApiPublicCronAutoForwardRouteImport } from './routes/api/public/cron/auto-forward'
 import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
 import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
@@ -455,6 +456,11 @@ const ApiPublicCronRolloverSubscriptionsRoute =
     path: '/api/public/cron/rollover-subscriptions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCronFlightT30Route = ApiPublicCronFlightT30RouteImport.update({
+  id: '/api/public/cron/flight-t30',
+  path: '/api/public/cron/flight-t30',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicCronAutoForwardRoute =
   ApiPublicCronAutoForwardRouteImport.update({
     id: '/api/public/cron/auto-forward',
@@ -620,6 +626,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
+  '/api/public/cron/flight-t30': typeof ApiPublicCronFlightT30Route
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
@@ -700,6 +707,7 @@ export interface FileRoutesByTo {
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
+  '/api/public/cron/flight-t30': typeof ApiPublicCronFlightT30Route
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
@@ -785,6 +793,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
+  '/api/public/cron/flight-t30': typeof ApiPublicCronFlightT30Route
   '/api/public/cron/rollover-subscriptions': typeof ApiPublicCronRolloverSubscriptionsRoute
   '/api/public/hooks/summarize-learning': typeof ApiPublicHooksSummarizeLearningRoute
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
@@ -870,6 +879,7 @@ export interface FileRouteTypes {
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
+    | '/api/public/cron/flight-t30'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
@@ -950,6 +960,7 @@ export interface FileRouteTypes {
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
+    | '/api/public/cron/flight-t30'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
@@ -1034,6 +1045,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
+    | '/api/public/cron/flight-t30'
     | '/api/public/cron/rollover-subscriptions'
     | '/api/public/hooks/summarize-learning'
     | '/api/public/hooks/wait-thresholds'
@@ -1081,6 +1093,7 @@ export interface RootRouteChildren {
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronAutoForwardRoute: typeof ApiPublicCronAutoForwardRoute
+  ApiPublicCronFlightT30Route: typeof ApiPublicCronFlightT30Route
   ApiPublicCronRolloverSubscriptionsRoute: typeof ApiPublicCronRolloverSubscriptionsRoute
   ApiPublicHooksSummarizeLearningRoute: typeof ApiPublicHooksSummarizeLearningRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
@@ -1557,6 +1570,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cron/flight-t30': {
+      id: '/api/public/cron/flight-t30'
+      path: '/api/public/cron/flight-t30'
+      fullPath: '/api/public/cron/flight-t30'
+      preLoaderRoute: typeof ApiPublicCronFlightT30RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/auto-forward': {
       id: '/api/public/cron/auto-forward'
       path: '/api/public/cron/auto-forward'
@@ -1868,6 +1888,7 @@ const rootRouteChildren: RootRouteChildren = {
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronAutoForwardRoute: ApiPublicCronAutoForwardRoute,
+  ApiPublicCronFlightT30Route: ApiPublicCronFlightT30Route,
   ApiPublicCronRolloverSubscriptionsRoute:
     ApiPublicCronRolloverSubscriptionsRoute,
   ApiPublicHooksSummarizeLearningRoute: ApiPublicHooksSummarizeLearningRoute,
