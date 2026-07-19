@@ -116,6 +116,8 @@ function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; v
   push("From flight", fields.from_flight);
   push("To flight", fields.to_flight);
   push("Client", fields.clientcompanyname);
+  const pax = fields.pax ?? [];
+  if (pax.length > 0) out.push({ label: `Passengers (${pax.length})`, value: pax.join(", ") });
   return out;
 }
 
