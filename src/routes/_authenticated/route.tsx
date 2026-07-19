@@ -5,6 +5,17 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    // Session-first: cache hit avoids a network call to /auth/v1/user on every navigation.
+    // Only revalidate with getUser() when no session is present, or when the token is close
+    // to expiry (Supabase auto-refreshes but we still want to catch a truly stale token).
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+    if (session && session.user) {
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+      if (expiresAt - Date.now() > 60_000) {
+        return { user: session.user };
+      }
+    }
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
     return { user: data.user };
