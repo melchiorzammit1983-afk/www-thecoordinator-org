@@ -157,6 +157,7 @@ import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinat
 import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
 import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { useFeature } from "@/hooks/use-features";
+import { useAiToggle } from "@/hooks/use-preferences";
 import { IfFeature } from "@/components/billing/IfFeature";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
