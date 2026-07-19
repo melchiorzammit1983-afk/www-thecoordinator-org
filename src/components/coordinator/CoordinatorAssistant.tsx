@@ -231,6 +231,9 @@ export function CoordinatorAssistant({ children }: { children: ReactNode }) {
 
 function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen | null; open: boolean; setOpen: (v: boolean) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // Which draft/batch item currently has the inline passenger editor open.
+  // Keys: `draft:<msgId>` or `batch:<msgId>:<idx>`.
+  const [editingPax, setEditingPax] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
