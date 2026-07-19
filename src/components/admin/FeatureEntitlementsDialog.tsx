@@ -18,8 +18,9 @@ import {
   listFeatureEntitlements,
   setFeatureEntitlement,
   clearFeatureEntitlement,
+  bulkSetFeatureEntitlements,
 } from "@/lib/admin.functions";
-import type { FeatureKey } from "@/lib/features";
+import { AI_FEATURE_KEYS, type FeatureKey } from "@/lib/features";
 
 type Row = {
   key: FeatureKey;
