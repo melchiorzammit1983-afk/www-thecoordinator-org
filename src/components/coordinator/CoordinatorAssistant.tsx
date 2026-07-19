@@ -15,10 +15,10 @@ import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
-import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, createJobsBulk } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, createJobsBulk, mergeTrips } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
@@ -91,6 +91,7 @@ type ChatMsg =
   | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
   | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
+  | { id: string; role: "assistant"; merge: AssistantMergeTrips; rawMessage?: string; applied?: boolean }
   | {
       id: string;
       role: "assistant";
@@ -163,6 +164,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const bulkFn = useServerFn(createJobsBulk);
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
+  const mergeFn = useServerFn(mergeTrips);
   const meterFn = useServerFn(meterAssistantConfirm);
   const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
@@ -236,6 +238,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           }
           if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
           if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
+          if ("merge" in m) return { role: "assistant" as const, text: m.merge.summary };
           if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
           return { role: "assistant" as const, text: "" };
         });
@@ -260,6 +263,8 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
         setMessages((m) => [...m, { id, role: "assistant", fix: result, rawMessage }]);
       } else if (result.kind === "partner_suggest") {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
+      } else if (result.kind === "merge_trips") {
+        setMessages((m) => [...m, { id, role: "assistant", merge: result, rawMessage }]);
       } else if (result.kind === "command_actions") {
         setMessages((m) => [
           ...m,
