@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { GraduationCap, Check, X, Archive, Globe, Building2, Loader2, Sparkles, ShieldAlert } from "lucide-react";
+import { GraduationCap, X, Archive, Globe, Building2, Loader2, Sparkles, ShieldAlert } from "lucide-react";
 import { adminListLessons, adminDecideLesson, adminCreateGlobalLesson } from "@/lib/ai-lessons.functions";
 import { redactPii } from "@/lib/ai-pii-preview";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
