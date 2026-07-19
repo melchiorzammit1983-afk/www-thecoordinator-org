@@ -2729,7 +2729,7 @@ async function _computeTripLiveStatus(data: {
       if (r.scheduled && pickupIso) {
         const s = new Date(r.scheduled).getTime();
         const p = new Date(pickupIso).getTime();
-        if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+        if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > FLIGHT_TIME_MISMATCH_MS) {
           status = "time_mismatch";
           note = `Scheduled ${formatMaltaTime(r.scheduled)} vs pickup ${formatMaltaTime(pickupIso)}`;
         }
