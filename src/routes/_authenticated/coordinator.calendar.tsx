@@ -2593,10 +2593,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
 
-      {/* Ask AI (top-right) */}
-      <div className="absolute top-1 right-1 z-10">
-        <AskAiInlineButton trip={job} size="xs" variant="ghost" label="Ask AI" />
-      </div>
+
+
 
       {/* Tap area — opens details sheet */}
       <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
