@@ -1,7 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  type UIMessage,
+} from "ai";
+import {
+  PUBLIC_AI_LIMITS,
+  PUBLIC_AI_MESSAGES,
+  bumpDailyCounter,
+  checkDailyCap,
+  isOverSessionCap,
+  tryFaqAnswer,
+} from "@/lib/public-ai-guard.server";
 
 // In-memory best-effort rate limits. Signed-in users get a generous bucket;
 // anonymous visitors are rate-limited by client IP to protect the paid gateway.
@@ -29,6 +43,26 @@ function clientIp(request: Request): string {
     (h.get("x-forwarded-for") ?? "").split(",")[0].trim() ||
     "anon"
   );
+}
+
+function cannedTextResponse(text: string): Response {
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      const id = "canned-1";
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: text });
+      writer.write({ type: "text-end", id });
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
+}
+
+function lastUserText(messages: UIMessage[]): string {
+  const last = [...messages].reverse().find((m) => m.role === "user");
+  return (last?.parts ?? [])
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join(" ")
+    .trim();
 }
 
 export const Route = createFileRoute("/api/help-chat")({
@@ -76,6 +110,35 @@ export const Route = createFileRoute("/api/help-chat")({
         if (!Array.isArray(messages) || messages.length === 0 || messages.length > 40) {
           return new Response("Messages are required", { status: 400 });
         }
+        const uiMessages = messages as UIMessage[];
+
+        // ---- PUBLIC (sales / anonymous) COST CONTROLS ----
+        // Coach-mode (authenticated coordinators) is intentionally untouched:
+        // that flow is covered by the points/overage billing system.
+        if (mode === "sales") {
+          const lastText = lastUserText(uiMessages);
+
+          // 5. Input length cap
+          if (lastText.length > PUBLIC_AI_LIMITS.MAX_INPUT_CHARS) {
+            return cannedTextResponse(PUBLIC_AI_MESSAGES.INPUT_TOO_LONG);
+          }
+
+          // 2. Per-session message cap
+          const userTurns = uiMessages.filter((m) => m.role === "user").length;
+          if (isOverSessionCap(userTurns)) {
+            return cannedTextResponse(PUBLIC_AI_MESSAGES.SESSION_CAP);
+          }
+
+          // 1. FAQ shortcut — zero AI cost
+          const faq = lastText ? tryFaqAnswer(lastText) : null;
+          if (faq) return cannedTextResponse(faq);
+
+          // 3. Daily global circuit breaker
+          const cap = await checkDailyCap();
+          if (!cap.allowed) {
+            return cannedTextResponse(PUBLIC_AI_MESSAGES.DAILY_CAP);
+          }
+        }
 
         const key = process.env.LOVABLE_API_KEY;
         if (!key) {
@@ -91,7 +154,7 @@ export const Route = createFileRoute("/api/help-chat")({
             system += `\n\n--- CURRENT USER CONTEXT ---\n${body.context.slice(0, 2000)}`;
           }
           try {
-            const lastUser = [...(messages as UIMessage[])].reverse().find((m) => m.role === "user");
+            const lastUser = [...uiMessages].reverse().find((m) => m.role === "user");
             const lastText = lastUser?.parts?.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim() ?? "";
             if (lastText) {
               const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -114,9 +177,13 @@ export const Route = createFileRoute("/api/help-chat")({
           const result = streamText({
             model,
             system,
-            messages: convertToModelMessages(messages as UIMessage[]),
-            maxOutputTokens: mode === "sales" ? 400 : 800,
+            messages: convertToModelMessages(uiMessages),
+            maxOutputTokens: mode === "sales" ? PUBLIC_AI_LIMITS.MAX_OUTPUT_TOKENS : 800,
           });
+          if (mode === "sales") {
+            // Best-effort — count the public model call. Fire-and-forget.
+            void bumpDailyCounter();
+          }
           return result.toUIMessageStreamResponse();
         } catch (error) {
           const msg = error instanceof Error ? error.message : "AI request failed";
