@@ -2687,19 +2687,22 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
     if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    if ((job as any).status === "completed" || (job as any).status === "cancelled") {
+      return { ok: false as const, reason: "trip_finished" };
+    }
 
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
     const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
       _company_id: c.id,
-      _feature_key: "flight_vessel_tracking",
+      _feature_key: "flight_status_extra_lookup",
       _job_id: data.job_id,
-      _note: "flight/vessel status refresh",
+      _note: "flight/vessel status extra lookup (manual)",
       _cost_override: undefined as unknown as number,
     });
     if (spendErr) {
@@ -2712,10 +2715,10 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
 
     try {
       const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
-      if (!r.ok) await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+      if (!r.ok) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
       return r;
     } catch (e: any) {
-      await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", data.job_id);
+      await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", data.job_id);
       return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
