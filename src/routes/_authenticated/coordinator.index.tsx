@@ -23,6 +23,7 @@ import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
 import { WatchtowerToggle } from "@/components/coordinator/WatchtowerToggle";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
+import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
