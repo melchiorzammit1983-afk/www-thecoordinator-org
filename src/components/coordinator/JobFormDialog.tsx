@@ -759,7 +759,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const withErrors = useMemo(() => edited.map(recomputeTripErrors), [edited]);
   const valid = withErrors.filter((t) => t.errors.length === 0);
   const incomplete = withErrors.filter((t) => t.errors.length > 0);
-  const aiEnabled = useFeature("ai_extraction");
+  const aiFeatureOn = useFeature("ai_extraction");
+  const aiUserOn = useAiToggle("ai_bulk_paste");
+  const aiEnabled = aiFeatureOn && aiUserOn;
 
   // ------- Address auto-fix (Google Places) -------
   // When enabled in settings, replace fuzzy From/To text with Google's top
