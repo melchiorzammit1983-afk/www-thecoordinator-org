@@ -53,7 +53,7 @@ async function unregisterMatching(): Promise<void> {
 
 /**
  * Called from `src/start.ts` on the client. Safe to call more than once.
- * Also fires a `crewchange:sw-update` window event when a new worker becomes
+ * Also fires a `thecoordinator:sw-update` window event when a new worker becomes
  * waiting — `UpdatePrompt` listens for it.
  */
 export function registerServiceWorker(): void {
@@ -75,7 +75,7 @@ export function registerServiceWorker(): void {
           installing.addEventListener("statechange", () => {
             if (installing.state === "installed" && navigator.serviceWorker.controller) {
               window.dispatchEvent(
-                new CustomEvent("crewchange:sw-update", { detail: { registration } }),
+                new CustomEvent("thecoordinator:sw-update", { detail: { registration } }),
               );
             }
           });

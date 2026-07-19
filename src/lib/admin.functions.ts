@@ -187,6 +187,10 @@ export const whoAmI = createServerFn({ method: "GET" })
 function phoneToEmail(phone: string) {
   // Deterministic synthetic email so phone sign-in works without an SMS provider.
   const digits = phone.replace(/[^\d]/g, "");
+  return `p${digits}@phone.thecoordinator.local`;
+}
+function phoneToLegacyEmail(phone: string) {
+  const digits = phone.replace(/[^\d]/g, "");
   return `p${digits}@phone.crewchange.local`;
 }
 
@@ -1106,14 +1110,18 @@ export const adminApprovePasswordResetRequest = createServerFn({ method: "POST" 
 
     const phone = req.phone as string;
     const digits = phone.replace(/[^\d]/g, "");
-    const email = `p${digits}@phone.crewchange.local`;
+    const email = `p${digits}@phone.thecoordinator.local`;
+    const legacyEmail = `p${digits}@phone.crewchange.local`;
 
-    // Find user by synthetic email (paginated).
+    // Find user by synthetic email (paginated). Match new or legacy domain.
     let existing: { id: string; user_metadata?: any } | null = null;
     for (let page = 1; page <= 5 && !existing; page++) {
       const { data: list, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
       if (error) throw new Error(error.message);
-      existing = list.users.find((u) => u.email?.toLowerCase() === email) as any;
+      existing = list.users.find((u) => {
+        const e = u.email?.toLowerCase();
+        return e === email || e === legacyEmail;
+      }) as any;
       if (list.users.length < 200) break;
     }
     if (!existing) throw new Error("No account found for that phone number.");

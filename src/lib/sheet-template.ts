@@ -74,7 +74,7 @@ export function downloadExcelTemplate() {
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   triggerDownload(
     new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    "crewchange-trips-template.xlsx",
+    "thecoordinator-trips-template.xlsx",
   );
 }
 
@@ -87,7 +87,7 @@ export function downloadGoogleSheetsTemplate() {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(","))
     .join("\n");
-  triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), "crewchange-trips-template.csv");
+  triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), "thecoordinator-trips-template.csv");
 }
 
 // Read an uploaded .xlsx/.xls/.csv file and return a tab-separated string
