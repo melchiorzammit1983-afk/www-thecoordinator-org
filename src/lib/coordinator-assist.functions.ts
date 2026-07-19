@@ -587,7 +587,11 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       body: JSON.stringify({
         model: assistModel,
         response_format: { type: "json_object" },
-        max_tokens: 1200,
+        // Trip extraction can return several draft cards with passenger lists.
+        // 1200 tokens was too small for real crew-change emails and caused the
+        // model response to be cut mid-JSON, which then surfaced raw JSON in the
+        // chat instead of proposal cards.
+        max_tokens: 5000,
         messages: [
           { role: "system", content: system },
           { role: "user", content: effectiveMessage },
@@ -616,7 +620,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       throw new Error(`AI error (${res.status}): ${body.slice(0, 200)}`);
     }
     const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     try {
@@ -637,6 +641,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       });
     } catch { /* noop */ }
     const content = json.choices?.[0]?.message?.content ?? "";
+    const finishReason = json.choices?.[0]?.finish_reason ?? null;
     const answer = async (text: string): Promise<AssistantAnswer> => {
       await meter("assistant_qa", "assistant Q&A turn");
       return { kind: "answer", text: text + overageNotice };
@@ -645,7 +650,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     let parsed: unknown;
     // Some model turns wrap JSON in ```json fences, prefix it with the
     // user's pasted text, or append trailing prose. Strip fences first,
-    // then fall back to extracting the largest {...} block before giving up.
+    // then fall back to extracting balanced {...} blocks before giving up.
     const extractJson = (raw: string): unknown | null => {
       const s = raw.trim();
       if (!s) return null;
@@ -657,6 +662,32 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       const first = s.indexOf("{");
       const last = s.lastIndexOf("}");
       if (first >= 0 && last > first) candidates.push(s.slice(first, last + 1));
+      // Balanced-object scan that ignores braces inside JSON strings. This
+      // recovers when the model adds prose before/after a valid JSON object.
+      let depth = 0;
+      let start = -1;
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === "{") {
+          if (depth === 0) start = i;
+          depth += 1;
+        } else if (ch === "}" && depth > 0) {
+          depth -= 1;
+          if (depth === 0 && start >= 0) candidates.push(s.slice(start, i + 1));
+        }
+      }
       for (const c of candidates) {
         try { return JSON.parse(c); } catch { /* keep trying */ }
       }
@@ -664,6 +695,9 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     };
     const extracted = extractJson(content);
     if (extracted === null) {
+      if (finishReason === "length" || /^\s*[{[]/.test(content)) {
+        return answer("I started extracting the trips, but the structured result was incomplete. Please send the same message again and I'll return it as trip cards, not raw JSON.");
+      }
       return answer(content || "Sorry, I couldn't parse that.");
     }
     parsed = extracted;
