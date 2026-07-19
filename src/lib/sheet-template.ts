@@ -257,7 +257,13 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
 
     const pax: string[] = [];
-    if (name && isMeaningfulName(name)) pax.push(name);
+    // Support multiple names in one cell: "John Smith, Maria Rossi & Ali"
+    const nameParts = name
+      ? name.split(/\s*(?:,|;|\/| & | \+ | and )\s*/i).map((s) => s.trim()).filter(Boolean)
+      : [];
+    for (const part of nameParts) {
+      if (isMeaningfulName(part)) pax.push(part);
+    }
     // If quantity > names supplied, pad with generic labels so seat counts match.
     while (pax.length < qty) pax.push(pax.length === 0 ? "Guest" : `Guest ${pax.length + 1}`);
 

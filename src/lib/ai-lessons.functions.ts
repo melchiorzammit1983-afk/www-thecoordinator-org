@@ -258,3 +258,51 @@ export const adminDecideLesson = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Admin: author a global lesson directly (approved, scope=global) so it
+ *  reaches every opted-in company via the ai_lessons retrieval pipeline. */
+export const adminCreateGlobalLesson = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      kind: LessonKind,
+      title: z.string().min(3).max(140),
+      example_input: z.string().min(1).max(40000),
+      rule_text: z.string().min(3).max(20000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    if (!(await isPlatformAdmin(context.userId))) throw new Error("Forbidden");
+    const { redactPii } = await import("@/lib/ai-pii.server");
+    const { embedText } = await import("@/lib/ai-embed.server");
+
+    const exampleR = redactPii(data.example_input);
+    const ruleR = redactPii(data.rule_text);
+    if (!exampleR.safe) throw new Error(`Example rejected: ${exampleR.reason}`);
+    if (!ruleR.safe) throw new Error(`Rule rejected: ${ruleR.reason}`);
+
+    let embedding: number[] | null = null;
+    try {
+      embedding = await embedText(`${data.title}\n${ruleR.text}\n${exampleR.text}`);
+    } catch { /* embedding failure must not block insert */ }
+
+    const sb = await adminClient();
+    const { data: row, error } = await sb
+      .from("ai_lessons")
+      .insert({
+        kind: data.kind,
+        scope: "global",
+        company_id: null,
+        title: data.title,
+        example_input_redacted: exampleR.text,
+        rule_text: ruleR.text,
+        embedding: embedding as unknown as string,
+        status: "approved",
+        submitted_by: context.userId,
+        approved_by: context.userId,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { id: row.id };
+  });
