@@ -563,6 +563,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       body: JSON.stringify({
         model: "google/gemini-3.5-flash",
         response_format: { type: "json_object" },
+        max_tokens: 1200,
         messages: [
           { role: "system", content: system },
           { role: "user", content: effectiveMessage },
