@@ -2510,7 +2510,7 @@ async function applyLiveStatusToJob(
   if (result.scheduled && job.pickup_at) {
     const s = new Date(result.scheduled).getTime();
     const p = new Date(job.pickup_at).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > 45 * 60_000) {
+    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > FLIGHT_TIME_MISMATCH_MS) {
       status = "time_mismatch";
       note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
