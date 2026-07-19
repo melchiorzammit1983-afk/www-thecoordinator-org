@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plane, PlaneOff, AlertCircle } from "lucide-react";
+import { Plane, AlertTriangle, AlertCircle } from "lucide-react";
 import { getFlightTrackingConfig } from "@/lib/coordinator.functions";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
