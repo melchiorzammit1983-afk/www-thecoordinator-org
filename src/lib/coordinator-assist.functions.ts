@@ -721,7 +721,15 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
       const d = (raw ?? {}) as Record<string, unknown>;
       const rawFields = (d.fields ?? {}) as Record<string, unknown>;
-      const rawPax = rawFields.pax ?? rawFields.passengers ?? rawFields.passenger_names ?? rawFields.names;
+      const rawPax =
+        rawFields.pax ??
+        rawFields.passengers ??
+        rawFields.passenger_names ??
+        rawFields.names ??
+        d.pax ??
+        d.passengers ??
+        d.passenger_names ??
+        d.names;
       let pax: string[] | null = null;
       if (Array.isArray(rawPax)) {
         pax = rawPax
