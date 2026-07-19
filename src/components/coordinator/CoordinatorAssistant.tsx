@@ -44,6 +44,7 @@ export type AssistantScreen = {
     vehicle?: string | null;
     contact_phone?: string | null;
     clientcompanyname?: string | null;
+    pax?: string[] | null;
   } | null;
 };
 
