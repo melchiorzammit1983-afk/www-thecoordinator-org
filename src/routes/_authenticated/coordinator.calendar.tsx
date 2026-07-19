@@ -155,6 +155,7 @@ import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
 import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
 import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
+import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { useFeature } from "@/hooks/use-features";
 import { IfFeature } from "@/components/billing/IfFeature";
 
@@ -2701,6 +2702,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               >
                 ✈ {flightCode} · Not tracked · fix code
               </button>
+            )}
+            {hasFlightCode && (
+              <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-1 align-middle" />
             )}
 
             {job.status && job.status !== "pending" && job.status !== "active" && (

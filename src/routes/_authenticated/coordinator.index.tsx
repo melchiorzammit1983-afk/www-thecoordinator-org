@@ -24,6 +24,7 @@ import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActiv
 import { WatchtowerToggle } from "@/components/coordinator/WatchtowerToggle";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
+import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
@@ -232,6 +233,7 @@ function SectionHeader({
 }
 
 type TripRowJob = {
+  id?: string | null;
   route_duration_sec?: number | null;
   live_eta_sec?: number | null;
   live_eta_updated_at?: string | null;
@@ -325,6 +327,9 @@ function TripRow({
             </span>
           );
         })()}
+        {job?.id && (job.from_flight || job.to_flight) && (
+          <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-0.5" />
+        )}
         {meta && <span>· {meta}</span>}
       </div>
     </Link>
