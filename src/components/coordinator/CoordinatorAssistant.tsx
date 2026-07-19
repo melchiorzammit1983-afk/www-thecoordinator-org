@@ -121,7 +121,9 @@ function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; v
 // ---------------- Provider + FAB + Panel ----------------
 
 export function CoordinatorAssistant({ children }: { children: ReactNode }) {
-  const enabled = useFeature("ai_coordinator_assist");
+  const featureOn = useFeature("ai_coordinator_assist");
+  const userOn = useAiToggle("assistant_fab");
+  const enabled = featureOn && userOn;
   const [screen, setScreenState] = useState<AssistantScreen | null>(null);
   const screenRef = useRef<AssistantScreen | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
