@@ -74,6 +74,7 @@ import {
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
 import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown, Undo2, Wand2 } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
+import { useAiToggle } from "@/hooks/use-preferences";
 import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
