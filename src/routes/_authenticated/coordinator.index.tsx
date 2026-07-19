@@ -88,18 +88,20 @@ function DashboardPage() {
             <span className="block text-[11px] font-normal opacity-80">Schedule a transfer</span>
           </span>
         </Button>
-        <Button
-          size="lg"
-          variant="secondary"
-          className="h-14 justify-start gap-3 text-base shadow-sm"
-          onClick={() => navigate({ to: "/coordinator/ai-center" })}
-        >
-          <Bot className="h-5 w-5 text-primary" />
-          <span className="text-left leading-tight">
-            <span className="block font-semibold">Chat with AI</span>
-            <span className="block text-[11px] font-normal opacity-70">Voice, rules & auto‑dispatch</span>
-          </span>
-        </Button>
+        <IfFeature feature="ai_coordinator_assist">
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-14 justify-start gap-3 text-base shadow-sm"
+            onClick={() => navigate({ to: "/coordinator/ai-center" })}
+          >
+            <Bot className="h-5 w-5 text-primary" />
+            <span className="text-left leading-tight">
+              <span className="block font-semibold">Chat with AI</span>
+              <span className="block text-[11px] font-normal opacity-70">Voice, rules & auto‑dispatch</span>
+            </span>
+          </Button>
+        </IfFeature>
       </div>
 
       {/* Stats – tight grid, no clipping on 375px */}
