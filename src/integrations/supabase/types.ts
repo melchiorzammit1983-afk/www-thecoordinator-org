@@ -5902,6 +5902,39 @@ export type Database = {
           },
         ]
       }
+      user_preferences: {
+        Row: {
+          ai_toggles: Json
+          created_at: string
+          haptics_enabled: boolean
+          home_layout: Json
+          sound_enabled: boolean
+          theme: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_toggles?: Json
+          created_at?: string
+          haptics_enabled?: boolean
+          home_layout?: Json
+          sound_enabled?: boolean
+          theme?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_toggles?: Json
+          created_at?: string
+          haptics_enabled?: boolean
+          home_layout?: Json
+          sound_enabled?: boolean
+          theme?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_security_settings: {
         Row: {
           auto_lock_seconds: number
