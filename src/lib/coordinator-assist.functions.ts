@@ -259,9 +259,6 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const glossary = ((glossRows ?? []) as Array<{ id: string; title: string; rule_text: string; company_id: string | null; scope: string }>).map(
       (g) => ({ id: g.id, term: g.title, meaning: g.rule_text, owned: g.company_id === company.id }),
     );
-    const glossaryBlock = glossary.length
-      ? glossary.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
-      : "(empty — nothing taught yet)";
 
     // Coordinator-authored business rules from the AI Center → Rules tab.
     // These are HARD company rules and should be applied before soft biases.
@@ -274,14 +271,8 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .order("created_at", { ascending: true })
       .limit(50);
     const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
-    const rulesBlock = rules.length
-      ? rules.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
-      : "(no custom rules configured)";
 
-    // Silent-learning bias summary. CANONICAL SOURCE: `ai_lessons` with
-    // kind='suggestion_rule' (either the "AI learned bias" row written by
-    // the summarize-learning cron, or any suggestion rules a coordinator
-    // saved manually via the AI Learning page). Company-scoped only.
+    // Silent-learning bias summary (see AI Learning page).
     const { data: biasRows } = await supabaseAdmin
       .from("ai_lessons")
       .select("title, rule_text")
@@ -290,8 +281,39 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .eq("company_id", company.id)
       .order("updated_at", { ascending: false })
       .limit(20);
-    const learnedBlock = biasRows && biasRows.length
-      ? biasRows.map((r) => `• ${r.rule_text}`).join("\n")
+    const biases = (biasRows ?? []) as { title: string; rule_text: string }[];
+
+    // ---- Relevance pre-filter (cost optimisation) ----
+    // Only inject glossary/rules/biases whose keywords plausibly match this
+    // turn. Falls back to a small top-N when nothing scores, so brand-new
+    // coordinators still get some context.
+    const msgLower = data.message.toLowerCase();
+    const historyLower = (data.history ?? []).slice(-4).map((m) => (m.text ?? "").toLowerCase()).join(" ");
+    const haystack = `${msgLower}\n${historyLower}`;
+    const tokenize = (s: string): string[] => Array.from(new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []));
+    const msgTokens = new Set(tokenize(haystack));
+    const scoreText = (t: string): number => {
+      let score = 0;
+      for (const w of tokenize(t)) if (msgTokens.has(w)) score += 1;
+      return score;
+    };
+    const pickTop = <T,>(items: T[], score: (x: T) => number, cap: number, fallback: number): T[] => {
+      const hits = items.map((x) => ({ x, s: score(x) })).filter((r) => r.s > 0)
+        .sort((a, b) => b.s - a.s).slice(0, cap).map((r) => r.x);
+      return hits.length > 0 ? hits : items.slice(0, fallback);
+    };
+    const glossaryPick = pickTop(glossary, (g) => scoreText(g.term) * 2 + scoreText(g.meaning), 15, Math.min(6, glossary.length));
+    const rulesPick = pickTop(rules, (r) => scoreText(r.title) * 2 + scoreText(r.rule_text), 10, Math.min(6, rules.length));
+    const biasesPick = pickTop(biases, (r) => scoreText(r.title) + scoreText(r.rule_text), 8, Math.min(4, biases.length));
+
+    const glossaryBlock = glossaryPick.length
+      ? glossaryPick.map((g) => `- ${g.term} = ${g.meaning}${g.owned ? "" : "  [shared]"}`).join("\n")
+      : "(empty — nothing taught yet)";
+    const rulesBlock = rulesPick.length
+      ? rulesPick.map((r, i) => `${i + 1}. ${r.title}: ${r.rule_text}`).join("\n")
+      : "(no custom rules configured)";
+    const learnedBlock = biasesPick.length
+      ? biasesPick.map((r) => `• ${r.rule_text}`).join("\n")
       : "(no learned preferences yet)";
 
 
@@ -338,7 +360,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .gte("pickup_at", nowIso)
       .lte("pickup_at", soonIso)
       .order("pickup_at", { ascending: true })
-      .limit(40);
+      .limit(15);
     const upcoming = (upcomingRows ?? []) as any[];
     const upcomingBlock = upcoming.length
       ? upcoming
@@ -396,33 +418,38 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .map((m) => `${(m.role ?? "user").toUpperCase()}: ${m.text}`)
       .join("\n");
 
-    // Fold the retired "Ask the Guide" coach knowledge (live facts, event
-    // catalog, visual signals, help article index) into this unified
-    // assistant so nothing is lost when kind:"answer" is returned.
+    // Cost optimisation: only pay to load and inject the folded Guide
+    // knowledge and billing snapshot when this turn actually looks like a
+    // how-to / billing question. Trip create/edit turns don't need either.
+    const helpIntent = /\b(how|what|why|where|when|help|guide|explain|troubleshoot|meaning|means|show me|walk me)\b|\?/.test(msgLower);
+    const billingIntent = /\b(point|points|credit|credits|balance|charge|charged|cost|price|pricing|bill|billing|top[- ]?up|topup|invoice|payment)\b/.test(msgLower);
+
     let guideKnowledge = "";
-    try {
-      const { buildSystemPrompt } = await import("@/lib/help-ai.server");
-      guideKnowledge = buildSystemPrompt({ mode: "coach" });
-    } catch {
-      /* non-fatal — assistant still works without the folded guide */
+    if (helpIntent) {
+      try {
+        const { buildSystemPrompt } = await import("@/lib/help-ai.server");
+        guideKnowledge = buildSystemPrompt({ mode: "coach" });
+      } catch {
+        /* non-fatal */
+      }
     }
 
-    // Billing agent context — points balance, recent point-spend history,
-    // and the per-feature price list. Reuses the same tables the coordinator
-    // billing dashboard reads (`companies.points_balance`, `points_ledger`,
-    // `ai_feature_costs`). Q&A only — no top-up initiation from chat.
-    const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
-      supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
-      supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(15),
-      supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
-    ]);
-    const pointsBalance = Number(balRow?.points_balance ?? 0);
-    const ledgerBlock = (recentLedger ?? []).length
-      ? (recentLedger ?? []).map((l: { points_deducted: number | string; note: string | null; feature_key: string | null; created_at: string }) => `${l.created_at.slice(0, 16).replace("T", " ")}  -${l.points_deducted}  ${l.feature_key ?? "-"}  ${l.note ?? ""}`).join("\n")
-      : "(no ledger entries yet)";
-    const featureCostBlock = (featureCostRows ?? []).length
-      ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
-      : "(no priced features)";
+    let billingBlock = "";
+    if (billingIntent) {
+      const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
+        supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
+        supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(10),
+        supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
+      ]);
+      const pointsBalance = Number(balRow?.points_balance ?? 0);
+      const ledgerBlock = (recentLedger ?? []).length
+        ? (recentLedger ?? []).map((l: { points_deducted: number | string; note: string | null; feature_key: string | null; created_at: string }) => `${l.created_at.slice(0, 16).replace("T", " ")}  -${l.points_deducted}  ${l.feature_key ?? "-"}  ${l.note ?? ""}`).join("\n")
+        : "(no ledger entries yet)";
+      const featureCostBlock = (featureCostRows ?? []).length
+        ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
+        : "(no priced features)";
+      billingBlock = `\n===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================\nCurrent points balance: ${pointsBalance}\n\nFeature price list (points per action):\n${featureCostBlock}\n\nMost recent point-spend entries (newest first):\n${ledgerBlock}\n`;
+    }
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
@@ -521,19 +548,7 @@ Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
 Recent conversation:
 ${historyLines || "(none)"}
-
-===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================
-Current points balance: ${pointsBalance}
-
-Feature price list (points per action):
-${featureCostBlock}
-
-Most recent point-spend entries (newest first):
-${ledgerBlock}
-
-===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
-${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
-`;
+${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================\n${guideKnowledge}\n` : ""}`;
 
 
 
@@ -548,6 +563,7 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
       body: JSON.stringify({
         model: "google/gemini-3.5-flash",
         response_format: { type: "json_object" },
+        max_tokens: 1200,
         messages: [
           { role: "system", content: system },
           { role: "user", content: effectiveMessage },
