@@ -2475,7 +2475,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             : hasFlightCode && schedTime
               ? `Flight ${schedTime}`
               : hasFlightCode && (job.flight_status === "unknown" || !job.flight_status)
-                ? "Not tracked · check code"
+                ? (job.flight_status_note || "Not tracked · check code")
                 : "";
 
   const labels = job.labels ?? [];
