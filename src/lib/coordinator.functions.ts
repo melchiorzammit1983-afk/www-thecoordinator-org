@@ -2105,7 +2105,8 @@ type LiveStatusResult = {
 };
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
-const LIVE_STATUS_TTL_MS = 5 * 60_000;
+const LIVE_STATUS_TTL_MS = 20 * 60_000;
+
 
 function isoToDayKey(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
