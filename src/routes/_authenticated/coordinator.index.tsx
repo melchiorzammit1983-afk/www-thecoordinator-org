@@ -285,6 +285,34 @@ function TripRow({
         {job && (job.traffic_delay_minutes || job.traffic_severity || job.leave_by_at) && (
           <TrafficBadge info={job} compact />
         )}
+        {job && (job.from_flight || job.to_flight) && (() => {
+          const code = job.from_flight || job.to_flight;
+          const s = job.flight_status;
+          const tone =
+            s === "cancelled" || s === "delayed" || s === "time_mismatch"
+              ? "text-destructive"
+              : s === "early"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : s === "on_time" || s === "landed" || s === "arrived" || s === "departed"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-amber-600";
+          const label =
+            s === "cancelled" ? "CANCELLED"
+              : s === "delayed" ? (job.flight_status_note || "delayed")
+              : s === "time_mismatch" ? (job.flight_status_note || "time mismatch")
+              : s === "early" ? (job.flight_status_note || "early")
+              : s === "on_time" ? "on time"
+              : s === "landed" ? "landed"
+              : s === "arrived" ? "arrived"
+              : s === "departed" ? "departed"
+              : s === "unknown" ? (job.flight_status_note || "not tracked · fix code")
+              : "checking flight…";
+          return (
+            <span className={cn("inline-flex items-center gap-1 font-medium truncate max-w-[60%]", tone)} title={job.flight_status_note ?? undefined}>
+              ✈ {code} · {label}
+            </span>
+          );
+        })()}
         {meta && <span>· {meta}</span>}
       </div>
     </Link>
