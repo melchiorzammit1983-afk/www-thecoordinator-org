@@ -2249,7 +2249,12 @@ async function fetchLiveStatusViaAeroDataBox(
     else if (status === "diverted") note = `Diverted · ${note}`.trim();
 
     // Anchor persisted times to whichever side (dep vs arr) is closer to pickup.
+    // Anchor selection: prefer the semantic side (arr for inbound / from_flight,
+    // dep for outbound / to_flight). Fall back to whichever side is closer to
+    // pickup_at when the requested side has no scheduled time.
     const anchor: "arr" | "dep" = (() => {
+      if (side === "arr" && arrSched) return "arr";
+      if (side === "dep" && depSched) return "dep";
       if (!pickupMs) return arrSched ? "arr" : "dep";
       const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
       const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
