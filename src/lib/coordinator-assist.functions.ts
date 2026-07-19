@@ -643,11 +643,30 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     };
 
     let parsed: unknown;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
+    // Some model turns wrap JSON in ```json fences, prefix it with the
+    // user's pasted text, or append trailing prose. Strip fences first,
+    // then fall back to extracting the largest {...} block before giving up.
+    const extractJson = (raw: string): unknown | null => {
+      const s = raw.trim();
+      if (!s) return null;
+      const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const candidates: string[] = [];
+      if (fenced?.[1]) candidates.push(fenced[1].trim());
+      candidates.push(s);
+      // Sliced by outermost braces.
+      const first = s.indexOf("{");
+      const last = s.lastIndexOf("}");
+      if (first >= 0 && last > first) candidates.push(s.slice(first, last + 1));
+      for (const c of candidates) {
+        try { return JSON.parse(c); } catch { /* keep trying */ }
+      }
+      return null;
+    };
+    const extracted = extractJson(content);
+    if (extracted === null) {
       return answer(content || "Sorry, I couldn't parse that.");
     }
+    parsed = extracted;
     const p = parsed as Record<string, unknown>;
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
       const d = (raw ?? {}) as Record<string, unknown>;
