@@ -2507,6 +2507,18 @@ export async function applyLiveStatusToJob(
 
   let status = result.status ?? "unknown";
   let note = result.note ?? "";
+  // Derive "early" from actual-vs-scheduled drift when the provider didn't
+  // explicitly say so. 10+ min ahead counts as early.
+  if (
+    result.scheduled &&
+    result.estimated &&
+    (status === "on_time" || status === "unknown")
+  ) {
+    const drift = Math.round(
+      (new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000,
+    );
+    if (drift <= -10) status = "early";
+  }
   if (result.scheduled && job.pickup_at) {
     const s = new Date(result.scheduled).getTime();
     const p = new Date(job.pickup_at).getTime();
