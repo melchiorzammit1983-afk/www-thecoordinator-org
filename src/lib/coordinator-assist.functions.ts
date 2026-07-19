@@ -360,7 +360,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .gte("pickup_at", nowIso)
       .lte("pickup_at", soonIso)
       .order("pickup_at", { ascending: true })
-      .limit(40);
+      .limit(15);
     const upcoming = (upcomingRows ?? []) as any[];
     const upcomingBlock = upcoming.length
       ? upcoming
