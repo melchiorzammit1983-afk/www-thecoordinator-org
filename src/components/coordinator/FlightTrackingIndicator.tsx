@@ -41,7 +41,7 @@ export function FlightTrackingIndicator() {
             {isConfigured ? (
               <Plane className="h-3.5 w-3.5" />
             ) : isNotConfigured ? (
-              <PlaneOff className="h-3.5 w-3.5" />
+              <AlertTriangle className="h-3.5 w-3.5" />
             ) : (
               <AlertCircle className="h-3.5 w-3.5" />
             )}
