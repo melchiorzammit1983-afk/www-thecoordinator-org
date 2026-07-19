@@ -1,119 +1,64 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
-  CalendarDays,
-  Users,
-  Coins,
   MoreHorizontal,
-  Inbox,
-  Link2,
-  Tag,
-  FileText,
-  Handshake,
-  Car,
-  Palette,
-  Bot,
-  Gift,
   KeyRound,
   LogOut,
   Plus,
-  MapPin,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useFeatures } from "@/hooks/use-features";
-import { AI_FEATURE_KEYS, type FeatureKey } from "@/lib/features";
+import { usePreferences } from "@/hooks/use-preferences";
 import { cn } from "@/lib/utils";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listDrivers } from "@/lib/coordinator.functions";
-
-type TabItem = {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-  exact: boolean;
-  feature: FeatureKey | null;
-  aiGroup?: boolean;
-};
-
-// Only the two most-used destinations flank the center "+ New" button.
-// Everything else lives in the More sheet — grouped for scan-ability.
-const LEFT: TabItem[] = [
-  { to: "/coordinator", label: "Home", icon: LayoutDashboard, exact: true, feature: null },
-  { to: "/coordinator/calendar", label: "Dispatch", icon: CalendarDays, exact: false, feature: "dispatch" },
-];
-
-const RIGHT: TabItem[] = [
-  { to: "/coordinator/ai-center", label: "AI", icon: Bot, exact: false, feature: null, aiGroup: true },
-];
-
-type Group = { label: string; items: TabItem[] };
-
-const MORE_GROUPS: Group[] = [
-  {
-    label: "Operations",
-    items: [
-      { to: "/coordinator/pending", label: "Pending", icon: Inbox, exact: false, feature: "pending" },
-      { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
-      { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
-      { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
-    ],
-  },
-  {
-    label: "Clients & Partners",
-    items: [
-      { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
-      { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
-      { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
-    ],
-  },
-  {
-    label: "Business",
-    items: [
-      { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
-      { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
-      { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: "branding_advert" },
-      { to: "/coordinator/address-settings", label: "Address & Map", icon: MapPin, exact: false, feature: null },
-    ],
-  },
-];
-
-function isItemVisible(item: TabItem, features?: Record<string, boolean>): boolean {
-  if (item.aiGroup) return !features || AI_FEATURE_KEYS.some((k) => features[k] !== false);
-  if (!item.feature) return true;
-  return features?.[item.feature] !== false;
-}
+import { resolveMobileLayout, type TabDef } from "@/lib/tab-catalog";
 
 export function MobileTabBar({ onOpenChangePassword }: { onOpenChangePassword: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const { data: features } = useFeatures();
+  const { prefs } = usePreferences();
   const [moreOpen, setMoreOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const driversFn = useServerFn(listDrivers);
   const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() });
   const qc = useQueryClient();
 
-  const { left, right, groups } = useMemo(() => {
-    const left = LEFT.filter((i) => isItemVisible(i, features));
-    const right = RIGHT.filter((i) => isItemVisible(i, features));
-    const groups = MORE_GROUPS
-      .map((g) => ({ ...g, items: g.items.filter((i) => isItemVisible(i, features)) }))
-      .filter((g) => g.items.length > 0);
-    return { left, right, groups };
-  }, [features]);
+  const { bottom, more, defaultTabId } = useMemo(
+    () => resolveMobileLayout(prefs.home_layout as any, features),
+    [prefs.home_layout, features],
+  );
 
-  const isActive = (item: TabItem) =>
-    item.exact ? pathname === item.to : pathname.startsWith(item.to);
-  const isMoreActive = groups.some((g) => g.items.some((i) => isActive(i)));
+  // First-launch: navigate to the user's chosen default tab (once per session)
+  useEffect(() => {
+    if (pathname !== "/coordinator") return;
+    const target = bottom.concat(more).find((t) => t.id === defaultTabId);
+    if (!target || target.to === "/coordinator") return;
+    const flag = "__coord_launched_default";
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem(flag)) return;
+    sessionStorage.setItem(flag, "1");
+    navigate({ to: target.to, replace: true });
+  }, [pathname, bottom, more, defaultTabId, navigate]);
+
+  const isActive = (item: TabDef) => (item.exact ? pathname === item.to : pathname.startsWith(item.to));
+  const isMoreActive = more.some((i) => isActive(i));
 
   async function signOut() {
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   }
+
+  // Split bottom row: left slots + center "+" + right slots
+  // With max 3 pinned, we place first 2 on the left, remainder on the right.
+  const left = bottom.slice(0, 2);
+  const right = bottom.slice(2, 3);
 
   return (
     <>
@@ -122,10 +67,11 @@ export function MobileTabBar({ onOpenChangePassword }: { onOpenChangePassword: (
         aria-label="Primary"
       >
         {left.map((item) => (
-          <TabButton key={item.to} item={item} active={isActive(item)} />
+          <TabButton key={item.id} item={item} active={isActive(item)} />
         ))}
+        {/* Fill left slot when only 1 pinned so + stays centered */}
+        {left.length < 2 && <span className="flex-1" aria-hidden />}
 
-        {/* Center primary action — visually raised */}
         <div className="flex flex-1 items-center justify-center">
           <button
             type="button"
@@ -138,8 +84,9 @@ export function MobileTabBar({ onOpenChangePassword }: { onOpenChangePassword: (
         </div>
 
         {right.map((item) => (
-          <TabButton key={item.to} item={item} active={isActive(item)} />
+          <TabButton key={item.id} item={item} active={isActive(item)} />
         ))}
+        {right.length < 1 && <span className="flex-1" aria-hidden />}
 
         <button
           type="button"
@@ -156,47 +103,43 @@ export function MobileTabBar({ onOpenChangePassword }: { onOpenChangePassword: (
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[85vh] overflow-y-auto rounded-t-2xl pb-safe"
-        >
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl pb-safe">
           <div className="mx-auto -mt-2 mb-3 h-1.5 w-10 rounded-full bg-muted-foreground/30" />
           <SheetHeader className="text-left">
             <SheetTitle>More</SheetTitle>
           </SheetHeader>
 
-          <div className="mt-4 space-y-5">
-            {groups.map((g) => (
-              <div key={g.label}>
-                <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {g.label}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {g.items.map((item) => {
-                    const active = isActive(item);
-                    return (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        onClick={() => setMoreOpen(false)}
-                        className={cn(
-                          "flex min-h-[80px] flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-colors",
-                          active
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border bg-card text-foreground hover:bg-muted",
-                        )}
-                      >
-                        <item.icon className="h-5 w-5" />
-                        <span className="leading-tight">{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {more.map((item) => {
+              const active = isActive(item);
+              return (
+                <Link
+                  key={item.id}
+                  to={item.to}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    "flex min-h-[80px] flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted",
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span className="leading-tight">{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
 
           <div className="mt-5 border-t pt-3 space-y-1">
+            <Link
+              to="/settings"
+              onClick={() => setMoreOpen(false)}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium hover:bg-muted"
+            >
+              <SettingsIcon className="h-4 w-4" />
+              Settings
+            </Link>
             <button
               type="button"
               onClick={() => { setMoreOpen(false); onOpenChangePassword(); }}
@@ -232,7 +175,7 @@ export function MobileTabBar({ onOpenChangePassword }: { onOpenChangePassword: (
   );
 }
 
-function TabButton({ item, active }: { item: TabItem; active: boolean }) {
+function TabButton({ item, active }: { item: TabDef; active: boolean }) {
   return (
     <Link
       to={item.to}
@@ -246,3 +189,6 @@ function TabButton({ item, active }: { item: TabItem; active: boolean }) {
     </Link>
   );
 }
+
+// Re-export so we don't need default fallback icon
+LayoutDashboard;
