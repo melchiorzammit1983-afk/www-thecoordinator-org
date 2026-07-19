@@ -1707,6 +1707,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
           ))}
         </div>
       )}
+      <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">
         <PendingPortalBookings />
         {jobs.length === 0 && (
@@ -1714,6 +1715,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
         )}
         {renderItems(items, ctx)}
       </div>
+
     </div>
   );
 }
