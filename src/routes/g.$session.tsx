@@ -178,6 +178,21 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
           <div><Label className="text-xs">Pickup time</Label><Input type="datetime-local" value={pickup} onChange={(e) => setPickup(e.target.value)} /></div>
           <div><Label className="text-xs">Pax</Label><Input type="number" min={1} value={pax} onChange={(e) => setPax(e.target.value)} /></div>
         </div>
+        <div>
+          <Label className="text-xs">Passenger names (optional, one per line)</Label>
+          <Textarea
+            value={paxNames}
+            onChange={(e) => setPaxNames(e.target.value)}
+            rows={Math.min(6, Math.max(2, (Number(pax) || 1)))}
+            placeholder={`${boot.guest.name}\nSecond passenger name`}
+          />
+          <div className="text-[11px] text-muted-foreground mt-1">
+            {parsedPaxNames.length} of {Number(pax) || 1} named
+            {parsedPaxNames.length < (Number(pax) || 1)
+              ? ` · remaining slots will show as "Guest ${parsedPaxNames.length + 1}"…`
+              : ""}
+          </div>
+        </div>
         <div><Label className="text-xs">Flight (optional)</Label><Input value={flight} onChange={(e) => setFlight(e.target.value)} placeholder="KM123" /></div>
         <div><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Extra luggage, child seat, …" /></div>
         <div><Label className="text-xs">Promo code (optional)</Label><Input value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} /></div>
