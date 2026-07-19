@@ -37,12 +37,12 @@ const screenSchema = z
   .optional();
 
 const inputSchema = z.object({
-  message: z.string().trim().min(1).max(2000),
+  message: z.string().trim().min(1).max(20000),
   history: z
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        text: z.string().max(4000),
+        text: z.string().max(40000),
       }),
     )
     .max(20)
