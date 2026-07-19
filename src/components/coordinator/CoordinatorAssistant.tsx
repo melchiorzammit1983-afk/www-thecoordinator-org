@@ -21,6 +21,7 @@ import { recordAiAuditAction } from "@/lib/ai-audit.functions";
 import { createJob, updateJob, updateDriverBasic, applyAiCommandActions } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
+import { useAiToggle } from "@/hooks/use-preferences";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
