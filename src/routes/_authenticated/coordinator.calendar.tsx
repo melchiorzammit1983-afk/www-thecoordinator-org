@@ -157,6 +157,7 @@ import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinat
 import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
 import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { useFeature } from "@/hooks/use-features";
+import { useAiToggle } from "@/hooks/use-preferences";
 import { IfFeature } from "@/components/billing/IfFeature";
 
 export const Route = createFileRoute("/_authenticated/coordinator/calendar")({
@@ -2288,11 +2289,13 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
 
 function useLiveEtaPoint(jobId: string): LiveEtaPoint | null {
   const fn = useServerFn(listActiveDriverLocations);
+  const pollingOn = useAiToggle("live_eta_polling");
   const { data } = useQuery({
     queryKey: ["live-locations"],
     queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LiveEtaPoint[]>,
-    refetchInterval: 30_000,
+    refetchInterval: pollingOn ? 30_000 : false,
     staleTime: 20_000,
+    enabled: pollingOn,
   });
   return (data ?? []).find((p) => p.job_id === jobId) ?? null;
 }

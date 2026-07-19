@@ -21,6 +21,7 @@ import { recordAiAuditAction } from "@/lib/ai-audit.functions";
 import { createJob, updateJob, updateDriverBasic, applyAiCommandActions } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
+import { useAiToggle } from "@/hooks/use-preferences";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -120,7 +121,9 @@ function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; v
 // ---------------- Provider + FAB + Panel ----------------
 
 export function CoordinatorAssistant({ children }: { children: ReactNode }) {
-  const enabled = useFeature("ai_coordinator_assist");
+  const featureOn = useFeature("ai_coordinator_assist");
+  const userOn = useAiToggle("assistant_fab");
+  const enabled = featureOn && userOn;
   const [screen, setScreenState] = useState<AssistantScreen | null>(null);
   const screenRef = useRef<AssistantScreen | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
