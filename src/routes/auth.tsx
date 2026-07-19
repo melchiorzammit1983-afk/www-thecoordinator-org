@@ -290,8 +290,14 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
     setLoading(true);
     const digits = parsed.data.phone.replace(/[^\d]/g, "");
-    const email = `p${digits}@phone.crewchange.local`;
-    const { error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
+    const email = `p${digits}@phone.thecoordinator.local`;
+    let { error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
+    if (error) {
+      // Fallback to legacy domain for pre-rename accounts.
+      const legacyEmail = `p${digits}@phone.crewchange.local`;
+      const res = await supabase.auth.signInWithPassword({ email: legacyEmail, password: parsed.data.password });
+      error = res.error;
+    }
     setLoading(false);
     if (error) return toast.error("Invalid phone number or password");
 
