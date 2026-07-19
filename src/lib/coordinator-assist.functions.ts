@@ -70,6 +70,8 @@ export type AssistantDraft = {
     pax?: string[] | null;
   };
   summary: string;
+  /** Parse-time warnings surfaced to the UI so silent extraction gaps are visible. */
+  warnings?: string[];
 };
 
 export type AssistantAnswer = {
