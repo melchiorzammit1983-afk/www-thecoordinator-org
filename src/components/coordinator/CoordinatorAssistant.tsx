@@ -132,6 +132,72 @@ function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; v
   return out;
 }
 
+// Parse a textarea value into a clean list of passenger names.
+// Splits on newlines, commas, semicolons, " & ", " + " and strips bullets.
+function parsePaxText(text: string): string[] {
+  return text
+    .split(/\r?\n|;|\s+[&+]\s+|,(?=\s*\S)/)
+    .map((n) => n.replace(/^[-•\d.)\s]+/, "").trim())
+    .filter((n) => n.length > 0 && n.length <= 200)
+    .slice(0, 200);
+}
+
+// Drop the blocking pax warning codes after a manual edit. Keep non-pax
+// warnings and informational codes intact so the coordinator still sees them.
+function stripResolvedPaxWarnings(warnings: string[] | undefined, newPax: string[]): string[] | undefined {
+  if (!warnings?.length) return warnings;
+  const kept = warnings.filter((w) => {
+    if (w.startsWith("count_mismatch")) return false; // user reviewed count
+    if (w.startsWith("no_pax_extracted")) return newPax.length === 0;
+    return true;
+  });
+  return kept.length ? kept : undefined;
+}
+
+/**
+ * Inline editor for the parsed passenger list. Renders a textarea seeded
+ * with the current names (one per line), plus Save/Cancel. Save writes the
+ * edited list back into the draft's `fields.pax` and clears the blocking
+ * pax warnings so Confirm becomes enabled.
+ */
+function PaxInlineEditor({
+  initial,
+  onSave,
+  onCancel,
+  disabled,
+}: {
+  initial: string[];
+  onSave: (pax: string[]) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(initial.join("\n"));
+  const parsed = parsePaxText(text);
+  return (
+    <div className="mt-2 rounded border border-amber-300 bg-background p-2">
+      <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+        Edit passengers — one name per line
+      </div>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={Math.min(6, Math.max(3, parsed.length + 1))}
+        placeholder={"Jane Doe\nJohn Smith"}
+        className="text-xs"
+        disabled={disabled}
+      />
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{parsed.length} passenger{parsed.length === 1 ? "" : "s"}</span>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={onCancel} disabled={disabled}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(parsed)} disabled={disabled}>Save</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ---------------- Provider + FAB + Panel ----------------
 
 export function CoordinatorAssistant({ children }: { children: ReactNode }) {
@@ -165,6 +231,9 @@ export function CoordinatorAssistant({ children }: { children: ReactNode }) {
 
 function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen | null; open: boolean; setOpen: (v: boolean) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // Which draft/batch item currently has the inline passenger editor open.
+  // Keys: `draft:<msgId>` or `batch:<msgId>:<idx>`.
+  const [editingPax, setEditingPax] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -608,8 +677,35 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     );
   };
 
+  const updateDraftPax = (msgId: string, pax: string[]) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== msgId || !("draft" in x)) return x;
+        const nextFields = { ...x.draft.fields, pax: pax.length ? pax : null };
+        const nextWarnings = stripResolvedPaxWarnings(x.draft.warnings, pax);
+        return { ...x, draft: { ...x.draft, fields: nextFields, warnings: nextWarnings } };
+      }),
+    );
+  };
+
+  const updateBatchItemPax = (batchId: string, idx: number, pax: string[]) => {
+    setMessages((m) =>
+      m.map((x) => {
+        if (x.id !== batchId || !("batch" in x)) return x;
+        const drafts = x.batch.drafts.map((d, i) => {
+          if (i !== idx) return d;
+          const nextFields = { ...d.fields, pax: pax.length ? pax : null };
+          const nextWarnings = stripResolvedPaxWarnings(d.warnings, pax);
+          return { ...d, fields: nextFields, warnings: nextWarnings };
+        });
+        return { ...x, batch: { ...x.batch, drafts } };
+      }),
+    );
+  };
+
   const confirmFix = useMutation({
     mutationFn: async (fix: AssistantDataFix) => {
+
       if (fix.target === "trip") {
         // Reuse existing updateJob: pull the current row, patch the single field.
         const existing = (await getJobFn({ data: { id: fix.target_id } })) as Record<string, unknown>;
@@ -1010,12 +1106,31 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                           </dl>
                         )}
                         {m.draft.warnings?.length ? (
-                          <ul className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          <ul className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
                             {m.draft.warnings.map((w, i) => (
                               <li key={i}>⚠ {paxWarningLabel(w)}</li>
                             ))}
                           </ul>
                         ) : null}
+                        {editingPax === `draft:${m.id}` ? (
+                          <PaxInlineEditor
+                            initial={m.draft.fields.pax ?? []}
+                            disabled={busy}
+                            onCancel={() => setEditingPax(null)}
+                            onSave={(pax) => { updateDraftPax(m.id, pax); setEditingPax(null); }}
+                          />
+                        ) : (
+                          (m.draft.warnings?.some((w) => w.startsWith("no_pax_extracted") || w.startsWith("count_mismatch")) || (m.draft.fields.pax ?? []).length > 0) && (
+                            <button
+                              type="button"
+                              className="mb-2 text-[11px] font-medium text-primary hover:underline"
+                              onClick={() => setEditingPax(`draft:${m.id}`)}
+                              disabled={busy}
+                            >
+                              {(m.draft.fields.pax ?? []).length > 0 ? "Edit passengers" : "Add passengers"}
+                            </button>
+                          )
+                        )}
                         <div className="flex gap-2">
                           <Button size="sm" disabled={busy} onClick={() => confirm.mutate({ draft: m.draft, rawMessage: m.rawMessage })}>
                             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -1092,6 +1207,25 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                                     ))}
                                   </ul>
                                 ) : null}
+                                {editingPax === `batch:${m.id}:${i}` ? (
+                                  <PaxInlineEditor
+                                    initial={d.fields.pax ?? []}
+                                    disabled={busy}
+                                    onCancel={() => setEditingPax(null)}
+                                    onSave={(pax) => { updateBatchItemPax(m.id, i, pax); setEditingPax(null); }}
+                                  />
+                                ) : (
+                                  (d.warnings?.some((w) => w.startsWith("no_pax_extracted") || w.startsWith("count_mismatch")) || (d.fields.pax ?? []).length > 0) && (
+                                    <button
+                                      type="button"
+                                      className="mt-1 text-[11px] font-medium text-primary hover:underline"
+                                      onClick={() => setEditingPax(`batch:${m.id}:${i}`)}
+                                      disabled={busy}
+                                    >
+                                      {(d.fields.pax ?? []).length > 0 ? "Edit passengers" : "Add passengers"}
+                                    </button>
+                                  )
+                                )}
                               </div>
                             );
                           })}
