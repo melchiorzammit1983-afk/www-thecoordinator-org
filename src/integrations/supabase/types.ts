@@ -291,6 +291,47 @@ export type Database = {
           },
         ]
       }
+      ai_char_overage_settings: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          enabled: boolean
+          free_char_threshold: number
+          id: string
+          price_per_char: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          free_char_threshold?: number
+          id?: string
+          price_per_char?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          free_char_threshold?: number
+          id?: string
+          price_per_char?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_char_overage_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_command_log: {
         Row: {
           actions: Json
