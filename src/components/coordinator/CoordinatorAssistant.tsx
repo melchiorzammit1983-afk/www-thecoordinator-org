@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
-import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, createJobsBulk, mergeTrips } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
@@ -161,7 +161,6 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const askFn = useServerFn(askCoordinatorAssistant);
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
-  const bulkFn = useServerFn(createJobsBulk);
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
   const mergeFn = useServerFn(mergeTrips);
@@ -326,29 +325,6 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
       const missing = missingCreateFields(f);
       if (missing.length) throw new Error(`Missing ${missing.join(", ")} for "${draft.summary}".`);
       const pax = (f.pax ?? []).map((n) => n.trim()).filter(Boolean);
-      if (pax.length > 0) {
-        // Route to bulkFn so the passenger list is actually persisted; single
-        // trip inside the batch, keeps the driver assignment via clarify.
-        return bulkFn({
-          data: {
-            trips: [
-              {
-                from_location: f.from_location!,
-                to_location: f.to_location!,
-                date: f.date!,
-                time: f.time!,
-                flightorship: "",
-                from_flight: f.from_flight ?? "",
-                to_flight: f.to_flight ?? "",
-                tracking_kind: "flight",
-                clientcompanyname: f.clientcompanyname ?? "",
-                contact_phone: f.contact_phone ?? "",
-                pax,
-              },
-            ],
-          },
-        });
-      }
       return createFn({
         data: {
           from_location: f.from_location!,
@@ -370,10 +346,11 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           pickup_display_name: null,
           dropoff_display_name: null,
           tracking_kind: "flight",
+          pax,
         },
       });
     },
-    [createFn, bulkFn, missingCreateFields],
+    [createFn, missingCreateFields],
   );
 
   const confirm = useMutation({
@@ -403,6 +380,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
           dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
           tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+          pax: f.pax ?? undefined,
         };
         const res = await updateFn({ data: payload });
         // Before-state = only the fields we're about to change.
@@ -494,6 +472,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
         pickup_display_name: (existing.pickup_display_name ?? null) as string | null,
         dropoff_display_name: (existing.dropoff_display_name ?? null) as string | null,
         tracking_kind: (existing.tracking_kind ?? "flight") as "flight" | "vessel",
+        pax: f.pax ?? undefined,
       };
       return updateFn({ data: payload });
     },

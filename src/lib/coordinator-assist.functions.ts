@@ -721,11 +721,26 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
       const d = (raw ?? {}) as Record<string, unknown>;
       const rawFields = (d.fields ?? {}) as Record<string, unknown>;
-      const rawPax = rawFields.pax ?? rawFields.passengers;
+      const rawPax =
+        rawFields.pax ??
+        rawFields.passengers ??
+        rawFields.passenger_names ??
+        rawFields.names ??
+        d.pax ??
+        d.passengers ??
+        d.passenger_names ??
+        d.names;
       let pax: string[] | null = null;
-      if (Array.isArray(rawPax)) {
-        pax = rawPax
-          .map((n) => (typeof n === "string" ? n.trim() : ""))
+      if (Array.isArray(rawPax) || typeof rawPax === "string") {
+        const rawNames = Array.isArray(rawPax)
+          ? rawPax
+          : rawPax.split(/\r?\n|;|\s+[&+]\s+|,(?=\s*[A-ZÀ-ÖØ-Þ])/).map((name) => name.replace(/^[-•\d.)\s]+/, ""));
+        pax = rawNames
+          .map((n) => {
+            if (typeof n === "string") return n.trim();
+            if (n && typeof n === "object" && "name" in n) return String((n as { name?: unknown }).name ?? "").trim();
+            return "";
+          })
           .filter((n) => n.length > 0 && n.length <= 200)
           .slice(0, 200);
         if (pax.length === 0) pax = null;

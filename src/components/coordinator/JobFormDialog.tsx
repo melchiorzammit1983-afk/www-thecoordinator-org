@@ -268,7 +268,6 @@ function ManualForm({
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
-  const bulkFn = useServerFn(createJobsBulk);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
 
@@ -299,6 +298,7 @@ function ManualForm({
     mutationFn: async () => {
       const effFrom = from || (fromFlight ? "Airport" : "");
       const effTo = to || (toFlight ? "Airport" : "");
+      const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       const payload = {
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
@@ -314,18 +314,7 @@ function ManualForm({
         dropoff_display_name: toDisplayName,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
-      const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-      if (pax.length) {
-        await bulkFn({ data: { trips: [{
-          from_location: effFrom, to_location: effTo, date, time,
-          flightorship: fromFlight || toFlight || "",
-          from_flight: fromFlight, to_flight: toFlight,
-          tracking_kind: trackingKind,
-          clientcompanyname: client, pax,
-        }], label_ids: labelIds } });
-      } else {
-        await createFn({ data: payload });
-      }
+      await createFn({ data: { ...payload, pax } });
       return date;
     },
     onSuccess: (savedDate) => {

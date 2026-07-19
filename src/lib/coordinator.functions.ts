@@ -580,6 +580,7 @@ const jobInput = z.object({
   pickup_display_name: z.string().trim().max(200).optional().nullable(),
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
   tracking_kind: z.enum(["flight", "vessel"]).optional(),
+  pax: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
@@ -599,6 +600,19 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
   if (allowed.length) {
     await supabaseAdmin.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
   }
+}
+
+async function syncJobPax(jobId: string, names: string[] | undefined) {
+  if (names === undefined) return;
+  const supabaseAdmin = await getAdminClient();
+  const clean = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean))).slice(0, 200);
+  const { error: deleteErr } = await supabaseAdmin.from("pax").delete().eq("job_id", jobId);
+  if (deleteErr) throw new Error(deleteErr.message);
+  if (!clean.length) return;
+  const { error: insertErr } = await supabaseAdmin
+    .from("pax")
+    .insert(clean.map((name) => ({ job_id: jobId, name })));
+  if (insertErr) throw new Error(insertErr.message);
 }
 
 export const createJob = createServerFn({ method: "POST" })
@@ -635,6 +649,7 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
+    await syncJobPax(row.id, data.pax);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
     // Auto-estimate the fare from company pricing + service areas. Route
@@ -690,6 +705,7 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       // Labels-only edits fall through to syncJobLabels below (allowed).
       if (Object.keys(diff).length === 0) {
+        await syncJobPax(data.id, data.pax);
         await syncJobLabels(context, c.id, data.id, data.label_ids);
         return { ok: true };
       }
@@ -702,6 +718,7 @@ export const updateJob = createServerFn({ method: "POST" })
         driverId: lockable.driver_id,
       });
       // Labels can still be updated immediately (coordinator-only metadata).
+      await syncJobPax(data.id, data.pax);
       await syncJobLabels(context, c.id, data.id, data.label_ids);
       return { ok: true, ...res };
     }
@@ -756,6 +773,7 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
+    await syncJobPax(data.id, data.pax);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
