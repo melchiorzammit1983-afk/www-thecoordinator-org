@@ -74,7 +74,10 @@ function DashboardPage() {
           <h1 className="text-2xl font-semibold truncate">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Live summary of your operations.</p>
         </div>
-        <WatchtowerToggle />
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <WatchtowerToggle />
+          <FlightTrackingIndicator />
+        </div>
       </div>
 
       {/* Quick actions */}
