@@ -764,6 +764,41 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     );
   };
 
+  const confirmMerge = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find((x) => x.id === msgId && "merge" in x) as
+        | (ChatMsg & { merge: AssistantMergeTrips; rawMessage?: string })
+        | undefined;
+      if (!msg) throw new Error("Merge proposal not found.");
+      const result = await mergeFn({
+        data: {
+          keep_job_id: msg.merge.keep_job_id,
+          drop_job_ids: msg.merge.drop_job_ids,
+        },
+      });
+      return { msgId, merge: msg.merge, result };
+    },
+    onSuccess: ({ msgId, merge, result }) => {
+      const r = result as { cancelled?: number; merged_pax?: number };
+      const cancelled = r.cancelled ?? merge.drop_job_ids.length;
+      const msg = `Merged ${cancelled} duplicate trip${cancelled === 1 ? "" : "s"}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["trip-flags"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      setMessages((m) => [
+        ...m.map((x) => (x.id === msgId && "merge" in x ? { ...x, applied: true } : x)),
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ ${merge.summary}${r.merged_pax ? ` · ${r.merged_pax} passengers copied` : ""}` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not merge the trips.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
 
 
   // ------------- Structured command actions (group / ungroup / message) -------------
