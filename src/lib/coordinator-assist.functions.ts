@@ -751,6 +751,25 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       return null;
     };
     const extracted = extractJson(content);
+    const aigRunId = res.headers.get("X-Lovable-AIG-Run-ID");
+    const aigLogId = res.headers.get("X-Lovable-AIG-Log-ID");
+    try {
+      const { logRawAiResponse } = await import("./ai-raw-log.server");
+      await logRawAiResponse({
+        feature_key: "assistant_qa",
+        surface: "coordinator_assistant",
+        model: assistModel,
+        aig_run_id: aigRunId,
+        aig_log_id: aigLogId,
+        finish_reason: finishReason,
+        parse_ok: extracted !== null,
+        parse_error: extracted === null ? "extractJson returned null" : null,
+        raw_content: content,
+        company_id: company.id,
+        actor_user_id: context.userId,
+        meta: { message_length: data.message?.length ?? 0 },
+      });
+    } catch { /* noop */ }
     if (extracted === null) {
       if (finishReason === "length" || /^\s*[{[]/.test(content)) {
         return answer("I started extracting the trips, but the structured result was incomplete. Please send the same message again and I'll return it as trip cards, not raw JSON.");
