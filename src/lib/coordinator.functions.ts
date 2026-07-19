@@ -2125,21 +2125,26 @@ async function fetchLiveStatusViaGemini(
 
   // Fail fast for obviously invalid flight codes so we don't burn a Gemini
   // call (or points) on `ASSO VENTICINCUE` sitting in a flight field.
+  // Also compute the canonical normalized code — used as the cache key so
+  // "LO673", "lo 673" and "LO0673" all resolve to the same cached result.
+  let canonical = id.toUpperCase().replace(/\s+/g, "");
   if (kind === "flight") {
     const parsed = parseFlightCode(id);
     if (!parsed.ok) {
       if (looksLikeVessel(id)) return { ok: false, reason: "vessel_in_flight_field" };
       return { ok: false, reason: "invalid_code" };
     }
+    canonical = parsed.normalized ?? canonical;
   }
 
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { ok: false, reason: "not_configured" };
 
   const variant = opts.variant ? `:${opts.variant}` : "";
-  const cacheKey = `v3:${kind}:${id.toUpperCase()}:${isoToDayKey(pickupIso)}${variant}`;
+  const cacheKey = `v4:${kind}:${canonical}:${isoToDayKey(pickupIso)}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
+
 
   const pickupLine = pickupIso
     ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
