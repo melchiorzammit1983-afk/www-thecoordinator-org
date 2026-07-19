@@ -1106,12 +1106,31 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                           </dl>
                         )}
                         {m.draft.warnings?.length ? (
-                          <ul className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          <ul className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
                             {m.draft.warnings.map((w, i) => (
                               <li key={i}>⚠ {paxWarningLabel(w)}</li>
                             ))}
                           </ul>
                         ) : null}
+                        {editingPax === `draft:${m.id}` ? (
+                          <PaxInlineEditor
+                            initial={m.draft.fields.pax ?? []}
+                            disabled={busy}
+                            onCancel={() => setEditingPax(null)}
+                            onSave={(pax) => { updateDraftPax(m.id, pax); setEditingPax(null); }}
+                          />
+                        ) : (
+                          (m.draft.warnings?.some((w) => w.startsWith("no_pax_extracted") || w.startsWith("count_mismatch")) || (m.draft.fields.pax ?? []).length > 0) && (
+                            <button
+                              type="button"
+                              className="mb-2 text-[11px] font-medium text-primary hover:underline"
+                              onClick={() => setEditingPax(`draft:${m.id}`)}
+                              disabled={busy}
+                            >
+                              {(m.draft.fields.pax ?? []).length > 0 ? "Edit passengers" : "Add passengers"}
+                            </button>
+                          )
+                        )}
                         <div className="flex gap-2">
                           <Button size="sm" disabled={busy} onClick={() => confirm.mutate({ draft: m.draft, rawMessage: m.rawMessage })}>
                             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
