@@ -47,6 +47,7 @@ import {
   Clock,
   Plane,
   User as UserIcon,
+  Info,
 } from "lucide-react";
 import { TripEventsMap } from "@/components/coordinator/TripEventsMap";
 import {
@@ -258,7 +259,7 @@ type Job = {
   route_distance_m?: number | null;
 };
 
-function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI" }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string }) {
+function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI", className }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string; className?: string }) {
   const openAi = useOpenAssistant();
   const assistantEnabled = useFeature("ai_coordinator_assist");
   if (!assistantEnabled) return null;
@@ -266,7 +267,11 @@ function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "As
     <Button
       size="sm"
       variant={variant}
-      className={size === "xs" ? "h-6 px-2 text-[10px]" : ""}
+      className={
+        size === "xs"
+          ? `h-6 px-2 text-[10px] ${className ?? ""}`
+          : `flex-1 min-h-11 ${className ?? ""}`
+      }
       onClick={(e) => {
         e.stopPropagation();
         openAi(
@@ -293,7 +298,7 @@ function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "As
         );
       }}
     >
-      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-3.5 w-3.5 mr-1"} />
+      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-4 w-4 mr-1.5"} />
       {label}
     </Button>
   );
@@ -2559,7 +2564,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       ref={setNodeRef}
       data-job-id={job.id}
       style={style}
-      className={`relative rounded-md border-2 pl-8 pr-1 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-12 sm:pr-2 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
@@ -2592,10 +2597,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         <Checkbox checked={isSelected} onCheckedChange={() => ctx.onToggleSelect(job.id)} aria-label="Select trip" />
       </div>
 
-      {/* Ask AI (top-right) */}
-      <div className="absolute top-1 right-1 z-10">
-        <AskAiInlineButton trip={job} size="xs" variant="ghost" label="Ask AI" />
-      </div>
+
+
 
       {/* Tap area — opens details sheet */}
       <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
@@ -2915,6 +2918,33 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
         </div>
       </button>
 
+      {/* Action bar — large tap targets, well spaced from top-right kebab */}
+      <div className="mt-2 flex items-stretch gap-1.5 border-t border-border/60 pt-2">
+        <AskAiInlineButton trip={job} label="Ask AI" />
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-h-11"
+          onClick={(e) => { e.stopPropagation(); ctx.onChat(job); }}
+          aria-label="Open trip chat"
+        >
+          <MessagesSquare className="h-4 w-4 mr-1.5" />
+          Message
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-h-11"
+          onClick={(e) => { e.stopPropagation(); ctx.onOpenDetails(job); }}
+          aria-label="Open trip details"
+        >
+          <Info className="h-4 w-4 mr-1.5" />
+          Details
+        </Button>
+      </div>
+
+
+
 
       {/* Top-right controls: drag (desktop) + menu */}
       <div className="absolute top-1.5 right-1 flex items-center gap-0.5">
@@ -3118,8 +3148,8 @@ function TripMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Actions">
-          <MoreVertical className="h-4 w-4" />
+        <Button size="icon" variant="ghost" className="h-11 w-11 sm:h-8 sm:w-8" aria-label="Actions">
+          <MoreVertical className="h-5 w-5 sm:h-4 sm:w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
