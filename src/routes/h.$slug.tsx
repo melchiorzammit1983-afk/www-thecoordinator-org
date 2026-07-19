@@ -1,13 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 /**
- * `/h/$slug` — branded company portal link.
- *
- * Coordinators share links like `https://thecoordinator.org/h/grand-hotel`.
- * The resolution now happens server-side: we redirect the browser to the
- * public API endpoint, which itself replies with a 302 to `/portal/<token>`.
- * The magic token is never exposed to client-side JavaScript.
+ * `/h/$slug` — layout for branded portal + room QR children.
+ * The actual slug redirect lives in `h.$slug.index.tsx`, so that visiting
+ * `/h/$slug/r/$qr` mounts the room-landing child instead of triggering
+ * the by-slug redirect.
  */
 export const Route = createFileRoute("/h/$slug")({
   ssr: false,
@@ -17,19 +14,5 @@ export const Route = createFileRoute("/h/$slug")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: BrandedRedirect,
+  component: () => <Outlet />,
 });
-
-function BrandedRedirect() {
-  const { slug } = Route.useParams();
-
-  useEffect(() => {
-    window.location.replace(`/api/public/portal/by-slug/${encodeURIComponent(slug)}`);
-  }, [slug]);
-
-  return (
-    <div className="min-h-screen grid place-items-center p-8 text-center">
-      <p className="text-sm text-muted-foreground">Opening your portal…</p>
-    </div>
-  );
-}

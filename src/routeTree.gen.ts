@@ -33,6 +33,7 @@ import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
+import { Route as HSlugIndexRouteImport } from './routes/h.$slug.index'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
@@ -217,6 +218,11 @@ const Char91DotmcpChar93ListToolsRoute =
     path: '/.mcp/list-tools',
     getParentRoute: () => rootRouteImport,
   } as any)
+const HSlugIndexRoute = HSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HSlugRoute,
+} as any)
 const AuthenticatedCoordinatorIndexRoute =
   AuthenticatedCoordinatorIndexRouteImport.update({
     id: '/',
@@ -639,6 +645,7 @@ export interface FileRoutesByFullPath {
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/h/$slug/': typeof HSlugIndexRoute
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
@@ -678,7 +685,6 @@ export interface FileRoutesByTo {
   '/api/help-chat': typeof ApiHelpChatRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
-  '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
@@ -722,6 +728,7 @@ export interface FileRoutesByTo {
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
+  '/h/$slug': typeof HSlugIndexRoute
   '/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
@@ -810,6 +817,7 @@ export interface FileRoutesById {
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
+  '/h/$slug/': typeof HSlugIndexRoute
   '/_authenticated/coordinator/portals/$id': typeof AuthenticatedCoordinatorPortalsIdRoute
   '/api/public/cron/ai-auto-coordinate': typeof ApiPublicCronAiAutoCoordinateRoute
   '/api/public/cron/auto-forward': typeof ApiPublicCronAutoForwardRoute
@@ -898,6 +906,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin/'
     | '/coordinator/'
+    | '/h/$slug/'
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
@@ -937,7 +946,6 @@ export interface FileRouteTypes {
     | '/api/help-chat'
     | '/c/$token'
     | '/g/$session'
-    | '/h/$slug'
     | '/help/$topic'
     | '/portal/$token'
     | '/t/$token'
@@ -981,6 +989,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
+    | '/h/$slug'
     | '/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
@@ -1068,6 +1077,7 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
+    | '/h/$slug/'
     | '/_authenticated/coordinator/portals/$id'
     | '/api/public/cron/ai-auto-coordinate'
     | '/api/public/cron/auto-forward'
@@ -1308,6 +1318,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/.mcp/list-tools'
       preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/h/$slug/': {
+      id: '/h/$slug/'
+      path: '/'
+      fullPath: '/h/$slug/'
+      preLoaderRoute: typeof HSlugIndexRouteImport
+      parentRoute: typeof HSlugRoute
     }
     '/_authenticated/coordinator/': {
       id: '/_authenticated/coordinator/'
@@ -1885,10 +1902,12 @@ const HelpRouteChildren: HelpRouteChildren = {
 const HelpRouteWithChildren = HelpRoute._addFileChildren(HelpRouteChildren)
 
 interface HSlugRouteChildren {
+  HSlugIndexRoute: typeof HSlugIndexRoute
   HSlugRQrRoute: typeof HSlugRQrRoute
 }
 
 const HSlugRouteChildren: HSlugRouteChildren = {
+  HSlugIndexRoute: HSlugIndexRoute,
   HSlugRQrRoute: HSlugRQrRoute,
 }
 
