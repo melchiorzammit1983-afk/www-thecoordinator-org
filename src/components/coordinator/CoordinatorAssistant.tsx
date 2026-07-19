@@ -15,10 +15,10 @@ import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
-import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, createJobsBulk } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, createJobsBulk, mergeTrips } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
@@ -91,6 +91,7 @@ type ChatMsg =
   | { id: string; role: "assistant"; batch: AssistantBatch; rawMessage?: string }
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
   | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
+  | { id: string; role: "assistant"; merge: AssistantMergeTrips; rawMessage?: string; applied?: boolean }
   | {
       id: string;
       role: "assistant";
@@ -163,6 +164,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const bulkFn = useServerFn(createJobsBulk);
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
+  const mergeFn = useServerFn(mergeTrips);
   const meterFn = useServerFn(meterAssistantConfirm);
   const logFn = useServerFn(logAssistantAction);
   const qc = useQueryClient();
@@ -236,6 +238,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           }
           if ("fix" in m) return { role: "assistant" as const, text: m.fix.summary };
           if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
+          if ("merge" in m) return { role: "assistant" as const, text: m.merge.summary };
           if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
           return { role: "assistant" as const, text: "" };
         });
@@ -260,6 +263,8 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
         setMessages((m) => [...m, { id, role: "assistant", fix: result, rawMessage }]);
       } else if (result.kind === "partner_suggest") {
         setMessages((m) => [...m, { id, role: "assistant", suggest: result, rawMessage }]);
+      } else if (result.kind === "merge_trips") {
+        setMessages((m) => [...m, { id, role: "assistant", merge: result, rawMessage }]);
       } else if (result.kind === "command_actions") {
         setMessages((m) => [
           ...m,
@@ -759,6 +764,41 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     );
   };
 
+  const confirmMerge = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find((x) => x.id === msgId && "merge" in x) as
+        | (ChatMsg & { merge: AssistantMergeTrips; rawMessage?: string })
+        | undefined;
+      if (!msg) throw new Error("Merge proposal not found.");
+      const result = await mergeFn({
+        data: {
+          keep_job_id: msg.merge.keep_job_id,
+          drop_job_ids: msg.merge.drop_job_ids,
+        },
+      });
+      return { msgId, merge: msg.merge, result };
+    },
+    onSuccess: ({ msgId, merge, result }) => {
+      const r = result as { cancelled?: number; merged_pax?: number };
+      const cancelled = r.cancelled ?? merge.drop_job_ids.length;
+      const msg = `Merged ${cancelled} duplicate trip${cancelled === 1 ? "" : "s"}.`;
+      toast.success(msg);
+      maybeSpeak(msg);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["trip-flags"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-activity"] });
+      setMessages((m) => [
+        ...m.map((x) => (x.id === msgId && "merge" in x ? { ...x, applied: true } : x)),
+        { id: crypto.randomUUID(), role: "assistant", text: `✔ ${merge.summary}${r.merged_pax ? ` · ${r.merged_pax} passengers copied` : ""}` },
+      ]);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not merge the trips.";
+      toast.error(msg);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
+    },
+  });
+
 
 
   // ------------- Structured command actions (group / ungroup / message) -------------
@@ -1219,6 +1259,43 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                             >
                               {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                               Confirm selected ({chosenCount})
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                if ("merge" in m) {
+                  const busy = confirmMerge.isPending && confirmMerge.variables === m.id;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {m.applied ? "Merge applied" : "Merge duplicate trips — needs your approval"}
+                        </div>
+                        <div className="mb-2 text-sm">{m.merge.summary}</div>
+                        <div className="mb-3 rounded border bg-background p-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Keep </span>
+                            <span className="font-mono">{m.merge.keep_job_id.slice(0, 8)}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Cancel as duplicate </span>
+                            <span className="font-mono">{m.merge.drop_job_ids.map((id) => id.slice(0, 8)).join(", ")}</span>
+                          </div>
+                        </div>
+                        {!m.applied && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button size="sm" disabled={busy} onClick={() => confirmMerge.mutate(m.id)}>
+                              {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                              Confirm merge
                             </Button>
                             <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
                               Cancel

@@ -155,6 +155,19 @@ export type AssistantCommandActions = {
 };
 
 /**
+ * Merge duplicate trip cards after coordinator approval. This reuses the
+ * existing mergeTrips server function client-side, so passengers are copied to
+ * the kept trip and dropped duplicates are cancelled through the same manual
+ * merge pathway already used in the UI.
+ */
+export type AssistantMergeTrips = {
+  kind: "merge_trips";
+  keep_job_id: string;
+  drop_job_ids: string[];
+  summary: string;
+};
+
+/**
  * Trigger card for the existing AI Auto-Coordinate flow. The server fn
  * `aiAutoCoordinate` is invoked on Confirm from the client and its proposals
  * are then applied one-by-one via `applyAutoCoordinateProposal` — the SAME
@@ -173,6 +186,7 @@ export type AssistantResult =
   | AssistantDataFix
   | AssistantPartnerSuggest
   | AssistantCommandActions
+  | AssistantMergeTrips
   | AssistantAutoCoordinate;
 
 
@@ -478,6 +492,7 @@ You do NINE things:
 8) STRUCTURED ACTIONS on existing trips — group / ungroup / send a message to the driver or client on a trip. Return kind:"command_actions" with an array. This is the same execution layer as the old Command Bar, so the writes are trusted and audited. Use this when the coordinator says things like "group these two trips", "ungroup that trip", "message the driver that pickup is delayed 10 minutes", "tell the client we're 5 min away". Do NOT use command_actions for creating/updating trip content — those still go through draft / batch / search_update / data_fix.
 9) COORDINATE THE BACKLOG — when the coordinator says things like "coordinate my backlog", "review unassigned trips", "auto-coordinate", "sort out today", return kind:"auto_coordinate" with a one-line intro. The client then runs the existing AI Auto-Coordinate engine and presents its proposals for per-item approval.
 10) BILLING Q&A — when the coordinator asks about their points balance ("how many points do I have"), a specific charge ("why did that cost me points", "why was I charged"), the price of a feature ("how much does X cost"), or top-up options, ANSWER in kind:"answer" using the BILLING CONTEXT block below. Quote real numbers from BILLING CONTEXT — never invent. You cannot start a top-up from chat; if they want to buy points, tell them to open the Billing page and use "Request top-up".
+11) MERGE DUPLICATE TRIPS — when the coordinator says "merge these trips", "merge duplicates", or asks to combine duplicate cards, return kind:"merge_trips". Pick the best complete trip as keep_job_id and put the duplicates in drop_job_ids. Only use trip UUIDs from UPCOMING TRIPS, TRIPS REFERENCED BY SERIAL NUMBER, or the currently open trip.
 
 
 Rules:
@@ -517,6 +532,7 @@ Rules:
       { "type": "message", "job_id": "<uuid>", "thread": "driver" | "client" | "group", "body": "<short message>" }
     ],
     "summary": "..." }
+  { "kind": "merge_trips", "keep_job_id": "<uuid>", "drop_job_ids": ["<uuid>", ...], "summary": "..." }
   { "kind": "auto_coordinate", "intro": "<one short sentence, e.g. 'Reviewing your unassigned backlog now.'>" }
 - For "update" or "search_update", only include fields that CHANGE.
 - For "create" (single or batched), omit target_trip_id (null).
@@ -530,7 +546,7 @@ Rules:
 - ONE TRIP PER FLIGHT+DIRECTION+DATE: Group people who share the SAME flight number, SAME date, and SAME route (e.g. all 3 joiners on KM103 LHR/MLA on 20 Jul → airport→hotel/vessel) into ONE draft with all their names in "pax". Do NOT create one draft per person. Different flights or different dates → separate drafts. Hotel transfers, vessel attendance, and sign-offs are their own drafts.
 - CLIENT NAME: Use the sender / agency / vessel name as clientcompanyname (e.g. "Ship Agency Malta Ltd." or "MV Ocean Pioneer"). If a saved client note exists (see CLIENT NOTES below), mention it briefly in the trip summary.
 - If a request is genuinely too vague, kind:"answer" with ONE short clarifying question.
-- Structured actions: prefer command_actions for grouping and messages. Only include job_ids/job_id values that appear in UPCOMING TRIPS or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
+- Structured actions: prefer command_actions for grouping and messages. Use merge_trips only for true duplicate/merge requests. Only include job_ids/job_id values that appear in UPCOMING TRIPS, TRIPS REFERENCED BY SERIAL NUMBER, or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
 - Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
 - GLOSSARY EXPANSION: BEFORE producing any other kind, silently expand any glossary term found in the coordinator's message using COMPANY GLOSSARY below (case-insensitive).
 - GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
@@ -587,7 +603,11 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       body: JSON.stringify({
         model: assistModel,
         response_format: { type: "json_object" },
-        max_tokens: 1200,
+        // Trip extraction can return several draft cards with passenger lists.
+        // 1200 tokens was too small for real crew-change emails and caused the
+        // model response to be cut mid-JSON, which then surfaced raw JSON in the
+        // chat instead of proposal cards.
+        max_tokens: 5000,
         messages: [
           { role: "system", content: system },
           { role: "user", content: effectiveMessage },
@@ -616,7 +636,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       throw new Error(`AI error (${res.status}): ${body.slice(0, 200)}`);
     }
     const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     try {
@@ -637,6 +657,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       });
     } catch { /* noop */ }
     const content = json.choices?.[0]?.message?.content ?? "";
+    const finishReason = json.choices?.[0]?.finish_reason ?? null;
     const answer = async (text: string): Promise<AssistantAnswer> => {
       await meter("assistant_qa", "assistant Q&A turn");
       return { kind: "answer", text: text + overageNotice };
@@ -645,7 +666,7 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     let parsed: unknown;
     // Some model turns wrap JSON in ```json fences, prefix it with the
     // user's pasted text, or append trailing prose. Strip fences first,
-    // then fall back to extracting the largest {...} block before giving up.
+    // then fall back to extracting balanced {...} blocks before giving up.
     const extractJson = (raw: string): unknown | null => {
       const s = raw.trim();
       if (!s) return null;
@@ -657,6 +678,32 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       const first = s.indexOf("{");
       const last = s.lastIndexOf("}");
       if (first >= 0 && last > first) candidates.push(s.slice(first, last + 1));
+      // Balanced-object scan that ignores braces inside JSON strings. This
+      // recovers when the model adds prose before/after a valid JSON object.
+      let depth = 0;
+      let start = -1;
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === "{") {
+          if (depth === 0) start = i;
+          depth += 1;
+        } else if (ch === "}" && depth > 0) {
+          depth -= 1;
+          if (depth === 0 && start >= 0) candidates.push(s.slice(start, i + 1));
+        }
+      }
       for (const c of candidates) {
         try { return JSON.parse(c); } catch { /* keep trying */ }
       }
@@ -664,6 +711,9 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     };
     const extracted = extractJson(content);
     if (extracted === null) {
+      if (finishReason === "length" || /^\s*[{[]/.test(content)) {
+        return answer("I started extracting the trips, but the structured result was incomplete. Please send the same message again and I'll return it as trip cards, not raw JSON.");
+      }
       return answer(content || "Sorry, I couldn't parse that.");
     }
     parsed = extracted;
@@ -807,6 +857,34 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         kind: "command_actions",
         actions: cleaned,
         summary: typeof p.summary === "string" && p.summary.trim() ? p.summary : `${cleaned.length} action${cleaned.length === 1 ? "" : "s"} pending your approval`,
+      };
+    }
+
+    // ---- Merge duplicate trips ----
+    if (p.kind === "merge_trips") {
+      const upcomingIds = new Set(upcoming.map((r: any) => r.id as string));
+      const referencedIds = new Set(
+        referencedBlock === "(none)"
+          ? []
+          : Array.from(referencedBlock.matchAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)).map((m) => m[0]),
+      );
+      const openId = trip?.id ?? null;
+      const validJobId = (id: unknown): id is string =>
+        typeof id === "string" && (upcomingIds.has(id) || referencedIds.has(id) || id === openId);
+      const keep_job_id = validJobId(p.keep_job_id) ? p.keep_job_id : "";
+      const drop_job_ids = Array.isArray(p.drop_job_ids)
+        ? Array.from(new Set((p.drop_job_ids as unknown[]).filter(validJobId))).filter((id) => id !== keep_job_id).slice(0, 10)
+        : [];
+      if (!keep_job_id || drop_job_ids.length === 0) {
+        return answer("Which duplicate trips should I merge? Open the trips or refer to their card numbers, then tell me which one to keep.");
+      }
+      return {
+        kind: "merge_trips",
+        keep_job_id,
+        drop_job_ids,
+        summary: typeof p.summary === "string" && p.summary.trim()
+          ? p.summary.trim().slice(0, 300)
+          : `Merge ${drop_job_ids.length + 1} duplicate trips`,
       };
     }
 
