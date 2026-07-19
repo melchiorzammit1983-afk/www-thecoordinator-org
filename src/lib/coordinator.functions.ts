@@ -361,13 +361,13 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
     const sb = await getAdminClient();
     const [pendingRes, unassignedRes] = await Promise.all([
       sb.from("client_bookings")
-        .select("id, from_location, to_location, date, time, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id)")
+        .select("id, from_location, to_location, date, time, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at)")
         .eq("company_id", c.id)
         .in("status", ["pending", "modification_pending"])
         .order("created_at", { ascending: false })
         .limit(5),
       sb.from("jobs")
-        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id")
+        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at")
         .eq("company_id", c.id)
         .is("driver_id", null)
         .not("status", "in", "(completed,cancelled)")
@@ -390,6 +390,12 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
         leave_by_at: b.jobs?.leave_by_at ?? null,
         pickup_at: b.jobs?.pickup_at ?? null,
         driver_id: b.jobs?.driver_id ?? null,
+        from_flight: b.jobs?.from_flight ?? null,
+        to_flight: b.jobs?.to_flight ?? null,
+        flight_status: b.jobs?.flight_status ?? null,
+        flight_status_note: b.jobs?.flight_status_note ?? null,
+        flight_scheduled_at: b.jobs?.flight_scheduled_at ?? null,
+        flight_estimated_at: b.jobs?.flight_estimated_at ?? null,
       })),
       unassigned: unassignedRes.data ?? [],
     };
