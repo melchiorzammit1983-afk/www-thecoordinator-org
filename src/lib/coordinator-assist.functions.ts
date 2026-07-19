@@ -392,7 +392,19 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
         referencedBlock = refRows
           .map((r: any) => `#${r.trip_no} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"} · status:${r.status}${r.driver_id ? " · (driver assigned)" : ""}`)
           .join("\n");
-      }
+    }
+
+    // Client notes (per-company coordinator memory keyed by normalized client name).
+    // Injected into the prompt so the assistant can mention them in summaries.
+    const { data: noteRows } = await supabaseAdmin
+      .from("client_notes")
+      .select("client_display, note")
+      .eq("company_id", company.id)
+      .limit(200);
+    const clientNotes = (noteRows ?? []) as Array<{ client_display: string; note: string }>;
+    const clientNotesBlock = clientNotes.length
+      ? clientNotes.map((n) => `- ${n.client_display}: ${n.note.slice(0, 200)}`).join("\n")
+      : "(no client notes saved)";
     }
 
 
