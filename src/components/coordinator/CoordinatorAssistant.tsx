@@ -132,6 +132,72 @@ function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; v
   return out;
 }
 
+// Parse a textarea value into a clean list of passenger names.
+// Splits on newlines, commas, semicolons, " & ", " + " and strips bullets.
+function parsePaxText(text: string): string[] {
+  return text
+    .split(/\r?\n|;|\s+[&+]\s+|,(?=\s*\S)/)
+    .map((n) => n.replace(/^[-•\d.)\s]+/, "").trim())
+    .filter((n) => n.length > 0 && n.length <= 200)
+    .slice(0, 200);
+}
+
+// Drop the blocking pax warning codes after a manual edit. Keep non-pax
+// warnings and informational codes intact so the coordinator still sees them.
+function stripResolvedPaxWarnings(warnings: string[] | undefined, newPax: string[]): string[] | undefined {
+  if (!warnings?.length) return warnings;
+  const kept = warnings.filter((w) => {
+    if (w.startsWith("count_mismatch")) return false; // user reviewed count
+    if (w.startsWith("no_pax_extracted")) return newPax.length === 0;
+    return true;
+  });
+  return kept.length ? kept : undefined;
+}
+
+/**
+ * Inline editor for the parsed passenger list. Renders a textarea seeded
+ * with the current names (one per line), plus Save/Cancel. Save writes the
+ * edited list back into the draft's `fields.pax` and clears the blocking
+ * pax warnings so Confirm becomes enabled.
+ */
+function PaxInlineEditor({
+  initial,
+  onSave,
+  onCancel,
+  disabled,
+}: {
+  initial: string[];
+  onSave: (pax: string[]) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(initial.join("\n"));
+  const parsed = parsePaxText(text);
+  return (
+    <div className="mt-2 rounded border border-amber-300 bg-background p-2">
+      <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+        Edit passengers — one name per line
+      </div>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={Math.min(6, Math.max(3, parsed.length + 1))}
+        placeholder={"Jane Doe\nJohn Smith"}
+        className="text-xs"
+        disabled={disabled}
+      />
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{parsed.length} passenger{parsed.length === 1 ? "" : "s"}</span>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={onCancel} disabled={disabled}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(parsed)} disabled={disabled}>Save</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ---------------- Provider + FAB + Panel ----------------
 
 export function CoordinatorAssistant({ children }: { children: ReactNode }) {
