@@ -41,7 +41,7 @@ export function SalesChatbot() {
     setInput("");
     setPending(true);
     try {
-      const history = next.slice(-12).map((m) => ({ role: m.role, content: m.content }));
+      const history = next.slice(-30).map((m) => ({ role: m.role, content: m.content }));
       const res = await ask({ data: { messages: history } });
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
     } catch {
