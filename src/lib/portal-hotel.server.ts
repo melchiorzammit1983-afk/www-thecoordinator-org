@@ -329,6 +329,7 @@ export async function createGuestBooking(sessionToken: string, input: z.infer<ty
     to_location: input.to_location,
     pickup_at: input.pickup_at,
     pax_count: input.pax_count,
+    pax_names: (input.pax_names ?? []).map((n) => n.trim()).filter(Boolean),
     flight_number: input.flight_number ?? null,
     notes: input.notes ?? null,
     zone_name: zoneName,
