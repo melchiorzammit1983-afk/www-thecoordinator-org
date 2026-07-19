@@ -187,6 +187,10 @@ export const whoAmI = createServerFn({ method: "GET" })
 function phoneToEmail(phone: string) {
   // Deterministic synthetic email so phone sign-in works without an SMS provider.
   const digits = phone.replace(/[^\d]/g, "");
+  return `p${digits}@phone.thecoordinator.local`;
+}
+function phoneToLegacyEmail(phone: string) {
+  const digits = phone.replace(/[^\d]/g, "");
   return `p${digits}@phone.crewchange.local`;
 }
 
