@@ -27,9 +27,9 @@ export function useFeatures() {
   return useQuery({
     queryKey: ["my-features"],
     queryFn: () => fn() as Promise<Record<string, boolean>>,
-    staleTime: 0,
-    refetchInterval: 30_000,
-    refetchOnMount: "always",
+    // Realtime channel above invalidates this query when entitlements change,
+    // so we don't need aggressive polling. 5 min staleTime + focus refetch is plenty.
+    staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
   });
 }
