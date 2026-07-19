@@ -2445,7 +2445,7 @@ async function fetchLiveStatusViaGemini(
 // override identically for flights and vessels. When the first grounded call
 // returns nothing, retries once with an airport hint derived from the job's
 // endpoints before giving up.
-async function applyLiveStatusToJob(
+export async function applyLiveStatusToJob(
   supabaseAdmin: any,
   job: {
     id: string;
