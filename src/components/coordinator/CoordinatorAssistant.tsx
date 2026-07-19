@@ -1269,6 +1269,43 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   );
                 }
+                if ("merge" in m) {
+                  const busy = confirmMerge.isPending && confirmMerge.variables === m.id;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 rounded-md border bg-muted/30 p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {m.applied ? "Merge applied" : "Merge duplicate trips — needs your approval"}
+                        </div>
+                        <div className="mb-2 text-sm">{m.merge.summary}</div>
+                        <div className="mb-3 rounded border bg-background p-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Keep </span>
+                            <span className="font-mono">{m.merge.keep_job_id.slice(0, 8)}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Cancel as duplicate </span>
+                            <span className="font-mono">{m.merge.drop_job_ids.map((id) => id.slice(0, 8)).join(", ")}</span>
+                          </div>
+                        </div>
+                        {!m.applied && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button size="sm" disabled={busy} onClick={() => confirmMerge.mutate(m.id)}>
+                              {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                              Confirm merge
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismissDraft(m.id)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
