@@ -142,6 +142,7 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { FlightCodeFixDialog } from "@/components/coordinator/FlightCodeFixDialog";
+import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
 import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
 import {
   RouteOptimizationAlertBanner,
