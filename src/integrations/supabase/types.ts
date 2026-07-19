@@ -435,6 +435,77 @@ export type Database = {
           },
         ]
       }
+      ai_cost_events: {
+        Row: {
+          actor_user_id: string | null
+          aig_log_id: string | null
+          aig_run_id: string | null
+          cached_tokens: number
+          company_id: string | null
+          created_at: string
+          duration_ms: number | null
+          feature_key: string
+          id: string
+          input_tokens: number
+          job_id: string | null
+          model: string | null
+          output_tokens: number
+          points_charged: number
+          real_cost_credits: number
+          real_cost_usd_cents: number
+          status: string
+          surface: string | null
+        }
+        Insert: {
+          actor_user_id?: string | null
+          aig_log_id?: string | null
+          aig_run_id?: string | null
+          cached_tokens?: number
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          feature_key: string
+          id?: string
+          input_tokens?: number
+          job_id?: string | null
+          model?: string | null
+          output_tokens?: number
+          points_charged?: number
+          real_cost_credits?: number
+          real_cost_usd_cents?: number
+          status?: string
+          surface?: string | null
+        }
+        Update: {
+          actor_user_id?: string | null
+          aig_log_id?: string | null
+          aig_run_id?: string | null
+          cached_tokens?: number
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          feature_key?: string
+          id?: string
+          input_tokens?: number
+          job_id?: string | null
+          model?: string | null
+          output_tokens?: number
+          points_charged?: number
+          real_cost_credits?: number
+          real_cost_usd_cents?: number
+          status?: string
+          surface?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_cost_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_feature_costs: {
         Row: {
           block_on_empty: boolean
@@ -668,6 +739,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ai_model_rates: {
+        Row: {
+          created_at: string
+          credits_per_usd: number
+          id: string
+          input_usd_per_1m: number
+          model: string
+          notes: string | null
+          output_usd_per_1m: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          credits_per_usd?: number
+          id?: string
+          input_usd_per_1m?: number
+          model: string
+          notes?: string | null
+          output_usd_per_1m?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          credits_per_usd?: number
+          id?: string
+          input_usd_per_1m?: number
+          model?: string
+          notes?: string | null
+          output_usd_per_1m?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       ai_pii_audit: {
         Row: {
