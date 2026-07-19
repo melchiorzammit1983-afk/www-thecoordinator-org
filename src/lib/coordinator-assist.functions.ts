@@ -548,19 +548,7 @@ Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
 Recent conversation:
 ${historyLines || "(none)"}
-
-===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================
-Current points balance: ${pointsBalance}
-
-Feature price list (points per action):
-${featureCostBlock}
-
-Most recent point-spend entries (newest first):
-${ledgerBlock}
-
-===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================
-${guideKnowledge || "(guide knowledge unavailable — answer briefly from general product knowledge)"}
-`;
+${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDGE (for kind:"answer") =====================\n${guideKnowledge}\n` : ""}`;
 
 
 
