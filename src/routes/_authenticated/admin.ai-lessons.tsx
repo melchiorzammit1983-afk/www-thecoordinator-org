@@ -63,6 +63,10 @@ function AiLessonsAdmin() {
 
       <SafetyBanner />
 
+      <TeachGlobalCard />
+
+
+
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
           <TabsTrigger value="pending">Pending</TabsTrigger>
