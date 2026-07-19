@@ -64,6 +64,7 @@ import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
 import { Route as AuthenticatedAdminAiSettingsRouteImport } from './routes/_authenticated/admin.ai-settings'
+import { Route as AuthenticatedAdminAiOverageRouteImport } from './routes/_authenticated/admin.ai-overage'
 import { Route as AuthenticatedAdminAiLessonsRouteImport } from './routes/_authenticated/admin.ai-lessons'
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
 import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
@@ -399,6 +400,12 @@ const AuthenticatedAdminAiSettingsRoute =
     path: '/ai-settings',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminAiOverageRoute =
+  AuthenticatedAdminAiOverageRouteImport.update({
+    id: '/ai-overage',
+    path: '/ai-overage',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminAiLessonsRoute =
   AuthenticatedAdminAiLessonsRouteImport.update({
     id: '/ai-lessons',
@@ -600,6 +607,7 @@ export interface FileRoutesByFullPath {
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
+  '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
   '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -682,6 +690,7 @@ export interface FileRoutesByTo {
   '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
+  '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
   '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -769,6 +778,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/_authenticated/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
+  '/_authenticated/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
   '/_authenticated/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
@@ -856,6 +866,7 @@ export interface FileRouteTypes {
     | '/admin/ai-activity'
     | '/admin/ai-insights'
     | '/admin/ai-lessons'
+    | '/admin/ai-overage'
     | '/admin/ai-settings'
     | '/admin/password-resets'
     | '/admin/portal-settings'
@@ -938,6 +949,7 @@ export interface FileRouteTypes {
     | '/admin/ai-activity'
     | '/admin/ai-insights'
     | '/admin/ai-lessons'
+    | '/admin/ai-overage'
     | '/admin/ai-settings'
     | '/admin/password-resets'
     | '/admin/portal-settings'
@@ -1024,6 +1036,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/ai-activity'
     | '/_authenticated/admin/ai-insights'
     | '/_authenticated/admin/ai-lessons'
+    | '/_authenticated/admin/ai-overage'
     | '/_authenticated/admin/ai-settings'
     | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
@@ -1513,6 +1526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAiSettingsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/ai-overage': {
+      id: '/_authenticated/admin/ai-overage'
+      path: '/ai-overage'
+      fullPath: '/admin/ai-overage'
+      preLoaderRoute: typeof AuthenticatedAdminAiOverageRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/ai-lessons': {
       id: '/_authenticated/admin/ai-lessons'
       path: '/ai-lessons'
@@ -1724,6 +1744,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminAiActivityRoute: typeof AuthenticatedAdminAiActivityRoute
   AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
   AuthenticatedAdminAiLessonsRoute: typeof AuthenticatedAdminAiLessonsRoute
+  AuthenticatedAdminAiOverageRoute: typeof AuthenticatedAdminAiOverageRoute
   AuthenticatedAdminAiSettingsRoute: typeof AuthenticatedAdminAiSettingsRoute
   AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
   AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
@@ -1739,6 +1760,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminAiActivityRoute: AuthenticatedAdminAiActivityRoute,
   AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
   AuthenticatedAdminAiLessonsRoute: AuthenticatedAdminAiLessonsRoute,
+  AuthenticatedAdminAiOverageRoute: AuthenticatedAdminAiOverageRoute,
   AuthenticatedAdminAiSettingsRoute: AuthenticatedAdminAiSettingsRoute,
   AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,
   AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
