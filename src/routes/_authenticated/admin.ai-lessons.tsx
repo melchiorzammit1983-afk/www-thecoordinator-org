@@ -3,14 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { GraduationCap, Check, X, Archive, Globe, Building2, Loader2 } from "lucide-react";
-import { adminListLessons, adminDecideLesson } from "@/lib/ai-lessons.functions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GraduationCap, Check, X, Archive, Globe, Building2, Loader2, Sparkles, ShieldAlert } from "lucide-react";
+import { adminListLessons, adminDecideLesson, adminCreateGlobalLesson } from "@/lib/ai-lessons.functions";
+import { redactPii } from "@/lib/ai-pii-preview";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SafetyBanner } from "@/components/ai/SafetyBanner";
+
+type LessonKind = "parse_pattern" | "qa" | "suggestion_rule" | "signal_fix";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-lessons")({
   component: AiLessonsAdmin,
