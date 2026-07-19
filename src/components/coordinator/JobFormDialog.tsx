@@ -312,10 +312,9 @@ function ManualForm({
         dropoff_place_id: toPlaceId,
         pickup_display_name: fromDisplayName,
         dropoff_display_name: toDisplayName,
-        pax,
       };
       if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
-      await createFn({ data: payload });
+      await createFn({ data: { ...payload, pax } });
       return date;
     },
     onSuccess: (savedDate) => {
