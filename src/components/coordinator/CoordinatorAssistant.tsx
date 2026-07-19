@@ -1083,6 +1083,13 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                                     Needs: {missing.join(", ")}
                                   </div>
                                 )}
+                                {d.warnings?.length ? (
+                                  <ul className="mt-1 space-y-0.5 text-[11px] text-amber-700 dark:text-amber-300">
+                                    {d.warnings.map((w, j) => (
+                                      <li key={j}>⚠ {paxWarningLabel(w)}</li>
+                                    ))}
+                                  </ul>
+                                ) : null}
                               </div>
                             );
                           })}
@@ -1090,7 +1097,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
                             size="sm"
-                            disabled={busy || anyMissing}
+                            disabled={busy || anyMissing || anyBlockingWarn}
                             onClick={() => confirmBatch.mutate(m.id)}
                           >
                             {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
@@ -1104,6 +1111,13 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                               Reply with the missing info and I'll update the list.
                             </span>
                           )}
+                          {anyBlockingWarn && !anyMissing && (
+                            <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                              Resolve passenger warnings above before confirming all — or Remove the affected trip and re-send.
+                            </span>
+                          )}
+                        </div>
+
                         </div>
                       </div>
                     </div>
