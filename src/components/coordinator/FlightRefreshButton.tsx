@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { refreshJobLiveStatus } from "@/lib/coordinator.functions";
-import { formatMaltaTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 type Props = {
