@@ -246,6 +246,26 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       status: "accepted", job_id: (job as any).id, accepted_at: new Date().toISOString(),
     } as any).eq("id", data.booking_id);
 
+    // Seed pax rows so the driver has verifiable slots. Use supplied
+    // pax_names first, then pad with the primary guest name + "Guest N"
+    // placeholders up to pax_count.
+    {
+      const supplied: string[] = Array.isArray((payload as any).pax_names)
+        ? (payload as any).pax_names.map((n: any) => String(n || "").trim()).filter(Boolean)
+        : [];
+      const count = Math.max(1, Math.min(20, Number((payload as any).pax_count) || 1));
+      const primary = fullName || "Guest";
+      const names: string[] = [];
+      for (let i = 0; i < count; i++) {
+        if (supplied[i]) names.push(supplied[i]);
+        else if (i === 0) names.push(primary);
+        else names.push(`Guest ${i + 1}`);
+      }
+      if (names.length) {
+        await a.from("pax").insert(names.map((name) => ({ job_id: (job as any).id, name })) as any);
+      }
+    }
+
     // create tracking token
     await a.from("pax_tracking_tokens" as any).insert({
       job_id: (job as any).id,
