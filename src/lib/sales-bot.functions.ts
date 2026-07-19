@@ -87,17 +87,31 @@ export const askSalesBot = createServerFn({ method: "POST" })
       return { reply: PUBLIC_AI_MESSAGES.OFFLINE };
     }
 
+    const startedAt = Date.now();
+    const modelId = "google/gemini-3.1-flash-lite";
     try {
       const gateway = createLovableAiGatewayProvider(key);
-      const { text } = await generateText({
-        model: gateway("google/gemini-3.1-flash-lite"),
+      const result = await generateText({
+        model: gateway(modelId),
         system: SYSTEM_PROMPT,
         messages: data.messages.map((m) => ({ role: m.role, content: m.content })),
         maxOutputTokens: PUBLIC_AI_LIMITS.MAX_OUTPUT_TOKENS,
       });
       // Only count a call once the model was actually invoked.
       await bumpDailyCounter();
-      const reply = (text ?? "").trim();
+      const { recordAiCost } = await import("./ai-cost.server");
+      await recordAiCost({
+        feature_key: "sales_bot",
+        model: modelId,
+        usage: {
+          input_tokens: result.usage?.inputTokens ?? 0,
+          output_tokens: result.usage?.outputTokens ?? 0,
+        },
+        surface: "landing_sales_bot",
+        duration_ms: Date.now() - startedAt,
+        points_charged: 0,
+      });
+      const reply = (result.text ?? "").trim();
       if (!reply) return { reply: PUBLIC_AI_MESSAGES.EMPTY_REPLY };
       return { reply };
     } catch (err) {
