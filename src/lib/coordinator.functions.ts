@@ -2469,8 +2469,11 @@ export async function applyLiveStatusToJob(
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
+  // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
+  const side: "arr" | "dep" | undefined =
+    kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
 
-  let result = await fetchLiveStatus(kind, code, job.pickup_at);
+  let result = await fetchLiveStatus(kind, code, job.pickup_at, side);
 
   // Retry once with an airport hint if the first pass produced nothing usable.
   // AeroDataBox doesn't accept airport hints, but the Gemini vessel path does.
