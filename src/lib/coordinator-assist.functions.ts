@@ -514,6 +514,9 @@ Rules:
 - Use "batch" only when 2+ new trips.
 - Use "search_update" for ANY multi-existing-trip edit by a shared reference.
 - Use "data_fix" ONLY for spelling/phone/flight-code fixes.
+- PASSENGER EXTRACTION: When the message lists people (crew changes, joiners, sign-offs, guest lists, "PAX:", numbered lines with names), put every name into the trip's "pax" array. Preserve rank/role suffixes if given ("M. Harris – Master"). Skip generic role words like "Driver", "Coordinator", "Inspector" only when they clearly refer to staff, not passengers.
+- ONE TRIP PER FLIGHT+DIRECTION+DATE: Group people who share the SAME flight number, SAME date, and SAME route (e.g. all 3 joiners on KM103 LHR/MLA on 20 Jul → airport→hotel/vessel) into ONE draft with all their names in "pax". Do NOT create one draft per person. Different flights or different dates → separate drafts. Hotel transfers, vessel attendance, and sign-offs are their own drafts.
+- CLIENT NAME: Use the sender / agency / vessel name as clientcompanyname (e.g. "Ship Agency Malta Ltd." or "MV Ocean Pioneer"). If a saved client note exists (see CLIENT NOTES below), mention it briefly in the trip summary.
 - If a request is genuinely too vague, kind:"answer" with ONE short clarifying question.
 - Structured actions: prefer command_actions for grouping and messages. Only include job_ids/job_id values that appear in UPCOMING TRIPS or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
 - Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
