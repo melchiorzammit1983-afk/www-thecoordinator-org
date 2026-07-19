@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "sdk_version": "0.23.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://qpfarpqtygnifsweabny.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "the-coordinator-mcp",
+      "version": "0.1.0",
+      "title": "The Coordinator"
+    },
+    "tools": [
+      {
+        "name": "list_upcoming_trips",
+        "title": "List upcoming trips",
+        "description": "List the signed-in coordinator's upcoming trips within a time window. Returns trip number, pickup time, from/to, status, and assigned driver name.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "hours_ahead": {
+              "default": 24,
+              "description": "How many hours ahead of now to include. Default 24.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 720
+            },
+            "limit": {
+              "default": 50,
+              "description": "Max trips to return. Default 50.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_trip",
+        "title": "Get trip",
+        "description": "Fetch full details for one trip by its trip number (e.g. 1234). Includes pickup/dropoff, status, driver, flight info, and pricing fields.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "trip_no": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "The trip's sequential number as shown on the card."
+            }
+          },
+          "required": [
+            "trip_no"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_drivers",
+        "title": "List drivers",
+        "description": "List drivers visible to the signed-in coordinator, with vehicle and contact details.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "default": 100,
+              "description": "Max drivers to return. Default 100.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
