@@ -2166,6 +2166,7 @@ function fmtHm(iso: string | null): string {
 async function fetchLiveStatusViaAeroDataBox(
   identifier: string,
   pickupIso: string | null,
+  side?: "arr" | "dep",
 ): Promise<LiveStatusResult> {
   const raw = (identifier || "").trim();
   if (!raw) return { ok: false, reason: "no_code" };
