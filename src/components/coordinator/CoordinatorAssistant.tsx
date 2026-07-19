@@ -700,8 +700,9 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     );
   };
 
-
+  const confirmFix = useMutation({
     mutationFn: async (fix: AssistantDataFix) => {
+
       if (fix.target === "trip") {
         // Reuse existing updateJob: pull the current row, patch the single field.
         const existing = (await getJobFn({ data: { id: fix.target_id } })) as Record<string, unknown>;
