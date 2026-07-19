@@ -1372,7 +1372,35 @@ function groupStripeStyle(gid: string | null | undefined): React.CSSProperties |
   return { boxShadow: `inset 4px 0 0 hsl(${groupHue(gid)} 70% 50%)` };
 }
 
+/* ------------------------------ Lane select-all chip ------------------------------ */
+
+function SelectAllInLane({ jobs, ctx, label = "Select all here" }: { jobs: Job[]; ctx: CardCtx; label?: string }) {
+  if (jobs.length < 2) return null;
+  const ids = jobs.map((j) => j.id);
+  const selectedHere = ids.filter((id) => ctx.selected.has(id)).length;
+  if (selectedHere === 0) return null; // only surface once user has started selecting
+  const allHere = selectedHere === ids.length;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        // If all selected → deselect this lane. Otherwise select the rest.
+        for (const id of ids) {
+          const isSel = ctx.selected.has(id);
+          if (!allHere && !isSel) ctx.onToggleSelect(id);
+          if (allHere && isSel) ctx.onToggleSelect(id);
+        }
+      }}
+      className="mb-2 inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+    >
+      {allHere ? `Deselect all here (${selectedHere})` : `Select all here (${ids.length})`}
+    </button>
+  );
+}
+
 /* ------------------------------ Grouping helpers ------------------------------ */
+
+
 
 type RenderItem = { kind: "single"; job: Job } | { kind: "group"; group_id: string; jobs: Job[] };
 
