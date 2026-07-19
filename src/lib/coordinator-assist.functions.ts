@@ -474,7 +474,8 @@ Rules:
   { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
     "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
                 "driver_id"? (uuid from roster below or null), "driver_name"?,
-                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"? },
+                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"?,
+                "pax"? (array of passenger / crew names for this trip, e.g. ["M. Harris – Master", "J. Cooper – C/O"]) },
     "summary": "one short sentence" }
   { "kind": "batch",
     "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
