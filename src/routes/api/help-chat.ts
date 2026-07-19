@@ -105,14 +105,17 @@ export const Route = createFileRoute("/api/help-chat")({
           } catch { /* non-fatal */ }
         }
 
+        // Sales mode gets the cheapest model; coach mode gets flash for
+        // slightly stronger step-by-step task guidance.
         const gateway = createLovableAiGatewayProvider(key);
-        const model = gateway("google/gemini-3.5-flash");
+        const model = gateway(mode === "sales" ? "google/gemini-3.1-flash-lite" : "google/gemini-3.5-flash");
 
         try {
           const result = streamText({
             model,
             system,
             messages: convertToModelMessages(messages as UIMessage[]),
+            maxOutputTokens: mode === "sales" ? 400 : 800,
           });
           return result.toUIMessageStreamResponse();
         } catch (error) {
