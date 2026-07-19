@@ -257,6 +257,8 @@ type Job = {
 
 function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI" }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string }) {
   const openAi = useOpenAssistant();
+  const assistantEnabled = useFeature("ai_coordinator_assist");
+  if (!assistantEnabled) return null;
   return (
     <Button
       size="sm"
