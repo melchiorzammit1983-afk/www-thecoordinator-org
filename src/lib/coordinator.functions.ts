@@ -2445,7 +2445,7 @@ async function fetchLiveStatusViaGemini(
 // override identically for flights and vessels. When the first grounded call
 // returns nothing, retries once with an airport hint derived from the job's
 // endpoints before giving up.
-async function applyLiveStatusToJob(
+export async function applyLiveStatusToJob(
   supabaseAdmin: any,
   job: {
     id: string;
@@ -2507,6 +2507,18 @@ async function applyLiveStatusToJob(
 
   let status = result.status ?? "unknown";
   let note = result.note ?? "";
+  // Derive "early" from actual-vs-scheduled drift when the provider didn't
+  // explicitly say so. 10+ min ahead counts as early.
+  if (
+    result.scheduled &&
+    result.estimated &&
+    (status === "on_time" || status === "unknown")
+  ) {
+    const drift = Math.round(
+      (new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000,
+    );
+    if (drift <= -10) status = "early";
+  }
   if (result.scheduled && job.pickup_at) {
     const s = new Date(result.scheduled).getTime();
     const p = new Date(job.pickup_at).getTime();
@@ -2611,22 +2623,33 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
+      .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
     if (error) throw new Error(error.message);
     if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    const freshCutoffMs = Date.now() - 5 * 60_000;
     let updated = 0;
+    let skippedFresh = 0;
     for (const j of jobs) {
+      // Skip trips whose live status was refreshed within the last 5 min —
+      // the AeroDataBox cache would return the same value and this would
+      // just burn extra-lookup points for no new information.
+      const last = (j as any).flight_status_updated_at as string | null;
+      if (last && new Date(last).getTime() > freshCutoffMs) {
+        skippedFresh++;
+        continue;
+      }
       try {
         const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
           _company_id: c.id,
-          _feature_key: "flight_vessel_tracking",
+          _feature_key: "flight_status_extra_lookup",
           _job_id: (j as any).id,
-          _note: "flight/vessel status refresh (bulk)",
+          _note: "flight status extra lookup (bulk refresh)",
           _cost_override: undefined as unknown as number,
         });
         if (spendErr) {
@@ -2635,12 +2658,12 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
         }
         const r = await applyLiveStatusToJob(supabaseAdmin, j as any);
         if (r.ok) updated++;
-        else await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", (j as any).id);
+        else await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", (j as any).id);
       } catch {
-        await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", (j as any).id);
+        await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", (j as any).id);
       }
     }
-    return { checked: jobs.length, updated, configured };
+    return { checked: jobs.length, updated, configured, skippedFresh };
   });
 
 export const getFlightTrackingConfig = createServerFn({ method: "GET" })
@@ -2664,19 +2687,22 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind")
+      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
     if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    if ((job as any).status === "completed" || (job as any).status === "cancelled") {
+      return { ok: false as const, reason: "trip_finished" };
+    }
 
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
     const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
       _company_id: c.id,
-      _feature_key: "flight_vessel_tracking",
+      _feature_key: "flight_status_extra_lookup",
       _job_id: data.job_id,
-      _note: "flight/vessel status refresh",
+      _note: "flight/vessel status extra lookup (manual)",
       _cost_override: undefined as unknown as number,
     });
     if (spendErr) {
@@ -2689,10 +2715,10 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
 
     try {
       const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
-      if (!r.ok) await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+      if (!r.ok) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
       return r;
     } catch (e: any) {
-      await refundPoints(c.id, "flight_vessel_tracking", "refresh threw", data.job_id);
+      await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", data.job_id);
       return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
@@ -2905,21 +2931,28 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind")
+      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind, status, flight_status_updated_at")
       .eq("id", data.job_id)
       .maybeSingle();
     if (error || !job) throw new Error("Trip not found");
     if ((job as any).company_id !== c.id) throw new Error("Not allowed");
+    // Never lookup for finished trips — they're archived, status is frozen.
+    const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is actually attached.
-    const hasCode = !!((job as any).from_flight || (job as any).to_flight);
-    if (hasCode) {
+    // Only meter when a flight/vessel identifier is actually attached, the
+    // trip isn't finished, and the last lookup is older than the 5-min
+    // AeroDataBox cache (otherwise we'd burn points for a cached answer).
+    const hasCode = !finished && !!((job as any).from_flight || (job as any).to_flight);
+    const lastFlightAt = (job as any).flight_status_updated_at as string | null;
+    const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < 5 * 60_000;
+    const shouldMeterFlight = hasCode && !flightFresh;
+    if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
-        _feature_key: "flight_vessel_tracking",
+        _feature_key: "flight_status_extra_lookup",
         _job_id: data.job_id,
-        _note: "flight/vessel status refresh",
+        _note: "flight/vessel status extra lookup",
         _cost_override: undefined as unknown as number,
       });
       if (spendErr) {
@@ -2938,17 +2971,17 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         to_location: (job as any).to_location ?? undefined,
         date: (job as any).date ?? undefined,
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
-        from_flight: (job as any).from_flight ?? undefined,
-        to_flight: (job as any).to_flight ?? undefined,
+        from_flight: finished ? undefined : (job as any).from_flight ?? undefined,
+        to_flight: finished ? undefined : (job as any).to_flight ?? undefined,
         tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
       });
     } catch (e) {
-      if (hasCode) await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+      if (shouldMeterFlight) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
       throw e;
     }
 
-    if (hasCode && !preview.flight?.ok) {
-      await refundPoints(c.id, "flight_vessel_tracking", "refresh failed", data.job_id);
+    if (shouldMeterFlight && !preview.flight?.ok) {
+      await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
     }
 
     const patch: Record<string, any> = {};
