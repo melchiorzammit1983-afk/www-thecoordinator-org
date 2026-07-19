@@ -2279,9 +2279,10 @@ async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
+  side?: "arr" | "dep",
 ): Promise<LiveStatusResult> {
   if (kind === "flight") {
-    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso);
+    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
     if (!r.ok && r.reason === "not_configured") {
       return { ok: true, status: "unknown", note: "Live flight tracking not configured", scheduled: null, estimated: null, confidence: "low" };
     }
