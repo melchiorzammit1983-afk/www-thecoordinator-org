@@ -153,5 +153,89 @@ function LessonRow({ lesson, onDecide, busy }: {
   );
 }
 
-// Silence unused import
-void Check;
+function TeachGlobalCard() {
+  const createFn = useServerFn(adminCreateGlobalLesson);
+  const qc = useQueryClient();
+  const [kind, setKind] = useState<LessonKind>("qa");
+  const [title, setTitle] = useState("");
+  const [example, setExample] = useState("");
+  const [rule, setRule] = useState("");
+
+  const preview = example ? redactPii(example) : null;
+  const mut = useMutation({
+    mutationFn: () => createFn({ data: { kind, title, example_input: example, rule_text: rule } }),
+    onSuccess: () => {
+      toast.success("Global lesson saved — every opted-in company will retrieve it.");
+      setTitle(""); setExample(""); setRule("");
+      qc.invalidateQueries({ queryKey: ["admin", "ai-lessons"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const canSubmit = title.trim().length >= 3 && example.trim().length >= 1 && rule.trim().length >= 3;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4 text-primary" /> Teach the global AI
+        </CardTitle>
+        <CardDescription>
+          Anything you save here is stored as an approved global lesson and injected into every opted-in company's AI when it's semantically relevant. Personal data is stripped first.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div>
+          <Label className="text-xs">Kind</Label>
+          <RadioGroup value={kind} onValueChange={(v) => setKind(v as LessonKind)} className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-1.5">
+            {[
+              ["parse_pattern", "Message format"],
+              ["qa", "How-to answer"],
+              ["suggestion_rule", "Suggestion rule"],
+              ["signal_fix", "Signal → fix"],
+            ].map(([v, l]) => (
+              <div key={v} className="flex items-center gap-2 rounded-md border p-2 text-xs">
+                <RadioGroupItem value={v} id={`g-${v}`} /> <Label htmlFor={`g-${v}`} className="cursor-pointer">{l}</Label>
+              </div>
+            ))}
+          </RadioGroup>
+        </div>
+
+        <div>
+          <Label htmlFor="g-title" className="text-xs">Short title</Label>
+          <Input id="g-title" value={title} onChange={(e) => setTitle(e.target.value)}
+            placeholder='e.g. "Hotel emails put pax count in brackets after name"' />
+        </div>
+
+        <div>
+          <Label htmlFor="g-example" className="text-xs">Example input</Label>
+          <Textarea id="g-example" rows={4} value={example} onChange={(e) => setExample(e.target.value)}
+            placeholder="Paste a representative message or extract…" />
+          {preview && Object.keys(preview.stripped).length > 0 && (
+            <div className="mt-1 flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <ShieldAlert className="mt-0.5 h-3 w-3" />
+              <span>
+                Personal data will be replaced with tags before storage:{" "}
+                {Object.entries(preview.stripped).map(([k, n]) => `${k}(${n})`).join(", ")}.
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="g-rule" className="text-xs">The rule to remember</Label>
+          <Textarea id="g-rule" rows={3} value={rule} onChange={(e) => setRule(e.target.value)}
+            placeholder='e.g. "Number in brackets after the name is the passenger count"' />
+        </div>
+
+        <div className="flex justify-end">
+          <Button size="sm" disabled={!canSubmit || mut.isPending} onClick={() => mut.mutate()}>
+            {mut.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+            <Globe className="h-3.5 w-3.5 mr-1" /> Save global lesson
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
