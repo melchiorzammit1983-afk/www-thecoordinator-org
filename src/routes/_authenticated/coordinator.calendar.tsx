@@ -1971,7 +1971,9 @@ function DriverLane({ driver, jobs, ctx }: { driver: Driver; jobs: Job[]; ctx: C
     >
       <div className="text-sm font-medium truncate">{driver.name}</div>
       <div className="text-xs text-muted-foreground mb-2 truncate">{driver.vehicle ?? "—"}</div>
+      <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">{renderItems(items, ctx)}</div>
+
     </div>
   );
 }
