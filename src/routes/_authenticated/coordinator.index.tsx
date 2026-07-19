@@ -232,6 +232,7 @@ function SectionHeader({
 }
 
 type TripRowJob = {
+  id?: string | null;
   route_duration_sec?: number | null;
   live_eta_sec?: number | null;
   live_eta_updated_at?: string | null;
