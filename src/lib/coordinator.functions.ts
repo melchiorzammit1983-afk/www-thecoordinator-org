@@ -1425,41 +1425,18 @@ export const deleteJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, driver_accepted_at, status, deletion_requested_at")
+      .select("id, company_id")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) return { deleted: false, pending: false, missing: true };
-    const lockable: LockableJob = {
-      id: (job as any).id,
-      company_id: (job as any).company_id,
-      driver_id: (job as any).driver_id,
-      driver_accepted_at: (job as any).driver_accepted_at,
-      status: (job as any).status,
-    };
-    if (c.isAdmin || !isJobLocked(lockable)) {
-      const { error: dErr } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id).eq("company_id", c.id);
-      if (dErr) throw new Error(dErr.message);
-      return { deleted: true, pending: false };
-    }
-    // Locked: route through change-request approval flow.
-    const res = await createChangeRequest({
-      jobId: data.job_id,
-      companyId: c.id,
-      requestedBy: context.userId,
-      kind: "delete",
-      requestedChanges: { delete: true },
-      driverId: lockable.driver_id,
-    });
-    // Keep legacy flag in sync so existing UI badges keep showing "deletion pending".
-    await supabaseAdmin
-      .from("jobs")
-      .update({ deletion_requested_at: new Date().toISOString(), deletion_requested_by: context.userId } as never)
-      .eq("id", data.job_id)
-      .eq("company_id", c.id);
-    return { deleted: false, ...res };
+    // Hard delete — the coordinator-approve / change-request flow has been retired.
+    const { error: dErr } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id).eq("company_id", c.id);
+    if (dErr) throw new Error(dErr.message);
+    return { deleted: true, pending: false };
   });
+
 
 
 export const cancelDeletionRequest = createServerFn({ method: "POST" })
