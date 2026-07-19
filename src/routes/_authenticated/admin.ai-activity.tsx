@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-activity")({
   component: AiActivityPage,
@@ -111,6 +112,8 @@ function AiActivityPage() {
           </Button>
         </div>
       </div>
+      <AdminAiHeaderTabs active="activity" />
+
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {(Object.keys(KIND_META) as Kind[]).map((k) => {

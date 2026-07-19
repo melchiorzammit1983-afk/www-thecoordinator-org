@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-insights")({
   component: AiInsights,
@@ -33,6 +34,8 @@ function AiInsights() {
         <Sparkles className="h-5 w-5 text-primary" />
         <h1 className="text-2xl font-semibold">AI insights</h1>
       </div>
+      <AdminAiHeaderTabs active="insights" />
+
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Questions (30d)" value={recent.length} icon={<MessageSquare className="h-4 w-4" />} />

@@ -440,6 +440,7 @@ export type Database = {
           block_on_empty: boolean
           category: string
           enabled: boolean
+          est_cost_usd_cents: number | null
           feature_key: string
           is_addon: boolean
           label: string | null
@@ -453,6 +454,7 @@ export type Database = {
           block_on_empty?: boolean
           category?: string
           enabled?: boolean
+          est_cost_usd_cents?: number | null
           feature_key: string
           is_addon?: boolean
           label?: string | null
@@ -466,6 +468,7 @@ export type Database = {
           block_on_empty?: boolean
           category?: string
           enabled?: boolean
+          est_cost_usd_cents?: number | null
           feature_key?: string
           is_addon?: boolean
           label?: string | null
@@ -1351,6 +1354,8 @@ export type Database = {
           advert_link: string | null
           advert_url: string | null
           ai_fallback_to_general: boolean
+          ai_free_monthly_points: number
+          ai_free_points_used_this_period: number
           ai_monthly_cap: number | null
           ai_period_reset_at: string
           ai_points_balance: number
@@ -1398,6 +1403,8 @@ export type Database = {
           advert_link?: string | null
           advert_url?: string | null
           ai_fallback_to_general?: boolean
+          ai_free_monthly_points?: number
+          ai_free_points_used_this_period?: number
           ai_monthly_cap?: number | null
           ai_period_reset_at?: string
           ai_points_balance?: number
@@ -1445,6 +1452,8 @@ export type Database = {
           advert_link?: string | null
           advert_url?: string | null
           ai_fallback_to_general?: boolean
+          ai_free_monthly_points?: number
+          ai_free_points_used_this_period?: number
           ai_monthly_cap?: number | null
           ai_period_reset_at?: string
           ai_points_balance?: number
