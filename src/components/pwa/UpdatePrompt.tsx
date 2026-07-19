@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 /**
- * Listens for the `crewchange:sw-update` event dispatched by
+ * Listens for the `thecoordinator:sw-update` event dispatched by
  * `registerServiceWorker` and shows a "New version — refresh" toast.
  * On confirm we message the waiting worker to `skipWaiting`, then reload.
  */
@@ -34,8 +34,8 @@ export function UpdatePrompt() {
       });
     }
 
-    window.addEventListener("crewchange:sw-update", onUpdate);
-    return () => window.removeEventListener("crewchange:sw-update", onUpdate);
+    window.addEventListener("thecoordinator:sw-update", onUpdate);
+    return () => window.removeEventListener("thecoordinator:sw-update", onUpdate);
   }, []);
 
   return null;
