@@ -1,45 +1,28 @@
-## Goals
+## Root cause
 
-1. Let admins author lessons that reach every company (via the existing global-lesson retrieval pipeline).
-2. Fix bulk-paste / AI extract so parsed names actually land in the passenger list (both `pax` rows and `jobs.pax_name` + `pax_count`).
+The URL `https://thecoordinator.org/h/<slug>/r/<qr>` is served by two nested routes:
 
----
+- `src/routes/h.$slug.tsx` → parent route at `/h/$slug`
+- `src/routes/h.$slug.r.$qr.tsx` → child route at `/h/$slug/r/$qr`
 
-## 1. Admin "Teach the Global AI" — extend `admin.ai-lessons`
+`routeTree.gen.ts` confirms the QR route is registered as a **child** of `HSlugRoute` (`parentRoute: typeof HSlugRoute`). Under TanStack Router, a parent route's `component` renders on every child match. When it doesn't render an `<Outlet />`, its own UI takes over instead of the child.
 
-Reuse the existing `ai_lessons` table + `match_ai_lessons` RPC. Admin-authored entries are inserted directly as `scope='global'`, `status='approved'` so they show up for every company's assistant/parser via the retrieval already wired in `src/lib/ai-context.server.ts`.
+`h.$slug.tsx` is currently a leaf: its component does `window.location.replace('/api/public/portal/by-slug/<slug>')` inside `useEffect` and never renders `<Outlet />`. So visiting the QR URL immediately fires the by-slug redirect. The slug in the failing link is the portal's UUID (`ee3916ed-…`), which isn't a valid branded slug — `/api/public/portal/by-slug/$slug.ts` returns the "This portal link is no longer active." 404, which is exactly what the user sees. The child room-landing page never gets a chance to mount.
 
-- **Server (`src/lib/ai-lessons.functions.ts`)**: add `adminCreateGlobalLesson` (admin-guarded). Fields: `kind` (parse_pattern | qa | suggestion_rule | signal_fix), `title`, `example_input`, `rule_text`. On insert: PII-redact `example_input`, embed `rule_text` via `embedText`, store `scope='global'`, `status='approved'`, `company_id=null`, `created_by=admin.uid`.
-- **UI (`src/routes/_authenticated/admin.ai-lessons.tsx`)**: add a top card "Teach the global AI" with the same 4 fields as `TeachAiDialog`, a "Save global lesson" button, and a live PII-preview line (reuse `redactPii`). Keep the existing review queue below.
-- Global lessons already flow into every AI surface because `buildLearnedContext` and assistant prompts pull from `ai_lessons` where `scope='global' AND status='approved'`.
+## Fix
 
-No schema migration required (columns already exist).
+Split the parent into a real layout plus a sibling index leaf, following the documented "promote a leaf to a layout" pattern.
 
----
+1. **`src/routes/h.$slug.tsx`** — turn into a pure layout: component just returns `<Outlet />`. Keep `ssr: false` and the noindex `head()`. No `useEffect`, no redirect logic here.
+2. **New `src/routes/h.$slug.index.tsx`** — move the current redirect body here. This owns `/h/$slug` only and continues to call `/api/public/portal/by-slug/<slug>` for branded-slug landings.
+3. **`src/routes/h.$slug.r.$qr.tsx`** — no change. Now that the parent renders `<Outlet />`, this child mounts normally and calls `/api/public/portal/guest/room/<qr>` for the room QR flow.
 
-## 2. Fix "names → passenger list" in JobFormDialog bulk paste
+Let TanStack Router regenerate `src/routeTree.gen.ts` from the new file set (no manual edits).
 
-Two gaps today:
+## Verification
 
-- **Server** `src/lib/coordinator.functions.ts` bulk-create loop (~line 2033): inserts `pax` rows but never writes `jobs.pax_name` / `jobs.pax_count`. Fix: after computing `t.pax`, set on the job insert:
-  - `pax_name`: first name (or `pax.join(", ")` truncated to column limit)
-  - `pax_count`: `t.pax.length || 1`
-- **AI extract path** in `JobFormDialog.tsx` (`aiInitialOutput` → `AiRow`): confirm the AI row's `pax` array is carried through `handleComplete`/`edited` into the mutation payload. Where the AI returns names inside `notes` / `contact_name` instead of `pax[]`, promote them: post-process each `AiRow` to move meaningful names (via `isMeaningfulName`) into `pax[]` before it reaches `edited`.
-- **Manual single-trip path** (~line 316): same treatment — `paxText` already splits into names; also set `pax_count = pax.length` and `pax_name = pax[0]` on the create payload.
-- Add a small "Passengers (N)" chip on each parsed-trip card so the coordinator sees the parse succeeded before saving.
+- Load `/h/<uuid>/r/<qr>` — should show the room landing (name/email/phone form or a specific `not_found` / `room_disabled` / `portal_disabled` message from the guest-room API), never the by-slug "no longer active" message.
+- Load `/h/<branded-slug>` — should still redirect to `/portal/<magic_token>` as before.
+- Load `/h/<invalid-slug>` — should still show "This portal link is no longer active." from by-slug.
 
----
-
-## 3. Verify
-
-- Admin: create a global lesson → sign in as a different company → send an assistant message that matches the example → confirm the rule appears in the injected `LEARNED PATTERNS` block (server log) and influences the reply.
-- Coordinator: paste a message containing 2–3 names → BulkForm shows Passengers chip with those names → Save → open the created job → `pax` table has rows AND `jobs.pax_name` / `pax_count` populated.
-
----
-
-### Technical notes
-
-- Admin guard: reuse `has_role(auth.uid(), 'admin')` check pattern already used elsewhere in `ai-lessons.functions.ts`.
-- Embedding failures must not block insert (mirror existing `submitLesson` behavior).
-- `pax_name` is a text column — no length constraint issue; still cap at 500 chars defensively.
-- No changes to workflows, no new tables, no RLS changes.
+If the QR URL still fails after the routing fix, the follow-up is on the QR side: check whether the row exists in the room-QR table and whether `active`/`portal.link_enabled` are truthy — those return the `not_found` / `room_disabled` / `portal_disabled` errors handled by the room-landing page's `Unavailable` component. That check is a separate step and only needed if routing is proven correct but the page still says the QR is invalid.
