@@ -2720,7 +2720,7 @@ async function _computeTripLiveStatus(data: {
   const code = (data.from_flight || data.to_flight || "").trim();
   const kind: "flight" | "vessel" = data.tracking_kind === "vessel" ? "vessel" : "flight";
   if (code) {
-    const r = await fetchLiveStatusViaGemini(kind, code, pickupIso);
+    const r = await fetchLiveStatus(kind, code, pickupIso);
     if (!r.ok) {
       flight = { ok: false, code, reason: r.reason ?? "no_result" };
     } else {
