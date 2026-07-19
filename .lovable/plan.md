@@ -1,38 +1,58 @@
-# Fix: passenger names missing on portal-created trips
+# Auto-fill passenger list
 
-## Root cause (verified against trip #140)
+Goal: whenever a trip has `pax_count > 1` and no passenger rows, populate the passenger list automatically from any names we can find, and pad the rest with `Guest N`. Drivers always see the right number of slots to verify.
 
-- The guest QR portal booking form (`GuestBookingInput` in `src/lib/portal-hotel.server.ts`) only captures the primary guest name + `pax_count`. Trip #140's `portal_bookings.payload` shows `pax_count: 2` but no names for the 2nd passenger.
-- `acceptPortalBooking` in `src/lib/portal.functions.ts` writes only `clientcompanyname = "melchior zammit"` on the job and never inserts into `public.pax`. Result: driver sees 0 passengers to verify.
+## How the extractor works
 
-## What to change
+A single helper `extractPaxNames({ clientcompanyname, notes, name, surname, portalPaxNames })` returns a clean, deduped array of names.
 
-### 1. Portal guest booking form — collect names
-- **`src/lib/portal-hotel.server.ts`**
-  - Extend `GuestBookingInput` with `pax_names: z.array(z.string().min(1).max(120)).max(20).optional()`.
-  - Persist `pax_names` into `payload.pax_names` on `portal_bookings` insert.
-- **`src/routes/g.$session.tsx`** (guest mini-portal booking sheet)
-  - Add a "Passenger names (one per line)" textarea. Placeholder pre-fills the primary guest name. Auto-grows with `pax_count`.
-  - On submit, split textarea by newlines/commas, trim, and send as `pax_names`.
+Sources it scans, in priority order:
 
-### 2. Accept flow — seed pax rows with placeholder fallback
-- **`src/lib/portal.functions.ts` → `acceptPortalBooking`**
-  - After job insert, build the passenger list:
-    1. Start with `payload.pax_names` (if any).
-    2. If length < `payload.pax_count`, pad with the primary guest name (slot 0) and `"Guest 2"`, `"Guest 3"`, … so `list.length === pax_count`.
-    3. If `pax_count` missing, use just the primary name.
-  - Insert one row per name into `public.pax` with `job_id`, `name`, `status: 'pending'`.
-  - Reuse the existing `syncJobPax` helper from `src/lib/coordinator.functions.ts` if it accepts an explicit list; otherwise inline the insert (mirrors `syncJobPax` shape).
+1. **Portal booking payload** — any `pax_names[]` supplied by the hotel/guest portal.
+2. **Client/company field** — anything inside parentheses:
+   `MV Ocean Pioneer (Michael Harris, Thomas White)` → `["Michael Harris", "Thomas White"]`.
+3. **Notes field** — patterns like `Passengers: A, B & C`, `Pax: A / B`, `Guests — A, B`.
+4. **Name + Surname** — split combined values like `John Smith & Jane Doe`, `John & Jane`.
 
-### 3. Backfill existing portal jobs
-- Migration (data-only, run once via `supabase--insert`):
-  - For every `jobs` row where `source LIKE 'portal:%'` and no rows in `pax` for that `job_id`, insert `pax` rows derived from the linked `portal_bookings.payload` — primary name + placeholders up to `pax_count`.
+Splitting rules: `,`, `;`, `&`, `/`, ` and ` (case-insensitive), newlines. Trim, drop empties, dedupe case-insensitive, cap at 20.
 
-## Non-goals
-- No change to non-portal creation paths (AI assistant, manual form, client portal) — those already flow through `syncJobPax`.
-- No change to fare/pricing.
+## Padding
 
-## Test plan
-1. Create a new guest booking with `pax_count=3` and 2 names entered → accept → job has 3 pax rows (2 real + `"Guest 3"`).
-2. Trip #140 after backfill: shows `melchior zammit` + `Guest 2` in the driver's passenger list.
-3. Guest booking with 0 names entered + `pax_count=2` → 2 pax rows (primary + `Guest 2`).
+Given `names[]` and `pax_count`:
+
+```
+result = names.slice(0, pax_count)
+while result.length < pax_count: result.push(`Guest ${result.length + 1}`)
+```
+
+If `pax_count` is null/1, only the extracted names are used (no padding).
+
+## Where it runs
+
+- **`createJob`** (`src/lib/coordinator.functions.ts`) — after insert, if `data.pax` is empty/undefined and `pax_count > 1`, call the extractor from the just-inserted job fields and pass to `syncJobPax`.
+- **`updateJob`** — same treatment when `pax_count` grows or the client/notes fields change, but only if the current pax list is empty. Never overwrite manually-edited rows.
+- **`acceptPortalBooking`** (`src/lib/portal.functions.ts`) — already seeds names; refactor to call the shared extractor so notes/client parentheses on portal bookings also feed in.
+- **AI extraction path** — the assistant's `toDraft` continues to pass explicit `pax`; extractor only fires when that array is empty.
+
+## Backfill
+
+One-time migration/insert that, for every job with `pax_count > 1` and zero rows in `pax`:
+
+1. Runs the extractor over its `clientcompanyname` + `notes` + `name`/`surname` + linked `portal_bookings.payload.pax_names`.
+2. Pads with `Guest N` to reach `pax_count`.
+3. Inserts the rows.
+
+Uses a SQL function `public.extract_pax_names(text, text, text, text, text[])` mirroring the TS logic (regex-based) so the backfill is a single SQL statement. New trips still use the TS helper.
+
+## Files touched
+
+- `src/lib/pax-extract.ts` (new) — pure TS extractor + unit-friendly helpers.
+- `src/lib/coordinator.functions.ts` — call extractor in `createJob` / `updateJob` before `syncJobPax`.
+- `src/lib/portal.functions.ts` — replace inline logic with shared extractor.
+- `supabase migration` — `extract_pax_names()` SQL helper + backfill `INSERT … SELECT` for existing trips.
+
+## What we do NOT do
+
+- No overwrite when the pax list already has any row.
+- No auto-fill for solo trips (`pax_count <= 1`).
+- No AI call — pure regex/string parsing, zero cost.
