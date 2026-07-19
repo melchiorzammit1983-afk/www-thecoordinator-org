@@ -550,7 +550,7 @@ ${guideKnowledge || "(guide knowledge unavailable — answer briefly from genera
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },
-          { role: "user", content: data.message },
+          { role: "user", content: effectiveMessage },
         ],
       }),
     });
