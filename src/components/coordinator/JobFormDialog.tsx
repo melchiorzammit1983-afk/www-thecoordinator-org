@@ -268,7 +268,6 @@ function ManualForm({
   const qc = useQueryClient();
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
-  const bulkFn = useServerFn(createJobsBulk);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
 
