@@ -33,7 +33,7 @@ export function FlightRefreshButton({ jobId, hasCode, variant = "button", classN
         const label = f.code ? `${f.code}` : "Flight";
         const status = f.status && f.status !== "unknown" ? ` · ${f.status}` : "";
         const note = f.note ? ` — ${f.note}` : "";
-        const stamp = f.updated_at ? ` (updated ${formatMaltaTime(f.updated_at)})` : "";
+        const stamp = "";
         if (f.status === "delayed" || f.status === "cancelled" || f.status === "time_mismatch") {
           toast.error(`${label}${status}${note}${stamp}`);
         } else if (f.status === "early") {
