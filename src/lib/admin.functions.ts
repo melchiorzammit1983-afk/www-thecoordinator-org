@@ -713,18 +713,67 @@ export const adminSetFeatureCost = createServerFn({ method: "POST" })
       feature_key: z.string().trim().min(1).max(80),
       points_cost: z.number().min(0).max(10000),
       label: z.string().trim().max(120).optional(),
-      category: z.enum(["core", "ai", "comms", "data", "dispatch", "portal"]).optional(),
+      category: z.enum(["core", "ai", "comms", "data", "dispatch", "portal", "reporting", "routing"]).optional(),
       enabled: z.boolean().optional(),
       block_on_empty: z.boolean().optional(),
       min_plan_code: z.enum(["starter", "pro", "business"]).nullable().optional(),
       is_addon: z.boolean().optional(),
       sort_order: z.number().int().min(0).max(9999).optional(),
+      est_cost_usd_cents: z.number().min(0).max(10000).nullable().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const sb = await assertAdmin(context);
     const { error } = await sb.from("ai_feature_costs")
       .upsert({ ...data } as never, { onConflict: "feature_key" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- AI free monthly allowance (per-company override) ----------
+
+export const adminListFreeAllowances = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const sb = await assertAdmin(context);
+    const { data, error } = await sb
+      .from("companies")
+      .select("id, name, ai_free_monthly_points, ai_free_points_used_this_period, ai_period_reset_at")
+      .gt("ai_free_monthly_points", 0)
+      .order("ai_free_monthly_points", { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const adminSearchCompanies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ query: z.string().trim().max(120).default("") }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    let q = sb.from("companies")
+      .select("id, name, ai_free_monthly_points, ai_free_points_used_this_period");
+    if (data.query) q = q.ilike("name", `%${data.query}%`);
+    const { data: rows, error } = await q.order("name").limit(20);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const adminSetFreeAllowance = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      company_id: z.string().uuid(),
+      ai_free_monthly_points: z.number().min(0).max(100_000),
+      reset_used: z.boolean().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const patch: Record<string, unknown> = { ai_free_monthly_points: data.ai_free_monthly_points };
+    if (data.reset_used) patch.ai_free_points_used_this_period = 0;
+    const { error } = await sb.from("companies").update(patch as never).eq("id", data.company_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
