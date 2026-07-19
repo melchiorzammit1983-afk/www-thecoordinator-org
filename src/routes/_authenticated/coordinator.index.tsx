@@ -234,6 +234,12 @@ type TripRowJob = {
   traffic_delay_minutes?: number | null;
   traffic_severity?: string | null;
   leave_by_at?: string | null;
+  from_flight?: string | null;
+  to_flight?: string | null;
+  flight_status?: string | null;
+  flight_status_note?: string | null;
+  flight_scheduled_at?: string | null;
+  flight_estimated_at?: string | null;
 };
 
 function TripRow({
