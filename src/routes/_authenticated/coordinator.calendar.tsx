@@ -2288,11 +2288,13 @@ function TripFlagBadges({ job, ctx }: { job: Job; ctx: CardCtx }) {
 
 function useLiveEtaPoint(jobId: string): LiveEtaPoint | null {
   const fn = useServerFn(listActiveDriverLocations);
+  const pollingOn = useAiToggle("live_eta_polling");
   const { data } = useQuery({
     queryKey: ["live-locations"],
     queryFn: () => fn({ data: { since_minutes: 30 } }) as Promise<LiveEtaPoint[]>,
-    refetchInterval: 30_000,
+    refetchInterval: pollingOn ? 30_000 : false,
     staleTime: 20_000,
+    enabled: pollingOn,
   });
   return (data ?? []).find((p) => p.job_id === jobId) ?? null;
 }
