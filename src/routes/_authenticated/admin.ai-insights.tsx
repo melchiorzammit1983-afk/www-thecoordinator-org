@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-insights")({
   component: AiInsights,
