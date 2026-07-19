@@ -259,7 +259,7 @@ type Job = {
   route_distance_m?: number | null;
 };
 
-function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI" }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string }) {
+function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI", className }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string; className?: string }) {
   const openAi = useOpenAssistant();
   const assistantEnabled = useFeature("ai_coordinator_assist");
   if (!assistantEnabled) return null;
@@ -267,7 +267,11 @@ function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "As
     <Button
       size="sm"
       variant={variant}
-      className={size === "xs" ? "h-6 px-2 text-[10px]" : ""}
+      className={
+        size === "xs"
+          ? `h-6 px-2 text-[10px] ${className ?? ""}`
+          : `flex-1 min-h-11 ${className ?? ""}`
+      }
       onClick={(e) => {
         e.stopPropagation();
         openAi(
@@ -294,7 +298,7 @@ function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "As
         );
       }}
     >
-      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-3.5 w-3.5 mr-1"} />
+      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-4 w-4 mr-1.5"} />
       {label}
     </Button>
   );
