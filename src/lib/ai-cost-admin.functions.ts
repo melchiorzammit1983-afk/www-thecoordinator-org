@@ -14,8 +14,11 @@ const rangeSchema = z.object({
 async function assertAdmin(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
-    .schema("private")
-    .rpc("is_admin", { _user_id: userId });
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "admin")
+    .maybeSingle();
   if (error || !data) throw new Error("Forbidden — admins only.");
 }
 
