@@ -3526,6 +3526,8 @@ export type Database = {
           flight_status_confidence: string | null
           flight_status_note: string | null
           flight_status_updated_at: string | null
+          flight_t30_checked: boolean
+          flight_t30_checked_at: string | null
           flight_terminal: string | null
           flightorship: string | null
           forward_after: string | null
@@ -3656,6 +3658,8 @@ export type Database = {
           flight_status_confidence?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
+          flight_t30_checked?: boolean
+          flight_t30_checked_at?: string | null
           flight_terminal?: string | null
           flightorship?: string | null
           forward_after?: string | null
@@ -3786,6 +3790,8 @@ export type Database = {
           flight_status_confidence?: string | null
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
+          flight_t30_checked?: boolean
+          flight_t30_checked_at?: string | null
           flight_terminal?: string | null
           flightorship?: string | null
           forward_after?: string | null
