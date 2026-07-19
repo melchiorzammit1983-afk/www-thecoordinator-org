@@ -160,6 +160,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
   const askFn = useServerFn(askCoordinatorAssistant);
   const getJobFn = useServerFn(getJobForAssistant);
   const createFn = useServerFn(createJob);
+  const bulkFn = useServerFn(createJobsBulk);
   const updateFn = useServerFn(updateJob);
   const updateDriverFn = useServerFn(updateDriverBasic);
   const meterFn = useServerFn(meterAssistantConfirm);
