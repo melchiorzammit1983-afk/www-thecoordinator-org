@@ -66,6 +66,8 @@ export type AssistantDraft = {
     from_flight?: string | null;
     to_flight?: string | null;
     clientcompanyname?: string | null;
+    /** Passenger / crew names extracted for this trip (max 200, ≤200 chars each). */
+    pax?: string[] | null;
   };
   summary: string;
 };
@@ -393,6 +395,18 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       }
     }
 
+    // Client notes (per-company coordinator memory keyed by normalized client name).
+    // Injected into the prompt so the assistant can mention them in summaries.
+    const { data: noteRows } = await supabaseAdmin
+      .from("client_notes")
+      .select("client_display, note")
+      .eq("company_id", company.id)
+      .limit(200);
+    const clientNotes = (noteRows ?? []) as Array<{ client_display: string; note: string }>;
+    const clientNotesBlock = clientNotes.length
+      ? clientNotes.map((n) => `- ${n.client_display}: ${n.note.slice(0, 200)}`).join("\n")
+      : "(no client notes saved)";
+
 
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
@@ -472,7 +486,8 @@ Rules:
   { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
     "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
                 "driver_id"? (uuid from roster below or null), "driver_name"?,
-                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"? },
+                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"?,
+                "pax"? (array of passenger / crew names for this trip, e.g. ["M. Harris – Master", "J. Cooper – C/O"]) },
     "summary": "one short sentence" }
   { "kind": "batch",
     "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
@@ -511,6 +526,9 @@ Rules:
 - Use "batch" only when 2+ new trips.
 - Use "search_update" for ANY multi-existing-trip edit by a shared reference.
 - Use "data_fix" ONLY for spelling/phone/flight-code fixes.
+- PASSENGER EXTRACTION: When the message lists people (crew changes, joiners, sign-offs, guest lists, "PAX:", numbered lines with names), put every name into the trip's "pax" array. Preserve rank/role suffixes if given ("M. Harris – Master"). Skip generic role words like "Driver", "Coordinator", "Inspector" only when they clearly refer to staff, not passengers.
+- ONE TRIP PER FLIGHT+DIRECTION+DATE: Group people who share the SAME flight number, SAME date, and SAME route (e.g. all 3 joiners on KM103 LHR/MLA on 20 Jul → airport→hotel/vessel) into ONE draft with all their names in "pax". Do NOT create one draft per person. Different flights or different dates → separate drafts. Hotel transfers, vessel attendance, and sign-offs are their own drafts.
+- CLIENT NAME: Use the sender / agency / vessel name as clientcompanyname (e.g. "Ship Agency Malta Ltd." or "MV Ocean Pioneer"). If a saved client note exists (see CLIENT NOTES below), mention it briefly in the trip summary.
 - If a request is genuinely too vague, kind:"answer" with ONE short clarifying question.
 - Structured actions: prefer command_actions for grouping and messages. Only include job_ids/job_id values that appear in UPCOMING TRIPS or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
 - Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
@@ -542,6 +560,9 @@ ${upcomingBlock}
 
 TRIPS REFERENCED BY SERIAL NUMBER in the current message (resolve any bare "#N" / "card N" / "trip N" to these UUIDs before choosing an action):
 ${referencedBlock}
+
+CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
+${clientNotesBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
@@ -630,11 +651,22 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     const p = parsed as Record<string, unknown>;
     const toDraft = (raw: unknown, forceCreate = false): AssistantDraft => {
       const d = (raw ?? {}) as Record<string, unknown>;
+      const rawFields = (d.fields ?? {}) as Record<string, unknown>;
+      const rawPax = rawFields.pax ?? rawFields.passengers;
+      let pax: string[] | null = null;
+      if (Array.isArray(rawPax)) {
+        pax = rawPax
+          .map((n) => (typeof n === "string" ? n.trim() : ""))
+          .filter((n) => n.length > 0 && n.length <= 200)
+          .slice(0, 200);
+        if (pax.length === 0) pax = null;
+      }
+      const fields = { ...(rawFields as AssistantDraft["fields"]), pax };
       return {
         kind: "draft",
         action: !forceCreate && d.action === "update" ? "update" : "create",
         target_trip_id: !forceCreate && typeof d.target_trip_id === "string" ? d.target_trip_id : null,
-        fields: (d.fields as AssistantDraft["fields"]) ?? {},
+        fields,
         summary: typeof d.summary === "string" ? d.summary : "Proposed trip",
       };
     };
