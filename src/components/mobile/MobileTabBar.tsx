@@ -190,5 +190,3 @@ function TabButton({ item, active }: { item: TabDef; active: boolean }) {
   );
 }
 
-// Re-export so we don't need default fallback icon
-LayoutDashboard;
