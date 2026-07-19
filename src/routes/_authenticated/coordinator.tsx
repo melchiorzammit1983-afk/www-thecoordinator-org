@@ -222,6 +222,9 @@ function CoordinatorLayout() {
           })}
         </nav>
         <div className="mt-auto p-3 border-t space-y-1">
+          <Link to="/settings" className="flex items-center gap-3 px-3 py-2 text-sm rounded-md text-foreground/70 hover:bg-muted hover:text-foreground">
+            <SettingsIcon className="h-4 w-4" /> Settings
+          </Link>
           <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setShowChangePw(true)}>
             <KeyRound className="h-4 w-4" /> Change password
           </Button>
