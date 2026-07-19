@@ -3148,8 +3148,8 @@ function TripMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Actions">
-          <MoreVertical className="h-4 w-4" />
+        <Button size="icon" variant="ghost" className="h-11 w-11 sm:h-8 sm:w-8" aria-label="Actions">
+          <MoreVertical className="h-5 w-5 sm:h-4 sm:w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
