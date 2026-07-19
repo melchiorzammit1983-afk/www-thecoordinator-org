@@ -814,6 +814,60 @@ export type Database = {
           },
         ]
       }
+      ai_raw_responses: {
+        Row: {
+          actor_user_id: string | null
+          aig_log_id: string | null
+          aig_run_id: string | null
+          company_id: string | null
+          content_length: number | null
+          created_at: string
+          feature_key: string
+          finish_reason: string | null
+          id: string
+          meta: Json
+          model: string | null
+          parse_error: string | null
+          parse_ok: boolean
+          raw_content: string | null
+          surface: string | null
+        }
+        Insert: {
+          actor_user_id?: string | null
+          aig_log_id?: string | null
+          aig_run_id?: string | null
+          company_id?: string | null
+          content_length?: number | null
+          created_at?: string
+          feature_key: string
+          finish_reason?: string | null
+          id?: string
+          meta?: Json
+          model?: string | null
+          parse_error?: string | null
+          parse_ok?: boolean
+          raw_content?: string | null
+          surface?: string | null
+        }
+        Update: {
+          actor_user_id?: string | null
+          aig_log_id?: string | null
+          aig_run_id?: string | null
+          company_id?: string | null
+          content_length?: number | null
+          created_at?: string
+          feature_key?: string
+          finish_reason?: string | null
+          id?: string
+          meta?: Json
+          model?: string | null
+          parse_error?: string | null
+          parse_ok?: boolean
+          raw_content?: string | null
+          surface?: string | null
+        }
+        Relationships: []
+      }
       ai_training_logs: {
         Row: {
           ai_initial_output: Json
