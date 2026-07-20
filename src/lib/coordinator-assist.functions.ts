@@ -709,6 +709,11 @@ Rules:
 - GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
 - SERIAL NUMBER RESOLUTION: The coordinator may refer to any trip by its per-company serial number ("#123", "card 45", "trip 7"). ALWAYS resolve these against TRIPS REFERENCED BY SERIAL NUMBER first, then UPCOMING TRIPS. Use the UUID (not the "#N" string) as job_id / target_trip_id. If a referenced serial does not appear in either list, ask a short clarifying question instead of guessing.
 - Answers are plain text (no markdown).
+- OUTPUT DISCIPLINE (critical for long crew-change pastes):
+  * Return ONE top-level JSON object. NEVER emit a second JSON object, prose commentary, or anything after the closing brace.
+  * Keep "summary" and "clarify" under ~120 characters each. Keep "pax" entries under ~80 chars each. Do not paraphrase the whole paste back.
+  * Prefer many short trips in a "batch" over long free-text. Do not include the source paste verbatim in any field.
+  * If the request is a multi-trip crew change, EMIT EVERY TRIP as a batch element — do not stop early and do not summarize instead.
 
 Today's date (Malta): ${today}
 Company: ${company.name}
