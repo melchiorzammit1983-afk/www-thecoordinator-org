@@ -102,6 +102,8 @@ type ChatMsg =
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
   | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
   | { id: string; role: "assistant"; merge: AssistantMergeTrips; rawMessage?: string; applied?: boolean }
+  | { id: string; role: "assistant"; setting: AssistantSettingChange; rawMessage?: string; applied?: boolean }
+  | { id: string; role: "assistant"; check: AssistantDataCheck; rawMessage?: string }
   | {
       id: string;
       role: "assistant";
