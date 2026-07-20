@@ -684,10 +684,16 @@ export const adminUpsertPointPack = createServerFn({ method: "POST" })
       price: z.number().min(0),
       sort_order: z.number().int().min(0).max(999).default(0),
       is_active: z.boolean().default(true),
+      is_reference_rate: z.boolean().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const sb = await assertAdmin(context);
+    if (data.is_reference_rate === true) {
+      const clearQ = sb.from("point_packs").update({ is_reference_rate: false } as never).eq("is_reference_rate", true);
+      const { error: clrErr } = data.id ? await clearQ.neq("id", data.id) : await clearQ;
+      if (clrErr) throw new Error(clrErr.message);
+    }
     if (data.id) {
       const { error } = await sb.from("point_packs").update(data as never).eq("id", data.id);
       if (error) throw new Error(error.message);
