@@ -762,6 +762,12 @@ ${referencedBlock}
 CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
 ${clientNotesBlock}
 
+CURRENT AI TOGGLES (owner-controllable via kind:"setting_change"):
+${aiConfigBlock}
+
+CURRENT FEATURE ENTITLEMENTS (admin-controlled — do NOT return setting_change for these; respond with an answer explaining they must ask their admin):
+${entitlementsBlock}
+
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
 
