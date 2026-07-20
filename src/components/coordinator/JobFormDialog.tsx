@@ -293,6 +293,13 @@ function ManualForm({
   });
   const preview = previewMut.data;
 
+  // Schedule-conflict gate: DriverAssignmentConflictHint reports severity;
+  // when it's "conflict" the coordinator must tick "Assign anyway" before
+  // submit is allowed. Prevents accidental double-booking of a driver.
+  const [conflictSeverity, setConflictSeverity] = useState<"free" | "tight" | "conflict" | null>(null);
+  const [assignAnyway, setAssignAnyway] = useState(false);
+  useEffect(() => { setAssignAnyway(false); }, [driverId, date, time, from, to]);
+  const hardBlocked = conflictSeverity === "conflict" && !assignAnyway;
 
   const mut = useMutation({
     mutationFn: async () => {
