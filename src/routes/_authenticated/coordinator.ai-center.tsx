@@ -24,15 +24,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { listAiRules, upsertAiRule, deleteAiRule } from "@/lib/coordinator.functions";
+import { listAiRules, upsertAiRule, deleteAiRule, getAiConfig, saveAiConfig, aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
 import { listMyLessons, archiveMyLesson } from "@/lib/ai-lessons.functions";
 import { listAiAuditActions, upsertGlossaryTerm, undoAssistantAction } from "@/lib/ai-audit.functions";
 import { AiLearningTab } from "@/components/coordinator/AiLearningTab";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
   validateSearch: (s: Record<string, unknown>) => ({
     tab: (typeof s.tab === "string" ? s.tab : "knowledge") as
-      | "knowledge" | "agents" | "activity" | "learning",
+      | "knowledge" | "agents" | "activity" | "learning" | "toggles",
   }),
   component: AiBrainPage,
 });
@@ -56,14 +57,16 @@ function AiBrainPage() {
         value={tab}
         onValueChange={(v) => navigate({ search: { tab: v as typeof tab }, replace: true })}
       >
-        <TabsList className="grid grid-cols-4 w-full max-w-2xl">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="learning">Learning</TabsTrigger>
+          <TabsTrigger value="toggles">Toggles</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="knowledge" className="mt-4 space-y-4"><KnowledgeTab /></TabsContent>
         <TabsContent value="learning" className="mt-4"><AiLearningTab /></TabsContent>
+        <TabsContent value="toggles" className="mt-4"><TogglesTab /></TabsContent>
         <TabsContent value="agents" className="mt-4 space-y-4"><AgentsTab /></TabsContent>
         <TabsContent value="activity" className="mt-4"><ActivityTab /></TabsContent>
       </Tabs>
@@ -518,5 +521,189 @@ function ActivityTab() {
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  );
+}
+
+/* -------------------------------------------------------------- */
+/* TAB · Toggles + Auto-Coordinate directive                      */
+/* -------------------------------------------------------------- */
+
+type AiCfg = {
+  auto_assign_enabled: boolean;
+  auto_extract_bulk: boolean;
+  auto_reply_drafts: boolean;
+  ai_command_enabled: boolean;
+  voice_to_trip_enabled: boolean;
+  auto_coordinate_enabled: boolean;
+};
+
+type Proposal =
+  | { kind: "group"; trip_ids: string[]; reason: string }
+  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
+  | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
+
+function TogglesTab() {
+  const getFn = useServerFn(getAiConfig);
+  const saveFn = useServerFn(saveAiConfig);
+  const runFn = useServerFn(aiAutoCoordinate);
+  const applyFn = useServerFn(applyAutoCoordinateProposal);
+  const qc = useQueryClient();
+
+  const cfgQ = useQuery({
+    queryKey: ["ai-config"],
+    queryFn: () => getFn() as Promise<AiCfg>,
+  });
+  const [dirty, setDirty] = useState<Partial<AiCfg>>({});
+  const cfg: AiCfg = { ...(cfgQ.data ?? {
+    auto_assign_enabled: false, auto_extract_bulk: true, auto_reply_drafts: true,
+    ai_command_enabled: true, voice_to_trip_enabled: true, auto_coordinate_enabled: false,
+  }), ...dirty };
+
+  const save = useMutation({
+    mutationFn: (next: AiCfg) => saveFn({ data: next }),
+    onSuccess: () => { toast.success("Saved"); setDirty({}); qc.invalidateQueries({ queryKey: ["ai-config"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Directive prompt shown when auto_coordinate goes off→on
+  const wasOn = cfgQ.data?.auto_coordinate_enabled ?? false;
+  const nowOn = cfg.auto_coordinate_enabled;
+  const showDirective = !wasOn && nowOn;
+
+  const [directive, setDirective] = useState("");
+  const [plan, setPlan] = useState<{ proposals: Proposal[]; considered: number } | null>(null);
+  const [done, setDone] = useState<Set<number>>(new Set());
+
+  const lessonsFn = useServerFn(listMyLessons);
+  const lessonsQ = useQuery({
+    queryKey: ["my-ai-lessons"],
+    queryFn: () => lessonsFn() as Promise<Array<{ id: string; kind: string; title: string; status: string }>>,
+  });
+  const chips = (lessonsQ.data ?? [])
+    .filter((l) => l.kind === "suggestion_rule" && l.status !== "archived")
+    .slice(0, 6)
+    .map((l) => l.title);
+
+  const run = useMutation({
+    mutationFn: () => runFn({ data: { directive: directive.trim() || null } }) as Promise<{ proposals: Proposal[]; considered: number }>,
+    onSuccess: (r) => {
+      setPlan(r); setDone(new Set());
+      if (r.proposals.length === 0) toast.info("Nothing to coordinate — you're all caught up.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const apply = useMutation({
+    mutationFn: (p: { idx: number; proposal: Proposal }) => applyFn({
+      data: {
+        kind: p.proposal.kind,
+        trip_ids: p.proposal.trip_ids,
+        driver_id: p.proposal.kind === "assign" ? p.proposal.driver_id : undefined,
+        partner_company_id: p.proposal.kind === "dispatch" ? p.proposal.partner_company_id : undefined,
+      },
+    }) as Promise<{ ok: boolean }>,
+    onSuccess: (_r, v) => { setDone((prev) => new Set(prev).add(v.idx)); qc.invalidateQueries({ queryKey: ["calendar-jobs"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const rows: Array<{ key: keyof AiCfg; label: string; desc: string }> = [
+    { key: "auto_coordinate_enabled", label: "AI Auto-Coordinate", desc: "Daily pass over unassigned trips to propose groups and assignments." },
+    { key: "auto_assign_enabled", label: "Auto-assign to drivers", desc: "Allow the assistant to assign trips (confirmed by you)." },
+    { key: "ai_command_enabled", label: "AI command actions", desc: "Let the assistant propose grouping, ungrouping, edits, messages." },
+    { key: "auto_extract_bulk", label: "AI bulk paste", desc: "Extract multiple trips from a pasted email." },
+    { key: "auto_reply_drafts", label: "AI reply drafts", desc: "Suggest replies to inbound trip messages." },
+    { key: "voice_to_trip_enabled", label: "Voice → trip", desc: "Turn spoken instructions into trip drafts." },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Automations</CardTitle>
+          <CardDescription>Flip a switch on/off. Nothing here changes without your Save.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {rows.map((r) => (
+            <div key={r.key} className="flex items-start justify-between gap-4">
+              <div>
+                <Label className="text-sm">{r.label}</Label>
+                <p className="text-xs text-muted-foreground">{r.desc}</p>
+              </div>
+              <Switch
+                checked={cfg[r.key]}
+                onCheckedChange={(v) => setDirty((d) => ({ ...d, [r.key]: v }))}
+              />
+            </div>
+          ))}
+          <div className="flex justify-end pt-2">
+            <Button size="sm" onClick={() => save.mutate(cfg)} disabled={save.isPending || Object.keys(dirty).length === 0}>
+              {save.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />} Save changes
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {showDirective && (
+        <Card className="border-primary/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> What should I focus on?</CardTitle>
+            <CardDescription>Tell the coordinator agent what to prioritize this run — or leave blank for a general pass.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              value={directive}
+              onChange={(e) => setDirective(e.target.value)}
+              rows={3}
+              placeholder='e.g. "Group airport trips within 45 minutes of each other. Prefer Alex for morning shifts."'
+            />
+            {chips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map((c, i) => (
+                  <button key={i} type="button" onClick={() => setDirective((prev) => prev ? `${prev}\n${c}` : c)}
+                    className="text-[11px] rounded-full border px-2.5 py-1 hover:bg-muted">
+                    <Sparkles className="inline h-2.5 w-2.5 mr-1" />{c}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => save.mutate(cfg)} disabled={save.isPending}>
+                Save toggle only
+              </Button>
+              <Button size="sm" onClick={async () => { await save.mutateAsync(cfg); run.mutate(); }} disabled={run.isPending || save.isPending}>
+                {run.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />} Save &amp; run now
+              </Button>
+            </div>
+
+            {plan && (
+              <div className="space-y-2 pt-2">
+                <div className="text-xs text-muted-foreground">
+                  Reviewed {plan.considered} trip{plan.considered === 1 ? "" : "s"} · {plan.proposals.length} proposal{plan.proposals.length === 1 ? "" : "s"}
+                </div>
+                {plan.proposals.map((p, i) => (
+                  <div key={i} className={`rounded-md border p-2 flex items-center gap-2 ${done.has(i) ? "opacity-50" : ""}`}>
+                    <Badge variant="secondary" className="text-[10px] uppercase">{p.kind}</Badge>
+                    <div className="flex-1 text-xs">{p.reason}</div>
+                    <Button size="sm" disabled={done.has(i) || apply.isPending}
+                      onClick={() => apply.mutate({ idx: i, proposal: p })}>
+                      {done.has(i) ? "Applied" : "Accept"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="py-3 text-sm flex items-center justify-between">
+          <span>Set default routing rules (e.g. weekday shifts → a specific driver).</span>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/coordinator/dispatch-rules">Open Dispatch Rules</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

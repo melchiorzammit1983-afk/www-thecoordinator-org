@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
-import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips, aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
@@ -110,7 +110,28 @@ type ChatMsg =
       selected: boolean[]; // per action
       applied?: boolean;
       results?: Array<{ index: number; ok: boolean; message: string }>;
+    }
+  | {
+      id: string;
+      role: "assistant";
+      autoCoord: {
+        intro: string;
+        directive?: string | null;
+        resolved_target?: { type: "driver" | "partner"; id: string; name: string } | null;
+      };
+      loading: boolean;
+      error?: string;
+      proposals?: AutoCoordProposal[];
+      considered?: number;
+      selected?: boolean[];
+      done?: number[]; // indices already applied
+      applying?: boolean;
     };
+
+type AutoCoordProposal =
+  | { kind: "group"; trip_ids: string[]; reason: string }
+  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
+  | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
@@ -318,6 +339,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
           if ("merge" in m) return { role: "assistant" as const, text: m.merge.summary };
           if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
+          if ("autoCoord" in m) return { role: "assistant" as const, text: m.autoCoord.intro };
           return { role: "assistant" as const, text: "" };
         });
       return (await askFn({
@@ -355,21 +377,26 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           },
         ]);
       } else if (result.kind === "auto_coordinate") {
-        const rt = result.resolved_target;
-        const targetLine = rt
-          ? `\nTarget: ${rt.type === "driver" ? "driver" : "partner"} ${rt.name}.`
-          : "";
-        const directiveLine = result.directive ? `\nDirective: "${result.directive}"` : "";
         setMessages((m) => [
           ...m,
           {
             id,
             role: "assistant",
-            text: `${result.intro}${directiveLine}${targetLine}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)`,
+            autoCoord: {
+              intro: result.intro,
+              directive: result.directive ?? null,
+              resolved_target: result.resolved_target ?? null,
+            },
+            loading: true,
           },
         ]);
         maybeSpeak(result.intro);
-
+        // Fire the plan inline
+        runAutoCoord.mutate({
+          msgId: id,
+          directive: result.directive ?? null,
+          resolved_target: result.resolved_target ?? null,
+        });
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
@@ -383,6 +410,81 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", text: `⚠ ${msg}` }]);
     },
   });
+
+  // ---- Inline Auto-Coordinate plan/apply ----
+  const runAutoCoordFn = useServerFn(aiAutoCoordinate);
+  const applyAutoCoordFn = useServerFn(applyAutoCoordinateProposal);
+  const qcInner = useQueryClient();
+
+  const runAutoCoord = useMutation({
+    mutationFn: async (v: { msgId: string; directive: string | null; resolved_target: { type: "driver" | "partner"; id: string; name: string } | null }) => {
+      const res = (await runAutoCoordFn({
+        data: {
+          directive: v.directive ?? undefined,
+          resolved_target: v.resolved_target ?? undefined,
+        },
+      })) as { proposals: AutoCoordProposal[]; considered: number };
+      return { msgId: v.msgId, ...res };
+    },
+    onSuccess: (r) => {
+      setMessages((m) => m.map((x) => {
+        if (x.id !== r.msgId || !("autoCoord" in x)) return x;
+        return { ...x, loading: false, proposals: r.proposals, considered: r.considered, selected: r.proposals.map(() => true), done: [] };
+      }));
+    },
+    onError: (e: Error, v) => {
+      const msg = e.message || "Auto-Coordinate failed.";
+      toast.error(msg);
+      setMessages((m) => m.map((x) => (x.id !== v.msgId || !("autoCoord" in x) ? x : { ...x, loading: false, error: msg })));
+    },
+  });
+
+  const applyAutoCoordOne = async (msgId: string, idx: number) => {
+    const msg = messages.find((x) => x.id === msgId);
+    if (!msg || !("autoCoord" in msg) || !msg.proposals) return;
+    const p = msg.proposals[idx];
+    if (!p) return;
+    setMessages((m) => m.map((x) => (x.id !== msgId || !("autoCoord" in x) ? x : { ...x, applying: true })));
+    try {
+      await applyAutoCoordFn({
+        data: {
+          kind: p.kind,
+          trip_ids: p.trip_ids,
+          driver_id: p.kind === "assign" ? p.driver_id : undefined,
+          partner_company_id: p.kind === "dispatch" ? p.partner_company_id : undefined,
+        },
+      });
+      setMessages((m) => m.map((x) => {
+        if (x.id !== msgId || !("autoCoord" in x)) return x;
+        return { ...x, applying: false, done: [...(x.done ?? []), idx] };
+      }));
+      qcInner.invalidateQueries({ queryKey: ["calendar-jobs"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+      setMessages((m) => m.map((x) => (x.id !== msgId || !("autoCoord" in x) ? x : { ...x, applying: false })));
+    }
+  };
+
+  const applyAutoCoordSelected = async (msgId: string) => {
+    const msg = messages.find((x) => x.id === msgId);
+    if (!msg || !("autoCoord" in msg) || !msg.proposals || !msg.selected) return;
+    for (let i = 0; i < msg.proposals.length; i++) {
+      if (!msg.selected[i]) continue;
+      if ((msg.done ?? []).includes(i)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await applyAutoCoordOne(msgId, i);
+    }
+    toast.success("Applied");
+  };
+
+  const toggleAutoCoordRow = (msgId: string, idx: number) => {
+    setMessages((m) => m.map((x) => {
+      if (x.id !== msgId || !("autoCoord" in x) || !x.selected) return x;
+      const next = x.selected.slice();
+      next[idx] = !next[idx];
+      return { ...x, selected: next };
+    }));
+  };
 
   const sendText = useCallback((text: string) => {
     const t = text.trim();
@@ -1460,6 +1562,76 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                               Cancel
                             </Button>
                           </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                if ("autoCoord" in m) {
+                  const rt = m.autoCoord.resolved_target;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex-1 space-y-2 rounded-md bg-muted px-3 py-2 text-sm">
+                        <div className="whitespace-pre-wrap">{m.autoCoord.intro}</div>
+                        {(m.autoCoord.directive || rt) && (
+                          <div className="text-xs text-muted-foreground space-y-0.5">
+                            {m.autoCoord.directive && <div>Directive: "{m.autoCoord.directive}"</div>}
+                            {rt && <div>Target: {rt.type} · {rt.name}</div>}
+                          </div>
+                        )}
+                        {m.loading && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+                            Planning…
+                          </div>
+                        )}
+                        {m.error && <div className="text-xs text-destructive">⚠ {m.error}</div>}
+                        {!m.loading && m.proposals && m.proposals.length === 0 && (
+                          <div className="text-xs text-muted-foreground">Nothing to coordinate — you're all caught up.</div>
+                        )}
+                        {!m.loading && m.proposals && m.proposals.length > 0 && (
+                          <>
+                            <div className="text-[11px] text-muted-foreground">
+                              {m.proposals.length} proposal{m.proposals.length === 1 ? "" : "s"} · reviewed {m.considered ?? 0} trip{(m.considered ?? 0) === 1 ? "" : "s"}
+                            </div>
+                            <div className="space-y-1.5">
+                              {m.proposals.map((p, i) => {
+                                const isDone = (m.done ?? []).includes(i);
+                                const isSel = m.selected?.[i] ?? false;
+                                return (
+                                  <div key={i} className={`rounded border bg-background p-2 flex items-start gap-2 text-xs ${isDone ? "opacity-50" : ""}`}>
+                                    <input
+                                      type="checkbox"
+                                      className="mt-0.5"
+                                      checked={isSel}
+                                      disabled={isDone}
+                                      onChange={() => toggleAutoCoordRow(m.id, i)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="uppercase text-[10px] rounded bg-secondary px-1.5 py-0.5">{p.kind}</span>
+                                        <span className="text-[10px] text-muted-foreground">{p.trip_ids.length} trip{p.trip_ids.length === 1 ? "" : "s"}</span>
+                                      </div>
+                                      <div className="mt-0.5 text-muted-foreground">{p.reason}</div>
+                                    </div>
+                                    <Button size="sm" variant="outline" disabled={isDone || m.applying}
+                                      onClick={() => applyAutoCoordOne(m.id, i)}>
+                                      {isDone ? "Applied" : "Accept"}
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex justify-end">
+                              <Button size="sm" disabled={m.applying || (m.done?.length ?? 0) === m.proposals.length}
+                                onClick={() => applyAutoCoordSelected(m.id)}>
+                                Accept selected
+                              </Button>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
