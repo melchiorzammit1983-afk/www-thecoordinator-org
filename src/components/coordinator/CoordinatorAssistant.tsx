@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
-import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips } from "@/lib/coordinator.functions";
+import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips, aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
 import { dispatchJobToPartner } from "@/lib/collab.functions";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
