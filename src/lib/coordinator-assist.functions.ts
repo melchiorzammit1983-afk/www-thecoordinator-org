@@ -179,7 +179,15 @@ export type AssistantMergeTrips = {
 export type AssistantAutoCoordinate = {
   kind: "auto_coordinate";
   intro: string; // one-line preamble to show above the run button
+  /** Verbatim coordinator instruction to inject into the planning prompt. */
+  directive?: string | null;
+  /** Resolved target when the coordinator named a specific driver or partner. */
+  resolved_target?:
+    | { type: "driver"; id: string; name: string }
+    | { type: "partner"; id: string; name: string }
+    | null;
 };
+
 
 export type AssistantResult =
   | AssistantAnswer
