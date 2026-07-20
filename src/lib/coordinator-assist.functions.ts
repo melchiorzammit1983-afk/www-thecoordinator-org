@@ -576,7 +576,9 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     // knowledge and billing snapshot when this turn actually looks like a
     // how-to / billing question. Trip create/edit turns don't need either.
     const helpIntent = /\b(how|what|why|where|when|help|guide|explain|troubleshoot|meaning|means|show me|walk me)\b|\?/.test(msgLower);
-    const billingIntent = /\b(point|points|credit|credits|balance|charge|charged|cost|price|pricing|bill|billing|top[- ]?up|topup|invoice|payment)\b/.test(msgLower);
+    const billingIntent = /\b(point|points|credit|credits|balance|charge|charged|cost|costs|costing|price|pricing|bill|billing|top[- ]?up|topup|invoice|payment|spend|spending|reduce|save|cheaper|expensive)\b/.test(msgLower);
+    const costAdvisorIntent = /\b(reduce|save|cheaper|cut|lower|too much|what am i paying|unused|not using)\b/.test(msgLower) && billingIntent;
+    const dataCheckIntent = /\b(mistake|mistakes|duplicate|duplicates|dupes|dup|check.*(trip|today|tomorrow|data)|scan.*(trip|today)|forgotten|missing|any issues|anything wrong)\b/.test(msgLower);
 
     let guideKnowledge = "";
     if (helpIntent) {
@@ -590,10 +592,12 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     let billingBlock = "";
     if (billingIntent) {
-      const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
+      const monthAgoIso = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }, { data: usage30 }] = await Promise.all([
         supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
         supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(10),
         supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
+        supabaseAdmin.from("points_ledger").select("feature_key, points_deducted").eq("company_id", company.id).gte("created_at", monthAgoIso),
       ]);
       const pointsBalance = Number(balRow?.points_balance ?? 0);
       const ledgerBlock = (recentLedger ?? []).length
@@ -602,8 +606,30 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       const featureCostBlock = (featureCostRows ?? []).length
         ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
         : "(no priced features)";
-      billingBlock = `\n===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================\nCurrent points balance: ${pointsBalance}\n\nFeature price list (points per action):\n${featureCostBlock}\n\nMost recent point-spend entries (newest first):\n${ledgerBlock}\n`;
+      // 30-day rollup grouped by feature_key (Postgres does the totals for us via JS reduce, still cheap).
+      const rollup = new Map<string, { count: number; total: number }>();
+      for (const r of (usage30 ?? []) as { feature_key: string | null; points_deducted: number | string }[]) {
+        const k = r.feature_key ?? "-";
+        const cur = rollup.get(k) ?? { count: 0, total: 0 };
+        cur.count += 1;
+        cur.total += Number(r.points_deducted ?? 0);
+        rollup.set(k, cur);
+      }
+      const usageBlock = rollup.size
+        ? Array.from(rollup.entries()).sort((a, b) => b[1].total - a[1].total).map(([k, v]) => `- ${k}: ${v.count} uses · ${v.total.toFixed(2)} pts`).join("\n")
+        : "(no spend in the last 30 days)";
+      // Enabled surfaces the coordinator might toggle off. Combines ai_configuration + entitlements.
+      const enabledCandidates: string[] = [];
+      for (const k of Object.keys(aiConfig) as (keyof typeof aiConfig)[]) {
+        if (aiConfig[k]) enabledCandidates.push(`${k} (${AI_CONFIG_TOGGLE_LABELS[k]})`);
+      }
+      for (const e of entitlements) {
+        if (e.enabled) enabledCandidates.push(`${e.feature} [admin-controlled]`);
+      }
+      const enabledBlock = enabledCandidates.length ? enabledCandidates.map((s) => `- ${s}`).join("\n") : "(nothing extra enabled)";
+      billingBlock = `\n===================== BILLING CONTEXT (for kind:"answer" on billing / cost / cost-reduction questions) =====================\nCurrent points balance: ${pointsBalance}\n\nFeature price list (points per action):\n${featureCostBlock}\n\nMost recent point-spend entries (newest first):\n${ledgerBlock}\n\nSPEND — LAST 30 DAYS (grouped by feature_key, highest total first):\n${usageBlock}\n\nCURRENTLY ENABLED surfaces the coordinator could toggle off:\n${enabledBlock}\n\nWhen answering cost-reduction questions: cross-reference ENABLED surfaces with SPEND. Flag any enabled AI toggle with ZERO or very low 30-day spend as a candidate to turn off (route via kind:"setting_change" for owner-controllable ai_configuration keys; for admin-controlled entitlements, tell the coordinator to ask their admin). Use ONLY the real numbers above — never estimate.\n`;
     }
+
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
