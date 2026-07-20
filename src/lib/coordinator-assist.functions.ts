@@ -976,8 +976,41 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     // ---- Auto-coordinate trigger ----
     if (p.kind === "auto_coordinate") {
       const intro = typeof p.intro === "string" && p.intro.trim() ? p.intro.trim().slice(0, 240) : "Reviewing your unassigned backlog and grouping opportunities.";
-      return { kind: "auto_coordinate", intro };
+      const directive = typeof p.directive === "string" && p.directive.trim() ? p.directive.trim().slice(0, 500) : null;
+      const targetName = typeof p.target_name === "string" && p.target_name.trim() ? p.target_name.trim().slice(0, 200) : null;
+
+      // If the coordinator named a specific destination, resolve it against
+      // the driver roster and the ACTIVE_PARTNERS list before running the
+      // planner. If nothing matches, ask a short clarifying question rather
+      // than silently running a generic auto-coordinate.
+      let resolved_target: AssistantAutoCoordinate["resolved_target"] = null;
+      if (targetName) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+        const nt = norm(targetName);
+        const driverMatch = drivers.find((d) => {
+          const n = norm(d.name ?? "");
+          return n && (n === nt || n.includes(nt) || nt.includes(n));
+        });
+        const partnerMatch = !driverMatch
+          ? partners.find((pp) => {
+              const n = norm(pp.name ?? "");
+              return n && (n === nt || n.includes(nt) || nt.includes(n));
+            })
+          : null;
+        if (driverMatch) {
+          resolved_target = { type: "driver", id: driverMatch.id, name: driverMatch.name ?? targetName };
+        } else if (partnerMatch) {
+          resolved_target = { type: "partner", id: partnerMatch.id, name: partnerMatch.name ?? targetName };
+        } else {
+          return answer(
+            `I couldn't find a driver or partner company named "${targetName}" in your roster or your Collaborate network. Double-check the spelling, or tell me the exact name and I'll try again.`,
+          );
+        }
+      }
+
+      return { kind: "auto_coordinate", intro, directive, resolved_target };
     }
+
 
 
 
