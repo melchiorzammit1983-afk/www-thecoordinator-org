@@ -5796,17 +5796,41 @@ export async function runAutoCoordinate(
   };
   const eligibleList = wantsTodayOnly ? list.filter(isTodayTrip) : list;
   const normalizeTargetName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  const compactTargetName = (s: string) => normalizeTargetName(s).replace(/\s+/g, "");
+  const editDistance = (a: string, b: string) => {
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+      }
+    }
+    return dp[a.length][b.length];
+  };
+  const closeNameMatch = (needle: string, haystack: string) => {
+    if (!needle || !haystack) return false;
+    if (haystack.includes(needle) || needle.includes(haystack)) return true;
+    const maxDistance = Math.max(1, Math.floor(Math.min(needle.length, haystack.length) * 0.2));
+    return editDistance(needle, haystack) <= maxDistance;
+  };
   const matchNameInDirective = <T extends { id: string; name?: string | null }>(rows: T[]): T | null => {
     const normalizedDirective = normalizeTargetName(directive);
+    const compactDirective = compactTargetName(directive);
     if (!normalizedDirective) return null;
     const exact = rows.find((r) => {
       const n = normalizeTargetName(r.name ?? "");
-      return n && normalizedDirective.includes(n);
+      const c = compactTargetName(r.name ?? "");
+      return n && (normalizedDirective.includes(n) || closeNameMatch(c, compactDirective));
     });
     if (exact) return exact;
     return rows.find((r) => {
       const n = normalizeTargetName(r.name ?? "");
-      return n && n.split(" ").some((part) => part.length >= 4 && normalizedDirective.includes(part));
+      return n && n.split(" ").some((part) => part.length >= 4 && closeNameMatch(part, compactDirective));
     }) ?? null;
   };
   const wantsPartner = /\b(partner|dispatch|forward|collaborate|send to partner)\b/.test(directiveText);
