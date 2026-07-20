@@ -276,6 +276,11 @@ async function _tryCharge(
     if (ent?.expires_at && new Date(ent.expires_at).getTime() < Date.now()) {
       return { charged: false, reason: "feature_expired" };
     }
+    // Per-coordinator opt-out (user_feature_preferences)
+    const { data: pref } = await sb.from("user_feature_preferences")
+      .select("enabled")
+      .eq("company_id", companyId).eq("feature_key", featureKey).maybeSingle();
+    if (pref && pref.enabled === false) return { charged: false, reason: "feature_disabled_by_user" };
     const { error } = await sb.rpc("spend_points" as any, {
       _company_id: companyId,
       _feature_key: featureKey,
