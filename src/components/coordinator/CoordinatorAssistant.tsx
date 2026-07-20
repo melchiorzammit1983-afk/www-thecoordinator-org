@@ -1673,6 +1673,62 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   );
                 }
+                if ("setting" in m) {
+                  const s = m.setting;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="w-full max-w-[92%] rounded-md border bg-muted/40 p-3 text-sm space-y-2">
+                        <div className="font-medium">{s.summary}</div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="rounded bg-background px-2 py-0.5 border">{s.label}</span>
+                          <span className="text-muted-foreground line-through">{s.old_value ? "on" : "off"}</span>
+                          <span>→</span>
+                          <span className="font-semibold">{s.new_value ? "on" : "off"}</span>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          {m.applied ? (
+                            <span className="text-xs text-muted-foreground">Applied</span>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => setMessages((ms) => ms.map((x) => x.id === m.id && "setting" in x ? { ...x, applied: true } : x))}>Dismiss</Button>
+                              <Button size="sm" disabled={applySetting.isPending} onClick={() => applySetting.mutate(m.id)}>Confirm</Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("check" in m) {
+                  const c = m.check;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="w-full max-w-[92%] rounded-md border bg-muted/40 p-3 text-sm space-y-2">
+                        <div className="font-medium">{c.summary}</div>
+                        {c.items.length > 0 && (
+                          <ul className="space-y-1">
+                            {c.items.map((it, i) => (
+                              <li key={`${it.job_id}-${i}`} className="rounded border bg-background px-2 py-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium truncate">{it.label}</span>
+                                  <span className="rounded bg-muted px-1.5 py-0.5 uppercase tracking-wide text-[10px]">{it.issue_type.replace("_", " ")}</span>
+                                </div>
+                                <div className="mt-0.5 text-muted-foreground">{it.detail}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                if (!("text" in m)) return null;
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -1684,6 +1740,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   </div>
                 );
+
               })}
               {ask.isPending && (
                 <div className="flex gap-2">
