@@ -179,7 +179,15 @@ export type AssistantMergeTrips = {
 export type AssistantAutoCoordinate = {
   kind: "auto_coordinate";
   intro: string; // one-line preamble to show above the run button
+  /** Verbatim coordinator instruction to inject into the planning prompt. */
+  directive?: string | null;
+  /** Resolved target when the coordinator named a specific driver or partner. */
+  resolved_target?:
+    | { type: "driver"; id: string; name: string }
+    | { type: "partner"; id: string; name: string }
+    | null;
 };
+
 
 export type AssistantResult =
   | AssistantAnswer
@@ -574,7 +582,7 @@ Rules:
     ],
     "summary": "..." }
   { "kind": "merge_trips", "keep_job_id": "<uuid>", "drop_job_ids": ["<uuid>", ...], "summary": "..." }
-  { "kind": "auto_coordinate", "intro": "<one short sentence, e.g. 'Reviewing your unassigned backlog now.'>" }
+  { "kind": "auto_coordinate", "intro": "<one short sentence>", "directive": "<verbatim rewrite of the coordinator's instruction, e.g. 'assign all unassigned trips to driver Mark Evans' or 'dispatch all unassigned trips to partner Baygors Cab Ltd', or null>", "target_name": "<the driver or partner company name the coordinator named, or null>" }
 - For "update" or "search_update", only include fields that CHANGE.
 - For "create" (single or batched), omit target_trip_id (null).
 - Batch of creates: each element MUST be action:"create".
@@ -588,7 +596,7 @@ Rules:
 - CLIENT NAME: Use the sender / agency / vessel name as clientcompanyname (e.g. "Ship Agency Malta Ltd." or "MV Ocean Pioneer"). If a saved client note exists (see CLIENT NOTES below), mention it briefly in the trip summary.
 - If a request is genuinely too vague, kind:"answer" with ONE short clarifying question.
 - Structured actions: prefer command_actions for grouping and messages. Use merge_trips only for true duplicate/merge requests. Only include job_ids/job_id values that appear in UPCOMING TRIPS, TRIPS REFERENCED BY SERIAL NUMBER, or the currently open trip. Keep messages short and professional; the coordinator sees each one before it is sent.
-- Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind.
+- Auto-coordinate: return kind:"auto_coordinate" only when the coordinator clearly asks to sweep the backlog. Do not combine with any other kind. If the coordinator names a SPECIFIC driver or partner company as the destination (e.g. "send all unassigned trips to Baygorscab", "assign the whole backlog to Mark"), you MUST fill "directive" with a clear verbatim rewrite of the instruction AND "target_name" with the driver or partner name they used. Otherwise set both to null.
 - GLOSSARY EXPANSION: BEFORE producing any other kind, silently expand any glossary term found in the coordinator's message using COMPANY GLOSSARY below (case-insensitive).
 - GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
 - SERIAL NUMBER RESOLUTION: The coordinator may refer to any trip by its per-company serial number ("#123", "card 45", "trip 7"). ALWAYS resolve these against TRIPS REFERENCED BY SERIAL NUMBER first, then UPCOMING TRIPS. Use the UUID (not the "#N" string) as job_id / target_trip_id. If a referenced serial does not appear in either list, ask a short clarifying question instead of guessing.
@@ -968,8 +976,41 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     // ---- Auto-coordinate trigger ----
     if (p.kind === "auto_coordinate") {
       const intro = typeof p.intro === "string" && p.intro.trim() ? p.intro.trim().slice(0, 240) : "Reviewing your unassigned backlog and grouping opportunities.";
-      return { kind: "auto_coordinate", intro };
+      const directive = typeof p.directive === "string" && p.directive.trim() ? p.directive.trim().slice(0, 500) : null;
+      const targetName = typeof p.target_name === "string" && p.target_name.trim() ? p.target_name.trim().slice(0, 200) : null;
+
+      // If the coordinator named a specific destination, resolve it against
+      // the driver roster and the ACTIVE_PARTNERS list before running the
+      // planner. If nothing matches, ask a short clarifying question rather
+      // than silently running a generic auto-coordinate.
+      let resolved_target: AssistantAutoCoordinate["resolved_target"] = null;
+      if (targetName) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+        const nt = norm(targetName);
+        const driverMatch = drivers.find((d) => {
+          const n = norm(d.name ?? "");
+          return n && (n === nt || n.includes(nt) || nt.includes(n));
+        });
+        const partnerMatch = !driverMatch
+          ? partners.find((pp) => {
+              const n = norm(pp.name ?? "");
+              return n && (n === nt || n.includes(nt) || nt.includes(n));
+            })
+          : null;
+        if (driverMatch) {
+          resolved_target = { type: "driver", id: driverMatch.id, name: driverMatch.name ?? targetName };
+        } else if (partnerMatch) {
+          resolved_target = { type: "partner", id: partnerMatch.id, name: partnerMatch.name ?? targetName };
+        } else {
+          return answer(
+            `I couldn't find a driver or partner company named "${targetName}" in your roster or your Collaborate network. Double-check the spelling, or tell me the exact name and I'll try again.`,
+          );
+        }
+      }
+
+      return { kind: "auto_coordinate", intro, directive, resolved_target };
     }
+
 
 
 

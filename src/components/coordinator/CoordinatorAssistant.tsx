@@ -355,8 +355,21 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           },
         ]);
       } else if (result.kind === "auto_coordinate") {
-        setMessages((m) => [...m, { id, role: "assistant", text: `${result.intro}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)` }]);
+        const rt = result.resolved_target;
+        const targetLine = rt
+          ? `\nTarget: ${rt.type === "driver" ? "driver" : "partner"} ${rt.name}.`
+          : "";
+        const directiveLine = result.directive ? `\nDirective: "${result.directive}"` : "";
+        setMessages((m) => [
+          ...m,
+          {
+            id,
+            role: "assistant",
+            text: `${result.intro}${directiveLine}${targetLine}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)`,
+          },
+        ]);
         maybeSpeak(result.intro);
+
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
