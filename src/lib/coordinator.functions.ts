@@ -3061,6 +3061,11 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const shouldMeterFlight = hasCode && !flightFresh;
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+      {
+        const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
+        try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
+        catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+      }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
         _feature_key: "flight_status_extra_lookup",
