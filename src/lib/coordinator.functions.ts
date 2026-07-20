@@ -3510,8 +3510,12 @@ export const listTripMessagesCoord = createServerFn({ method: "GET" })
             ((r.thread_kind === "group" || r.thread_kind == null) && !r.pax_id)),
       );
     } else {
-      // "all" — hide the driver-only private channel too
-      filtered = filtered.filter((r) => r.thread_kind !== "driver_coord");
+      // "all" — include the driver↔coordinator channel so rejection reasons
+      // and other driver-side notes surface on the trip card's Message button.
+      // Scoping above (currentDriverId) already limits driver_coord to the
+      // currently-assigned driver, so reassigning starts a fresh thread while
+      // the rejection reason from the previous driver stays visible while the
+      // job is unassigned.
     }
     const unreadIds = filtered
       .filter((r) => (r.sender_kind === "driver" || r.sender_kind === "client") && !r.read_by_coordinator_at)
