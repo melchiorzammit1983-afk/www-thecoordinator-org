@@ -293,26 +293,52 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
 
     // Meter (soft — but we treat failure as pause)
     let charged = true;
-    try {
+    let chargeErr: string | null = null;
+    const trySpend = async () => {
       const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
       await assertUserFeatureEnabled(supabaseAdmin, companyId, "ai_watchtower_scan");
-      const { error } = await supabaseAdmin.rpc("spend_points", {
+      return await supabaseAdmin.rpc("spend_points", {
         _company_id: companyId,
         _feature_key: "ai_watchtower_scan",
         _job_id: undefined as unknown as string,
         _note: "watchtower scan",
         _cost_override: undefined as unknown as number,
       });
-      if (error) charged = false;
-    } catch {
+    };
+    try {
+      let { error } = await trySpend();
+      // If out of AI-bucket points but the general wallet is funded, enable
+      // fallback for this company and retry once so coordinators aren't
+      // stranded when only the general pool has credit.
+      if (error && /insufficient_ai_points/i.test(error.message ?? "")) {
+        const { data: co } = await supabaseAdmin
+          .from("companies")
+          .select("points_balance, ai_fallback_to_general")
+          .eq("id", companyId)
+          .maybeSingle();
+        if (co && Number(co.points_balance ?? 0) > 0 && !co.ai_fallback_to_general) {
+          await supabaseAdmin
+            .from("companies")
+            .update({ ai_fallback_to_general: true })
+            .eq("id", companyId);
+          const retry = await trySpend();
+          error = retry.error;
+        }
+      }
+      if (error) {
+        charged = false;
+        chargeErr = error.message ?? "spend_failed";
+      }
+    } catch (e: any) {
       charged = false;
+      chargeErr = e?.message ?? "spend_failed";
     }
     if (!charged) {
       await supabaseAdmin
         .from("watchtower_settings")
         .update({ enabled: false, updated_at: new Date().toISOString() })
         .eq("user_id", context.userId);
-      return { ok: false, reason: "insufficient_points" as const };
+      return { ok: false, reason: "insufficient_points" as const, message: chargeErr };
     }
 
     // Scan today's + upcoming (24h) active jobs
