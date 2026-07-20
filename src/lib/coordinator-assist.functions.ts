@@ -582,7 +582,7 @@ Rules:
     ],
     "summary": "..." }
   { "kind": "merge_trips", "keep_job_id": "<uuid>", "drop_job_ids": ["<uuid>", ...], "summary": "..." }
-  { "kind": "auto_coordinate", "intro": "<one short sentence, e.g. 'Reviewing your unassigned backlog now.'>" }
+  { "kind": "auto_coordinate", "intro": "<one short sentence>", "directive": "<verbatim rewrite of the coordinator's instruction, e.g. 'assign all unassigned trips to driver Mark Evans' or 'dispatch all unassigned trips to partner Baygors Cab Ltd', or null>", "target_name": "<the driver or partner company name the coordinator named, or null>" }
 - For "update" or "search_update", only include fields that CHANGE.
 - For "create" (single or batched), omit target_trip_id (null).
 - Batch of creates: each element MUST be action:"create".
