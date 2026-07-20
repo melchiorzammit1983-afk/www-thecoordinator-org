@@ -411,6 +411,81 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     },
   });
 
+  // ---- Inline Auto-Coordinate plan/apply ----
+  const runAutoCoordFn = useServerFn(aiAutoCoordinate);
+  const applyAutoCoordFn = useServerFn(applyAutoCoordinateProposal);
+  const qcInner = useQueryClient();
+
+  const runAutoCoord = useMutation({
+    mutationFn: async (v: { msgId: string; directive: string | null; resolved_target: { type: "driver" | "partner"; id: string; name: string } | null }) => {
+      const res = (await runAutoCoordFn({
+        data: {
+          directive: v.directive ?? undefined,
+          resolved_target: v.resolved_target ?? undefined,
+        },
+      })) as { proposals: AutoCoordProposal[]; considered: number };
+      return { msgId: v.msgId, ...res };
+    },
+    onSuccess: (r) => {
+      setMessages((m) => m.map((x) => {
+        if (x.id !== r.msgId || !("autoCoord" in x)) return x;
+        return { ...x, loading: false, proposals: r.proposals, considered: r.considered, selected: r.proposals.map(() => true), done: [] };
+      }));
+    },
+    onError: (e: Error, v) => {
+      const msg = e.message || "Auto-Coordinate failed.";
+      toast.error(msg);
+      setMessages((m) => m.map((x) => (x.id !== v.msgId || !("autoCoord" in x) ? x : { ...x, loading: false, error: msg })));
+    },
+  });
+
+  const applyAutoCoordOne = async (msgId: string, idx: number) => {
+    const msg = messages.find((x) => x.id === msgId);
+    if (!msg || !("autoCoord" in msg) || !msg.proposals) return;
+    const p = msg.proposals[idx];
+    if (!p) return;
+    setMessages((m) => m.map((x) => (x.id !== msgId || !("autoCoord" in x) ? x : { ...x, applying: true })));
+    try {
+      await applyAutoCoordFn({
+        data: {
+          kind: p.kind,
+          trip_ids: p.trip_ids,
+          driver_id: p.kind === "assign" ? p.driver_id : undefined,
+          partner_company_id: p.kind === "dispatch" ? p.partner_company_id : undefined,
+        },
+      });
+      setMessages((m) => m.map((x) => {
+        if (x.id !== msgId || !("autoCoord" in x)) return x;
+        return { ...x, applying: false, done: [...(x.done ?? []), idx] };
+      }));
+      qcInner.invalidateQueries({ queryKey: ["calendar-jobs"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+      setMessages((m) => m.map((x) => (x.id !== msgId || !("autoCoord" in x) ? x : { ...x, applying: false })));
+    }
+  };
+
+  const applyAutoCoordSelected = async (msgId: string) => {
+    const msg = messages.find((x) => x.id === msgId);
+    if (!msg || !("autoCoord" in msg) || !msg.proposals || !msg.selected) return;
+    for (let i = 0; i < msg.proposals.length; i++) {
+      if (!msg.selected[i]) continue;
+      if ((msg.done ?? []).includes(i)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await applyAutoCoordOne(msgId, i);
+    }
+    toast.success("Applied");
+  };
+
+  const toggleAutoCoordRow = (msgId: string, idx: number) => {
+    setMessages((m) => m.map((x) => {
+      if (x.id !== msgId || !("autoCoord" in x) || !x.selected) return x;
+      const next = x.selected.slice();
+      next[idx] = !next[idx];
+      return { ...x, selected: next };
+    }));
+  };
+
   const sendText = useCallback((text: string) => {
     const t = text.trim();
     if (!t || ask.isPending) return;
