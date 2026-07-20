@@ -879,6 +879,12 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
     if (!iso) throw new Error("No flight time available yet");
 
     // Meter first — refuse the shift if the company is out of points.
+    const { assertUserFeatureEnabled: _gateShift, friendlyGateError: _gerrShift } = await import("@/lib/user-feature-prefs.server");
+    try {
+      await _gateShift(supabaseAdmin, c.id, "auto_shift_early_flight");
+    } catch (e) {
+      throw new Error(_gerrShift(e) ?? (e as Error).message);
+    }
     const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
       _company_id: c.id,
       _feature_key: "auto_shift_early_flight",
