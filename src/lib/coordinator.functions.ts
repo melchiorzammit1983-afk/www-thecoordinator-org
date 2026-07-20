@@ -5724,21 +5724,35 @@ export async function runAutoCoordinate(
   }
   await assertFeatureEnabled(companyId, "ai_auto_coordinate");
 
-  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  // Active unassigned trips = what's visible on the coordinator board.
+  // Include from ~1h ago (in-flight backlog) through the future.
+  const pastCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const historyCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  const [{ data: jobs }, { data: drivers }, { data: history }, partners] = await Promise.all([
+  const [{ data: jobs }, { data: drivers }, { data: assignedJobs }, { data: history }, partners] = await Promise.all([
     sb
       .from("jobs")
-      .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
+      .select(
+        "id, trip_no, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_at, time, date, status, route_duration_sec, pax(name)",
+      )
       .eq("company_id", companyId)
       .is("driver_id", null)
-      .or(`pickup_at.gte.${cutoff},pickup_at.is.null`)
+      .not("status", "in", "(completed,cancelled)")
+      .or(`pickup_at.gte.${pastCutoff},pickup_at.is.null`)
       .order("pickup_at", { ascending: true, nullsFirst: false })
-      .limit(120),
-    sb.from("drivers").select("id, name").eq("company_id", companyId).neq("status", "offline").limit(60),
+      .limit(200),
+    sb.from("drivers").select("id, name, status").eq("company_id", companyId).neq("status", "offline").limit(60),
+    // Existing assignments used to detect scheduling conflicts.
     sb
       .from("jobs")
-      .select("from_location, to_location, pickup_at, time, name, surname, driver_id, drivers:driver_id(name)")
+      .select("id, driver_id, pickup_at, route_duration_sec")
+      .eq("company_id", companyId)
+      .not("driver_id", "is", null)
+      .not("status", "in", "(completed,cancelled)")
+      .gte("pickup_at", pastCutoff)
+      .limit(500),
+    sb
+      .from("jobs")
+      .select("from_location, to_location, pickup_at, time, driver_id, drivers:driver_id(name)")
       .eq("company_id", companyId)
       .eq("status", "completed")
       .gte("created_at", historyCutoff)
