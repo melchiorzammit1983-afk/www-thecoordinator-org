@@ -1633,5 +1633,60 @@ export const stageAssistantActions = createServerFn({ method: "POST" })
     return { id: (row as { id: string }).id };
   });
 
+/**
+ * Apply a confirmed setting_change proposal. Currently scoped to owner-editable
+ * `ai_configuration` toggles — we merge the single changed field with the
+ * current row (preserving other toggles) and upsert. Feature entitlements are
+ * admin-controlled by RLS and are not writable from here.
+ */
+export const applyAssistantSettingChange = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        target: z.literal("ai_configuration"),
+        key: z.enum([
+          "auto_assign_enabled",
+          "auto_extract_bulk",
+          "auto_reply_drafts",
+          "ai_command_enabled",
+          "voice_to_trip_enabled",
+          "auto_coordinate_enabled",
+        ]),
+        new_value: z.boolean(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) throw new Error("No company assigned to this account.");
+    const { data: cur } = await supabaseAdmin
+      .from("ai_configuration")
+      .select("*")
+      .eq("company_id", company.id)
+      .maybeSingle();
+    const merged: Record<string, unknown> = {
+      company_id: company.id,
+      auto_assign_enabled: cur?.auto_assign_enabled ?? false,
+      auto_extract_bulk: cur?.auto_extract_bulk ?? true,
+      auto_reply_drafts: cur?.auto_reply_drafts ?? true,
+      ai_command_enabled: cur?.ai_command_enabled ?? true,
+      voice_to_trip_enabled: cur?.voice_to_trip_enabled ?? true,
+      auto_coordinate_enabled: cur?.auto_coordinate_enabled ?? false,
+    };
+    merged[data.key] = data.new_value;
+    const { error } = await supabaseAdmin
+      .from("ai_configuration")
+      .upsert(merged, { onConflict: "company_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true, key: data.key, new_value: data.new_value };
+  });
+
+
 
 
