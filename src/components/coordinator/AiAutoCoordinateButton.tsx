@@ -32,7 +32,9 @@ export function AiAutoCoordinateButton() {
       setPlan(r);
       setDone(new Set());
       if (r.proposals.length === 0) {
-        toast.info(r.considered > 0 ? "No safe proposal found — try naming the driver or partner." : "No eligible unassigned trips found.");
+        toast.info(r.considered > 0
+          ? "Found unassigned trips but no available driver or partner to take them."
+          : "No active unassigned trips right now.");
       }
     },
     onError: (e: Error) => toast.error(e.message),
