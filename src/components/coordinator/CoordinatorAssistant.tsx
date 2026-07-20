@@ -401,12 +401,19 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           directive: result.directive ?? null,
           resolved_target: result.resolved_target ?? null,
         });
+      } else if (result.kind === "setting_change") {
+        setMessages((m) => [...m, { id, role: "assistant", setting: result, rawMessage }]);
+        maybeSpeak(result.summary);
+      } else if (result.kind === "data_check") {
+        setMessages((m) => [...m, { id, role: "assistant", check: result, rawMessage }]);
+        maybeSpeak(result.summary);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
       }
 
     },
+
 
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : "Assistant failed. Try again.";
