@@ -792,10 +792,9 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         model: assistModel,
         response_format: { type: "json_object" },
         // Trip extraction can return several draft cards with passenger lists.
-        // 1200 tokens was too small for real crew-change emails and caused the
-        // model response to be cut mid-JSON, which then surfaced raw JSON in the
-        // chat instead of proposal cards.
-        max_tokens: 5000,
+        // 5000 was still being hit by multi-trip crew-change pastes; bumped to
+        // give Gemini room for 4-6 trips with full pax arrays.
+        max_tokens: 12000,
         messages: [
           { role: "system", content: system },
           { role: "user", content: effectiveMessage },

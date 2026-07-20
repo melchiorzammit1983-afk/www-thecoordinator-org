@@ -1,37 +1,26 @@
-# Fix production slowness: sign-in, page load, and AI
 
-## Diagnosis (verified this turn)
+## Problem
 
-- Console: `supabase.auth.getUser()` and `/_serverFn/*` calls fail with `TypeError: Failed to fetch`.
-- Network: `GET /auth/v1/user` → Failed to fetch; a server fn returned `TSR/Error` with empty message (the backend call inside it timed out).
-- Backend probes just now: `db_health` metrics endpoint timed out; `slow_queries` returned `Connection terminated due to connection timeout`.
-- Cloud status: reports healthy, but the Postgres side is not accepting connections in time.
+When you paste a real crew-change message, the assistant answers "I started extracting the trips, but the structured result was incomplete…" instead of showing trip cards. From `ai_raw_responses` there are two distinct causes, both landing on the same fallback error:
 
-That combination — healthy control plane, unreachable DB, connection timeouts — is the Lovable Cloud instance running out of compute/connection headroom. Every authenticated page load currently fires: `auth.getUser()` in the `_authenticated` gate + `getMyCompany` + `getMyFeatures` (with a realtime channel + 30s refetch) + `getMyBilling` + `getUserPrefs`, plus AI server fns. When the DB stalls, sign-in stalls, protected routes stall, and AI stalls.
+1. **Post-JSON prose (your last message).** Gemini returned a valid `{ "kind": "batch", "drafts": […] }` and then appended a second clarify sentence after the closing brace. Our `extractJson` balanced-brace scan only accepts a candidate if `JSON.parse` succeeds on it as-is, and it never tries the *first* balanced object alone when the tail is garbage. So a perfectly usable draft gets thrown away.
+2. **Token truncation on longer pastes.** `max_tokens: 5000` is still being hit (`finish_reason: "length"`) on multi-trip emails; JSON ends mid-string and can't be parsed at all.
 
-## Step 1 — Upgrade Cloud compute (unblock production now)
+## Fix
 
-Call `supabase--resize_compute` so you can pick the next tier in the approval picker. Larger instance = more concurrent connections + more RAM for Postgres, which is the metric that's saturated. Takes a few minutes; increases monthly Cloud usage.
+All changes in `src/lib/coordinator-assist.functions.ts`. Frontend/UI unchanged.
 
-After resize, re-run `db_health` and `slow_queries` to confirm timeouts are gone and to capture the top offenders for Step 2.
-
-## Step 2 — Cut per-page-load DB round-trips (no functional change)
-
-Goal: one authenticated page load = one bootstrap round-trip instead of 4–5.
-
-1. **Consolidate bootstrap** — add `getMyBootstrap` server fn in `src/lib/coordinator.functions.ts` returning `{ company, features, billing, prefs }` in a single `requireSupabaseAuth` handler. Update `useMyCompany`, `useFeatures`, `useMyBilling`, `usePreferences` to read from one shared `["me-bootstrap"]` query via `useQuery(select: ...)`, keeping their public APIs unchanged.
-2. **Stop the 30s feature refetch storm** — in `src/hooks/use-features.ts` drop `refetchInterval: 30_000` and `refetchOnMount: "always"`; keep the realtime channel as the invalidation source, and raise `staleTime` to 60s. Same for billing.
-3. **Cache `getUser` at the gate** — in `src/routes/_authenticated/route.tsx` `beforeLoad`, prefer `supabase.auth.getSession()` for the presence check (no network) and only call `getUser()` when a session exists; also short-circuit if `queryClient` already has `["me-bootstrap"]`. Keeps the security posture (server fns still re-validate via `requireSupabaseAuth`).
-4. **Defer non-critical AI wiring** — the AI FAB/`AskGuideProvider` should not eagerly hit the network on mount; only fetch on first open. Verify `SalesChatbot` and help-chat public surfaces are already guarded (they are, via `public-ai-guard.server.ts`).
-5. **Verify** — after deploy, load `/coordinator`, watch DevTools Network: expect 1× `/auth/v1/session` (cached) + 1× `/_serverFn/getMyBootstrap`, no 30s polling. Re-check `db_health` connection count under real traffic.
+1. **Salvage the first balanced JSON object.** In `extractJson`, when the balanced-brace scan finds candidates, try each in order (first one first) and return the first that parses. This already exists but currently the *last* candidate (`s.slice(first, last+1)`) is also pushed and tried before the balanced ones — reorder so balanced-scan candidates are tried first, so trailing prose after `}` no longer poisons a valid object.
+2. **Add a light JSON-repair fallback** for `finish_reason === "length"`: if strict parse fails, attempt to (a) close any unterminated string, (b) close open arrays/objects by counting depth, then re-parse. If it yields `{ kind: "batch", drafts: [...] }` with at least one usable draft, return those cards with a small "⚠ Response was truncated — review carefully" note instead of the "send again" dead-end.
+3. **Raise `max_tokens` to 12000.** Gemini 3.5 Flash easily supports it; the current 5000 is the practical bottleneck for 3+ trip pastes with pax lists.
+4. **Better fallback message.** When we truly cannot recover anything, tell the user what actually happened (truncated vs unparseable) instead of blaming them.
 
 ## Out of scope
+No changes to prompt, cost metering, `toDraft`, pax extraction, or the UI. This is a parser/robustness pass only.
 
-- No schema changes, no RLS changes, no AI behavior changes.
-- No changes to workflows, dispatch, flight tracking, or billing math.
+## Verification
+- Re-send your exact 5-crew message → expect 2 trip cards (MMH → Cerviola today ~12:00, Cerviola → Airport tomorrow 08:00) with 5 pax each.
+- Query `ai_raw_responses` after the retry to confirm `parse_ok = true`.
 
-## Technical notes
-
-- `getMyBootstrap` returns the same shapes the existing hooks already expose, so hook consumers don't change.
-- Realtime channel in `use-features.ts` stays — it's the correct invalidation signal; the 30s poll is the redundant one.
-- Session-first gate check is safe: `requireSupabaseAuth` on every protected server fn is the real authorization boundary.
+## Question for you
+For point #2 (salvage truncated JSON): do you want to **auto-surface** the partial cards with a warning, or would you rather the assistant **auto-retry once** with a shorter/summarized prompt when it hits `length`? Auto-surface is faster and cheaper; auto-retry costs a second AI call but gives a complete result. I'd default to auto-surface unless you say otherwise.
