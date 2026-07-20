@@ -339,6 +339,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           if ("suggest" in m) return { role: "assistant" as const, text: m.suggest.summary };
           if ("merge" in m) return { role: "assistant" as const, text: m.merge.summary };
           if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
+          if ("autoCoord" in m) return { role: "assistant" as const, text: m.autoCoord.intro };
           return { role: "assistant" as const, text: "" };
         });
       return (await askFn({
