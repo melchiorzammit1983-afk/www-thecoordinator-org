@@ -857,16 +857,11 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     const extractJson = (raw: string): unknown | null => {
       const s = raw.trim();
       if (!s) return null;
-      const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
       const candidates: string[] = [];
+      const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
       if (fenced?.[1]) candidates.push(fenced[1].trim());
-      candidates.push(s);
-      // Sliced by outermost braces.
-      const first = s.indexOf("{");
-      const last = s.lastIndexOf("}");
-      if (first >= 0 && last > first) candidates.push(s.slice(first, last + 1));
-      // Balanced-object scan that ignores braces inside JSON strings. This
-      // recovers when the model adds prose before/after a valid JSON object.
+      // Balanced-object scan FIRST — recovers when the model appends prose or
+      // a second JSON blob after a valid object (a common Gemini pattern).
       let depth = 0;
       let start = -1;
       let inString = false;
@@ -879,24 +874,58 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
           else if (ch === '"') inString = false;
           continue;
         }
-        if (ch === '"') {
-          inString = true;
-          continue;
-        }
-        if (ch === "{") {
-          if (depth === 0) start = i;
-          depth += 1;
-        } else if (ch === "}" && depth > 0) {
+        if (ch === '"') { inString = true; continue; }
+        if (ch === "{") { if (depth === 0) start = i; depth += 1; }
+        else if (ch === "}" && depth > 0) {
           depth -= 1;
           if (depth === 0 && start >= 0) candidates.push(s.slice(start, i + 1));
         }
       }
+      candidates.push(s);
+      const first = s.indexOf("{");
+      const last = s.lastIndexOf("}");
+      if (first >= 0 && last > first) candidates.push(s.slice(first, last + 1));
       for (const c of candidates) {
         try { return JSON.parse(c); } catch { /* keep trying */ }
       }
       return null;
     };
-    const extracted = extractJson(content);
+    // Repair a JSON string that was cut mid-output by max_tokens: close any
+    // open string, then close open arrays/objects by counting depth.
+    const repairTruncatedJson = (raw: string): unknown | null => {
+      const s = raw.trim();
+      if (!s) return null;
+      const first = s.indexOf("{");
+      if (first < 0) return null;
+      let body = s.slice(first);
+      const stack: string[] = [];
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < body.length; i++) {
+        const ch = body[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === "{") stack.push("}");
+        else if (ch === "[") stack.push("]");
+        else if (ch === "}" || ch === "]") stack.pop();
+      }
+      if (inString) body += '"';
+      // Trim trailing commas / partial keys before closers.
+      body = body.replace(/,\s*"[^"\\]*$/, "").replace(/,\s*$/, "");
+      while (stack.length) body += stack.pop();
+      try { return JSON.parse(body); } catch { return null; }
+    };
+    let extracted = extractJson(content);
+    let recoveredFromTruncation = false;
+    if (extracted === null && (finishReason === "length" || /^\s*[{[]/.test(content))) {
+      const repaired = repairTruncatedJson(content);
+      if (repaired) { extracted = repaired; recoveredFromTruncation = true; }
+    }
     const aigRunId = res.headers.get("X-Lovable-AIG-Run-ID");
     const aigLogId = res.headers.get("X-Lovable-AIG-Log-ID");
     try {
@@ -909,16 +938,19 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         aig_log_id: aigLogId,
         finish_reason: finishReason,
         parse_ok: extracted !== null,
-        parse_error: extracted === null ? "extractJson returned null" : null,
+        parse_error: extracted === null ? "extractJson returned null" : (recoveredFromTruncation ? "recovered_from_truncation" : null),
         raw_content: content,
         company_id: company.id,
         actor_user_id: context.userId,
-        meta: { message_length: data.message?.length ?? 0 },
+        meta: { message_length: data.message?.length ?? 0, recovered: recoveredFromTruncation },
       });
     } catch { /* noop */ }
     if (extracted === null) {
-      if (finishReason === "length" || /^\s*[{[]/.test(content)) {
-        return answer("I started extracting the trips, but the structured result was incomplete. Please send the same message again and I'll return it as trip cards, not raw JSON.");
+      if (finishReason === "length") {
+        return answer("The AI response was cut off before I could finish extracting the trips. Try pasting fewer trips at once, or split the message into two.");
+      }
+      if (/^\s*[{[]/.test(content)) {
+        return answer("The AI returned data I couldn't fully parse. Try rephrasing, or paste the trips one block at a time.");
       }
       return answer(content || "Sorry, I couldn't parse that.");
     }
