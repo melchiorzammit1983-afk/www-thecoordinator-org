@@ -100,11 +100,17 @@ export function WatchtowerToggle() {
         if (r.new_alerts > 0) {
           toast(`Watchtower found ${r.new_alerts} new issue${r.new_alerts === 1 ? "" : "s"}`);
         }
+      } else if (r?.reason === "feature_disabled") {
+        toast.error("Watchtower is switched off in your Settings → Features. Turn on 'AI Watchtower scan' to resume.", {
+          action: { label: "Open Settings", onClick: () => { window.location.href = "/settings"; } },
+        });
+        refetchSettings();
       } else if (r?.reason === "insufficient_points") {
         toast.error(
           r?.message
             ? `Watchtower paused — ${r.message}. Top up to resume.`
             : "Watchtower paused — not enough points. Top up to resume.",
+          { action: { label: "Top up", onClick: () => { window.location.href = "/coordinator/billing"; } } },
         );
         refetchSettings();
       } else if (r?.reason === "daily_cap_reached") {
