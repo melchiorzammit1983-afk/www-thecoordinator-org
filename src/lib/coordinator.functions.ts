@@ -5625,9 +5625,94 @@ async function callGemini(
 // ---------- AI: Auto-Coordinate (propose-only autopilot) ----------
 type CoordProposal =
   | { kind: "group"; trip_ids: string[]; reason: string }
-  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string };
+  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
+  | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
 
-export async function runAutoCoordinate(companyId: string) {
+/**
+ * Load the caller company's ACTIVE Collaborate partners. Same source of truth
+ * as the assistant + Collaborate UI use, so partner_company_id references
+ * coming from the assistant/auto-coordinate flow can be validated against it.
+ */
+async function loadActivePartners(
+  sb: Awaited<ReturnType<typeof getAdminClient>>,
+  companyId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const { data: conns } = await sb
+    .from("coordinator_connections")
+    .select("owner_company_id, partner_company_id, status")
+    .or(`owner_company_id.eq.${companyId},partner_company_id.eq.${companyId}`)
+    .eq("status", "active");
+  const partnerIds = Array.from(
+    new Set(
+      (conns ?? [])
+        .map((r: any) => (r.owner_company_id === companyId ? r.partner_company_id : r.owner_company_id))
+        .filter((id: string) => id && id !== companyId),
+    ),
+  );
+  if (partnerIds.length === 0) return [];
+  const { data: rows } = await sb.from("companies").select("id, name").in("id", partnerIds);
+  return (rows ?? []).map((p: any) => ({ id: p.id, name: p.name ?? "Unknown" }));
+}
+
+/**
+ * Shared dispatch guardrails — same executor / loop / hop-insert / chain-update
+ * flow used inline by `applyAiCommandActions`'s "dispatch" branch. Callable
+ * from applyAutoCoordinateProposal so the two paths cannot drift.
+ */
+async function dispatchJobToPartner(
+  sb: Awaited<ReturnType<typeof getAdminClient>>,
+  callerCompanyId: string,
+  jobId: string,
+  partnerCompanyId: string,
+  note: string,
+): Promise<void> {
+  const { data: job } = await sb
+    .from("jobs")
+    .select(
+      "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status",
+    )
+    .eq("id", jobId)
+    .maybeSingle();
+  if (!job) throw new Error("trip not found");
+  if ((job.executor_company_id ?? job.company_id) !== callerCompanyId)
+    throw new Error("only current executor can dispatch");
+  const chain: string[] = Array.isArray((job as any).dispatch_chain_company_ids)
+    ? (job as any).dispatch_chain_company_ids
+    : [job.company_id];
+  if (chain.includes(partnerCompanyId)) throw new Error("would create a loop");
+  const { data: hops } = await sb
+    .from("job_dispatch_hops")
+    .select("hop_index")
+    .eq("job_id", jobId)
+    .order("hop_index", { ascending: false })
+    .limit(1);
+  const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
+  await sb.from("job_dispatch_hops").insert({
+    job_id: jobId,
+    hop_index: nextIndex,
+    from_company_id: callerCompanyId,
+    to_company_id: partnerCompanyId,
+    status: "pending",
+    note,
+  });
+  const { error } = await sb
+    .from("jobs")
+    .update({
+      origin_company_id: (job as any).origin_company_id ?? job.company_id,
+      executor_company_id: partnerCompanyId,
+      dispatch_status: "pending",
+      dispatched_at: new Date().toISOString(),
+      dispatch_decided_at: null,
+      dispatch_chain_company_ids: [...chain, partnerCompanyId],
+    } as never)
+    .eq("id", jobId);
+  if (error) throw error;
+}
+
+export async function runAutoCoordinate(
+  companyId: string,
+  opts: { directive?: string | null; resolved_target?: { type: "driver" | "partner"; id: string; name: string } | null } = {},
+) {
   const sb = await getAdminClient();
   const { data: cfg } = await sb
     .from("ai_configuration")
@@ -5641,7 +5726,7 @@ export async function runAutoCoordinate(companyId: string) {
 
   const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const historyCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  const [{ data: jobs }, { data: drivers }, { data: history }] = await Promise.all([
+  const [{ data: jobs }, { data: drivers }, { data: history }, partners] = await Promise.all([
     sb
       .from("jobs")
       .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
@@ -5659,6 +5744,7 @@ export async function runAutoCoordinate(companyId: string) {
       .gte("created_at", historyCutoff)
       .order("pickup_at", { ascending: false, nullsFirst: false })
       .limit(300),
+    loadActivePartners(sb, companyId),
   ]);
 
   const list = jobs ?? [];
@@ -5682,9 +5768,8 @@ export async function runAutoCoordinate(companyId: string) {
     )
     .join("\n");
   const driverLines = drv.map((d: any) => `${d.id}: ${d.name ?? ""}`).join("\n") || "(no free drivers)";
+  const partnerLines = partners.map((p) => `${p.id}: ${p.name}`).join("\n") || "(no active partners)";
 
-  // Compact 30-day completed-trip reference so the AI can spot recurring
-  // monthly patterns (regular clients, repeat routes, habitual drivers).
   const historyList = (history ?? []).map((h: any) => ({
     pickup: h.from_location ?? "",
     dropoff: h.to_location ?? "",
@@ -5698,6 +5783,20 @@ export async function runAutoCoordinate(companyId: string) {
         .join("\n")}`
     : "PAST_30D_COMPLETED: (none)";
 
+  const directive = (opts.directive ?? "").trim();
+  const resolved = opts.resolved_target ?? null;
+  const directiveBlock = directive
+    ? `\n\nCOORDINATOR DIRECTIVE (HARD instruction — the plan MUST satisfy this over general optimization):\n"${directive}"${
+        resolved
+          ? `\nResolved target: ${resolved.type} ${resolved.id} (${resolved.name}). ${
+              resolved.type === "driver"
+                ? "Prefer kind:\"assign\" proposals with this driver_id for as many eligible trips as possible."
+                : "Prefer kind:\"dispatch\" proposals with this partner_company_id for as many eligible trips as possible."
+            }`
+          : ""
+      }`
+    : "";
+
   const parsed = await callGemini(
     await buildSystemPrompt(
       companyId,
@@ -5705,10 +5804,11 @@ export async function runAutoCoordinate(companyId: string) {
         `Use PAST_30D_COMPLETED as reference memory to recognize recurring monthly patterns — regular clients, repeat routes, and drivers habitually paired with them — when grouping or assigning.\n` +
         `Return JSON: {"proposals":[\n` +
         `  {"kind":"group","trip_ids":["uuid",...],"reason":"..."},\n` +
-        `  {"kind":"assign","trip_ids":["uuid",...],"driver_id":"uuid","reason":"..."}\n` +
+        `  {"kind":"assign","trip_ids":["uuid",...],"driver_id":"uuid","reason":"..."},\n` +
+        `  {"kind":"dispatch","trip_ids":["uuid",...],"partner_company_id":"uuid","reason":"..."}\n` +
         `]}\n` +
-        `Rules: only real groups (2+ trips, same/near pickup within 30min AND overlapping routes). Only propose assignments when a specific driver clearly fits. Do NOT invent trip_ids or driver_ids — use only the IDs listed below.\n\n` +
-        `TRIPS:\n${tripLines}\n\nDRIVERS:\n${driverLines}\n\n${historyBlock}`,
+        `Rules: only real groups (2+ trips, same/near pickup within 30min AND overlapping routes). Only propose assignments when a specific driver clearly fits. Use "dispatch" only to forward trips to an ACTIVE PARTNER company. Do NOT invent trip_ids, driver_ids, or partner_company_ids — use only the IDs listed below.${directiveBlock}\n\n` +
+        `TRIPS:\n${tripLines}\n\nDRIVERS:\n${driverLines}\n\nACTIVE PARTNERS:\n${partnerLines}\n\n${historyBlock}`,
     ),
     "gemini-2.5-flash",
     { maxOutputTokens: 2000 },
@@ -5716,6 +5816,7 @@ export async function runAutoCoordinate(companyId: string) {
 
   const tripIdSet = new Set(list.map((j: any) => j.id));
   const driverIdSet = new Set(drv.map((d: any) => d.id));
+  const partnerIdSet = new Set(partners.map((p) => p.id));
 
   const raw = Array.isArray(parsed?.proposals) ? parsed.proposals : [];
   const proposals: CoordProposal[] = [];
@@ -5734,6 +5835,17 @@ export async function runAutoCoordinate(companyId: string) {
         driver_id: p.driver_id,
         reason: String(p.reason ?? "").slice(0, 300),
       });
+    } else if (
+      p.kind === "dispatch" &&
+      typeof p.partner_company_id === "string" &&
+      partnerIdSet.has(p.partner_company_id)
+    ) {
+      proposals.push({
+        kind: "dispatch",
+        trip_ids,
+        partner_company_id: p.partner_company_id,
+        reason: String(p.reason ?? "").slice(0, 300),
+      });
     }
   }
 
@@ -5746,7 +5858,6 @@ export async function runAutoCoordinate(companyId: string) {
     const perCost = Number(costRow?.points_cost ?? 1);
     for (let i = 0; i < touched.size; i++) {
       await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate trip", undefined);
-      // NOTE: uses configured points_cost per touched trip via spend_points RPC.
       void perCost;
     }
   }
@@ -5756,9 +5867,28 @@ export async function runAutoCoordinate(companyId: string) {
 
 export const aiAutoCoordinate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        directive: z.string().max(500).optional().nullable(),
+        resolved_target: z
+          .object({
+            type: z.enum(["driver", "partner"]),
+            id: z.string().uuid(),
+            name: z.string().max(200),
+          })
+          .optional()
+          .nullable(),
+      })
+      .optional()
+      .parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
-    return runAutoCoordinate(c.id);
+    return runAutoCoordinate(c.id, {
+      directive: data?.directive ?? null,
+      resolved_target: data?.resolved_target ?? null,
+    });
   });
 
 export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
@@ -5766,9 +5896,10 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z
       .object({
-        kind: z.enum(["group", "assign"]),
+        kind: z.enum(["group", "assign", "dispatch"]),
         trip_ids: z.array(z.string().uuid()).min(1).max(50),
         driver_id: z.string().uuid().optional(),
+        partner_company_id: z.string().uuid().optional(),
       })
       .parse(i),
   )
@@ -5800,7 +5931,7 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
         } as never)
         .in("id", data.trip_ids);
       if (uErr) throw new Error(uErr.message);
-    } else {
+    } else if (data.kind === "assign") {
       if (!data.driver_id) throw new Error("Missing driver_id for assignment");
       const { error: uErr } = await sb
         .from("jobs")
@@ -5808,6 +5939,17 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
         .in("id", data.trip_ids)
         .is("driver_id", null); // never overwrite existing assignments
       if (uErr) throw new Error(uErr.message);
+    } else {
+      // dispatch → forward each trip to a partner via the shared guardrails.
+      if (!data.partner_company_id) throw new Error("Missing partner_company_id for dispatch");
+      const partners = await loadActivePartners(sb, c.id);
+      if (!partners.some((p) => p.id === data.partner_company_id)) {
+        throw new Error("Not an active Collaborate partner");
+      }
+      for (const jobId of data.trip_ids) {
+        await spendOrThrow(c.id, "ai_agent_dispatch", `Auto-Coordinate dispatch ${jobId.slice(0, 8)}`, jobId);
+        await dispatchJobToPartner(sb, c.id, jobId, data.partner_company_id, "via AI Auto-Coordinate");
+      }
     }
 
     // Per-action metering (per_run / per_trip already charged at plan time).
@@ -5821,6 +5963,7 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
 
 // ---------- AI: Daily plan ----------
 export const aiPlanDriverDay = createServerFn({ method: "POST" })
