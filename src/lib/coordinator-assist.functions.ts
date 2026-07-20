@@ -679,31 +679,6 @@ Rules:
   { "kind": "setting_change", "target": "ai_configuration", "key": "<one of: auto_assign_enabled | auto_extract_bulk | auto_reply_drafts | ai_command_enabled | voice_to_trip_enabled | auto_coordinate_enabled>", "new_value": true|false, "summary": "one short sentence explaining what will change" }
   { "kind": "data_check" }
 
-  { "kind": "answer", "text": "..." }
-  { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
-    "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
-                "driver_id"? (uuid from roster below or null), "driver_name"?,
-                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"?,
-                "pax"? (array of passenger / crew names for this trip, e.g. ["M. Harris – Master", "J. Cooper – C/O"]) },
-    "summary": "one short sentence" }
-  { "kind": "batch",
-    "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
-    "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
-  { "kind": "search_update",
-    "criteria": "short human phrase describing which trips to match, e.g. 'Asso 25 trips today'",
-    "criteria_terms": ["asso 25"],
-    "date": "yyyy-mm-dd" | null,
-    "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
-    "summary": "..." }
-  { "kind": "data_fix",
-    "target": "trip" | "driver",
-    "target_id": "<uuid>",
-    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (trip);   name | phone   (driver)>",
-    "new_value": "<corrected value>",
-    "summary": "..." }
-  { "kind": "glossary_save", "term": "<shorthand>", "meaning": "<full meaning>" }
-  { "kind": "glossary_list" }
-  { "kind": "glossary_delete", "term": "<shorthand>" }
   { "kind": "partner_suggest",
     "items": [ { "job_id": "<uuid from UPCOMING TRIPS>", "partner_company_id": "<uuid from ACTIVE PARTNERS>", "reason": "one short line, or null" } ],
     "summary": "..." }
@@ -734,6 +709,11 @@ Rules:
 - GLOSSARY SAVE: use kind:"glossary_save" ONLY when the message is clearly a teaching statement about a term → meaning. Do NOT combine with any other action in the same turn.
 - SERIAL NUMBER RESOLUTION: The coordinator may refer to any trip by its per-company serial number ("#123", "card 45", "trip 7"). ALWAYS resolve these against TRIPS REFERENCED BY SERIAL NUMBER first, then UPCOMING TRIPS. Use the UUID (not the "#N" string) as job_id / target_trip_id. If a referenced serial does not appear in either list, ask a short clarifying question instead of guessing.
 - Answers are plain text (no markdown).
+- OUTPUT DISCIPLINE (critical for long crew-change pastes):
+  * Return ONE top-level JSON object. NEVER emit a second JSON object, prose commentary, or anything after the closing brace.
+  * Keep "summary" and "clarify" under ~120 characters each. Keep "pax" entries under ~80 chars each. Do not paraphrase the whole paste back.
+  * Prefer many short trips in a "batch" over long free-text. Do not include the source paste verbatim in any field.
+  * If the request is a multi-trip crew change, EMIT EVERY TRIP as a batch element — do not stop early and do not summarize instead.
 
 Today's date (Malta): ${today}
 Company: ${company.name}
@@ -781,74 +761,100 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
 
     const assistStart = Date.now();
     const assistModel = "google/gemini-3.5-flash";
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        "X-Lovable-AIG-SDK": "raw-fetch",
-      },
-      body: JSON.stringify({
-        model: assistModel,
-        response_format: { type: "json_object" },
-        // Trip extraction can return several draft cards with passenger lists.
-        // 5000 was still being hit by multi-trip crew-change pastes; bumped to
-        // give Gemini room for 4-6 trips with full pax arrays.
-        max_tokens: 12000,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: effectiveMessage },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      const status = res.status === 429 ? "rate_limited" : res.status === 402 ? "no_credits" : "error";
+    // Scale token budget with paste size so long crew-change messages
+    // (5-10 trips with pax) don't finish_reason="length" mid-JSON.
+    const msgLen = effectiveMessage.length;
+    const initialMaxTokens = msgLen > 4000 ? 24000 : msgLen > 1500 ? 16000 : 12000;
+
+    type ModelCall = {
+      content: string;
+      finishReason: string | null;
+      aigRunId: string | null;
+      aigLogId: string | null;
+      inputTokens: number;
+      outputTokens: number;
+      durationMs: number;
+      ok: boolean;
+      status: number;
+      errorBody?: string;
+    };
+    const callModel = async (
+      messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+      maxTokens: number,
+    ): Promise<ModelCall> => {
+      const start = Date.now();
+      const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": key,
+          "X-Lovable-AIG-SDK": "raw-fetch",
+        },
+        body: JSON.stringify({
+          model: assistModel,
+          response_format: { type: "json_object" },
+          max_tokens: maxTokens,
+          messages,
+        }),
+      });
+      const aigRunId = r.headers.get("X-Lovable-AIG-Run-ID");
+      const aigLogId = r.headers.get("X-Lovable-AIG-Log-ID");
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        return {
+          content: "", finishReason: null, aigRunId, aigLogId,
+          inputTokens: 0, outputTokens: 0, durationMs: Date.now() - start,
+          ok: false, status: r.status, errorBody: body,
+        };
+      }
+      const j = (await r.json()) as {
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      return {
+        content: j.choices?.[0]?.message?.content ?? "",
+        finishReason: j.choices?.[0]?.finish_reason ?? null,
+        aigRunId, aigLogId,
+        inputTokens: j.usage?.prompt_tokens ?? 0,
+        outputTokens: j.usage?.completion_tokens ?? 0,
+        durationMs: Date.now() - start,
+        ok: true, status: r.status,
+      };
+    };
+
+    const initialMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+      { role: "system", content: system },
+      { role: "user", content: effectiveMessage },
+    ];
+    const first = await callModel(initialMessages, initialMaxTokens);
+    if (!first.ok) {
+      const status = first.status === 429 ? "rate_limited" : first.status === 402 ? "no_credits" : "error";
       try {
         const { recordAiCost } = await import("./ai-cost.server");
         await recordAiCost({
-          feature_key: "assistant_qa",
-          model: assistModel,
-          company_id: company.id,
-          actor_user_id: context.userId,
-          surface: "coordinator_assistant",
-          duration_ms: Date.now() - assistStart,
-          status,
-          aig_run_id: res.headers.get("X-Lovable-AIG-Run-ID") ?? undefined,
-          aig_log_id: res.headers.get("X-Lovable-AIG-Log-ID") ?? undefined,
+          feature_key: "assistant_qa", model: assistModel,
+          company_id: company.id, actor_user_id: context.userId,
+          surface: "coordinator_assistant", duration_ms: first.durationMs,
+          status, aig_run_id: first.aigRunId ?? undefined, aig_log_id: first.aigLogId ?? undefined,
         });
       } catch { /* noop */ }
-      if (res.status === 429) throw new Error("AI rate limit hit — try again in a moment.");
-      if (res.status === 402) throw new Error("AI credits exhausted — top up to continue.");
-      throw new Error(`AI error (${res.status}): ${body.slice(0, 200)}`);
+      if (first.status === 429) throw new Error("AI rate limit hit — try again in a moment.");
+      if (first.status === 402) throw new Error("AI credits exhausted — top up to continue.");
+      throw new Error(`AI error (${first.status}): ${(first.errorBody ?? "").slice(0, 200)}`);
     }
-    const json = (await res.json()) as {
-      choices?: { message?: { content?: string }; finish_reason?: string }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
-    };
-    try {
-      const { recordAiCost } = await import("./ai-cost.server");
-      await recordAiCost({
-        feature_key: "assistant_qa",
-        model: assistModel,
-        usage: {
-          input_tokens: json.usage?.prompt_tokens ?? 0,
-          output_tokens: json.usage?.completion_tokens ?? 0,
-        },
-        company_id: company.id,
-        actor_user_id: context.userId,
-        surface: "coordinator_assistant",
-        duration_ms: Date.now() - assistStart,
-        aig_run_id: res.headers.get("X-Lovable-AIG-Run-ID") ?? undefined,
-        aig_log_id: res.headers.get("X-Lovable-AIG-Log-ID") ?? undefined,
-      });
-    } catch { /* noop */ }
-    const content = json.choices?.[0]?.message?.content ?? "";
-    const finishReason = json.choices?.[0]?.finish_reason ?? null;
+
+    let content = first.content;
+    let finishReason = first.finishReason;
+    let totalInputTokens = first.inputTokens;
+    let totalOutputTokens = first.outputTokens;
+    let totalDurationMs = first.durationMs;
+    let continuationUsed = false;
+
     const answer = async (text: string): Promise<AssistantAnswer> => {
       await meter("assistant_qa", "assistant Q&A turn");
       return { kind: "answer", text: text + overageNotice };
     };
+
 
     let parsed: unknown;
     // Some model turns wrap JSON in ```json fences, prefix it with the
@@ -922,12 +928,53 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     };
     let extracted = extractJson(content);
     let recoveredFromTruncation = false;
+
+    // Continuation retry: if the model got cut off mid-JSON on a long
+    // crew-change extraction, ask it to continue emitting ONLY the remaining
+    // raw JSON so we can concatenate and parse. Cheaper than re-running the
+    // whole prompt, and preserves already-emitted trips.
+    if (extracted === null && finishReason === "length" && !continuationUsed) {
+      continuationUsed = true;
+      const contMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        ...initialMessages,
+        { role: "assistant", content },
+        {
+          role: "user",
+          content:
+            "Your previous JSON was cut off. Continue emitting ONLY the remaining raw JSON so that concatenating it verbatim to your previous output produces one valid JSON object. Do not repeat any characters you already produced. Do not add prose, code fences, or a new JSON object. Just the missing tail, ending with the final closing brace.",
+        },
+      ];
+      const cont = await callModel(contMessages, initialMaxTokens);
+      if (cont.ok) {
+        content = content + cont.content;
+        finishReason = cont.finishReason;
+        totalInputTokens += cont.inputTokens;
+        totalOutputTokens += cont.outputTokens;
+        totalDurationMs += cont.durationMs;
+        extracted = extractJson(content);
+      }
+    }
+
     if (extracted === null && (finishReason === "length" || /^\s*[{[]/.test(content))) {
       const repaired = repairTruncatedJson(content);
       if (repaired) { extracted = repaired; recoveredFromTruncation = true; }
     }
-    const aigRunId = res.headers.get("X-Lovable-AIG-Run-ID");
-    const aigLogId = res.headers.get("X-Lovable-AIG-Log-ID");
+    const aigRunId = first.aigRunId;
+    const aigLogId = first.aigLogId;
+    try {
+      const { recordAiCost } = await import("./ai-cost.server");
+      await recordAiCost({
+        feature_key: "assistant_qa",
+        model: assistModel,
+        usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+        company_id: company.id,
+        actor_user_id: context.userId,
+        surface: "coordinator_assistant",
+        duration_ms: totalDurationMs,
+        aig_run_id: aigRunId ?? undefined,
+        aig_log_id: aigLogId ?? undefined,
+      });
+    } catch { /* noop */ }
     try {
       const { logRawAiResponse } = await import("./ai-raw-log.server");
       await logRawAiResponse({
@@ -938,13 +985,18 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         aig_log_id: aigLogId,
         finish_reason: finishReason,
         parse_ok: extracted !== null,
-        parse_error: extracted === null ? "extractJson returned null" : (recoveredFromTruncation ? "recovered_from_truncation" : null),
+        parse_error: extracted === null ? "extractJson returned null" : (recoveredFromTruncation ? "recovered_from_truncation" : (continuationUsed ? "recovered_via_continuation" : null)),
         raw_content: content,
         company_id: company.id,
         actor_user_id: context.userId,
-        meta: { message_length: data.message?.length ?? 0, recovered: recoveredFromTruncation },
+        meta: {
+          message_length: data.message?.length ?? 0,
+          recovered: recoveredFromTruncation,
+          continuation_used: continuationUsed,
+        },
       });
     } catch { /* noop */ }
+
     if (extracted === null) {
       if (finishReason === "length") {
         return answer("The AI response was cut off before I could finish extracting the trips. Try pasting fewer trips at once, or split the message into two.");
