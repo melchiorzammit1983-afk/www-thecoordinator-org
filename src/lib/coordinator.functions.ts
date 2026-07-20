@@ -5809,9 +5809,10 @@ export async function runAutoCoordinate(
       return n && n.split(" ").some((part) => part.length >= 4 && normalizedDirective.includes(part));
     }) ?? null;
   };
-  const wantsPartner = /\b(partner|dispatch|forward|collaborate)\b/.test(directiveText);
-  const inferredDriver = !opts.resolved_target && !wantsPartner ? matchNameInDirective(drv) : null;
-  const inferredPartner = !opts.resolved_target && !inferredDriver ? matchNameInDirective(partners) : null;
+  const wantsPartner = /\b(partner|dispatch|forward|collaborate|send to partner)\b/.test(directiveText);
+  const wantsDriver = /\b(driver|assign|move|give|put|send to driver)\b/.test(directiveText);
+  const inferredDriver = !opts.resolved_target && (wantsDriver || !wantsPartner) ? matchNameInDirective(drv) : null;
+  const inferredPartner = !opts.resolved_target && !inferredDriver && (wantsPartner || !wantsDriver) ? matchNameInDirective(partners) : null;
   const resolved = opts.resolved_target ?? (inferredDriver
     ? { type: "driver" as const, id: inferredDriver.id, name: inferredDriver.name ?? "driver" }
     : inferredPartner
