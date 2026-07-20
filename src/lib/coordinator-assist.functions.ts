@@ -1672,13 +1672,12 @@ export const applyAssistantSettingChange = createServerFn({ method: "POST" })
       .maybeSingle();
     const merged = {
       company_id: company.id,
-      auto_assign_enabled: cur?.auto_assign_enabled ?? false,
-      auto_extract_bulk: cur?.auto_extract_bulk ?? true,
-      auto_reply_drafts: cur?.auto_reply_drafts ?? true,
-      ai_command_enabled: cur?.ai_command_enabled ?? true,
-      voice_to_trip_enabled: cur?.voice_to_trip_enabled ?? true,
-      auto_coordinate_enabled: cur?.auto_coordinate_enabled ?? false,
-      [data.key]: data.new_value,
+      auto_assign_enabled: data.key === "auto_assign_enabled" ? data.new_value : cur?.auto_assign_enabled ?? false,
+      auto_extract_bulk: data.key === "auto_extract_bulk" ? data.new_value : cur?.auto_extract_bulk ?? true,
+      auto_reply_drafts: data.key === "auto_reply_drafts" ? data.new_value : cur?.auto_reply_drafts ?? true,
+      ai_command_enabled: data.key === "ai_command_enabled" ? data.new_value : cur?.ai_command_enabled ?? true,
+      voice_to_trip_enabled: data.key === "voice_to_trip_enabled" ? data.new_value : cur?.voice_to_trip_enabled ?? true,
+      auto_coordinate_enabled: data.key === "auto_coordinate_enabled" ? data.new_value : cur?.auto_coordinate_enabled ?? false,
     };
     const { error } = await supabaseAdmin
       .from("ai_configuration")
@@ -1686,6 +1685,7 @@ export const applyAssistantSettingChange = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true, key: data.key, new_value: data.new_value };
   });
+
 
 
 
