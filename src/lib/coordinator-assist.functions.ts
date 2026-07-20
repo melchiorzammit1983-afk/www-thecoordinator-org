@@ -679,31 +679,6 @@ Rules:
   { "kind": "setting_change", "target": "ai_configuration", "key": "<one of: auto_assign_enabled | auto_extract_bulk | auto_reply_drafts | ai_command_enabled | voice_to_trip_enabled | auto_coordinate_enabled>", "new_value": true|false, "summary": "one short sentence explaining what will change" }
   { "kind": "data_check" }
 
-  { "kind": "answer", "text": "..." }
-  { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
-    "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
-                "driver_id"? (uuid from roster below or null), "driver_name"?,
-                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"?,
-                "pax"? (array of passenger / crew names for this trip, e.g. ["M. Harris – Master", "J. Cooper – C/O"]) },
-    "summary": "one short sentence" }
-  { "kind": "batch",
-    "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
-    "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
-  { "kind": "search_update",
-    "criteria": "short human phrase describing which trips to match, e.g. 'Asso 25 trips today'",
-    "criteria_terms": ["asso 25"],
-    "date": "yyyy-mm-dd" | null,
-    "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
-    "summary": "..." }
-  { "kind": "data_fix",
-    "target": "trip" | "driver",
-    "target_id": "<uuid>",
-    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (trip);   name | phone   (driver)>",
-    "new_value": "<corrected value>",
-    "summary": "..." }
-  { "kind": "glossary_save", "term": "<shorthand>", "meaning": "<full meaning>" }
-  { "kind": "glossary_list" }
-  { "kind": "glossary_delete", "term": "<shorthand>" }
   { "kind": "partner_suggest",
     "items": [ { "job_id": "<uuid from UPCOMING TRIPS>", "partner_company_id": "<uuid from ACTIVE PARTNERS>", "reason": "one short line, or null" } ],
     "summary": "..." }
