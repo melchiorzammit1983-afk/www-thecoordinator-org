@@ -110,7 +110,28 @@ type ChatMsg =
       selected: boolean[]; // per action
       applied?: boolean;
       results?: Array<{ index: number; ok: boolean; message: string }>;
+    }
+  | {
+      id: string;
+      role: "assistant";
+      autoCoord: {
+        intro: string;
+        directive?: string | null;
+        resolved_target?: { type: "driver" | "partner"; id: string; name: string } | null;
+      };
+      loading: boolean;
+      error?: string;
+      proposals?: AutoCoordProposal[];
+      considered?: number;
+      selected?: boolean[];
+      done?: number[]; // indices already applied
+      applying?: boolean;
     };
+
+type AutoCoordProposal =
+  | { kind: "group"; trip_ids: string[]; reason: string }
+  | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
+  | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
 
 function draftFieldSummary(fields: AssistantDraft["fields"]): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
