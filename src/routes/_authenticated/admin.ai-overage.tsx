@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-overage")({
   component: Page,
@@ -51,6 +52,7 @@ function Page() {
 
   return (
     <div className="p-6 space-y-6 max-w-3xl mx-auto">
+      <AdminAiHeaderTabs active="overage" />
       <div>
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" /> AI long-message pricing (platform default)

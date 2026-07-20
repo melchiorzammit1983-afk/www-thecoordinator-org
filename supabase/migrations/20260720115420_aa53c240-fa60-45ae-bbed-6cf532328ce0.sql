@@ -1,0 +1,2 @@
+ALTER TABLE public.point_packs ADD COLUMN IF NOT EXISTS is_reference_rate boolean NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS point_packs_single_reference_rate ON public.point_packs ((is_reference_rate)) WHERE is_reference_rate = true;

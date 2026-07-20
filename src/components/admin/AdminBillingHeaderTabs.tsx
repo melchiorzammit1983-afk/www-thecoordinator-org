@@ -1,18 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { Settings2, BarChart3, Activity, DollarSign, GraduationCap, Coins } from "lucide-react";
+import { Coins, LineChart, DollarSign } from "lucide-react";
 
 const TABS = [
-  { key: "insights",  to: "/admin/ai-insights",  label: "Insights",  icon: BarChart3 },
-  { key: "settings",  to: "/admin/ai-settings",  label: "Settings",  icon: Settings2 },
-  { key: "activity",  to: "/admin/ai-activity",  label: "Activity",  icon: Activity },
-  { key: "lessons",   to: "/admin/ai-lessons",   label: "Lessons",   icon: GraduationCap },
-  { key: "costs",     to: "/admin/ai-costs",     label: "Real cost", icon: DollarSign },
-  { key: "overage",   to: "/admin/ai-overage",   label: "Overage",   icon: Coins },
+  { key: "topups",  to: "/admin/topups",  label: "Top-ups", icon: Coins },
+  { key: "revenue", to: "/admin/revenue", label: "Revenue", icon: LineChart },
+  { key: "pricing", to: "/admin/pricing", label: "Pricing", icon: DollarSign },
 ] as const;
 
 type TabKey = typeof TABS[number]["key"];
 
-export function AdminAiHeaderTabs({ active }: { active: TabKey }) {
+export function AdminBillingHeaderTabs({ active }: { active: TabKey }) {
   return (
     <div className="flex items-center gap-1 border-b -mx-1 px-1 overflow-x-auto">
       {TABS.map((t) => {

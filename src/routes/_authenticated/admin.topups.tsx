@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
 import { adminListTopups, adminApproveTopup, adminDeclineTopup } from "@/lib/admin.functions";
+import { AdminBillingHeaderTabs } from "@/components/admin/AdminBillingHeaderTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ function TopupsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      <AdminBillingHeaderTabs active="topups" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Top-up requests</h1>

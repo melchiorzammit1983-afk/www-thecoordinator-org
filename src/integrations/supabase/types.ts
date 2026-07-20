@@ -4545,6 +4545,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_reference_rate: boolean
           name: string
           points: number
           price: number
@@ -4555,6 +4556,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_reference_rate?: boolean
           name: string
           points: number
           price?: number
@@ -4565,6 +4567,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_reference_rate?: boolean
           name?: string
           points?: number
           price?: number

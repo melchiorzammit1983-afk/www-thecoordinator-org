@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DollarSign, Users, Sparkles, TrendingUp, Coins } from "lucide-react";
+import { AdminBillingHeaderTabs } from "@/components/admin/AdminBillingHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/revenue")({
   component: RevenuePage,
@@ -23,6 +24,7 @@ function RevenuePage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      <AdminBillingHeaderTabs active="revenue" />
       <div>
         <h1 className="text-2xl font-semibold">Revenue</h1>
         <p className="text-sm text-muted-foreground">MRR, point sales, and feature adoption over the last 30 days.</p>

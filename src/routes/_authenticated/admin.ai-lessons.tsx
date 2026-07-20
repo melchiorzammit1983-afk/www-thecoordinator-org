@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SafetyBanner } from "@/components/ai/SafetyBanner";
+import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 type LessonKind = "parse_pattern" | "qa" | "suggestion_rule" | "signal_fix";
 
@@ -51,7 +52,8 @@ function AiLessonsAdmin() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="p-6 space-y-4 max-w-6xl mx-auto">
+      <AdminAiHeaderTabs active="lessons" />
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <GraduationCap className="h-6 w-6 text-primary" /> AI Lessons — curation

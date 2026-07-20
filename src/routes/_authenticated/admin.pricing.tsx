@@ -21,6 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FEATURE_CATALOG } from "@/lib/features";
 import { CompanyBillingDialog } from "@/components/admin/CompanyBillingDialog";
+import { AdminBillingHeaderTabs } from "@/components/admin/AdminBillingHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/pricing")({
   component: PricingAdmin,
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/_authenticated/admin/pricing")({
 function PricingAdmin() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <AdminBillingHeaderTabs active="pricing" />
       <div>
         <h1 className="text-2xl font-semibold">Pricing</h1>
         <p className="text-sm text-muted-foreground">Set plans, point packs, and per-feature costs.</p>
@@ -159,7 +161,12 @@ function PointPacksCard() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Point packs</CardTitle>
+        <div>
+          <CardTitle>Point packs</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Mark one pack as the <strong>reference rate</strong> — it becomes the benchmark used to display EUR-equivalent values for point costs across the app.
+          </p>
+        </div>
         <Button size="sm" variant="outline" onClick={() => upMut.mutate({ name: "New pack", points: 100, price: 10, sort_order: (packs?.length ?? 0) + 1, is_active: true })}>
           <Plus className="h-4 w-4 mr-1" /> Add pack
         </Button>
@@ -168,7 +175,7 @@ function PointPacksCard() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead><TableHead>Points</TableHead><TableHead>Price (€)</TableHead><TableHead>Active</TableHead><TableHead></TableHead>
+              <TableHead>Name</TableHead><TableHead>Points</TableHead><TableHead>Price (€)</TableHead><TableHead>Active</TableHead><TableHead>Reference rate</TableHead><TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -185,9 +192,15 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
   const [points, setPoints] = useState(String(pack.points));
   const [price, setPrice] = useState(String(pack.price));
   const [active, setActive] = useState(pack.is_active);
+  const [isRef, setIsRef] = useState<boolean>(!!pack.is_reference_rate);
   return (
     <TableRow>
-      <TableCell><Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" /></TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
+          {pack.is_reference_rate && <Badge variant="default" className="whitespace-nowrap">Reference rate</Badge>}
+        </div>
+      </TableCell>
       <TableCell><Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell>
@@ -195,8 +208,13 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
           <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Off"}</Badge>
         </button>
       </TableCell>
+      <TableCell>
+        <button type="button" onClick={() => setIsRef(!isRef)} title="Only one pack can be the reference rate">
+          <Badge variant={isRef ? "default" : "outline"}>{isRef ? "Reference" : "Set as reference"}</Badge>
+        </button>
+      </TableCell>
       <TableCell className="text-right space-x-1">
-        <Button size="sm" variant="ghost" onClick={() => onSave({ id: pack.id, name, points: Number(points), price: Number(price), sort_order: pack.sort_order ?? 0, is_active: active })}>
+        <Button size="sm" variant="ghost" onClick={() => onSave({ id: pack.id, name, points: Number(points), price: Number(price), sort_order: pack.sort_order ?? 0, is_active: active, is_reference_rate: isRef })}>
           <Save className="h-4 w-4" />
         </Button>
         <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
