@@ -338,12 +338,16 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
         .from("watchtower_settings")
         .update({ enabled: false, updated_at: new Date().toISOString() })
         .eq("user_id", context.userId);
-      const isFeatureDisabled = /feature_disabled/i.test(chargeErr ?? "");
-      return {
-        ok: false,
-        reason: isFeatureDisabled ? ("feature_disabled" as const) : ("insufficient_points" as const),
-        message: chargeErr,
-      };
+      const err = chargeErr ?? "";
+      // Distinguish: user opt-out (Settings → Features) vs admin catalog / entitlement disable vs no points.
+      const isUserOptOut = /feature_disabled_by_user/i.test(err);
+      const isAdminDisabled = !isUserOptOut && /feature_disabled|feature_capped/i.test(err);
+      const reason = isUserOptOut
+        ? ("feature_disabled" as const)
+        : isAdminDisabled
+          ? ("feature_unavailable" as const)
+          : ("insufficient_points" as const);
+      return { ok: false, reason, message: chargeErr };
     }
 
     // Scan today's + upcoming (24h) active jobs

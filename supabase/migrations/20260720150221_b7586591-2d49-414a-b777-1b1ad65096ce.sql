@@ -1,0 +1,1 @@
+UPDATE public.ai_feature_costs SET enabled = true, updated_at = now() WHERE feature_key = 'ai_watchtower_scan';
