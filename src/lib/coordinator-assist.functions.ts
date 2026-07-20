@@ -330,6 +330,8 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     // All soft-metered (block_on_empty=false).
     const meter = async (featureKey: "assistant_qa", note: string) => {
       try {
+        const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
+        await assertUserFeatureEnabled(supabaseAdmin, company.id, "ai_coordinator_assist");
         await supabaseAdmin.rpc("spend_points", {
           _company_id: company.id,
           _feature_key: featureKey,

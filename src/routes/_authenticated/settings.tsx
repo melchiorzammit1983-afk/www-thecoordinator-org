@@ -13,6 +13,14 @@ import { AI_TOGGLES, type AiToggleKey, type AiToggleCategory } from "@/lib/user-
 import { usePreferences, useUpdatePreferences, useResetPreferences } from "@/hooks/use-preferences";
 import { useFeatures } from "@/hooks/use-features";
 import { TAB_CATALOG, tabsByFeatureVisible, resolveMobileLayout } from "@/lib/tab-catalog";
+import { TOGGLEABLE_FEATURES } from "@/lib/feature-descriptions";
+import { useFeaturePrefs, useSetFeaturePref } from "@/hooks/use-feature-prefs";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { listAiFeatureCosts } from "@/lib/billing.functions";
+import { useReferencePack } from "@/hooks/use-reference-rate";
+import { formatPoints } from "@/lib/points-eur";
+import { Wallet } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — The Coordinator" }] }),
@@ -108,6 +116,10 @@ function SettingsPage() {
             onChange={(v) => toggleOne(t.key, v)} />
         ))}
       </Section>
+
+      {/* Per-feature opt-out — separate from the AI master switch */}
+      <FeatureUsageSection />
+
 
       {/* Appearance */}
       <Section title="Appearance" icon={Palette}>
@@ -205,7 +217,72 @@ function ToggleRow({ label, description, checked, onChange }: {
   );
 }
 
-// ---------------- Mobile layout editor ----------------
+// ---------------- Per-feature opt-out ----------------
+
+function FeatureUsageSection() {
+  const { prefs, isEnabled } = useFeaturePrefs();
+  const setPref = useSetFeaturePref();
+  const listCostsFn = useServerFn(listAiFeatureCosts);
+  const { data: costs } = useQuery<Array<{ feature_key: string; points_cost: number | string }>>({
+    queryKey: ["ai-feature-costs"],
+    queryFn: () => listCostsFn() as any,
+    staleTime: 5 * 60_000,
+  });
+  const pack = useReferencePack();
+
+  const groups: Record<string, typeof TOGGLEABLE_FEATURES> = {};
+  for (const f of TOGGLEABLE_FEATURES) {
+    (groups[f.group] ||= []).push(f);
+  }
+  const groupOrder: Array<keyof typeof groups> = ["assistant", "extraction", "ops", "flights", "routing"];
+  const groupLabels: Record<string, string> = {
+    assistant: "Assistant", extraction: "Trip extraction", ops: "Automation",
+    flights: "Flights & vessels", routing: "Live routing",
+  };
+
+  function costLabel(key: string): string {
+    const c = (costs ?? []).find((r) => r.feature_key === key);
+    if (!c) return "Free";
+    const pts = Number(c.points_cost);
+    if (!pts || pts <= 0) return "Free";
+    return `${formatPoints(pts, pack)} per use`;
+  }
+
+  return (
+    <Section title="Feature usage & cost" icon={Wallet} action={
+      <span className="text-[10px] text-muted-foreground">Turn off features you don't want to pay for</span>
+    }>
+      {groupOrder.map((g) => {
+        const items = groups[g];
+        if (!items?.length) return null;
+        return (
+          <div key={g as string}>
+            <SubHeading>{groupLabels[g as string] ?? String(g)}</SubHeading>
+            {items.map((f) => (
+              <div key={f.key} className="flex items-start gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{f.label}</div>
+                  <div className="text-xs text-muted-foreground">{f.description}</div>
+                  <div className="mt-1 text-[11px] font-medium text-foreground/70">{costLabel(f.key)}</div>
+                </div>
+                <Switch
+                  className="mt-1 shrink-0"
+                  checked={isEnabled(f.key)}
+                  onCheckedChange={(v) => setPref.mutate(
+                    { feature_key: f.key, enabled: v },
+                    { onSuccess: () => toast.success(v ? `${f.label} enabled` : `${f.label} disabled`) },
+                  )}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </Section>
+  );
+}
+
+
 
 function MobileLayoutSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { prefs } = usePreferences();

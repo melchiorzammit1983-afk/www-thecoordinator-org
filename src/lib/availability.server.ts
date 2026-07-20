@@ -137,6 +137,8 @@ export async function tryAutoForward(jobId: string, reason: "off_hours" | "unans
 
   // Charge points (soft — never blocks the hop)
   try {
+    const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
+    await assertUserFeatureEnabled(sb, originCompanyId, "trip_auto_forward");
     await sb.rpc("spend_points", {
       _company_id: originCompanyId,
       _feature_key: "trip_auto_forward",

@@ -21,6 +21,7 @@ import {
   bulkSetFeatureEntitlements,
 } from "@/lib/admin.functions";
 import { AI_FEATURE_KEYS, type FeatureKey } from "@/lib/features";
+import { FeatureInfoTooltip } from "@/components/features/FeatureInfoTooltip";
 
 type Row = {
   key: FeatureKey;
@@ -181,6 +182,7 @@ function FeatureRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <div className="font-medium text-sm">{row.label}</div>
+          <FeatureInfoTooltip featureKey={row.key} fallbackDescription={row.description} />
           {!row.active ? (
             <Badge variant="destructive" className="text-[10px]">Off</Badge>
           ) : row.has_override ? (
