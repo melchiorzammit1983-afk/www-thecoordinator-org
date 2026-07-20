@@ -5659,7 +5659,7 @@ async function loadActivePartners(
  * flow used inline by `applyAiCommandActions`'s "dispatch" branch. Callable
  * from applyAutoCoordinateProposal so the two paths cannot drift.
  */
-async function dispatchJobToPartner(
+export async function dispatchJobToPartnerInternal(
   sb: Awaited<ReturnType<typeof getAdminClient>>,
   callerCompanyId: string,
   jobId: string,
