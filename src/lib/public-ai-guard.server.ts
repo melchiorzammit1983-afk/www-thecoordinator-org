@@ -33,7 +33,7 @@ type Faq = { keywords: string[][]; answer: string };
 // matcher conservative — we only short-circuit when we're confident.
 const FAQS: Faq[] = [
   {
-    keywords: [["what", "do"], ["what", "is"], ["what", "does"], ["about"], ["explain"]],
+    keywords: [["what", "do"], ["what", "is"], ["what", "does"], ["tell", "me"], ["explain", "product"], ["about", "product"], ["about", "platform"]],
     answer:
       "The Coordinators is a transport dispatch platform for hotels, shipping agents, and fleet owners in Malta. You create trips, assign drivers, track flights and vessels, share live trip links with clients, and hand off overflow jobs to trusted partners — all in one place. Want a quick demo? /request-access",
   },
