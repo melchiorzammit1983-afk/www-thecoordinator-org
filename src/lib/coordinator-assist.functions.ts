@@ -928,12 +928,53 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
     };
     let extracted = extractJson(content);
     let recoveredFromTruncation = false;
+
+    // Continuation retry: if the model got cut off mid-JSON on a long
+    // crew-change extraction, ask it to continue emitting ONLY the remaining
+    // raw JSON so we can concatenate and parse. Cheaper than re-running the
+    // whole prompt, and preserves already-emitted trips.
+    if (extracted === null && finishReason === "length" && !continuationUsed) {
+      continuationUsed = true;
+      const contMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        ...initialMessages,
+        { role: "assistant", content },
+        {
+          role: "user",
+          content:
+            "Your previous JSON was cut off. Continue emitting ONLY the remaining raw JSON so that concatenating it verbatim to your previous output produces one valid JSON object. Do not repeat any characters you already produced. Do not add prose, code fences, or a new JSON object. Just the missing tail, ending with the final closing brace.",
+        },
+      ];
+      const cont = await callModel(contMessages, initialMaxTokens);
+      if (cont.ok) {
+        content = content + cont.content;
+        finishReason = cont.finishReason;
+        totalInputTokens += cont.inputTokens;
+        totalOutputTokens += cont.outputTokens;
+        totalDurationMs += cont.durationMs;
+        extracted = extractJson(content);
+      }
+    }
+
     if (extracted === null && (finishReason === "length" || /^\s*[{[]/.test(content))) {
       const repaired = repairTruncatedJson(content);
       if (repaired) { extracted = repaired; recoveredFromTruncation = true; }
     }
-    const aigRunId = res.headers.get("X-Lovable-AIG-Run-ID");
-    const aigLogId = res.headers.get("X-Lovable-AIG-Log-ID");
+    const aigRunId = first.aigRunId;
+    const aigLogId = first.aigLogId;
+    try {
+      const { recordAiCost } = await import("./ai-cost.server");
+      await recordAiCost({
+        feature_key: "assistant_qa",
+        model: assistModel,
+        usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+        company_id: company.id,
+        actor_user_id: context.userId,
+        surface: "coordinator_assistant",
+        duration_ms: totalDurationMs,
+        aig_run_id: aigRunId ?? undefined,
+        aig_log_id: aigLogId ?? undefined,
+      });
+    } catch { /* noop */ }
     try {
       const { logRawAiResponse } = await import("./ai-raw-log.server");
       await logRawAiResponse({
@@ -944,13 +985,18 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
         aig_log_id: aigLogId,
         finish_reason: finishReason,
         parse_ok: extracted !== null,
-        parse_error: extracted === null ? "extractJson returned null" : (recoveredFromTruncation ? "recovered_from_truncation" : null),
+        parse_error: extracted === null ? "extractJson returned null" : (recoveredFromTruncation ? "recovered_from_truncation" : (continuationUsed ? "recovered_via_continuation" : null)),
         raw_content: content,
         company_id: company.id,
         actor_user_id: context.userId,
-        meta: { message_length: data.message?.length ?? 0, recovered: recoveredFromTruncation },
+        meta: {
+          message_length: data.message?.length ?? 0,
+          recovered: recoveredFromTruncation,
+          continuation_used: continuationUsed,
+        },
       });
     } catch { /* noop */ }
+
     if (extracted === null) {
       if (finishReason === "length") {
         return answer("The AI response was cut off before I could finish extracting the trips. Try pasting fewer trips at once, or split the message into two.");
