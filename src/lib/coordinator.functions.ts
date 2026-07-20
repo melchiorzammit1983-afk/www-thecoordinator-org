@@ -5724,21 +5724,35 @@ export async function runAutoCoordinate(
   }
   await assertFeatureEnabled(companyId, "ai_auto_coordinate");
 
-  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  // Active unassigned trips = what's visible on the coordinator board.
+  // Include from ~1h ago (in-flight backlog) through the future.
+  const pastCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const historyCutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  const [{ data: jobs }, { data: drivers }, { data: history }, partners] = await Promise.all([
+  const [{ data: jobs }, { data: drivers }, { data: assignedJobs }, { data: history }, partners] = await Promise.all([
     sb
       .from("jobs")
-      .select("id, name, surname, from_location, to_location, pickup_at, time, date, quantity")
+      .select(
+        "id, trip_no, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_at, time, date, status, route_duration_sec, pax(name)",
+      )
       .eq("company_id", companyId)
       .is("driver_id", null)
-      .or(`pickup_at.gte.${cutoff},pickup_at.is.null`)
+      .not("status", "in", "(completed,cancelled)")
+      .or(`pickup_at.gte.${pastCutoff},pickup_at.is.null`)
       .order("pickup_at", { ascending: true, nullsFirst: false })
-      .limit(120),
-    sb.from("drivers").select("id, name").eq("company_id", companyId).neq("status", "offline").limit(60),
+      .limit(200),
+    sb.from("drivers").select("id, name, status").eq("company_id", companyId).neq("status", "offline").limit(60),
+    // Existing assignments used to detect scheduling conflicts.
     sb
       .from("jobs")
-      .select("from_location, to_location, pickup_at, time, name, surname, driver_id, drivers:driver_id(name)")
+      .select("id, driver_id, pickup_at, route_duration_sec")
+      .eq("company_id", companyId)
+      .not("driver_id", "is", null)
+      .not("status", "in", "(completed,cancelled)")
+      .gte("pickup_at", pastCutoff)
+      .limit(500),
+    sb
+      .from("jobs")
+      .select("from_location, to_location, pickup_at, time, driver_id, drivers:driver_id(name)")
       .eq("company_id", companyId)
       .eq("status", "completed")
       .gte("created_at", historyCutoff)
@@ -5848,22 +5862,124 @@ export async function runAutoCoordinate(
     for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
     return chunks;
   };
+
+  // ---- Build per-driver busy schedule so we never propose a conflicting assignment.
+  const BUFFER_MIN = 30;
+  const DEFAULT_TRIP_MIN = 45;
+  type Busy = { start: number; end: number };
+  const busyByDriver = new Map<string, Busy[]>();
+  for (const a of (assignedJobs ?? []) as any[]) {
+    if (!a.driver_id || !a.pickup_at) continue;
+    const start = new Date(a.pickup_at).getTime();
+    if (!Number.isFinite(start)) continue;
+    const durMin = Math.max(15, Math.round((Number(a.route_duration_sec) || DEFAULT_TRIP_MIN * 60) / 60));
+    const end = start + durMin * 60_000;
+    const arr = busyByDriver.get(a.driver_id) ?? [];
+    arr.push({ start, end });
+    busyByDriver.set(a.driver_id, arr);
+  }
+  const tripWindow = (j: any): Busy | null => {
+    if (!j.pickup_at) return null;
+    const start = new Date(j.pickup_at).getTime();
+    if (!Number.isFinite(start)) return null;
+    const durMin = Math.max(15, Math.round((Number(j.route_duration_sec) || DEFAULT_TRIP_MIN * 60) / 60));
+    return { start, end: start + durMin * 60_000 };
+  };
+  const driverFreeFor = (driverId: string, win: Busy | null): boolean => {
+    if (!win) return true; // undated trip — allow any driver
+    const busy = busyByDriver.get(driverId) ?? [];
+    const buf = BUFFER_MIN * 60_000;
+    return !busy.some((b) => win.start < b.end + buf && b.start < win.end + buf);
+  };
+  const reserveDriver = (driverId: string, win: Busy | null) => {
+    if (!win) return;
+    const arr = busyByDriver.get(driverId) ?? [];
+    arr.push(win);
+    busyByDriver.set(driverId, arr);
+  };
+
+  // Availability-first planner. Given a preferred driver (may be null), assign
+  // every trip to the preferred driver when free, else the next free driver,
+  // else fall back to an active partner. Returns the resulting proposals.
+  const planAvailability = (
+    trips: any[],
+    preferred: { id: string; name: string } | null,
+  ): { proposals: CoordProposal[]; leftoverIds: string[] } => {
+    const assignBuckets = new Map<string, { trip_ids: string[]; reasons: string[] }>();
+    const dispatchBuckets = new Map<string, { trip_ids: string[]; reasons: string[] }>();
+    const leftover: string[] = [];
+    const nameOf = (id: string) => drv.find((d: any) => d.id === id)?.name ?? "driver";
+    const partnerNameOf = (id: string) => partners.find((p) => p.id === id)?.name ?? "partner";
+    const push = (map: Map<string, { trip_ids: string[]; reasons: string[] }>, key: string, tripId: string, reason: string) => {
+      const b = map.get(key) ?? { trip_ids: [], reasons: [] };
+      b.trip_ids.push(tripId);
+      if (b.reasons.length < 3) b.reasons.push(reason);
+      map.set(key, b);
+    };
+    for (const j of trips) {
+      const win = tripWindow(j);
+      if (preferred && driverFreeFor(preferred.id, win)) {
+        reserveDriver(preferred.id, win);
+        push(assignBuckets, preferred.id, j.id, `Assigned to ${preferred.name} as requested.`);
+        continue;
+      }
+      const alt = drv.find((d: any) => d.id !== preferred?.id && driverFreeFor(d.id, win));
+      if (alt) {
+        reserveDriver(alt.id, win);
+        const why = preferred
+          ? `${preferred.name} is busy at ${j.pickup_at ? new Date(j.pickup_at).toLocaleString("en-GB", { timeZone: "Europe/Malta", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }) : "this time"} — assigning to ${alt.name} (next available).`
+          : `${alt.name} is available for this trip.`;
+        push(assignBuckets, alt.id, j.id, why);
+        continue;
+      }
+      const partner = partners[0];
+      if (partner) {
+        const why = preferred
+          ? `No driver free — dispatching to ${partner.name}.`
+          : `No local driver available — dispatching to ${partner.name}.`;
+        push(dispatchBuckets, partner.id, j.id, why);
+        continue;
+      }
+      leftover.push(j.id);
+    }
+    const proposals: CoordProposal[] = [];
+    for (const [driver_id, b] of assignBuckets) {
+      for (const trip_ids of makeChunks(b.trip_ids)) {
+        proposals.push({
+          kind: "assign",
+          trip_ids,
+          driver_id,
+          reason: `${nameOf(driver_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(0, 300),
+        });
+      }
+    }
+    for (const [partner_company_id, b] of dispatchBuckets) {
+      for (const trip_ids of makeChunks(b.trip_ids)) {
+        proposals.push({
+          kind: "dispatch",
+          trip_ids,
+          partner_company_id,
+          reason: `${partnerNameOf(partner_company_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(0, 300),
+        });
+      }
+    }
+    return { proposals, leftoverIds: leftover };
+  };
+
+  // Named target path — try target first, fall back to any available.
   if (resolved) {
-    const targetTrips = eligibleList.map((j: any) => j.id).filter(Boolean);
     let proposals: CoordProposal[] = [];
     if (resolved.type === "driver" && drv.some((d: any) => d.id === resolved.id)) {
-      proposals = makeChunks(targetTrips).map((trip_ids) => ({
-        kind: "assign" as const,
-        trip_ids,
-        driver_id: resolved.id,
-        reason: `${wantsTodayOnly ? "Today's" : "Eligible"} unassigned trip${trip_ids.length === 1 ? "" : "s"} should be assigned to ${resolved.name} as requested.`,
-      }));
+      const r = planAvailability(eligibleList, { id: resolved.id, name: resolved.name });
+      proposals = r.proposals;
     } else if (resolved.type === "partner" && partners.some((p) => p.id === resolved.id)) {
-      proposals = makeChunks(targetTrips).map((trip_ids) => ({
+      // Partner has no local schedule — dispatch everything to them in chunks.
+      const ids = eligibleList.map((j: any) => j.id).filter(Boolean);
+      proposals = makeChunks(ids).map((trip_ids) => ({
         kind: "dispatch" as const,
         trip_ids,
         partner_company_id: resolved.id,
-        reason: `${wantsTodayOnly ? "Today's" : "Eligible"} unassigned trip${trip_ids.length === 1 ? "" : "s"} should be dispatched to ${resolved.name} as requested.`,
+        reason: `Dispatching ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"} to ${resolved.name} as requested.`,
       }));
     }
     await chargePlanIfNeeded(proposals);
@@ -5875,11 +5991,24 @@ export async function runAutoCoordinate(
     return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
   }
 
+  // No target named. If directive is a simple assign/dispatch or empty, use
+  // deterministic availability planner. Otherwise fall through to the LLM
+  // for genuinely ambiguous plans (grouping, optimization).
+  const simpleAssignIntent = !directive || /\b(assign|dispatch|distribute|hand out|give out|clear|share)\b/.test(directiveText);
+  if (simpleAssignIntent) {
+    const r = planAvailability(planningList, null);
+    await chargePlanIfNeeded(r.proposals);
+    return { proposals: r.proposals, metering_mode: meteringMode, considered: planningList.length };
+  }
+
   const tripLines = planningList
-    .map(
-      (j: any) =>
-        `${j.id}: ${j.pickup_at ?? j.date + " " + (j.time ?? "??")} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
-    )
+    .map((j: any) => {
+      const paxNames = Array.isArray(j.pax) ? j.pax.map((p: any) => p?.name).filter(Boolean).join(", ") : "";
+      const when = j.pickup_at ?? `${j.date ?? ""} ${j.time ?? "??"}`.trim();
+      const from = j.pickup_display_name || j.from_location || "";
+      const to = j.dropoff_display_name || j.to_location || "";
+      return `${j.id}: ${when} | ${from} → ${to}${paxNames ? ` | pax: ${paxNames}` : ""}`;
+    })
     .join("\n");
   const driverLines = drv.map((d: any) => `${d.id}: ${d.name ?? ""}`).join("\n") || "(no free drivers)";
   const partnerLines = partners.map((p) => `${p.id}: ${p.name}`).join("\n") || "(no active partners)";
@@ -5888,12 +6017,11 @@ export async function runAutoCoordinate(
     pickup: h.from_location ?? "",
     dropoff: h.to_location ?? "",
     time: h.pickup_at ?? h.time ?? "",
-    client: `${h.name ?? ""} ${h.surname ?? ""}`.trim(),
     driver: h.drivers?.name ?? "",
   }));
   const historyBlock = historyList.length
     ? `PAST_30D_COMPLETED (${historyList.length}):\n${historyList
-        .map((r) => `${r.time} | ${r.pickup} → ${r.dropoff} | ${r.client} | drv:${r.driver}`)
+        .map((r) => `${r.time} | ${r.pickup} → ${r.dropoff} | drv:${r.driver}`)
         .join("\n")}`
     : "PAST_30D_COMPLETED: (none)";
 
@@ -5905,7 +6033,7 @@ export async function runAutoCoordinate(
     await buildSystemPrompt(
       companyId,
       `You are a transport dispatch autopilot. Look at the ENTIRE unassigned backlog and propose the minimum set of actions that clears it.\n` +
-        `Use PAST_30D_COMPLETED as reference memory to recognize recurring monthly patterns — regular clients, repeat routes, and drivers habitually paired with them — when grouping or assigning.\n` +
+        `Use PAST_30D_COMPLETED as reference memory to recognize recurring monthly patterns — repeat routes and drivers habitually paired with them — when grouping or assigning.\n` +
         `Return JSON: {"proposals":[\n` +
         `  {"kind":"group","trip_ids":["uuid",...],"reason":"..."},\n` +
         `  {"kind":"assign","trip_ids":["uuid",...],"driver_id":"uuid","reason":"..."},\n` +
@@ -5923,7 +6051,7 @@ export async function runAutoCoordinate(
   const partnerIdSet = new Set(partners.map((p) => p.id));
 
   const raw = Array.isArray(parsed?.proposals) ? parsed.proposals : [];
-  const proposals: CoordProposal[] = [];
+  let proposals: CoordProposal[] = [];
   for (const p of raw) {
     if (!p || typeof p !== "object") continue;
     const trip_ids = Array.isArray(p.trip_ids)
@@ -5951,6 +6079,13 @@ export async function runAutoCoordinate(
         reason: String(p.reason ?? "").slice(0, 300),
       });
     }
+  }
+
+  // If the LLM produced nothing useful, fall back to the availability planner
+  // so we always try to clear the backlog rather than returning an empty plan.
+  if (proposals.length === 0) {
+    const r = planAvailability(planningList, null);
+    proposals = r.proposals;
   }
 
   await chargePlanIfNeeded(proposals);
