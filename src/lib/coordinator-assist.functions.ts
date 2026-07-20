@@ -488,27 +488,28 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? partners.map((p) => `${p.id} — ${p.name}`).join("\n")
       : "(no active Collaborate partners)";
 
-    // Upcoming trips this company is currently the executor for. Used so the
-    // assistant can point at real trip IDs when the coordinator asks to hand
-    // work off (e.g. "close for the day, cover these"). Scoped to next 48h
-    // and to trips NOT already dispatched out to a partner.
+    // Upcoming trips this company owns or is currently the executor for. Used
+    // so the assistant can answer "what do I have today / tomorrow / this
+    // week" and point at real trip IDs when the coordinator asks to hand
+    // work off. Scoped to a 7-day forward window so questions about
+    // "tomorrow" and the rest of the week always resolve.
     const nowIso = new Date().toISOString();
-    const soonIso = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    const soonIso = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     const { data: upcomingRows } = await supabaseAdmin
       .from("jobs")
-      .select("id, trip_no, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname")
-      .eq("executor_company_id", company.id)
+      .select("id, trip_no, date, time, from_location, to_location, driver_id, dispatch_status, pickup_at, clientcompanyname, company_id, executor_company_id")
+      .or(`company_id.eq.${company.id},executor_company_id.eq.${company.id}`)
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", nowIso)
       .lte("pickup_at", soonIso)
       .order("pickup_at", { ascending: true })
-      .limit(15);
+      .limit(80);
     const upcoming = (upcomingRows ?? []) as any[];
     const upcomingBlock = upcoming.length
       ? upcoming
           .map((r) => `#${r.trip_no ?? "?"} · ${r.id} — ${r.date ?? ""} ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}${r.driver_id ? " · (driver assigned)" : " · (no driver)"}${r.dispatch_status === "pending" ? " · (already sent to partner)" : ""}`)
           .join("\n")
-      : "(none in the next 48h)";
+      : "(none in the next 7 days)";
 
     // Serial-number resolver: parse the coordinator's message for references
     // like "#123", "card 45", "trip 7" and look up the matching trips in this
