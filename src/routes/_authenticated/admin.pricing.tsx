@@ -21,6 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FEATURE_CATALOG } from "@/lib/features";
 import { CompanyBillingDialog } from "@/components/admin/CompanyBillingDialog";
+import { AdminBillingHeaderTabs } from "@/components/admin/AdminBillingHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/pricing")({
   component: PricingAdmin,
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/_authenticated/admin/pricing")({
 function PricingAdmin() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <AdminBillingHeaderTabs active="pricing" />
       <div>
         <h1 className="text-2xl font-semibold">Pricing</h1>
         <p className="text-sm text-muted-foreground">Set plans, point packs, and per-feature costs.</p>
