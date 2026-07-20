@@ -24,15 +24,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { listAiRules, upsertAiRule, deleteAiRule } from "@/lib/coordinator.functions";
+import { listAiRules, upsertAiRule, deleteAiRule, getAiConfig, saveAiConfig, aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
 import { listMyLessons, archiveMyLesson } from "@/lib/ai-lessons.functions";
 import { listAiAuditActions, upsertGlossaryTerm, undoAssistantAction } from "@/lib/ai-audit.functions";
 import { AiLearningTab } from "@/components/coordinator/AiLearningTab";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ai-center")({
   validateSearch: (s: Record<string, unknown>) => ({
     tab: (typeof s.tab === "string" ? s.tab : "knowledge") as
-      | "knowledge" | "agents" | "activity" | "learning",
+      | "knowledge" | "agents" | "activity" | "learning" | "toggles",
   }),
   component: AiBrainPage,
 });
