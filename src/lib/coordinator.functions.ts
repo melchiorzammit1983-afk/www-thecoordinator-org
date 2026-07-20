@@ -5845,7 +5845,12 @@ export async function runAutoCoordinate(
     return { proposals, metering_mode: meteringMode, considered: eligibleList.length };
   }
 
-  const tripLines = list
+  const planningList = eligibleList;
+  if (planningList.length === 0) {
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+  }
+
+  const tripLines = planningList
     .map(
       (j: any) =>
         `${j.id}: ${j.pickup_at ?? j.date + " " + (j.time ?? "??")} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
@@ -5868,15 +5873,7 @@ export async function runAutoCoordinate(
     : "PAST_30D_COMPLETED: (none)";
 
   const directiveBlock = directive
-    ? `\n\nCOORDINATOR DIRECTIVE (HARD instruction — the plan MUST satisfy this over general optimization):\n"${directive}"${
-        resolved
-          ? `\nResolved target: ${resolved.type} ${resolved.id} (${resolved.name}). ${
-              resolved.type === "driver"
-                ? "Prefer kind:\"assign\" proposals with this driver_id for as many eligible trips as possible."
-                : "Prefer kind:\"dispatch\" proposals with this partner_company_id for as many eligible trips as possible."
-            }`
-          : ""
-      }`
+    ? `\n\nCOORDINATOR DIRECTIVE (HARD instruction — the plan MUST satisfy this over general optimization):\n"${directive}"`
     : "";
 
   const parsed = await callGemini(
@@ -5896,7 +5893,7 @@ export async function runAutoCoordinate(
     { maxOutputTokens: 2000 },
   );
 
-  const tripIdSet = new Set(list.map((j: any) => j.id));
+  const tripIdSet = new Set(planningList.map((j: any) => j.id));
   const driverIdSet = new Set(drv.map((d: any) => d.id));
   const partnerIdSet = new Set(partners.map((p) => p.id));
 
@@ -5933,7 +5930,7 @@ export async function runAutoCoordinate(
 
   await chargePlanIfNeeded(proposals);
 
-  return { proposals, metering_mode: meteringMode, considered: list.length };
+  return { proposals, metering_mode: meteringMode, considered: planningList.length };
 }
 
 export const aiAutoCoordinate = createServerFn({ method: "POST" })
