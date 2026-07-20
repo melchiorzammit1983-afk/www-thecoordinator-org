@@ -1696,6 +1696,7 @@ function DriverAssignmentConflictHint({
   candidate,
   drivers,
   onPickDriver,
+  onSeverityChange,
 }: {
   driverId: string | null;
   jobId: string | null;
@@ -1711,6 +1712,7 @@ function DriverAssignmentConflictHint({
     | null;
   drivers: Driver[];
   onPickDriver: (id: string) => void;
+  onSeverityChange?: (s: "free" | "tight" | "conflict" | null) => void;
 }) {
   const fn = useServerFn(previewAssignmentConflicts);
   const suggestFn = useServerFn(suggestAlternativeDrivers);
