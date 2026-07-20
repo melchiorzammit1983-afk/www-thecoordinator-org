@@ -293,6 +293,13 @@ function ManualForm({
   });
   const preview = previewMut.data;
 
+  // Schedule-conflict gate: DriverAssignmentConflictHint reports severity;
+  // when it's "conflict" the coordinator must tick "Assign anyway" before
+  // submit is allowed. Prevents accidental double-booking of a driver.
+  const [conflictSeverity, setConflictSeverity] = useState<"free" | "tight" | "conflict" | null>(null);
+  const [assignAnyway, setAssignAnyway] = useState(false);
+  useEffect(() => { setAssignAnyway(false); }, [driverId, date, time, from, to]);
+  const hardBlocked = conflictSeverity === "conflict" && !assignAnyway;
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -385,7 +392,7 @@ function ManualForm({
   }, [from, to, etaFn, job?.id]);
 
   return (
-    <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
+    <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); if (hardBlocked) { toast.error("Driver has a schedule conflict — tick 'Assign anyway' to override, or pick another driver."); return; } mut.mutate(); }}>
       {prefill && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           Prefilled from paste — fill in any missing fields highlighted below.
@@ -553,6 +560,7 @@ function ManualForm({
               jobId={job?.id ?? null}
               drivers={drivers}
               onPickDriver={(id) => setDriverId(id)}
+              onSeverityChange={setConflictSeverity}
               candidate={
                 job
                   ? null
@@ -566,6 +574,21 @@ function ManualForm({
                     }
               }
             />
+            {conflictSeverity === "conflict" && driverId !== "__none__" && (
+              <label className="mt-1 flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] leading-snug text-red-900 dark:text-red-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={assignAnyway}
+                  onChange={(e) => setAssignAnyway(e.target.checked)}
+                />
+                <span>
+                  <span className="font-semibold">Assign anyway</span> — I understand this driver's
+                  schedule collides with another trip and I take responsibility for the double-booking.
+                </span>
+              </label>
+            )}
+
           </div>
           <LabelPicker value={labelIds} onChange={setLabelIds} />
           <ToggleRow
@@ -1673,6 +1696,7 @@ function DriverAssignmentConflictHint({
   candidate,
   drivers,
   onPickDriver,
+  onSeverityChange,
 }: {
   driverId: string | null;
   jobId: string | null;
@@ -1688,6 +1712,7 @@ function DriverAssignmentConflictHint({
     | null;
   drivers: Driver[];
   onPickDriver: (id: string) => void;
+  onSeverityChange?: (s: "free" | "tight" | "conflict" | null) => void;
 }) {
   const fn = useServerFn(previewAssignmentConflicts);
   const suggestFn = useServerFn(suggestAlternativeDrivers);
@@ -1766,6 +1791,10 @@ function DriverAssignmentConflictHint({
     );
   }
   const data = q.data;
+  useEffect(() => {
+    if (!enabled) onSeverityChange?.(null);
+    else if (data) onSeverityChange?.(data.severity);
+  }, [enabled, data, onSeverityChange]);
   if (!data || data.severity === "free") {
     if (data?.severity === "free") {
       return (

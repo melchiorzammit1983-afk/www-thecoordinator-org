@@ -24,9 +24,28 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
  *   slack < 0                      => "conflict"
  */
 
-const PAX_DROPOFF_BUFFER_MIN = 10;
+const DEFAULT_PAX_DROPOFF_BUFFER_MIN = 10;
 const TIGHT_THRESHOLD_MIN = 5;
 const AVG_KMH_FALLBACK = 45; // used only if we truly cannot get a duration
+
+/**
+ * Loads the per-company boarding buffer (in minutes) that padd the gap
+ * between one trip's drop-off + handover and the next trip's pickup.
+ * Falls back to DEFAULT_PAX_DROPOFF_BUFFER_MIN when the column is null or
+ * the company row can't be resolved.
+ */
+async function loadCompanyBufferMin(supabase: any, userId: string): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from("companies")
+      .select("boarding_buffer_min")
+      .eq("owner_user_id", userId)
+      .maybeSingle();
+    const n = Number((data as any)?.boarding_buffer_min);
+    if (Number.isFinite(n) && n >= 0 && n <= 120) return n;
+  } catch { /* fall through */ }
+  return DEFAULT_PAX_DROPOFF_BUFFER_MIN;
+}
 
 export type ConflictSeverity = "free" | "tight" | "conflict";
 
@@ -182,7 +201,7 @@ function pickLabel(j: MinJob, kind: "pickup" | "dropoff"): string {
   return j.dropoff_display_name || j.to_location || "drop-off";
 }
 
-async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
+async function evaluatePairs(jobs: MinJob[], bufferMin: number = DEFAULT_PAX_DROPOFF_BUFFER_MIN): Promise<ConflictPair[]> {
   const sorted = jobs
     .filter((j) => j.pickup_at)
     .sort(
@@ -201,7 +220,7 @@ async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
     const prevDur = prev.route_duration_sec ?? null;
     const prevEnd = prevDur != null ? prevStart + prevDur * 1000 : null;
     const handoverReady =
-      prevEnd != null ? prevEnd + PAX_DROPOFF_BUFFER_MIN * 60_000 : null;
+      prevEnd != null ? prevEnd + bufferMin * 60_000 : null;
 
     // Transit prev.dropoff -> next.pickup. Prefer Routes API for accuracy,
     // fall back to a rough straight-line estimate when unavailable.
@@ -225,7 +244,7 @@ async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
 
     const prevEndLbl = prevEnd ? fmtHM(new Date(prevEnd).toISOString()) : "?";
     const nextLbl = fmtHM(next.pickup_at);
-    const buffer = PAX_DROPOFF_BUFFER_MIN;
+    const buffer = bufferMin;
     const transitMin = Math.round(transitSec / 60);
     const reason =
       severity === "conflict"
@@ -245,7 +264,7 @@ async function evaluatePairs(jobs: MinJob[]): Promise<ConflictPair[]> {
       severity,
       reason,
       transit_sec: transitSec,
-      buffer_min: PAX_DROPOFF_BUFFER_MIN,
+      buffer_min: bufferMin,
       prev_duration_sec: prevDur,
       prev_from_label: pickLabel(prev, "pickup"),
       prev_to_label: pickLabel(prev, "dropoff"),
@@ -288,7 +307,7 @@ export const checkDriverConflicts = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const jobs = await loadDriverDayJobs(context.supabase, data.driver_id, data.date);
-    const pairs = await evaluatePairs(jobs);
+    const pairs = await evaluatePairs(jobs, await loadCompanyBufferMin(context.supabase, context.userId));
     // Roll up per-job worst severity so UI can badge any job that is part
     // of a conflict pair without re-doing the math.
     const perJob: Record<string, { severity: ConflictSeverity; pairs: ConflictPair[] }> = {};
@@ -363,7 +382,7 @@ export const previewAssignmentConflicts = createServerFn({ method: "POST" })
       ...existing.filter((j) => j.id !== candidate!.id),
       candidate,
     ];
-    const pairs = await evaluatePairs(merged);
+    const pairs = await evaluatePairs(merged, await loadCompanyBufferMin(context.supabase, context.userId));
     const involved = pairs.filter(
       (p) => p.prev_job_id === candidate!.id || p.next_job_id === candidate!.id,
     );
@@ -442,7 +461,7 @@ export const suggestAlternativeDrivers = createServerFn({ method: "POST" })
       targets.map(async (driver_id) => {
         const existing = await loadDriverDayJobs(context.supabase, driver_id, date);
         const merged = [...existing.filter((j) => j.id !== candidate!.id), candidate!];
-        const pairs = await evaluatePairs(merged);
+        const pairs = await evaluatePairs(merged, await loadCompanyBufferMin(context.supabase, context.userId));
         const involved = pairs.filter(
           (p) => p.prev_job_id === candidate!.id || p.next_job_id === candidate!.id,
         );
@@ -463,4 +482,33 @@ export const suggestAlternativeDrivers = createServerFn({ method: "POST" })
       return b.min_slack_min - a.min_slack_min;
     });
     return { suggestions: results };
+  });
+
+/**
+ * Reads the coordinator's company-wide boarding buffer (minutes between one
+ * trip ending and the next pickup — accounting for drop-off + handover time).
+ */
+export const getBoardingBuffer = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const min = await loadCompanyBufferMin(context.supabase, context.userId);
+    return { boarding_buffer_min: min };
+  });
+
+export const setBoardingBuffer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ boarding_buffer_min: z.number().int().min(0).max(120) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: co } = await context.supabase
+      .from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    if (!co) throw new Error("No company assigned to this account");
+    const { error } = await supabaseAdmin
+      .from("companies")
+      .update({ boarding_buffer_min: data.boarding_buffer_min } as never)
+      .eq("id", (co as any).id);
+    if (error) throw new Error(error.message);
+    return { ok: true, boarding_buffer_min: data.boarding_buffer_min };
   });

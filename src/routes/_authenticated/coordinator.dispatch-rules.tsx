@@ -20,6 +20,7 @@ import {
   applyDispatchRuleProposal,
   type DispatchRule,
 } from "@/lib/dispatch-rules.functions";
+import { getBoardingBuffer, setBoardingBuffer } from "@/lib/scheduling.functions";
 import { listDrivers } from "@/lib/coordinator.functions";
 import { listConnections } from "@/lib/collab.functions";
 
@@ -78,6 +79,10 @@ function DispatchRulesPage() {
           Rules never auto-assign silently — matches surface here for your confirmation.
         </p>
       </div>
+
+      <BoardingBufferCard />
+
+
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -252,5 +257,65 @@ function RuleEditor({ initial, onClose, onSaved }: { initial: Partial<DispatchRu
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function BoardingBufferCard() {
+  const qc = useQueryClient();
+  const getFn = useServerFn(getBoardingBuffer);
+  const setFn = useServerFn(setBoardingBuffer);
+  const q = useQuery({
+    queryKey: ["boarding-buffer"],
+    queryFn: () => getFn() as Promise<{ boarding_buffer_min: number }>,
+  });
+  const [draft, setDraft] = useState<number | null>(null);
+  const value = draft ?? q.data?.boarding_buffer_min ?? 10;
+  const save = useMutation({
+    mutationFn: () => setFn({ data: { boarding_buffer_min: value } }),
+    onSuccess: () => {
+      toast.success("Boarding buffer updated");
+      setDraft(null);
+      qc.invalidateQueries({ queryKey: ["boarding-buffer"] });
+      qc.invalidateQueries({ queryKey: ["driver-conflicts"] });
+      qc.invalidateQueries({ queryKey: ["assignment-preview"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Boarding buffer</CardTitle>
+        <CardDescription>
+          Minutes reserved after a drop-off for the passengers to disembark before the
+          driver can start their next pickup. Used by conflict warnings on trip cards,
+          the driver picker, and AI Auto-Coordinate.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-end gap-3">
+          <div className="space-y-1.5">
+            <Label>Minutes</Label>
+            <Input
+              type="number"
+              min={0}
+              max={120}
+              value={value}
+              onChange={(e) => setDraft(Math.max(0, Math.min(120, Number(e.target.value) || 0)))}
+              className="w-28"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => save.mutate()}
+            disabled={save.isPending || draft === null || draft === q.data?.boarding_buffer_min}
+          >
+            {save.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />} Save
+          </Button>
+          <div className="text-xs text-muted-foreground pb-2">
+            Default 10 min. Raise it for VIP handovers or luggage-heavy runs.
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
