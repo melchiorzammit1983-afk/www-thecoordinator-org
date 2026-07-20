@@ -392,7 +392,7 @@ function ManualForm({
   }, [from, to, etaFn, job?.id]);
 
   return (
-    <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); mut.mutate(); }}>
+    <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); if (hardBlocked) { toast.error("Driver has a schedule conflict — tick 'Assign anyway' to override, or pick another driver."); return; } mut.mutate(); }}>
       {prefill && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           Prefilled from paste — fill in any missing fields highlighted below.
