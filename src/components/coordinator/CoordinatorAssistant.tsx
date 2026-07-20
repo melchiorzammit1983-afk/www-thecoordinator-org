@@ -15,7 +15,7 @@ import { useSpeechRecognition, speak, cancelSpeak, isSpeechSynthesisSupported } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { askCoordinatorAssistant, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips } from "@/lib/coordinator-assist.functions";
+import { askCoordinatorAssistant, applyAssistantSettingChange, getJobForAssistant, meterAssistantConfirm, stageAssistantActions, type AssistantResult, type AssistantDraft, type AssistantBatch, type AssistantDataFix, type AssistantPartnerSuggest, type AssistantCommandActions, type AssistantMergeTrips, type AssistantSettingChange, type AssistantDataCheck } from "@/lib/coordinator-assist.functions";
 import { logAssistantAction } from "@/lib/assistant-learning.functions";
 import { recordAiAuditAction } from "@/lib/ai-audit.functions";
 import { createJob, updateJob, updateDriverBasic, applyAiCommandActions, mergeTrips, aiAutoCoordinate, applyAutoCoordinateProposal } from "@/lib/coordinator.functions";
@@ -102,6 +102,8 @@ type ChatMsg =
   | { id: string; role: "assistant"; fix: AssistantDataFix; rawMessage?: string }
   | { id: string; role: "assistant"; suggest: AssistantPartnerSuggest; rawMessage?: string }
   | { id: string; role: "assistant"; merge: AssistantMergeTrips; rawMessage?: string; applied?: boolean }
+  | { id: string; role: "assistant"; setting: AssistantSettingChange; rawMessage?: string; applied?: boolean }
+  | { id: string; role: "assistant"; check: AssistantDataCheck; rawMessage?: string }
   | {
       id: string;
       role: "assistant";
@@ -340,6 +342,8 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           if ("merge" in m) return { role: "assistant" as const, text: m.merge.summary };
           if ("actions" in m) return { role: "assistant" as const, text: m.actions.summary };
           if ("autoCoord" in m) return { role: "assistant" as const, text: m.autoCoord.intro };
+          if ("setting" in m) return { role: "assistant" as const, text: m.setting.summary };
+          if ("check" in m) return { role: "assistant" as const, text: m.check.summary };
           return { role: "assistant" as const, text: "" };
         });
       return (await askFn({
@@ -397,12 +401,19 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           directive: result.directive ?? null,
           resolved_target: result.resolved_target ?? null,
         });
+      } else if (result.kind === "setting_change") {
+        setMessages((m) => [...m, { id, role: "assistant", setting: result, rawMessage }]);
+        maybeSpeak(result.summary);
+      } else if (result.kind === "data_check") {
+        setMessages((m) => [...m, { id, role: "assistant", check: result, rawMessage }]);
+        maybeSpeak(result.summary);
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
       }
 
     },
+
 
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : "Assistant failed. Try again.";
@@ -1112,6 +1123,31 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     },
   });
 
+  const applySettingFn = useServerFn(applyAssistantSettingChange);
+  const applySetting = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find(
+        (x): x is Extract<ChatMsg, { setting: AssistantSettingChange }> =>
+          x.id === msgId && "setting" in x,
+      );
+      if (!msg) throw new Error("Setting not found");
+      await applySettingFn({
+        data: { target: "ai_configuration", key: msg.setting.key, new_value: msg.setting.new_value },
+      });
+      return { msgId, label: msg.setting.label, new_value: msg.setting.new_value };
+    },
+    onSuccess: ({ msgId, label, new_value }) => {
+      setMessages((m) => m.map((x) => (x.id === msgId && "setting" in x ? { ...x, applied: true } : x)));
+      toast.success(`${label} is now ${new_value ? "on" : "off"}.`);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not update setting.";
+      toast.error(msg);
+    },
+  });
+
+
+
   const toggleActionRow = (msgId: string, idx: number) => {
     setMessages((m) =>
       m.map((x) => {
@@ -1637,6 +1673,62 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   );
                 }
+                if ("setting" in m) {
+                  const s = m.setting;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="w-full max-w-[92%] rounded-md border bg-muted/40 p-3 text-sm space-y-2">
+                        <div className="font-medium">{s.summary}</div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="rounded bg-background px-2 py-0.5 border">{s.label}</span>
+                          <span className="text-muted-foreground line-through">{s.old_value ? "on" : "off"}</span>
+                          <span>→</span>
+                          <span className="font-semibold">{s.new_value ? "on" : "off"}</span>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          {m.applied ? (
+                            <span className="text-xs text-muted-foreground">Applied</span>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => setMessages((ms) => ms.map((x) => x.id === m.id && "setting" in x ? { ...x, applied: true } : x))}>Dismiss</Button>
+                              <Button size="sm" disabled={applySetting.isPending} onClick={() => applySetting.mutate(m.id)}>Confirm</Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if ("check" in m) {
+                  const c = m.check;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="w-full max-w-[92%] rounded-md border bg-muted/40 p-3 text-sm space-y-2">
+                        <div className="font-medium">{c.summary}</div>
+                        {c.items.length > 0 && (
+                          <ul className="space-y-1">
+                            {c.items.map((it, i) => (
+                              <li key={`${it.job_id}-${i}`} className="rounded border bg-background px-2 py-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium truncate">{it.label}</span>
+                                  <span className="rounded bg-muted px-1.5 py-0.5 uppercase tracking-wide text-[10px]">{it.issue_type.replace("_", " ")}</span>
+                                </div>
+                                <div className="mt-0.5 text-muted-foreground">{it.detail}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                if (!("text" in m)) return null;
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -1648,6 +1740,7 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   </div>
                 );
+
               })}
               {ask.isPending && (
                 <div className="flex gap-2">

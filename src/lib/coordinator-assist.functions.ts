@@ -188,6 +188,43 @@ export type AssistantAutoCoordinate = {
     | null;
 };
 
+/**
+ * Confirm-first setting toggle. Currently scoped to `ai_configuration`
+ * (owner-controllable). Feature-entitlement changes are admin-only per RLS
+ * (see `company_feature_entitlements` policies) — the assistant surfaces
+ * those as an answer telling the coordinator to ask their admin.
+ */
+export type AssistantSettingChange = {
+  kind: "setting_change";
+  target: "ai_configuration";
+  key:
+    | "auto_assign_enabled"
+    | "auto_extract_bulk"
+    | "auto_reply_drafts"
+    | "ai_command_enabled"
+    | "voice_to_trip_enabled"
+    | "auto_coordinate_enabled";
+  label: string;
+  old_value: boolean;
+  new_value: boolean;
+  summary: string;
+};
+
+/**
+ * On-demand mistake/duplicate scan. READ-ONLY — surfaces trips the
+ * coordinator should manually review. Metered once per check via the
+ * `assistant_data_check` feature. Runs SQL against this company only.
+ */
+export type AssistantDataCheck = {
+  kind: "data_check";
+  items: Array<{
+    job_id: string;
+    label: string;
+    issue_type: "duplicate" | "missing_field" | "stale_pending";
+    detail: string;
+  }>;
+  summary: string;
+};
 
 export type AssistantResult =
   | AssistantAnswer
@@ -197,7 +234,20 @@ export type AssistantResult =
   | AssistantPartnerSuggest
   | AssistantCommandActions
   | AssistantMergeTrips
-  | AssistantAutoCoordinate;
+  | AssistantAutoCoordinate
+  | AssistantSettingChange
+  | AssistantDataCheck;
+
+/** Human labels for the six ai_configuration toggles the assistant can flip. */
+const AI_CONFIG_TOGGLE_LABELS: Record<AssistantSettingChange["key"], string> = {
+  auto_assign_enabled: "Auto-assign driver",
+  auto_extract_bulk: "AI bulk-paste extraction",
+  auto_reply_drafts: "AI reply drafter",
+  ai_command_enabled: "AI command bar",
+  voice_to_trip_enabled: "Voice-note → trip",
+  auto_coordinate_enabled: "AI Auto-Coordinate",
+};
+
 
 /**
  * Detect silent passenger-parsing failures so the UI can warn the coordinator
@@ -336,6 +386,33 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .order("created_at", { ascending: true })
       .limit(50);
     const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
+
+    // ---- Current AI toggles + feature entitlements (for setting_change / cost advisor) ----
+    const [{ data: cfgRow }, { data: entRows }] = await Promise.all([
+      supabaseAdmin.from("ai_configuration").select("*").eq("company_id", company.id).maybeSingle(),
+      supabaseAdmin
+        .from("company_feature_entitlements")
+        .select("feature, enabled, expires_at")
+        .eq("company_id", company.id),
+    ]);
+    const aiConfig = {
+      auto_assign_enabled: cfgRow?.auto_assign_enabled ?? false,
+      auto_extract_bulk: cfgRow?.auto_extract_bulk ?? true,
+      auto_reply_drafts: cfgRow?.auto_reply_drafts ?? true,
+      ai_command_enabled: cfgRow?.ai_command_enabled ?? true,
+      voice_to_trip_enabled: cfgRow?.voice_to_trip_enabled ?? true,
+      auto_coordinate_enabled: cfgRow?.auto_coordinate_enabled ?? false,
+    };
+    const aiConfigBlock = (Object.keys(aiConfig) as (keyof typeof aiConfig)[])
+      .map((k) => `- ${k} (${AI_CONFIG_TOGGLE_LABELS[k]}): ${aiConfig[k] ? "ON" : "OFF"}`)
+      .join("\n");
+    const entitlements = (entRows ?? []) as { feature: string; enabled: boolean; expires_at: string | null }[];
+    const entitlementsBlock = entitlements.length
+      ? entitlements
+          .map((e) => `- ${e.feature}: ${e.enabled && (!e.expires_at || new Date(e.expires_at).getTime() > Date.now()) ? "ON" : "OFF"} [admin-controlled]`)
+          .join("\n")
+      : "(none configured — all defaults)";
+
 
     // Silent-learning bias summary (see AI Learning page).
     const { data: biasRows } = await supabaseAdmin
@@ -499,7 +576,9 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     // knowledge and billing snapshot when this turn actually looks like a
     // how-to / billing question. Trip create/edit turns don't need either.
     const helpIntent = /\b(how|what|why|where|when|help|guide|explain|troubleshoot|meaning|means|show me|walk me)\b|\?/.test(msgLower);
-    const billingIntent = /\b(point|points|credit|credits|balance|charge|charged|cost|price|pricing|bill|billing|top[- ]?up|topup|invoice|payment)\b/.test(msgLower);
+    const billingIntent = /\b(point|points|credit|credits|balance|charge|charged|cost|costs|costing|price|pricing|bill|billing|top[- ]?up|topup|invoice|payment|spend|spending|reduce|save|cheaper|expensive)\b/.test(msgLower);
+    const costAdvisorIntent = /\b(reduce|save|cheaper|cut|lower|too much|what am i paying|unused|not using)\b/.test(msgLower) && billingIntent;
+    const dataCheckIntent = /\b(mistake|mistakes|duplicate|duplicates|dupes|dup|check.*(trip|today|tomorrow|data)|scan.*(trip|today)|forgotten|missing|any issues|anything wrong)\b/.test(msgLower);
 
     let guideKnowledge = "";
     if (helpIntent) {
@@ -513,10 +592,12 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
 
     let billingBlock = "";
     if (billingIntent) {
-      const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }] = await Promise.all([
+      const monthAgoIso = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const [{ data: balRow }, { data: recentLedger }, { data: featureCostRows }, { data: usage30 }] = await Promise.all([
         supabaseAdmin.from("companies").select("points_balance").eq("id", company.id).maybeSingle(),
         supabaseAdmin.from("points_ledger").select("points_deducted, note, feature_key, created_at").eq("company_id", company.id).order("created_at", { ascending: false }).limit(10),
         supabaseAdmin.from("ai_feature_costs").select("feature_key, label, points_cost, enabled, block_on_empty").order("feature_key"),
+        supabaseAdmin.from("points_ledger").select("feature_key, points_deducted").eq("company_id", company.id).gte("created_at", monthAgoIso),
       ]);
       const pointsBalance = Number(balRow?.points_balance ?? 0);
       const ledgerBlock = (recentLedger ?? []).length
@@ -525,12 +606,34 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       const featureCostBlock = (featureCostRows ?? []).length
         ? (featureCostRows ?? []).map((c: { feature_key: string; label: string | null; points_cost: number | string; enabled: boolean; block_on_empty: boolean }) => `- ${c.feature_key} (${c.label ?? c.feature_key}): ${c.points_cost} pts${c.enabled ? "" : " [disabled]"}${c.block_on_empty ? " [hard block when empty]" : ""}`).join("\n")
         : "(no priced features)";
-      billingBlock = `\n===================== BILLING CONTEXT (for kind:"answer" on billing questions) =====================\nCurrent points balance: ${pointsBalance}\n\nFeature price list (points per action):\n${featureCostBlock}\n\nMost recent point-spend entries (newest first):\n${ledgerBlock}\n`;
+      // 30-day rollup grouped by feature_key (Postgres does the totals for us via JS reduce, still cheap).
+      const rollup = new Map<string, { count: number; total: number }>();
+      for (const r of (usage30 ?? []) as { feature_key: string | null; points_deducted: number | string }[]) {
+        const k = r.feature_key ?? "-";
+        const cur = rollup.get(k) ?? { count: 0, total: 0 };
+        cur.count += 1;
+        cur.total += Number(r.points_deducted ?? 0);
+        rollup.set(k, cur);
+      }
+      const usageBlock = rollup.size
+        ? Array.from(rollup.entries()).sort((a, b) => b[1].total - a[1].total).map(([k, v]) => `- ${k}: ${v.count} uses · ${v.total.toFixed(2)} pts`).join("\n")
+        : "(no spend in the last 30 days)";
+      // Enabled surfaces the coordinator might toggle off. Combines ai_configuration + entitlements.
+      const enabledCandidates: string[] = [];
+      for (const k of Object.keys(aiConfig) as (keyof typeof aiConfig)[]) {
+        if (aiConfig[k]) enabledCandidates.push(`${k} (${AI_CONFIG_TOGGLE_LABELS[k]})`);
+      }
+      for (const e of entitlements) {
+        if (e.enabled) enabledCandidates.push(`${e.feature} [admin-controlled]`);
+      }
+      const enabledBlock = enabledCandidates.length ? enabledCandidates.map((s) => `- ${s}`).join("\n") : "(nothing extra enabled)";
+      billingBlock = `\n===================== BILLING CONTEXT (for kind:"answer" on billing / cost / cost-reduction questions) =====================\nCurrent points balance: ${pointsBalance}\n\nFeature price list (points per action):\n${featureCostBlock}\n\nMost recent point-spend entries (newest first):\n${ledgerBlock}\n\nSPEND — LAST 30 DAYS (grouped by feature_key, highest total first):\n${usageBlock}\n\nCURRENTLY ENABLED surfaces the coordinator could toggle off:\n${enabledBlock}\n\nWhen answering cost-reduction questions: cross-reference ENABLED surfaces with SPEND. Flag any enabled AI toggle with ZERO or very low 30-day spend as a candidate to turn off (route via kind:"setting_change" for owner-controllable ai_configuration keys; for admin-controlled entitlements, tell the coordinator to ask their admin). Use ONLY the real numbers above — never estimate.\n`;
     }
+
 
     const system = `You are the built-in AI dispatch assistant for The Coordinator, a transport-dispatch platform in Malta. You have ALSO absorbed the responsibilities of the retired "Ask the Guide" in-app coach — when the coordinator asks a how-to / troubleshooting / product question, answer it in kind:"answer" using the coach guidance and live facts below.
 
-You do NINE things:
+You do these things:
 1) ANSWER on-topic questions using the folded Guide knowledge at the bottom of this prompt.
 2) When the coordinator asks to CREATE or EDIT a SINGLE trip, return a DRAFT.
 3) MULTIPLE NEW trips → BATCH of create drafts.
@@ -540,12 +643,42 @@ You do NINE things:
 7) SUGGEST PARTNER HAND-OFF → kind:"partner_suggest" (see below).
 8) STRUCTURED ACTIONS on existing trips — group / ungroup / send a message to the driver or client on a trip. Return kind:"command_actions" with an array. This is the same execution layer as the old Command Bar, so the writes are trusted and audited. Use this when the coordinator says things like "group these two trips", "ungroup that trip", "message the driver that pickup is delayed 10 minutes", "tell the client we're 5 min away". Do NOT use command_actions for creating/updating trip content — those still go through draft / batch / search_update / data_fix.
 9) COORDINATE THE BACKLOG — when the coordinator says things like "coordinate my backlog", "review unassigned trips", "auto-coordinate", "sort out today", return kind:"auto_coordinate" with a one-line intro. The client then runs the existing AI Auto-Coordinate engine and presents its proposals for per-item approval.
-10) BILLING Q&A — when the coordinator asks about their points balance ("how many points do I have"), a specific charge ("why did that cost me points", "why was I charged"), the price of a feature ("how much does X cost"), or top-up options, ANSWER in kind:"answer" using the BILLING CONTEXT block below. Quote real numbers from BILLING CONTEXT — never invent. You cannot start a top-up from chat; if they want to buy points, tell them to open the Billing page and use "Request top-up".
+10) BILLING Q&A + COST-REDUCTION ADVICE — when the coordinator asks about points balance, a specific charge, feature price, or how to reduce cost / what they're paying for, ANSWER in kind:"answer" using the BILLING CONTEXT block below. Quote real numbers only. For cost reduction, cross-reference ENABLED surfaces with 30-day SPEND and name enabled toggles with zero use as candidates to turn off. If the coordinator then says "turn off X", return kind:"setting_change" for the matching ai_configuration key. For admin-controlled entitlements, tell them to ask their admin.
 11) MERGE DUPLICATE TRIPS — when the coordinator says "merge these trips", "merge duplicates", or asks to combine duplicate cards, return kind:"merge_trips". Pick the best complete trip as keep_job_id and put the duplicates in drop_job_ids. Only use trip UUIDs from UPCOMING TRIPS, TRIPS REFERENCED BY SERIAL NUMBER, or the currently open trip.
+12) SETTING TOGGLE — when the coordinator asks to turn a feature/automation on or off (e.g. "stop tracking flights so I don't get charged", "turn on auto-assign", "disable voice input"), fuzzy-match against CURRENT AI TOGGLES below. If it maps to an ai_configuration key, return kind:"setting_change". If the match falls under CURRENT FEATURE ENTITLEMENTS (admin-controlled), return kind:"answer" telling the coordinator that entitlement is admin-controlled and to ask their admin. If it doesn't clearly map to anything, return kind:"answer" listing 2–3 nearest ai_configuration toggles the coordinator could mean.
+13) DATA CHECK — when the coordinator explicitly asks something like "check for mistakes", "any duplicates today", "scan my trips", return kind:"data_check". The server runs the real duplicate / missing-field / stale-pending scan itself — you only trigger.
 
 
 Rules:
 - Return STRICT JSON only. No markdown. One of:
+  { "kind": "answer", "text": "..." }
+  { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
+    "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
+                "driver_id"? (uuid from roster below or null), "driver_name"?,
+                "vehicle"?, "contact_phone"?, "from_flight"?, "to_flight"?, "clientcompanyname"?,
+                "pax"? (array of passenger / crew names for this trip, e.g. ["M. Harris – Master", "J. Cooper – C/O"]) },
+    "summary": "one short sentence" }
+  { "kind": "batch",
+    "drafts": [ { "kind":"draft", "action":"create", "target_trip_id": null, "fields": {...}, "summary": "..." }, ... ],
+    "clarify": "one short question covering all missing/ambiguous bits across the trips, or null" }
+  { "kind": "search_update",
+    "criteria": "short human phrase describing which trips to match, e.g. 'Asso 25 trips today'",
+    "criteria_terms": ["asso 25"],
+    "date": "yyyy-mm-dd" | null,
+    "changes": { same field keys as "fields" above — ONLY the fields to change on every matched trip },
+    "summary": "..." }
+  { "kind": "data_fix",
+    "target": "trip" | "driver",
+    "target_id": "<uuid>",
+    "field": "<one of: from_location | to_location | contact_phone | clientcompanyname | from_flight | to_flight | vehicle   (trip);   name | phone   (driver)>",
+    "new_value": "<corrected value>",
+    "summary": "..." }
+  { "kind": "glossary_save", "term": "<shorthand>", "meaning": "<full meaning>" }
+  { "kind": "glossary_list" }
+  { "kind": "glossary_delete", "term": "<shorthand>" }
+  { "kind": "setting_change", "target": "ai_configuration", "key": "<one of: auto_assign_enabled | auto_extract_bulk | auto_reply_drafts | ai_command_enabled | voice_to_trip_enabled | auto_coordinate_enabled>", "new_value": true|false, "summary": "one short sentence explaining what will change" }
+  { "kind": "data_check" }
+
   { "kind": "answer", "text": "..." }
   { "kind": "draft", "action": "create" | "update", "target_trip_id": "<uuid or null>",
     "fields": { "from_location"?, "to_location"?, "date"? (yyyy-mm-dd), "time"? (HH:mm 24h Malta local),
@@ -628,6 +761,12 @@ ${referencedBlock}
 
 CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
 ${clientNotesBlock}
+
+CURRENT AI TOGGLES (owner-controllable via kind:"setting_change"):
+${aiConfigBlock}
+
+CURRENT FEATURE ENTITLEMENTS (admin-controlled — do NOT return setting_change for these; respond with an answer explaining they must ask their admin):
+${entitlementsBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
 Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
@@ -1011,6 +1150,118 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       return { kind: "auto_coordinate", intro, directive, resolved_target };
     }
 
+    // ---- Setting toggle (confirm-first) ----
+    if (p.kind === "setting_change") {
+      const target = typeof p.target === "string" ? p.target : "";
+      const key = typeof p.key === "string" ? p.key : "";
+      const new_value = typeof p.new_value === "boolean" ? p.new_value : null;
+      if (target === "feature_entitlement") {
+        return answer(
+          `That's an admin-controlled entitlement, so I can't toggle it from here. Ask your admin to change it in the admin panel.`,
+        );
+      }
+      if (target !== "ai_configuration" || !(key in AI_CONFIG_TOGGLE_LABELS) || new_value === null) {
+        return answer(
+          `I couldn't map that to a specific toggle. You can turn any of these on/off: ${(Object.keys(AI_CONFIG_TOGGLE_LABELS) as (keyof typeof AI_CONFIG_TOGGLE_LABELS)[]).map((k) => AI_CONFIG_TOGGLE_LABELS[k]).join(", ")}.`,
+        );
+      }
+      const typedKey = key as AssistantSettingChange["key"];
+      const old_value = aiConfig[typedKey];
+      if (old_value === new_value) {
+        return answer(`${AI_CONFIG_TOGGLE_LABELS[typedKey]} is already ${new_value ? "on" : "off"}.`);
+      }
+      return {
+        kind: "setting_change",
+        target: "ai_configuration",
+        key: typedKey,
+        label: AI_CONFIG_TOGGLE_LABELS[typedKey],
+        old_value,
+        new_value,
+        summary:
+          typeof p.summary === "string" && p.summary.trim()
+            ? p.summary.trim().slice(0, 300)
+            : `Turn ${new_value ? "on" : "off"} ${AI_CONFIG_TOGGLE_LABELS[typedKey]}`,
+      };
+    }
+
+    // ---- On-demand data check (duplicates / missing / stale pending) ----
+    if (p.kind === "data_check") {
+      // Read-only scan over a 14-day window (7 back, 7 fwd) for this company.
+      const startIso = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const endIso = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      const { data: scanRows } = await supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, date, time, pickup_at, from_location, to_location, clientcompanyname, status, driver_id")
+        .eq("company_id", company.id)
+        .not("status", "in", "(completed,cancelled)")
+        .gte("pickup_at", startIso)
+        .lte("pickup_at", endIso)
+        .order("pickup_at", { ascending: true })
+        .limit(400);
+      type Row = {
+        id: string; trip_no: number | null; date: string | null; time: string | null; pickup_at: string | null;
+        from_location: string | null; to_location: string | null; clientcompanyname: string | null;
+        status: string | null; driver_id: string | null;
+      };
+      const rows = (scanRows ?? []) as Row[];
+      const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      const label = (r: Row) => `#${r.trip_no ?? "?"} · ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}`;
+      const items: AssistantDataCheck["items"] = [];
+      const now = Date.now();
+      // Duplicates: same date + same from + same to + pickup within 10 min.
+      const dupSeen = new Set<string>();
+      for (let i = 0; i < rows.length; i++) {
+        for (let j = i + 1; j < rows.length; j++) {
+          const a = rows[i], b = rows[j];
+          if (!a.date || a.date !== b.date) continue;
+          if (norm(a.from_location) !== norm(b.from_location)) continue;
+          if (norm(a.to_location) !== norm(b.to_location)) continue;
+          const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : null;
+          const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : null;
+          if (ta == null || tb == null) continue;
+          if (Math.abs(ta - tb) > 10 * 60 * 1000) continue;
+          for (const r of [a, b]) {
+            if (dupSeen.has(r.id)) continue;
+            dupSeen.add(r.id);
+            items.push({ job_id: r.id, label: label(r), issue_type: "duplicate", detail: `Same date/route, pickup within 10 min of another trip.` });
+          }
+        }
+      }
+      for (const r of rows) {
+        const missing: string[] = [];
+        if (!r.from_location) missing.push("pickup");
+        if (!r.to_location) missing.push("drop-off");
+        if (!r.date) missing.push("date");
+        if (!r.time) missing.push("time");
+        if (missing.length) items.push({ job_id: r.id, label: label(r), issue_type: "missing_field", detail: `Missing: ${missing.join(", ")}.` });
+        // Stale pending: pickup in the past, still pending/new, no driver.
+        const pk = r.pickup_at ? new Date(r.pickup_at).getTime() : null;
+        if (pk != null && pk < now && !r.driver_id && (r.status === "pending" || r.status === "new" || r.status === "unassigned")) {
+          items.push({ job_id: r.id, label: label(r), issue_type: "stale_pending", detail: `Pickup was ${Math.round((now - pk) / 60000)} min ago and still unassigned.` });
+        }
+      }
+      // Meter once per check (read-only, no confirm step).
+      try {
+        await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: "assistant_data_check",
+          _job_id: undefined as unknown as string,
+          _note: `data check · ${items.length} issue${items.length === 1 ? "" : "s"} in ${rows.length} trip${rows.length === 1 ? "" : "s"}`,
+          _cost_override: undefined as unknown as number,
+        });
+      } catch { /* soft */ }
+      return {
+        kind: "data_check",
+        items: items.slice(0, 40),
+        summary: items.length === 0
+          ? `Checked ${rows.length} upcoming/recent trip${rows.length === 1 ? "" : "s"} — nothing looks off.`
+          : `Found ${items.length} thing${items.length === 1 ? "" : "s"} to review across ${rows.length} trip${rows.length === 1 ? "" : "s"}.`,
+      };
+    }
+
+
+
+
 
 
 
@@ -1381,6 +1632,62 @@ export const stageAssistantActions = createServerFn({ method: "POST" })
     if (!row) throw new Error("Failed to stage actions.");
     return { id: (row as { id: string }).id };
   });
+
+/**
+ * Apply a confirmed setting_change proposal. Currently scoped to owner-editable
+ * `ai_configuration` toggles — we merge the single changed field with the
+ * current row (preserving other toggles) and upsert. Feature entitlements are
+ * admin-controlled by RLS and are not writable from here.
+ */
+export const applyAssistantSettingChange = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        target: z.literal("ai_configuration"),
+        key: z.enum([
+          "auto_assign_enabled",
+          "auto_extract_bulk",
+          "auto_reply_drafts",
+          "ai_command_enabled",
+          "voice_to_trip_enabled",
+          "auto_coordinate_enabled",
+        ]),
+        new_value: z.boolean(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: company } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .eq("owner_user_id", context.userId)
+      .maybeSingle();
+    if (!company) throw new Error("No company assigned to this account.");
+    const { data: cur } = await supabaseAdmin
+      .from("ai_configuration")
+      .select("*")
+      .eq("company_id", company.id)
+      .maybeSingle();
+    const merged = {
+      company_id: company.id,
+      auto_assign_enabled: data.key === "auto_assign_enabled" ? data.new_value : cur?.auto_assign_enabled ?? false,
+      auto_extract_bulk: data.key === "auto_extract_bulk" ? data.new_value : cur?.auto_extract_bulk ?? true,
+      auto_reply_drafts: data.key === "auto_reply_drafts" ? data.new_value : cur?.auto_reply_drafts ?? true,
+      ai_command_enabled: data.key === "ai_command_enabled" ? data.new_value : cur?.ai_command_enabled ?? true,
+      voice_to_trip_enabled: data.key === "voice_to_trip_enabled" ? data.new_value : cur?.voice_to_trip_enabled ?? true,
+      auto_coordinate_enabled: data.key === "auto_coordinate_enabled" ? data.new_value : cur?.auto_coordinate_enabled ?? false,
+    };
+    const { error } = await supabaseAdmin
+      .from("ai_configuration")
+      .upsert(merged, { onConflict: "company_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true, key: data.key, new_value: data.new_value };
+  });
+
+
+
 
 
 
