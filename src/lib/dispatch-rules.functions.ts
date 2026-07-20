@@ -223,8 +223,8 @@ export const applyDispatchRuleProposal = createServerFn({ method: "POST" })
       const { error } = await sb.from("jobs").update({ driver_id: data.target_id }).eq("id", data.job_id);
       if (error) throw new Error(error.message);
     } else {
-      const { dispatchJobToPartner } = await import("./collab.functions");
-      await dispatchJobToPartner(sb, companyId, data.job_id, data.target_id, "via dispatch rule");
+      const { dispatchJobToPartnerInternal } = await import("./coordinator.functions");
+      await dispatchJobToPartnerInternal(sb, companyId, data.job_id, data.target_id, "via dispatch rule");
     }
     return { ok: true };
   });

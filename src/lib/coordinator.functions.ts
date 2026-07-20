@@ -5948,7 +5948,7 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
       }
       for (const jobId of data.trip_ids) {
         await spendOrThrow(c.id, "ai_agent_dispatch", `Auto-Coordinate dispatch ${jobId.slice(0, 8)}`, jobId);
-        await dispatchJobToPartner(sb, c.id, jobId, data.partner_company_id, "via AI Auto-Coordinate");
+        await dispatchJobToPartnerInternal(sb, c.id, jobId, data.partner_company_id, "via AI Auto-Coordinate");
       }
     }
 
@@ -6632,7 +6632,7 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           results.push({ index: idx, ok: true, message: `message sent (${a.thread})` });
         } else if (a.type === "dispatch") {
           await spendOrThrow(c.id, "ai_agent_dispatch", `AI dispatch trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
-          await dispatchJobToPartner(sb, c.id, a.job_id, a.partner_company_id, "via AI agent");
+          await dispatchJobToPartnerInternal(sb, c.id, a.job_id, a.partner_company_id, "via AI agent");
           affected++;
           results.push({ index: idx, ok: true, message: "dispatched to partner" });
 
