@@ -1150,6 +1150,118 @@ ${billingBlock}${guideKnowledge ? `\n===================== FOLDED GUIDE KNOWLEDG
       return { kind: "auto_coordinate", intro, directive, resolved_target };
     }
 
+    // ---- Setting toggle (confirm-first) ----
+    if (p.kind === "setting_change") {
+      const target = typeof p.target === "string" ? p.target : "";
+      const key = typeof p.key === "string" ? p.key : "";
+      const new_value = typeof p.new_value === "boolean" ? p.new_value : null;
+      if (target === "feature_entitlement") {
+        return answer(
+          `That's an admin-controlled entitlement, so I can't toggle it from here. Ask your admin to change it in the admin panel.`,
+        );
+      }
+      if (target !== "ai_configuration" || !(key in AI_CONFIG_TOGGLE_LABELS) || new_value === null) {
+        return answer(
+          `I couldn't map that to a specific toggle. You can turn any of these on/off: ${(Object.keys(AI_CONFIG_TOGGLE_LABELS) as (keyof typeof AI_CONFIG_TOGGLE_LABELS)[]).map((k) => AI_CONFIG_TOGGLE_LABELS[k]).join(", ")}.`,
+        );
+      }
+      const typedKey = key as AssistantSettingChange["key"];
+      const old_value = aiConfig[typedKey];
+      if (old_value === new_value) {
+        return answer(`${AI_CONFIG_TOGGLE_LABELS[typedKey]} is already ${new_value ? "on" : "off"}.`);
+      }
+      return {
+        kind: "setting_change",
+        target: "ai_configuration",
+        key: typedKey,
+        label: AI_CONFIG_TOGGLE_LABELS[typedKey],
+        old_value,
+        new_value,
+        summary:
+          typeof p.summary === "string" && p.summary.trim()
+            ? p.summary.trim().slice(0, 300)
+            : `Turn ${new_value ? "on" : "off"} ${AI_CONFIG_TOGGLE_LABELS[typedKey]}`,
+      };
+    }
+
+    // ---- On-demand data check (duplicates / missing / stale pending) ----
+    if (p.kind === "data_check") {
+      // Read-only scan over a 14-day window (7 back, 7 fwd) for this company.
+      const startIso = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const endIso = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      const { data: scanRows } = await supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, date, time, pickup_at, from_location, to_location, clientcompanyname, status, driver_id")
+        .eq("company_id", company.id)
+        .not("status", "in", "(completed,cancelled)")
+        .gte("pickup_at", startIso)
+        .lte("pickup_at", endIso)
+        .order("pickup_at", { ascending: true })
+        .limit(400);
+      type Row = {
+        id: string; trip_no: number | null; date: string | null; time: string | null; pickup_at: string | null;
+        from_location: string | null; to_location: string | null; clientcompanyname: string | null;
+        status: string | null; driver_id: string | null;
+      };
+      const rows = (scanRows ?? []) as Row[];
+      const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      const label = (r: Row) => `#${r.trip_no ?? "?"} · ${(r.time ?? "").slice(0, 5)} · ${r.from_location ?? "?"} → ${r.to_location ?? "?"}`;
+      const items: AssistantDataCheck["items"] = [];
+      const now = Date.now();
+      // Duplicates: same date + same from + same to + pickup within 10 min.
+      const dupSeen = new Set<string>();
+      for (let i = 0; i < rows.length; i++) {
+        for (let j = i + 1; j < rows.length; j++) {
+          const a = rows[i], b = rows[j];
+          if (!a.date || a.date !== b.date) continue;
+          if (norm(a.from_location) !== norm(b.from_location)) continue;
+          if (norm(a.to_location) !== norm(b.to_location)) continue;
+          const ta = a.pickup_at ? new Date(a.pickup_at).getTime() : null;
+          const tb = b.pickup_at ? new Date(b.pickup_at).getTime() : null;
+          if (ta == null || tb == null) continue;
+          if (Math.abs(ta - tb) > 10 * 60 * 1000) continue;
+          for (const r of [a, b]) {
+            if (dupSeen.has(r.id)) continue;
+            dupSeen.add(r.id);
+            items.push({ job_id: r.id, label: label(r), issue_type: "duplicate", detail: `Same date/route, pickup within 10 min of another trip.` });
+          }
+        }
+      }
+      for (const r of rows) {
+        const missing: string[] = [];
+        if (!r.from_location) missing.push("pickup");
+        if (!r.to_location) missing.push("drop-off");
+        if (!r.date) missing.push("date");
+        if (!r.time) missing.push("time");
+        if (missing.length) items.push({ job_id: r.id, label: label(r), issue_type: "missing_field", detail: `Missing: ${missing.join(", ")}.` });
+        // Stale pending: pickup in the past, still pending/new, no driver.
+        const pk = r.pickup_at ? new Date(r.pickup_at).getTime() : null;
+        if (pk != null && pk < now && !r.driver_id && (r.status === "pending" || r.status === "new" || r.status === "unassigned")) {
+          items.push({ job_id: r.id, label: label(r), issue_type: "stale_pending", detail: `Pickup was ${Math.round((now - pk) / 60000)} min ago and still unassigned.` });
+        }
+      }
+      // Meter once per check (read-only, no confirm step).
+      try {
+        await supabaseAdmin.rpc("spend_points", {
+          _company_id: company.id,
+          _feature_key: "assistant_data_check",
+          _job_id: undefined as unknown as string,
+          _note: `data check · ${items.length} issue${items.length === 1 ? "" : "s"} in ${rows.length} trip${rows.length === 1 ? "" : "s"}`,
+          _cost_override: undefined as unknown as number,
+        });
+      } catch { /* soft */ }
+      return {
+        kind: "data_check",
+        items: items.slice(0, 40),
+        summary: items.length === 0
+          ? `Checked ${rows.length} upcoming/recent trip${rows.length === 1 ? "" : "s"} — nothing looks off.`
+          : `Found ${items.length} thing${items.length === 1 ? "" : "s"} to review across ${rows.length} trip${rows.length === 1 ? "" : "s"}.`,
+      };
+    }
+
+
+
+
 
 
 
