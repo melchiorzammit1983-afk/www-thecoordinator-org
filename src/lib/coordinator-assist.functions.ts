@@ -387,6 +387,33 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       .limit(50);
     const rules = (ruleRows ?? []) as { title: string; rule_text: string }[];
 
+    // ---- Current AI toggles + feature entitlements (for setting_change / cost advisor) ----
+    const [{ data: cfgRow }, { data: entRows }] = await Promise.all([
+      supabaseAdmin.from("ai_configuration").select("*").eq("company_id", company.id).maybeSingle(),
+      supabaseAdmin
+        .from("company_feature_entitlements")
+        .select("feature, enabled, expires_at")
+        .eq("company_id", company.id),
+    ]);
+    const aiConfig = {
+      auto_assign_enabled: cfgRow?.auto_assign_enabled ?? false,
+      auto_extract_bulk: cfgRow?.auto_extract_bulk ?? true,
+      auto_reply_drafts: cfgRow?.auto_reply_drafts ?? true,
+      ai_command_enabled: cfgRow?.ai_command_enabled ?? true,
+      voice_to_trip_enabled: cfgRow?.voice_to_trip_enabled ?? true,
+      auto_coordinate_enabled: cfgRow?.auto_coordinate_enabled ?? false,
+    };
+    const aiConfigBlock = (Object.keys(aiConfig) as (keyof typeof aiConfig)[])
+      .map((k) => `- ${k} (${AI_CONFIG_TOGGLE_LABELS[k]}): ${aiConfig[k] ? "ON" : "OFF"}`)
+      .join("\n");
+    const entitlements = (entRows ?? []) as { feature: string; enabled: boolean; expires_at: string | null }[];
+    const entitlementsBlock = entitlements.length
+      ? entitlements
+          .map((e) => `- ${e.feature}: ${e.enabled && (!e.expires_at || new Date(e.expires_at).getTime() > Date.now()) ? "ON" : "OFF"} [admin-controlled]`)
+          .join("\n")
+      : "(none configured — all defaults)";
+
+
     // Silent-learning bias summary (see AI Learning page).
     const { data: biasRows } = await supabaseAdmin
       .from("ai_lessons")
