@@ -101,7 +101,11 @@ export function WatchtowerToggle() {
           toast(`Watchtower found ${r.new_alerts} new issue${r.new_alerts === 1 ? "" : "s"}`);
         }
       } else if (r?.reason === "insufficient_points") {
-        toast.error("Watchtower paused — not enough points. Top up to resume.");
+        toast.error(
+          r?.message
+            ? `Watchtower paused — ${r.message}. Top up to resume.`
+            : "Watchtower paused — not enough points. Top up to resume.",
+        );
         refetchSettings();
       } else if (r?.reason === "daily_cap_reached") {
         toast("Watchtower daily scan cap reached — pausing until tomorrow.");
