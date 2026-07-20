@@ -377,21 +377,26 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
           },
         ]);
       } else if (result.kind === "auto_coordinate") {
-        const rt = result.resolved_target;
-        const targetLine = rt
-          ? `\nTarget: ${rt.type === "driver" ? "driver" : "partner"} ${rt.name}.`
-          : "";
-        const directiveLine = result.directive ? `\nDirective: "${result.directive}"` : "";
         setMessages((m) => [
           ...m,
           {
             id,
             role: "assistant",
-            text: `${result.intro}${directiveLine}${targetLine}\n(Open Calendar → AI Auto-Coordinate to review and accept the proposals.)`,
+            autoCoord: {
+              intro: result.intro,
+              directive: result.directive ?? null,
+              resolved_target: result.resolved_target ?? null,
+            },
+            loading: true,
           },
         ]);
         maybeSpeak(result.intro);
-
+        // Fire the plan inline
+        runAutoCoord.mutate({
+          msgId: id,
+          directive: result.directive ?? null,
+          resolved_target: result.resolved_target ?? null,
+        });
       } else {
         setMessages((m) => [...m, { id, role: "assistant", text: result.text }]);
         maybeSpeak(result.text);
