@@ -1123,6 +1123,31 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
     },
   });
 
+  const applySettingFn = useServerFn(applyAssistantSettingChange);
+  const applySetting = useMutation({
+    mutationFn: async (msgId: string) => {
+      const msg = messages.find(
+        (x): x is Extract<ChatMsg, { setting: AssistantSettingChange }> =>
+          x.id === msgId && "setting" in x,
+      );
+      if (!msg) throw new Error("Setting not found");
+      await applySettingFn({
+        data: { target: "ai_configuration", key: msg.setting.key, new_value: msg.setting.new_value },
+      });
+      return { msgId, label: msg.setting.label, new_value: msg.setting.new_value };
+    },
+    onSuccess: ({ msgId, label, new_value }) => {
+      setMessages((m) => m.map((x) => (x.id === msgId && "setting" in x ? { ...x, applied: true } : x)));
+      toast.success(`${label} is now ${new_value ? "on" : "off"}.`);
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Could not update setting.";
+      toast.error(msg);
+    },
+  });
+
+
+
   const toggleActionRow = (msgId: string, idx: number) => {
     setMessages((m) =>
       m.map((x) => {
