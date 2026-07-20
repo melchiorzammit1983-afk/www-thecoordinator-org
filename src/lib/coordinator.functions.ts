@@ -5757,11 +5757,125 @@ export async function runAutoCoordinate(
     .maybeSingle();
   const meteringMode: "per_action" | "per_run" | "per_trip" = (costRow?.metering_mode as any) ?? "per_action";
 
+  const chargePlanIfNeeded = async (proposals: CoordProposal[]) => {
+    // Per-run / per-trip metering happens up-front; per-action defers to accept.
+    if (meteringMode === "per_run" && proposals.length > 0) {
+      await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate planning run");
+    } else if (meteringMode === "per_trip") {
+      const touched = new Set<string>();
+      for (const p of proposals) p.trip_ids.forEach((t) => touched.add(t));
+      const perCost = Number(costRow?.points_cost ?? 1);
+      for (let i = 0; i < touched.size; i++) {
+        await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate trip", undefined);
+        void perCost;
+      }
+    }
+  };
+
   if (list.length === 0) {
     return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
   }
 
-  const tripLines = list
+  const directive = (opts.directive ?? "").trim();
+  const directiveText = directive.toLowerCase();
+  const wantsTodayOnly = /\b(today|tonight|this evening|this morning|this afternoon)\b/.test(directiveText);
+  const maltaDate = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Malta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  const today = maltaDate(new Date());
+  const isTodayTrip = (j: any) => {
+    const dateValue = j.date ? String(j.date).slice(0, 10) : "";
+    if (dateValue === today) return true;
+    if (!j.pickup_at) return false;
+    const pickup = new Date(j.pickup_at);
+    return !Number.isNaN(pickup.getTime()) && maltaDate(pickup) === today;
+  };
+  const eligibleList = wantsTodayOnly ? list.filter(isTodayTrip) : list;
+  const normalizeTargetName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  const compactTargetName = (s: string) => normalizeTargetName(s).replace(/\s+/g, "");
+  const editDistance = (a: string, b: string) => {
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+      }
+    }
+    return dp[a.length][b.length];
+  };
+  const closeNameMatch = (needle: string, haystack: string) => {
+    if (!needle || !haystack) return false;
+    if (haystack.includes(needle) || needle.includes(haystack)) return true;
+    const maxDistance = Math.max(1, Math.floor(Math.min(needle.length, haystack.length) * 0.2));
+    return editDistance(needle, haystack) <= maxDistance;
+  };
+  const matchNameInDirective = <T extends { id: string; name?: string | null }>(rows: T[]): T | null => {
+    const normalizedDirective = normalizeTargetName(directive);
+    const compactDirective = compactTargetName(directive);
+    if (!normalizedDirective) return null;
+    const exact = rows.find((r) => {
+      const n = normalizeTargetName(r.name ?? "");
+      const c = compactTargetName(r.name ?? "");
+      return n && (normalizedDirective.includes(n) || closeNameMatch(c, compactDirective));
+    });
+    if (exact) return exact;
+    return rows.find((r) => {
+      const n = normalizeTargetName(r.name ?? "");
+      return n && n.split(" ").some((part) => part.length >= 4 && closeNameMatch(part, compactDirective));
+    }) ?? null;
+  };
+  const wantsPartner = /\b(partner|dispatch|forward|collaborate|send to partner)\b/.test(directiveText);
+  const wantsDriver = /\b(driver|assign|move|give|put|send to driver)\b/.test(directiveText);
+  const inferredDriver = !opts.resolved_target && (wantsDriver || !wantsPartner) ? matchNameInDirective(drv) : null;
+  const inferredPartner = !opts.resolved_target && !inferredDriver && (wantsPartner || !wantsDriver) ? matchNameInDirective(partners) : null;
+  const resolved = opts.resolved_target ?? (inferredDriver
+    ? { type: "driver" as const, id: inferredDriver.id, name: inferredDriver.name ?? "driver" }
+    : inferredPartner
+      ? { type: "partner" as const, id: inferredPartner.id, name: inferredPartner.name ?? "partner" }
+      : null);
+
+  const makeChunks = (ids: string[], size = 50) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+    return chunks;
+  };
+  if (resolved) {
+    const targetTrips = eligibleList.map((j: any) => j.id).filter(Boolean);
+    let proposals: CoordProposal[] = [];
+    if (resolved.type === "driver" && drv.some((d: any) => d.id === resolved.id)) {
+      proposals = makeChunks(targetTrips).map((trip_ids) => ({
+        kind: "assign" as const,
+        trip_ids,
+        driver_id: resolved.id,
+        reason: `${wantsTodayOnly ? "Today's" : "Eligible"} unassigned trip${trip_ids.length === 1 ? "" : "s"} should be assigned to ${resolved.name} as requested.`,
+      }));
+    } else if (resolved.type === "partner" && partners.some((p) => p.id === resolved.id)) {
+      proposals = makeChunks(targetTrips).map((trip_ids) => ({
+        kind: "dispatch" as const,
+        trip_ids,
+        partner_company_id: resolved.id,
+        reason: `${wantsTodayOnly ? "Today's" : "Eligible"} unassigned trip${trip_ids.length === 1 ? "" : "s"} should be dispatched to ${resolved.name} as requested.`,
+      }));
+    }
+    await chargePlanIfNeeded(proposals);
+    return { proposals, metering_mode: meteringMode, considered: eligibleList.length };
+  }
+
+  const planningList = eligibleList;
+  if (planningList.length === 0) {
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+  }
+
+  const tripLines = planningList
     .map(
       (j: any) =>
         `${j.id}: ${j.pickup_at ?? j.date + " " + (j.time ?? "??")} | ${j.from_location ?? ""} → ${j.to_location ?? ""} | ${j.name ?? ""} ${j.surname ?? ""} | qty ${j.quantity ?? 1}`,
@@ -5783,18 +5897,8 @@ export async function runAutoCoordinate(
         .join("\n")}`
     : "PAST_30D_COMPLETED: (none)";
 
-  const directive = (opts.directive ?? "").trim();
-  const resolved = opts.resolved_target ?? null;
   const directiveBlock = directive
-    ? `\n\nCOORDINATOR DIRECTIVE (HARD instruction — the plan MUST satisfy this over general optimization):\n"${directive}"${
-        resolved
-          ? `\nResolved target: ${resolved.type} ${resolved.id} (${resolved.name}). ${
-              resolved.type === "driver"
-                ? "Prefer kind:\"assign\" proposals with this driver_id for as many eligible trips as possible."
-                : "Prefer kind:\"dispatch\" proposals with this partner_company_id for as many eligible trips as possible."
-            }`
-          : ""
-      }`
+    ? `\n\nCOORDINATOR DIRECTIVE (HARD instruction — the plan MUST satisfy this over general optimization):\n"${directive}"`
     : "";
 
   const parsed = await callGemini(
@@ -5814,7 +5918,7 @@ export async function runAutoCoordinate(
     { maxOutputTokens: 2000 },
   );
 
-  const tripIdSet = new Set(list.map((j: any) => j.id));
+  const tripIdSet = new Set(planningList.map((j: any) => j.id));
   const driverIdSet = new Set(drv.map((d: any) => d.id));
   const partnerIdSet = new Set(partners.map((p) => p.id));
 
@@ -5849,20 +5953,9 @@ export async function runAutoCoordinate(
     }
   }
 
-  // Per-run / per-trip metering happens up-front; per-action defers to accept.
-  if (meteringMode === "per_run" && proposals.length > 0) {
-    await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate planning run");
-  } else if (meteringMode === "per_trip") {
-    const touched = new Set<string>();
-    for (const p of proposals) p.trip_ids.forEach((t) => touched.add(t));
-    const perCost = Number(costRow?.points_cost ?? 1);
-    for (let i = 0; i < touched.size; i++) {
-      await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate trip", undefined);
-      void perCost;
-    }
-  }
+  await chargePlanIfNeeded(proposals);
 
-  return { proposals, metering_mode: meteringMode, considered: list.length };
+  return { proposals, metering_mode: meteringMode, considered: planningList.length };
 }
 
 export const aiAutoCoordinate = createServerFn({ method: "POST" })

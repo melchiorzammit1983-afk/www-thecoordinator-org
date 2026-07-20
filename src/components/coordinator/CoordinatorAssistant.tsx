@@ -1626,7 +1626,11 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                         )}
                         {m.error && <div className="text-xs text-destructive">⚠ {m.error}</div>}
                         {!m.loading && m.proposals && m.proposals.length === 0 && (
-                          <div className="text-xs text-muted-foreground">Nothing to coordinate — you're all caught up.</div>
+                          <div className="text-xs text-muted-foreground">
+                            {(m.considered ?? 0) > 0
+                              ? `Reviewed ${m.considered} unassigned trip${m.considered === 1 ? "" : "s"}, but no safe proposal was made. Try naming the exact driver or partner.`
+                              : "No eligible unassigned trips found for that instruction."}
+                          </div>
                         )}
                         {!m.loading && m.proposals && m.proposals.length > 0 && (
                           <>
