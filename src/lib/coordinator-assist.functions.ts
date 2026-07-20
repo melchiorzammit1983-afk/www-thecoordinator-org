@@ -188,6 +188,43 @@ export type AssistantAutoCoordinate = {
     | null;
 };
 
+/**
+ * Confirm-first setting toggle. Currently scoped to `ai_configuration`
+ * (owner-controllable). Feature-entitlement changes are admin-only per RLS
+ * (see `company_feature_entitlements` policies) — the assistant surfaces
+ * those as an answer telling the coordinator to ask their admin.
+ */
+export type AssistantSettingChange = {
+  kind: "setting_change";
+  target: "ai_configuration";
+  key:
+    | "auto_assign_enabled"
+    | "auto_extract_bulk"
+    | "auto_reply_drafts"
+    | "ai_command_enabled"
+    | "voice_to_trip_enabled"
+    | "auto_coordinate_enabled";
+  label: string;
+  old_value: boolean;
+  new_value: boolean;
+  summary: string;
+};
+
+/**
+ * On-demand mistake/duplicate scan. READ-ONLY — surfaces trips the
+ * coordinator should manually review. Metered once per check via the
+ * `assistant_data_check` feature. Runs SQL against this company only.
+ */
+export type AssistantDataCheck = {
+  kind: "data_check";
+  items: Array<{
+    job_id: string;
+    label: string;
+    issue_type: "duplicate" | "missing_field" | "stale_pending";
+    detail: string;
+  }>;
+  summary: string;
+};
 
 export type AssistantResult =
   | AssistantAnswer
@@ -197,7 +234,20 @@ export type AssistantResult =
   | AssistantPartnerSuggest
   | AssistantCommandActions
   | AssistantMergeTrips
-  | AssistantAutoCoordinate;
+  | AssistantAutoCoordinate
+  | AssistantSettingChange
+  | AssistantDataCheck;
+
+/** Human labels for the six ai_configuration toggles the assistant can flip. */
+const AI_CONFIG_TOGGLE_LABELS: Record<AssistantSettingChange["key"], string> = {
+  auto_assign_enabled: "Auto-assign driver",
+  auto_extract_bulk: "AI bulk-paste extraction",
+  auto_reply_drafts: "AI reply drafter",
+  ai_command_enabled: "AI command bar",
+  voice_to_trip_enabled: "Voice-note → trip",
+  auto_coordinate_enabled: "AI Auto-Coordinate",
+};
+
 
 /**
  * Detect silent passenger-parsing failures so the UI can warn the coordinator
