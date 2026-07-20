@@ -1,39 +1,51 @@
-Plan: Fix Auto-Coordinate so it sees all unassigned trips and picks any available driver when the named one can't take them
+## Goal
 
-1. Repair the unassigned-trips query
-- The current Auto-Coordinate query selects `name`, `surname`, and `quantity` columns that no longer exist on `jobs`, so the query errors and returns 0 trips — that's the real reason "No eligible unassigned trips found" appears.
-- Replace those with the fields actually on trip cards: `trip_no`, `from_location`, `to_location`, `pickup_display_name`, `dropoff_display_name`, `pickup_at`, `date`, `time`, `status`, plus the joined `pax(name)` for passenger names.
-- Exclude completed/cancelled trips so the plan matches what the coordinator sees on the board.
-- Widen the time window: instead of "last 24h + null", include all active unassigned trips (past-hour to future). Keep the today-only filter when the directive says "today/tonight/this morning/etc".
+Prevent double-booking a driver by extending the existing schedule-collision system with (1) a configurable per-company boarding buffer, (2) a hard confirmation step before assigning, (3) a driver-side warning chip, and (4) the same rule applied to AI Auto-Coordinate / auto-assign.
 
-2. Named target ("assign all unassigned to BaygorCab") — try target first, then fall back
-- Keep the existing fuzzy name resolver.
-- When the resolver finds a driver or partner, first try to assign every eligible unassigned trip to that target as before.
-- For each trip the named target cannot take, fall back to the next available option, in this order:
-  a. Any other driver on the coordinator's board whose `status` is not `offline` AND has no scheduling conflict with that trip (reuse the existing schedule-conflict helpers already used by the assignment collision banner).
-  b. If no driver fits, an active Collaborate partner (dispatch).
-- Emit a mix of proposals: primary `assign` to the named target for trips it can take, and additional `assign` / `dispatch` proposals for the leftovers, each with a clear `reason` explaining why the fallback was chosen ("BaygorCab has a conflict at 09:50 — assigning to next available driver X").
-- Never overwrite already-assigned trips (the existing `.is("driver_id", null)` guard on apply stays).
+The math and Routes API infrastructure already exist in `src/lib/scheduling.functions.ts` (`evaluatePairs`, `previewAssignmentConflicts`, `suggestAlternativeDrivers`). We build on top of it — nothing about how trips or the map work changes.
 
-3. No named target — same availability-first behaviour
-- When the directive has no target (e.g. just "assign all unassigned trips"), skip the LLM for the simple case: walk the unassigned list in pickup order and hand each trip to the first available, non-conflicting driver; fall back to an active partner if none fits.
-- Keep the LLM path as a fallback for genuinely ambiguous directives (grouping, etc.).
+## Changes
 
-4. Chunking & limits
-- Group the resulting `assign` proposals per driver into chunks of 50 trip_ids (matches the apply endpoint's cap) so a big backlog produces multiple accept-able cards.
+### 1. Configurable boarding buffer (per company)
 
-5. Clearer empty-state messaging
-- Distinguish three cases in the response so the dialog can show the right message:
-  - No active unassigned trips at all.
-  - Trips exist but no driver/partner is available (surface this explicitly instead of the generic "no safe proposal").
-  - Named target not found (suggest the closest name matches).
+- Add column `boarding_buffer_min` (int, default 10) to `companies` (single global default per coordinator company — no per-driver setup needed).
+- New tiny server fn `getBoardingBufferMin` reads it inside `scheduling.functions.ts`; if unset, falls back to `10`.
+- `evaluatePairs` accepts a `bufferMin` param instead of the hard-coded constant. All three server fns (`checkDriverConflicts`, `previewAssignmentConflicts`, `suggestAlternativeDrivers`) look it up once from the caller's company and pass it through.
+- Coordinator can edit it in `coordinator.dispatch-rules.tsx` (existing page) — a single "Passenger boarding buffer (minutes)" field with a short explainer.
 
-6. Verify against live data
-- After the fix, re-run the query for the current company and confirm it returns the ~9 active unassigned trip cards currently on the board.
-- Confirm "assign all unassigned trips to BaygorCab" now returns real proposals, and that when BaygorCab is busy the plan proposes another available driver.
+### 2. Warn + require confirmation on assignment
 
-Files expected to change
-- `src/lib/coordinator.functions.ts` — `runAutoCoordinate` query + resolver + fallback logic.
-- `src/components/coordinator/AiAutoCoordinateButton.tsx` — surface the new empty-state messages.
+Any UI that sets a driver on a trip goes through the same guard:
 
-No schema changes. No changes to the apply path's safety guards.
+- `JobFormDialog.tsx` — already runs `previewAssignmentConflicts` for the picker. On submit, if severity is `tight` or `conflict`, open a new `<ConflictConfirmDialog />` that shows: prev trip end time, drive time to next pickup, boarding buffer used, shortfall in minutes, and the top 3 alternative drivers from `suggestAlternativeDrivers`. Coordinator must click "Assign anyway" to proceed, or pick a suggested driver.
+- `TripDetailsSheet.tsx` — reassign flow reuses the same dialog.
+- `BulkActionBar.tsx` "assign to driver" reuses it once per conflicting trip (or a single summary dialog when >1 conflict).
+
+Overrides are logged to `trip_audit_log` with reason "conflict_override" so we can see later who forced a known-bad assignment.
+
+### 3. Driver-side warning chip
+
+- `checkDriverConflicts` is already the source of truth. Add a lightweight public-ish read path the driver's PWA already uses (driver's own trips only, via the driver token route) — or, simpler: run `checkDriverConflicts` server-side keyed by the driver's own `driver_id` in the token loader and pass `perJob` down.
+- In `m.driver.$token.tsx` trip card, when `perJob[jobId].severity !== "free"`, render a compact amber/red chip: "Tight — 3 min slack" or "Conflict — leaves 8 min short". Tapping opens a small sheet with the pair details (prev trip end, next pickup, drive time) so the driver can push back to the coordinator before hitting the road.
+
+### 4. AI Auto-Coordinate / auto-assign respects the buffer
+
+- In `src/lib/coordinator.functions.ts`, wherever the AI planner picks a driver for an unassigned trip, call `previewAssignmentConflicts` (already imported infra) for each candidate driver *before* proposing the assignment.
+  - Skip drivers with severity `conflict`.
+  - `tight` drivers are allowed but the proposal note surfaces "tight — X min slack" so the coordinator sees it in the proposal review UI.
+  - If every candidate collides, the proposal falls back to "no eligible driver — needs manual review" instead of silently picking one.
+- Same gate applied to the `auto_assign_enabled` path.
+
+## Technical notes
+
+- Only two new UI pieces: `ConflictConfirmDialog.tsx` (shared) and the driver-card chip.
+- Schema change is a single `ALTER TABLE companies ADD COLUMN boarding_buffer_min integer NOT NULL DEFAULT 10;` migration.
+- `docs-facts.ts` `PAX_DROPOFF_BUFFER_MIN` becomes dynamic (per company) — Fact rendering falls back to the default when no company context.
+- Transit cache and Routes API usage do not change → no extra AI/Maps spend for the confirmation step (it re-uses the same in-memory cache hit from the picker preview).
+- No changes to trip cards, grouping, map, pricing, or any other subsystem.
+
+## Out of scope
+
+- Per-driver custom buffers.
+- Rerouting/rebalancing existing conflicts automatically — we only prevent new ones and surface existing ones.
+- Changing the "tight vs conflict" thresholds (still 5 min slack for tight, <0 for conflict).

@@ -1,0 +1,1 @@
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS boarding_buffer_min integer NOT NULL DEFAULT 10;

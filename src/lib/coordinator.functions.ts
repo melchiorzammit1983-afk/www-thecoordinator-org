@@ -5900,7 +5900,13 @@ export async function runAutoCoordinate(
   };
 
   // ---- Build per-driver busy schedule so we never propose a conflicting assignment.
-  const BUFFER_MIN = 30;
+  // Buffer = company boarding_buffer_min (unified with the coordinator's manual
+  // conflict checks) with a small safety floor so back-to-back turns still
+  // include hop-off + boarding time.
+  const { data: coBuf } = await sb
+    .from("companies").select("boarding_buffer_min").eq("id", companyId).maybeSingle();
+  const companyBuf = Number((coBuf as any)?.boarding_buffer_min);
+  const BUFFER_MIN = Number.isFinite(companyBuf) && companyBuf >= 0 ? Math.max(15, companyBuf + 15) : 30;
   const DEFAULT_TRIP_MIN = 45;
   type Busy = { start: number; end: number };
   const busyByDriver = new Map<string, Busy[]>();

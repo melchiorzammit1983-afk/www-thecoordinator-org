@@ -1558,6 +1558,7 @@ export type Database = {
           ai_points_used_this_period: number
           arrival_radius_m: number | null
           auto_next_job_enabled: boolean
+          boarding_buffer_min: number
           coordinator_phone: string | null
           created_at: string
           currency: string
@@ -1607,6 +1608,7 @@ export type Database = {
           ai_points_used_this_period?: number
           arrival_radius_m?: number | null
           auto_next_job_enabled?: boolean
+          boarding_buffer_min?: number
           coordinator_phone?: string | null
           created_at?: string
           currency?: string
@@ -1656,6 +1658,7 @@ export type Database = {
           ai_points_used_this_period?: number
           arrival_radius_m?: number | null
           auto_next_job_enabled?: boolean
+          boarding_buffer_min?: number
           coordinator_phone?: string | null
           created_at?: string
           currency?: string

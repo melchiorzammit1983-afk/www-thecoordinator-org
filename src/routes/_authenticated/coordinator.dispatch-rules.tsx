@@ -20,6 +20,7 @@ import {
   applyDispatchRuleProposal,
   type DispatchRule,
 } from "@/lib/dispatch-rules.functions";
+import { getBoardingBuffer, setBoardingBuffer } from "@/lib/scheduling.functions";
 import { listDrivers } from "@/lib/coordinator.functions";
 import { listConnections } from "@/lib/collab.functions";
 
@@ -78,6 +79,10 @@ function DispatchRulesPage() {
           Rules never auto-assign silently — matches surface here for your confirmation.
         </p>
       </div>
+
+      <BoardingBufferCard />
+
+
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
