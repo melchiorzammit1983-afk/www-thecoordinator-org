@@ -22,6 +22,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FEATURE_CATALOG } from "@/lib/features";
 import { CompanyBillingDialog } from "@/components/admin/CompanyBillingDialog";
 import { AdminBillingHeaderTabs } from "@/components/admin/AdminBillingHeaderTabs";
+import { FeatureInfoTooltip } from "@/components/features/FeatureInfoTooltip";
+import { useReferencePack } from "@/hooks/use-reference-rate";
+import { formatEur, eurPerPoint } from "@/lib/points-eur";
 
 export const Route = createFileRoute("/_authenticated/admin/pricing")({
   component: PricingAdmin,
@@ -308,16 +311,23 @@ function FeatureCostCard({
 
   const sliderMax = Math.max(50, Math.ceil(Math.max(points, initial)));
 
+  const pack = useReferencePack();
+  const rate = eurPerPoint(pack);
+
   return (
     <div className={`rounded-lg border bg-card p-4 flex flex-col gap-3 transition-shadow hover:shadow-md ${dirty ? "ring-1 ring-primary/40" : ""}`}>
       <div>
-        <div className="text-sm font-semibold leading-tight">{cost.label ?? cost.feature_key}</div>
+        <div className="text-sm font-semibold leading-tight flex items-center gap-1.5">
+          <span className="truncate">{cost.label ?? cost.feature_key}</span>
+          <FeatureInfoTooltip featureKey={cost.feature_key} />
+        </div>
         <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{cost.feature_key}</div>
       </div>
 
       <div className="flex items-baseline gap-1.5">
         <span className="text-3xl font-bold tabular-nums">{points.toFixed(2)}</span>
         <span className="text-xs text-muted-foreground">pts / use</span>
+        {rate != null && <span className="text-xs text-muted-foreground ml-1">{formatEur(points * rate)}</span>}
       </div>
 
       <div className="space-y-2">

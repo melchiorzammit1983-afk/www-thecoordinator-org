@@ -103,6 +103,10 @@ export const suggestRouteOptimization = createServerFn({ method: "POST" })
     const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!lovableKey || !mapsKey) throw new Error("gateway_not_configured");
 
+    // Respect the coordinator's per-feature opt-out before billing.
+    const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
+    await assertUserFeatureEnabled(supabase, company_id, "route_optimization");
+
     // Bill points BEFORE the AI call — spend_points throws on empty balance.
     const { error: spendErr } = await supabase.rpc("spend_points", {
       _company_id: company_id,

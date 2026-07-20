@@ -294,6 +294,8 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
     // Meter (soft — but we treat failure as pause)
     let charged = true;
     try {
+      const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
+      await assertUserFeatureEnabled(supabaseAdmin, companyId, "ai_watchtower_scan");
       const { error } = await supabaseAdmin.rpc("spend_points", {
         _company_id: companyId,
         _feature_key: "ai_watchtower_scan",

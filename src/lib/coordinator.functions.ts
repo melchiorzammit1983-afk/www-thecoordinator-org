@@ -4660,9 +4660,16 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     // Meter: 1pt for text-only, 3pts when files/urls attached.
     const willUseMedia = (data.attachments?.length ?? 0) > 0 || (data.urls?.length ?? 0) > 0;
     if (co) {
+      const extractionKey = willUseMedia ? "ai_extraction_media" : "ai_extraction";
+      const { assertUserFeatureEnabled, friendlyGateError } = await import("@/lib/user-feature-prefs.server");
+      try {
+        await assertUserFeatureEnabled(supabaseAdmin, co.id, extractionKey);
+      } catch (e) {
+        throw new Error(friendlyGateError(e) ?? (e as Error).message);
+      }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: co.id,
-        _feature_key: willUseMedia ? "ai_extraction_media" : "ai_extraction",
+        _feature_key: extractionKey,
         _job_id: undefined as unknown as string,
         _note: willUseMedia ? "ai_extraction (media)" : "ai_extraction (text)",
         _cost_override: undefined as unknown as number,

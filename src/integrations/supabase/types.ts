@@ -6047,6 +6047,41 @@ export type Database = {
           },
         ]
       }
+      user_feature_preferences: {
+        Row: {
+          company_id: string
+          enabled: boolean
+          feature_key: string
+          id: string
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          company_id: string
+          enabled?: boolean
+          feature_key: string
+          id?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          enabled?: boolean
+          feature_key?: string
+          id?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_feature_preferences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_preferences: {
         Row: {
           ai_toggles: Json

@@ -18,6 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
+import { FeatureInfoTooltip } from "@/components/features/FeatureInfoTooltip";
+import { useReferencePack } from "@/hooks/use-reference-rate";
+import { formatEur, eurPerPoint } from "@/lib/points-eur";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-settings")({
   component: AiSettingsAdmin,
@@ -183,17 +186,23 @@ function ActionRow({
     ? Math.round(((points * 1 - estCentsNum) / (points * 1)) * 100)
     : null;
 
+  const pack = useReferencePack();
+  const rate = eurPerPoint(pack);
+
   return (
     <div className={`rounded-lg border bg-card p-3 flex flex-col gap-3 md:flex-row md:items-start ${dirty ? "ring-1 ring-primary/40" : ""} ${isLegacy ? "opacity-70" : ""}`}>
       <div className="md:w-64 min-w-0">
-        <div className="text-sm font-semibold truncate">{cost.label || cost.feature_key}</div>
+        <div className="text-sm font-semibold flex items-center gap-1.5">
+          <span className="truncate">{cost.label || cost.feature_key}</span>
+          <FeatureInfoTooltip featureKey={cost.feature_key} />
+        </div>
         <div className="font-mono text-[10px] text-muted-foreground truncate">{cost.feature_key}</div>
         {isLegacy ? <Badge variant="outline" className="text-[10px] mt-1">Legacy</Badge> : null}
       </div>
 
       <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
         <label className="block">
-          <span className="text-[10px] text-muted-foreground">Points charged</span>
+          <span className="text-[10px] text-muted-foreground">Points charged{rate != null && points > 0 ? ` · ${formatEur(points * rate)}` : ""}</span>
           <Input type="number" min="0" step="0.25" value={String(points)}
             onChange={(e) => setPoints(Number(e.target.value) || 0)} className="h-8" />
         </label>
