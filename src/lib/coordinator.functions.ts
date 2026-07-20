@@ -6632,51 +6632,10 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           results.push({ index: idx, ok: true, message: `message sent (${a.thread})` });
         } else if (a.type === "dispatch") {
           await spendOrThrow(c.id, "ai_agent_dispatch", `AI dispatch trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
-          // Delegate to canonical dispatch flow rules via direct table write is not
-          // enough (loop/chain checks). Duplicate the guardrails inline.
-          const { data: job } = await sb
-            .from("jobs")
-            .select(
-              "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status",
-            )
-            .eq("id", a.job_id)
-            .maybeSingle();
-          if (!job) throw new Error("trip not found");
-          if ((job.executor_company_id ?? job.company_id) !== c.id)
-            throw new Error("only current executor can dispatch");
-          const chain: string[] = Array.isArray(job.dispatch_chain_company_ids)
-            ? job.dispatch_chain_company_ids
-            : [job.company_id];
-          if (chain.includes(a.partner_company_id)) throw new Error("would create a loop");
-          const { data: hops } = await sb
-            .from("job_dispatch_hops")
-            .select("hop_index")
-            .eq("job_id", a.job_id)
-            .order("hop_index", { ascending: false })
-            .limit(1);
-          const nextIndex = Number(hops?.[0]?.hop_index ?? -1) + 1;
-          await sb.from("job_dispatch_hops").insert({
-            job_id: a.job_id,
-            hop_index: nextIndex,
-            from_company_id: c.id,
-            to_company_id: a.partner_company_id,
-            status: "pending",
-            note: "via AI agent",
-          });
-          const { error } = await sb
-            .from("jobs")
-            .update({
-              origin_company_id: job.origin_company_id ?? job.company_id,
-              executor_company_id: a.partner_company_id,
-              dispatch_status: "pending",
-              dispatched_at: new Date().toISOString(),
-              dispatch_decided_at: null,
-              dispatch_chain_company_ids: [...chain, a.partner_company_id],
-            } as never)
-            .eq("id", a.job_id);
-          if (error) throw error;
+          await dispatchJobToPartner(sb, c.id, a.job_id, a.partner_company_id, "via AI agent");
           affected++;
           results.push({ index: idx, ok: true, message: "dispatched to partner" });
+
         } else if (a.type === "note") {
           results.push({ index: idx, ok: true, message: `note: ${String(a.note ?? "").slice(0, 120)}` });
         } else {
