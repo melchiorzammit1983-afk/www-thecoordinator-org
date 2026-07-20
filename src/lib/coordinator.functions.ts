@@ -879,6 +879,12 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
     if (!iso) throw new Error("No flight time available yet");
 
     // Meter first — refuse the shift if the company is out of points.
+    const { assertUserFeatureEnabled: _gateShift, friendlyGateError: _gerrShift } = await import("@/lib/user-feature-prefs.server");
+    try {
+      await _gateShift(supabaseAdmin, c.id, "auto_shift_early_flight");
+    } catch (e) {
+      throw new Error(_gerrShift(e) ?? (e as Error).message);
+    }
     const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
       _company_id: c.id,
       _feature_key: "auto_shift_early_flight",
@@ -2732,6 +2738,11 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    {
+      const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
+      try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
+      catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+    }
     const freshCutoffMs = Date.now() - 5 * 60_000;
     let updated = 0;
     let skippedFresh = 0;
@@ -2798,6 +2809,11 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     }
 
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    {
+      const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
+      try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
+      catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+    }
     const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
       _company_id: c.id,
       _feature_key: "flight_status_extra_lookup",
@@ -3050,6 +3066,11 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const shouldMeterFlight = hasCode && !flightFresh;
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+      {
+        const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
+        try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
+        catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+      }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
         _feature_key: "flight_status_extra_lookup",
@@ -5482,6 +5503,13 @@ export const rejectClientJob = createServerFn({ method: "POST" })
 
 async function spendOrThrow(companyId: string, featureKey: string, note: string, jobId?: string) {
   const sb = await getAdminClient();
+  // Respect the coordinator's per-feature opt-out before billing.
+  const { assertUserFeatureEnabled, friendlyGateError } = await import("@/lib/user-feature-prefs.server");
+  try {
+    await assertUserFeatureEnabled(sb, companyId, featureKey);
+  } catch (e) {
+    throw new Error(friendlyGateError(e) ?? (e as Error).message);
+  }
   const { error } = await sb.rpc("spend_points", {
     _company_id: companyId,
     _feature_key: featureKey,
