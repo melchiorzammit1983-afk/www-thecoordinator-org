@@ -5482,6 +5482,13 @@ export const rejectClientJob = createServerFn({ method: "POST" })
 
 async function spendOrThrow(companyId: string, featureKey: string, note: string, jobId?: string) {
   const sb = await getAdminClient();
+  // Respect the coordinator's per-feature opt-out before billing.
+  const { assertUserFeatureEnabled, friendlyGateError } = await import("@/lib/user-feature-prefs.server");
+  try {
+    await assertUserFeatureEnabled(sb, companyId, featureKey);
+  } catch (e) {
+    throw new Error(friendlyGateError(e) ?? (e as Error).message);
+  }
   const { error } = await sb.rpc("spend_points", {
     _company_id: companyId,
     _feature_key: featureKey,
