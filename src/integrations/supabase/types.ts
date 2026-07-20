@@ -2122,6 +2122,56 @@ export type Database = {
           },
         ]
       }
+      dispatch_default_rules: {
+        Row: {
+          company_id: string
+          created_at: string
+          days_of_week: number[]
+          enabled: boolean
+          end_time: string
+          id: string
+          label: string
+          start_time: string
+          target_id: string
+          target_type: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          days_of_week?: number[]
+          enabled?: boolean
+          end_time: string
+          id?: string
+          label: string
+          start_time: string
+          target_id: string
+          target_type: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          days_of_week?: number[]
+          enabled?: boolean
+          end_time?: string
+          id?: string
+          label?: string
+          start_time?: string
+          target_id?: string
+          target_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_default_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispatch_forward_events: {
         Row: {
           created_at: string
