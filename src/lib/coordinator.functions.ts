@@ -1115,6 +1115,7 @@ export const updateJobStatus = createServerFn({ method: "POST" })
 // (addresses, business names, geo pins, flight, contact, price, etc.).
 const CLONE_STRIP_FIELDS = new Set<string>([
   "id",
+  "trip_no",
   "created_at",
   "updated_at",
   // driver / assignment lifecycle
