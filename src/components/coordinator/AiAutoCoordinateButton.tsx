@@ -72,9 +72,9 @@ export function AiAutoCoordinateButton() {
 
   if (!enabled) return null;
   const chips = [
-    "Assign today's unassigned trips to BaygorCab",
+    "Assign today's unassigned trips to [driver name]",
     "Group similar airport trips",
-    "Dispatch unassigned trips to partner",
+    "Dispatch unassigned trips to [partner name]",
   ];
   return (
     <>
@@ -100,7 +100,7 @@ export function AiAutoCoordinateButton() {
                   onChange={(e) => setDirective(e.target.value)}
                   rows={3}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder={'e.g. "Assign today’s unassigned trips to BaygorCab"'}
+                  placeholder={'e.g. "Assign today’s unassigned trips to Mark"'}
                 />
                 <div className="flex flex-wrap gap-1.5">
                   {chips.map((chip) => (
