@@ -1670,7 +1670,7 @@ export const applyAssistantSettingChange = createServerFn({ method: "POST" })
       .select("*")
       .eq("company_id", company.id)
       .maybeSingle();
-    const merged: Record<string, unknown> = {
+    const merged = {
       company_id: company.id,
       auto_assign_enabled: cur?.auto_assign_enabled ?? false,
       auto_extract_bulk: cur?.auto_extract_bulk ?? true,
@@ -1678,14 +1678,15 @@ export const applyAssistantSettingChange = createServerFn({ method: "POST" })
       ai_command_enabled: cur?.ai_command_enabled ?? true,
       voice_to_trip_enabled: cur?.voice_to_trip_enabled ?? true,
       auto_coordinate_enabled: cur?.auto_coordinate_enabled ?? false,
+      [data.key]: data.new_value,
     };
-    merged[data.key] = data.new_value;
     const { error } = await supabaseAdmin
       .from("ai_configuration")
       .upsert(merged, { onConflict: "company_id" });
     if (error) throw new Error(error.message);
     return { ok: true, key: data.key, new_value: data.new_value };
   });
+
 
 
 
