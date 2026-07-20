@@ -1791,6 +1791,10 @@ function DriverAssignmentConflictHint({
     );
   }
   const data = q.data;
+  useEffect(() => {
+    if (!enabled) onSeverityChange?.(null);
+    else if (data) onSeverityChange?.(data.severity);
+  }, [enabled, data, onSeverityChange]);
   if (!data || data.severity === "free") {
     if (data?.severity === "free") {
       return (
