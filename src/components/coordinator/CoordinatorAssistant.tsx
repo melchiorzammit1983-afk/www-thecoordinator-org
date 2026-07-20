@@ -1567,6 +1567,76 @@ function AssistantSurface({ screen, open, setOpen }: { screen: AssistantScreen |
                     </div>
                   );
                 }
+                if ("autoCoord" in m) {
+                  const rt = m.autoCoord.resolved_target;
+                  return (
+                    <div key={m.id} className="flex gap-2">
+                      <div className="mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Bot className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex-1 space-y-2 rounded-md bg-muted px-3 py-2 text-sm">
+                        <div className="whitespace-pre-wrap">{m.autoCoord.intro}</div>
+                        {(m.autoCoord.directive || rt) && (
+                          <div className="text-xs text-muted-foreground space-y-0.5">
+                            {m.autoCoord.directive && <div>Directive: "{m.autoCoord.directive}"</div>}
+                            {rt && <div>Target: {rt.type} · {rt.name}</div>}
+                          </div>
+                        )}
+                        {m.loading && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+                            Planning…
+                          </div>
+                        )}
+                        {m.error && <div className="text-xs text-destructive">⚠ {m.error}</div>}
+                        {!m.loading && m.proposals && m.proposals.length === 0 && (
+                          <div className="text-xs text-muted-foreground">Nothing to coordinate — you're all caught up.</div>
+                        )}
+                        {!m.loading && m.proposals && m.proposals.length > 0 && (
+                          <>
+                            <div className="text-[11px] text-muted-foreground">
+                              {m.proposals.length} proposal{m.proposals.length === 1 ? "" : "s"} · reviewed {m.considered ?? 0} trip{(m.considered ?? 0) === 1 ? "" : "s"}
+                            </div>
+                            <div className="space-y-1.5">
+                              {m.proposals.map((p, i) => {
+                                const isDone = (m.done ?? []).includes(i);
+                                const isSel = m.selected?.[i] ?? false;
+                                return (
+                                  <div key={i} className={`rounded border bg-background p-2 flex items-start gap-2 text-xs ${isDone ? "opacity-50" : ""}`}>
+                                    <input
+                                      type="checkbox"
+                                      className="mt-0.5"
+                                      checked={isSel}
+                                      disabled={isDone}
+                                      onChange={() => toggleAutoCoordRow(m.id, i)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="uppercase text-[10px] rounded bg-secondary px-1.5 py-0.5">{p.kind}</span>
+                                        <span className="text-[10px] text-muted-foreground">{p.trip_ids.length} trip{p.trip_ids.length === 1 ? "" : "s"}</span>
+                                      </div>
+                                      <div className="mt-0.5 text-muted-foreground">{p.reason}</div>
+                                    </div>
+                                    <Button size="sm" variant="outline" disabled={isDone || m.applying}
+                                      onClick={() => applyAutoCoordOne(m.id, i)}>
+                                      {isDone ? "Applied" : "Accept"}
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex justify-end">
+                              <Button size="sm" disabled={m.applying || (m.done?.length ?? 0) === m.proposals.length}
+                                onClick={() => applyAutoCoordSelected(m.id)}>
+                                Accept selected
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
                 const isUser = m.role === "user";
                 return (
                   <div key={m.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
