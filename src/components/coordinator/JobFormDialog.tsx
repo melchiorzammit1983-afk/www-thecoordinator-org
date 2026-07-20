@@ -560,6 +560,7 @@ function ManualForm({
               jobId={job?.id ?? null}
               drivers={drivers}
               onPickDriver={(id) => setDriverId(id)}
+              onSeverityChange={setConflictSeverity}
               candidate={
                 job
                   ? null
@@ -573,6 +574,21 @@ function ManualForm({
                     }
               }
             />
+            {conflictSeverity === "conflict" && driverId !== "__none__" && (
+              <label className="mt-1 flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] leading-snug text-red-900 dark:text-red-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={assignAnyway}
+                  onChange={(e) => setAssignAnyway(e.target.checked)}
+                />
+                <span>
+                  <span className="font-semibold">Assign anyway</span> — I understand this driver's
+                  schedule collides with another trip and I take responsibility for the double-booking.
+                </span>
+              </label>
+            )}
+
           </div>
           <LabelPicker value={labelIds} onChange={setLabelIds} />
           <ToggleRow
