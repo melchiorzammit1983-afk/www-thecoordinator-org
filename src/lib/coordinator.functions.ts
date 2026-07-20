@@ -6581,6 +6581,17 @@ export const autoAssignJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const sb = await getAdminClient();
+
+    // Enforce the AI Center → Toggles switch (mirror runAutoCoordinate).
+    const { data: cfg } = await sb
+      .from("ai_configuration")
+      .select("auto_assign_enabled")
+      .eq("company_id", c.id)
+      .maybeSingle();
+    if (!cfg || (cfg as any).auto_assign_enabled !== true) {
+      throw new Error("Auto-assign is turned off in your AI settings — enable it in AI Center → Toggles.");
+    }
+
     // Ensure the job belongs to (or is executed by) this company
     const { data: job } = await sb
       .from("jobs")
@@ -6604,6 +6615,7 @@ export const autoAssignJob = createServerFn({ method: "POST" })
     await spendOrThrow(c.id, "ai_auto_assign", `Auto-assign trip ${data.job_id.slice(0, 8)}`, data.job_id);
     return { ok: true, driver_id: row.driver_id, reason: row.reason, score: Number(row.score ?? 0) };
   });
+
 
 // ---------- REFERRALS ----------
 
