@@ -2738,6 +2738,11 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!configured || !jobs?.length) return { checked: jobs?.length ?? 0, updated: 0, configured };
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
+    {
+      const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
+      try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
+      catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+    }
     const freshCutoffMs = Date.now() - 5 * 60_000;
     let updated = 0;
     let skippedFresh = 0;
