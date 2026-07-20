@@ -105,6 +105,11 @@ export function WatchtowerToggle() {
           action: { label: "Open Settings", onClick: () => { window.location.href = "/settings"; } },
         });
         refetchSettings();
+      } else if (r?.reason === "feature_unavailable") {
+        toast.error(
+          "Watchtower is not available on your current plan or has been disabled by the platform admin. Contact support to enable it.",
+        );
+        refetchSettings();
       } else if (r?.reason === "insufficient_points") {
         toast.error(
           r?.message
