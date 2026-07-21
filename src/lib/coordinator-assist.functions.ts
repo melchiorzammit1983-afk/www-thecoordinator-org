@@ -550,6 +550,63 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? clientNotes.map((n) => `- ${n.client_display}: ${n.note.slice(0, 200)}`).join("\n")
       : "(no client notes saved)";
 
+    // Phase 7 — pending review queues the assistant must acknowledge instead of ignoring.
+    // 1) Driver "On The Go" trips awaiting coordinator finalization (needs_review=true).
+    // 2) Public booking portal requests still in 'pending' status.
+    const [{ data: reviewJobs }, { data: pendingReqs }] = await Promise.all([
+      supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, from_location, to_location, pickup_at, drivers:driver_id(name)")
+        .eq("company_id", company.id)
+        .eq("needs_review", true)
+        .not("status", "in", "(completed,cancelled)")
+        .order("pickup_at", { ascending: true, nullsFirst: false })
+        .limit(20),
+      supabaseAdmin
+        .from("public_booking_requests")
+        .select("id, from_location, to_location, requested_at, status, portal_id")
+        .eq("status", "pending")
+        .in(
+          "portal_id",
+          (
+            (
+              await supabaseAdmin
+                .from("public_booking_portals")
+                .select("id")
+                .eq("company_id", company.id)
+            ).data ?? []
+          ).map((p: any) => p.id),
+        )
+        .order("requested_at", { ascending: false })
+        .limit(20),
+    ]);
+    const reviewList = (reviewJobs ?? []) as any[];
+    const pendingList = (pendingReqs ?? []) as any[];
+    const pendingReviewBlock = (reviewList.length || pendingList.length)
+      ? [
+          reviewList.length
+            ? `DRIVER TRIPS AWAITING REVIEW (${reviewList.length}) — Phase 2 On-The-Go, needs coordinator finalize:\n${reviewList
+                .map(
+                  (j) =>
+                    `- #${j.trip_no ?? "?"} (${j.id}) drv:${j.drivers?.name ?? "?"} ${j.pickup_at ?? ""} | ${j.from_location ?? ""} → ${j.to_location ?? ""}`,
+                )
+                .join("\n")}`
+            : "",
+          pendingList.length
+            ? `PUBLIC BOOKING REQUESTS PENDING (${pendingList.length}) — Phase 4 portal, needs coordinator accept/edit:\n${pendingList
+                .map(
+                  (r) =>
+                    `- ${r.id} ${r.requested_at ?? ""} | ${r.from_location ?? ""} → ${r.to_location ?? ""}`,
+                )
+                .join("\n")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : "(nothing pending review)";
+
+
+
 
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
