@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 import { DriverOtgSheet } from "@/components/driver/DriverOtgSheet";
+import { OtgManageDialog } from "@/components/driver/OtgManageDialog";
 
 
 import { Badge } from "@/components/ui/badge";
