@@ -3209,7 +3209,17 @@ function TripMenu({
             <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
               <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => copyClientLink.mutate()} disabled={copyClientLink.isPending}>
+            <DropdownMenuItem
+              onClick={() => {
+                const paxList = (job.pax ?? []).filter((p) => (p.name ?? "").trim().length > 0);
+                if (paxList.length > 1) {
+                  setPickerOpen(true);
+                } else {
+                  copyClientLink.mutate();
+                }
+              }}
+              disabled={copyClientLink.isPending}
+            >
               <Link2 className="h-4 w-4 mr-2" /> Copy client link
             </DropdownMenuItem>
           </>
