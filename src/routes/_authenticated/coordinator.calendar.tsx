@@ -2999,6 +2999,7 @@ function TripMenu({
 }) {
   const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
   const pending = !!job.deletion_requested_at;
+  const [pickerOpen, setPickerOpen] = useState(false);
   const qc = useQueryClient();
   const delFn = useServerFn(deleteJob);
   const cancelFn = useServerFn(cancelDeletionRequest);
