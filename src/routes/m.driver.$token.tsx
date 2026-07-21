@@ -1830,7 +1830,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                 className="w-full h-14 text-base font-semibold"
                 disabled={statusMut.isPending}
                 onClick={() => {
-                  if (nextStatus.value === "completed") setSummaryOpen(true);
+                  if (nextStatus.value === "completed") { void maybeFinalizeOtgDropoff(); setSummaryOpen(true); }
                   else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
                   else statusMut.mutate(nextStatus.value);
                 }}
