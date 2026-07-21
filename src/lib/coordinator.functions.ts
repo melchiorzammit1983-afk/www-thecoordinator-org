@@ -154,13 +154,15 @@ type LockableJob = {
   driver_id: string | null;
   driver_accepted_at: string | null;
   status: string | null;
+  created_by_driver?: boolean | null;
+  needs_review?: boolean | null;
 };
 
 async function loadLockableJob(jobId: string, companyId: string): Promise<LockableJob | null> {
   const sb = await getAdminClient();
   const { data } = await sb
     .from("jobs")
-    .select("id, company_id, driver_id, driver_accepted_at, status")
+    .select("id, company_id, driver_id, driver_accepted_at, status, created_by_driver, needs_review")
     .eq("id", jobId)
     .eq("company_id", companyId)
     .maybeSingle();
@@ -169,6 +171,10 @@ async function loadLockableJob(jobId: string, companyId: string): Promise<Lockab
 
 function isJobLocked(job: LockableJob | null): boolean {
   if (!job) return false;
+  // OTG trips awaiting coordinator review are the coordinator's to finalize:
+  // driver_accepted_at / en_route are auto-set at OTG start, but the trip
+  // has no real schedule yet — so treat it as unlocked until marked reviewed.
+  if (job.created_by_driver && job.needs_review) return false;
   if (job.driver_accepted_at) return true;
   const s = (job.status ?? "").toLowerCase();
   return s !== "" && s !== "pending";
