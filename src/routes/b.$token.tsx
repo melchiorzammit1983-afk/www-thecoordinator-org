@@ -202,6 +202,8 @@ function PublicBookingPage() {
       </Card>
 
       <RequestList bootstrap={bootstrap} />
+      <PastTripsCard trips={bootstrap?.history ?? []} />
+
 
       <div className="flex justify-end">
         <Button variant="outline" onClick={() => setShowChat((v) => !v)}>
