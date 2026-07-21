@@ -1876,17 +1876,19 @@ function DriverAssignmentConflictHint({
     }
   };
 
+  const data = q.data;
+  useEffect(() => {
+    if (!enabled) onSeverityChange?.(null);
+    else if (data) onSeverityChange?.(data.severity);
+  }, [enabled, data, onSeverityChange]);
+
   if (!enabled) return null;
   if (q.isLoading) {
     return (
       <div className="text-[11px] text-muted-foreground">Checking driver's schedule…</div>
     );
   }
-  const data = q.data;
-  useEffect(() => {
-    if (!enabled) onSeverityChange?.(null);
-    else if (data) onSeverityChange?.(data.severity);
-  }, [enabled, data, onSeverityChange]);
+
   if (!data || data.severity === "free") {
     if (data?.severity === "free") {
       return (
