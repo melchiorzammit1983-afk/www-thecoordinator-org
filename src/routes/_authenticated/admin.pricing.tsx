@@ -209,14 +209,16 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
       <TableCell><Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell>
-        <button type="button" onClick={() => setActive(!active)}>
-          <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Off"}</Badge>
-        </button>
+        <div className="flex items-center gap-2">
+          <Switch checked={active} onCheckedChange={setActive} />
+          <span className="text-[11px] text-muted-foreground">{active ? "Active" : "Off"}</span>
+        </div>
       </TableCell>
       <TableCell>
-        <button type="button" onClick={() => setIsRef(!isRef)} title="Only one pack can be the reference rate">
-          <Badge variant={isRef ? "default" : "outline"}>{isRef ? "Reference" : "Set as reference"}</Badge>
-        </button>
+        <div className="flex items-center gap-2" title="Only one pack can be the reference rate; drives EUR display across the app">
+          <Switch checked={isRef} onCheckedChange={setIsRef} />
+          <span className="text-[11px] text-muted-foreground">{isRef ? "Reference" : "—"}</span>
+        </div>
       </TableCell>
       <TableCell className="text-right space-x-1">
         <Button size="sm" variant="ghost" onClick={() => onSave({ id: pack.id, name, points: Number(points), price: Number(price), sort_order: pack.sort_order ?? 0, is_active: active, is_reference_rate: isRef })}>
