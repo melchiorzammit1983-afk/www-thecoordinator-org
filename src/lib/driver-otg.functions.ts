@@ -169,8 +169,17 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toISOString().slice(11, 16);
-    const pickupLabel = data.pickup_label?.trim()
-      || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
+    let pickupLabel = data.pickup_label?.trim() || "";
+    let pickupPlaceId: string | null = null;
+    if (!pickupLabel && typeof data.lat === "number" && typeof data.lng === "number") {
+      const rg = await reverseGeocode(data.lat, data.lng);
+      if (rg?.address) { pickupLabel = rg.address; pickupPlaceId = rg.place_id; }
+    }
+    if (!pickupLabel) {
+      pickupLabel = (typeof data.lat === "number" && typeof data.lng === "number")
+        ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`
+        : "Driver current location";
+    }
 
     const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: coordinatorId,
