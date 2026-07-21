@@ -108,6 +108,8 @@ type Job = {
   route_duration_sec?: number | null;
   route_distance_m?: number | null;
   labels?: { id: string; name: string; color: string }[];
+  needs_review?: boolean | null;
+  created_by_driver?: boolean | null;
 };
 
 type Prefill = Partial<{
