@@ -21,6 +21,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
+import { DriverOtgSheet } from "@/components/driver/DriverOtgSheet";
 
 
 import { Badge } from "@/components/ui/badge";
@@ -536,6 +537,7 @@ function DriverManifest() {
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
+  const [otgOpen, setOtgOpen] = useState(false);
   const [chatJob, setChatJob] = useState<Job | null>(null);
 
   useEffect(() => {
@@ -902,6 +904,10 @@ function DriverManifest() {
                     <Button size="icon" variant="outline" aria-label="Menu"><MoreVertical className="h-4 w-4" /></Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setOtgOpen(true)}>
+                      <Car className="h-4 w-4 mr-2" /> Create trip (On The Go)
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     {driver && (
                       <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                         <User className="h-4 w-4 mr-2" /> Edit profile
@@ -1097,6 +1103,12 @@ function DriverManifest() {
         job={autoNextJob}
         onDismiss={dismissAutoNext}
         onOpenTrip={() => { if (autoNextJob) { setOpenJob(autoNextJob as unknown as Job); dismissAutoNext(); } }}
+      />
+      <DriverOtgSheet
+        open={otgOpen}
+        onOpenChange={setOtgOpen}
+        token={token}
+        onCreated={() => qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] })}
       />
       <BrandingBar branding={data.branding} />
     </div>
