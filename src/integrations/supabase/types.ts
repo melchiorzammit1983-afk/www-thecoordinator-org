@@ -4398,6 +4398,7 @@ export type Database = {
           note: string | null
           phone: string | null
           status: Database["public"]["Enums"]["pax_status"]
+          stop_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4413,6 +4414,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
+          stop_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4428,6 +4430,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
+          stop_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4443,6 +4446,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pax_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "group_stops"
             referencedColumns: ["id"]
           },
         ]
