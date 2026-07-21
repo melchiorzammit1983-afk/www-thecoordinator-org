@@ -121,9 +121,10 @@ function PlanEditor({ plan, onSave, onDelete }: { plan: any; onSave: (row: any) 
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <button type="button" onClick={() => setIsPublic(!isPublic)}>
-          <Badge variant={isPublic ? "default" : "outline"}>{isPublic ? "Listed publicly" : "Hidden"}</Badge>
-        </button>
+        <label className="flex items-center gap-2 text-xs">
+          <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+          <span className="text-muted-foreground">Listed publicly on pricing page</span>
+        </label>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onDelete}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
           <Button size="sm" onClick={() => onSave({
