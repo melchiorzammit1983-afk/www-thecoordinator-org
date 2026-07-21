@@ -95,12 +95,18 @@ export const Route = createFileRoute("/api/public/hooks/summarize-learning")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const providedKey =
-          request.headers.get("apikey") ??
+        const expected = process.env.CRON_SECRET ?? "";
+        if (!expected) {
+          return new Response(JSON.stringify({ error: "cron_secret_not_configured" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const provided =
+          request.headers.get("x-cron-secret") ??
           request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
           "";
-        const anon = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
-        if (!providedKey || !anon || providedKey !== anon) {
+        if (provided !== expected) {
           return new Response(JSON.stringify({ error: "unauthorized" }), {
             status: 401,
             headers: { "Content-Type": "application/json" },
