@@ -26,6 +26,8 @@ type Boot = {
   to: string;
   driver: { first_name: string; vehicle: string | null; plate: string | null } | null;
   show_driver_location: boolean;
+  passenger?: { name: string; note: string | null } | null;
+
 };
 
 const STAGES = ["pending", "confirmed", "assigned", "en_route", "arrived", "in_progress", "completed"] as const;
