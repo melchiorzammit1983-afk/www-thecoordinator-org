@@ -530,6 +530,7 @@ function DriverBoardingApprovalPanel({
 
 function DriverManifest() {
   const { token } = Route.useParams();
+  const navigate = useNavigate();
   const fn = useServerFn(getDriverManifest);
   const qcTop = useQueryClient();
   const { data, isLoading } = useQuery({
