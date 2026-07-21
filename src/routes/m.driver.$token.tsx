@@ -1222,6 +1222,19 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [otgManageOpen, setOtgManageOpen] = useState(false);
+  // Auto-open the OTG manage sheet the first time the driver reaches
+  // "arrived" on their on-the-go trip so they can fill in / confirm the
+  // passenger list (unless the coordinator already added them).
+  const otgPromptedRef = useRef(false);
+  useEffect(() => {
+    if (!job.created_by_driver) return;
+    if (job.status !== "arrived") return;
+    if (otgPromptedRef.current) return;
+    otgPromptedRef.current = true;
+    setOtgManageOpen(true);
+  }, [job.created_by_driver, job.status]);
+
+
   
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
