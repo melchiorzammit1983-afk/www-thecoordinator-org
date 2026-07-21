@@ -1517,17 +1517,24 @@ export const deleteJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id")
+      .select("id, company_id, created_by_driver")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) return { deleted: false, pending: false, missing: true };
+    // On-the-go driver-created trips are the driver's record — coordinator
+    // can edit them freely but cannot delete. The driver deletes their own
+    // OTG trip from the driver app while it's still "needs review".
+    if ((job as any).created_by_driver) {
+      throw new Error("This trip was created by the driver on the go — you can edit it, but only the driver can delete it.");
+    }
     // Hard delete — the coordinator-approve / change-request flow has been retired.
     const { error: dErr } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id).eq("company_id", c.id);
     if (dErr) throw new Error(dErr.message);
     return { deleted: true, pending: false };
   });
+
 
 
 
