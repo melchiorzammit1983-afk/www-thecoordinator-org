@@ -1,52 +1,36 @@
-## Goal
+## Problem
 
-Rework the coordinator's Create Trip flow so that after typing passenger names, each one becomes an editable row (phone + note per person). Add real multi-stop support inside the same dialog, and teach the AI assistant to read and edit both.
+When a coordinator opens a driver's **on-the-go (OTG)** trip in the trip editor and changes the pickup time or the coordinator company, nothing updates on the trip. Both fields silently no-op (time) or don't exist at all (company).
 
-## 1. Passengers: one-by-one editing after Save
+**Root cause (confirmed in code):**
 
-Today (`JobFormDialog.tsx` lines 455-465), on Create the coordinator only sees a bulk textarea. Phone/note per passenger is only available after the trip is created (via `PaxEditor`, line 1580+). Result: names are saved but no per-passenger phone/note capture in the same flow.
+1. **Time change is silently converted to a "change request".** OTG trips are inserted with `status = 'en_route'` and `driver_accepted_at = now()` (`src/lib/driver-otg.functions.ts:158-159`). `isJobLocked` in `src/lib/coordinator.functions.ts:170-175` treats any job with `driver_accepted_at` set *or* status past `pending` as locked, so `updateJob` (line 700) routes the edit through `createChangeRequest` instead of patching the row. The coordinator sees "Trip updated" but the actual `pickup_at / date / time` stay put until the driver approves. For an OTG trip that is still `needs_review = true`, this is wrong — the driver hasn't scheduled anything; they just started rolling and it's the coordinator's job to finalize the details.
 
-Change:
-- Keep the paste textarea as the fast entry point.
-- After the coordinator clicks Save on a new trip, do **not** close the dialog. Switch the dialog into a compact "Passenger details" view listing every parsed name as its own row with inline Phone + Note fields (reuse the existing `PaxEditor` list UI). Coordinator fills what they want, then taps "Done".
-- Skippable — a "Skip, I'll do it later" link closes the dialog immediately.
-- Names entered inline (typed into the "Add another" row) get the same row treatment.
+2. **Coordinator company is not editable at all.** `JobFormDialog` never renders a company picker and `updateJob`'s input schema doesn't accept `company_id`, so a trip that the driver accidentally started under coordinator A can't be moved to coordinator B even though the driver's OTG start screen already supports that choice (`listOtgCoordinators`).
 
-Files: `src/components/coordinator/JobFormDialog.tsx` (new post-save step; reuse `PaxEditor` rendering), no schema change needed — pax rows already carry `phone`/`note`.
+## Fix
 
-## 2. Multi-stop in the same dialog
+### 1. Let coordinators freely edit an OTG trip until they mark it reviewed
 
-Today: multi-stop only exists via `group_stops` after a group is created; `JobFormDialog` shows only From / To. Coordinator has no way to add intermediate stops at create time.
+Treat OTG-in-review as "not really locked" for the coordinator who owns it:
 
-Change:
-- Add a **Stops** section in Step 2 (Where) with an ordered list of intermediate stops. Each row: `AddressAutocomplete` + optional passenger count + drag handle + remove. "+ Add stop" appends a row.
-- Persistence:
-  - On create/save with ≥1 intermediate stop, auto-create a `groups` row for the job and insert `group_stops` rows: pickup as stop 0, each intermediate in order, drop-off as final stop.
-  - On edit of a job that already has a `group_id`, load its stops via existing `listGroupStops` and let the coordinator add/remove/reorder in-place.
-- Add a new authenticated server function `addGroupStop` in `src/lib/groups.functions.ts` (coordinator-scoped, mirrors `otgAddStop` shape) and `removeGroupStop`; reuse existing `reorderStops`.
+- In `src/lib/coordinator.functions.ts`, extend the `LockableJob`/`existing` select to include `created_by_driver` and `needs_review`.
+- In `isJobLocked` (or at the `updateJob` call site), add: if `created_by_driver === true` AND `needs_review === true`, return `false` (not locked). Same treatment for the reassign path at line 1061 so the coordinator can also change/clear the driver on an OTG trip without approval friction.
+- Once the coordinator hits **Mark reviewed** (`needs_review` flips to false), normal locking resumes — future edits still go through the driver-approval change-request flow as today. This matches the previously agreed rule: OTG trips are the coordinator's to finalize; approved trips need driver consent.
 
-Files: `src/components/coordinator/JobFormDialog.tsx` (new StopsEditor sub-component), `src/lib/groups.functions.ts` (add/remove stop fns).
+### 2. Add a coordinator-company field for OTG trips
 
-## 3. AI assistant: read + edit passengers and stops
+- Add `company_id: z.string().uuid().optional()` to `jobInput` (used by `updateJob`).
+- In `updateJob`, when the caller sends a `company_id` different from the current one, verify it's the caller's own company or a connected partner (reuse the `coordinator_connections` check pattern from `startOnTheGoTrip`, lines 130-138) and only allow the move while `created_by_driver && needs_review`. Include `company_id` in the update patch.
+- In `src/components/coordinator/JobFormDialog.tsx`, when the loaded `job` has `created_by_driver && needs_review`, render a **Coordinator company** `<Select>` above the driver picker, populated from a small new server fn `listEditableOtgCoordinators` (mirrors `listOtgCoordinators` but keyed by the current user's company + active connections). Wire the chosen id into the update payload. Hide the field on all other trips.
 
-Currently the assistant can parse `pax` at create/update time but has no vocabulary for "add a phone to John", "remove passenger X", "add a stop at the Marina", "reorder stops".
+### 3. Small UX cleanups discovered in the same area
 
-Change in `src/lib/coordinator-assist.functions.ts`:
-- Extend the `command_actions` action set with new verbs: `add_pax`, `update_pax` (phone/note), `remove_pax`, `add_stop`, `remove_stop`, `reorder_stops`.
-- Include the currently-open trip's passenger list and (if grouped) its stop list in the assistant's context block so it can reference them by name/index.
-- Add a small executor in the client's command runner (same place existing `command_actions` like group/ungroup/message-driver dispatch) that calls the new pax/stop server functions.
-- Prompt guidance: examples like "add +356 9911 2233 to Elmer", "add a stop at St Julian's before the airport", "swap stops 2 and 3".
+- Show a subtle "OTG — editable until reviewed" hint next to the existing amber "needs review" banner so the coordinator understands why time/company are directly editable here but locked elsewhere.
+- After `updateJob` succeeds on an OTG trip, invalidate `["driver-manifest"]` too (not just `["jobs"]`) so the driver's device picks up the new time/company without waiting for the next poll.
 
-## 4. Verification
+## Out of scope
 
-- Create trip with 3 names → after Save, 3 editable rows appear; add phone to one, note to another, close → reopen trip and confirm persisted.
-- Create trip with pickup + 2 intermediate stops + drop-off → group is auto-created, stops persist in `group_stops` in correct order, `GroupStopsPanel` (existing) shows them.
-- Chat "add +356 79 12 34 56 to <name>" on open trip → `PaxEditor` list refreshes with the phone.
-- Chat "add a stop at the Marina before the airport" → new `group_stops` row appears in the right position.
-
-## Technical notes
-
-- Reusing `PaxEditor` for the post-save step means no new list UI to maintain; only wrap it in a "Passenger details" panel with a Done button.
-- Auto-creating a `groups` row when intermediate stops exist keeps the rest of the app (route optimization, GroupStopsPanel, driver manifest) working unchanged — they already read from `group_stops`.
-- New `addGroupStop`/`removeGroupStop` follow the existing pattern in `groups.functions.ts` (`requireSupabaseAuth` + `assertGroupCompany`), including a `record_trip_audit` call so the change appears on the trip map/timeline like every other coordinator action.
-- Assistant vocabulary additions are additive to the existing `command_actions` kind — no schema change to the AI response contract.
+- No change to how change-requests work for *approved* (non-OTG or already-reviewed) trips.
+- No change to OTG creation, deletion, passenger/stop editors, or map logging.
+- No schema migration — `company_id`, `created_by_driver`, `needs_review` already exist on `jobs`.
