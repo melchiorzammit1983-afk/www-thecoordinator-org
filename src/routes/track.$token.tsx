@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { PastTripsCard } from "@/components/client/PastTripsCard";
 import { toast } from "sonner";
+
 
 /**
  * Public passenger tracking page. Hotel-branded, coordinator invisible.
