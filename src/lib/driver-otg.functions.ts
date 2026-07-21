@@ -185,6 +185,8 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       company_id: coordinatorId,
       driver_id: link.subject_id,
       from_location: pickupLabel,
+      pickup_place_id: pickupPlaceId,
+      pickup_display_name: pickupPlaceId ? pickupLabel : null,
       to_location: data.to_location?.trim() || "TBD — set by driver",
       dropoff_place_id: data.dropoff_place_id || null,
       date, time,
