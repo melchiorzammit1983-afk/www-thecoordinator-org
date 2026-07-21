@@ -62,7 +62,7 @@ const BiasSchema = z
   .optional();
 
 export const placesAutocomplete = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -118,7 +118,7 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
   });
 
 export const placesDetails = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -168,7 +168,7 @@ export const placesDetails = createServerFn({ method: "POST" })
 // confident (single result, or first result's main text overlaps the input).
 // The caller decides whether to swap the text.
 export const resolveAddresses = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -303,7 +303,7 @@ async function _tryCharge(
 // caches the result on the jobs row (route_duration_sec / route_distance_m)
 // so we don't re-charge on every render.
 export const estimateRouteEta = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z.object({
       from: z.string().trim().min(2).max(300),
@@ -378,7 +378,7 @@ export const estimateRouteEta = createServerFn({ method: "POST" })
 // place_id when we have it; otherwise runs an autocomplete on the raw address
 // text and takes the top match.
 export const resolveJobPlaceNames = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z.object({ job_id: z.string().uuid() }).parse(input),
   )
@@ -573,7 +573,7 @@ export async function backfillJobNamesServer(jobIds: string[]): Promise<number> 
 // hotel don't double-charge. Silently no-ops per side when a feature is
 // disabled or points are out — callers just render the raw fallback.
 export const backfillJobEnrichment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z.object({
       job_ids: z.array(z.string().uuid()).min(1).max(50),
