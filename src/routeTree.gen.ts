@@ -86,6 +86,7 @@ import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/
 import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
 import { Route as ApiPublicTrackTokenIndexRouteImport } from './routes/api/public/track/$token/index'
 import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/public/portal/$token/index'
+import { Route as ApiPublicBTokenIndexRouteImport } from './routes/api/public/b/$token/index'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
 import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
 import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
@@ -531,6 +532,11 @@ const ApiPublicPortalTokenIndexRoute =
     path: '/api/public/portal/$token/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBTokenIndexRoute = ApiPublicBTokenIndexRouteImport.update({
+  id: '/api/public/b/$token/',
+  path: '/api/public/b/$token/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
   id: '/sign/$jobId',
   path: '/sign/$jobId',
@@ -688,6 +694,7 @@ export interface FileRoutesByFullPath {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -774,6 +781,7 @@ export interface FileRoutesByTo {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -866,6 +874,7 @@ export interface FileRoutesById {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -958,6 +967,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/guest/room/$qr'
@@ -1044,6 +1054,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token'
     | '/api/public/portal/$token'
     | '/api/public/track/$token'
     | '/api/public/portal/guest/room/$qr'
@@ -1135,6 +1146,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/guest/room/$qr'
@@ -1181,6 +1193,7 @@ export interface RootRouteChildren {
   ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
   ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
   ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
+  ApiPublicBTokenIndexRoute: typeof ApiPublicBTokenIndexRoute
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
   ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
   ApiPublicPortalGuestRoomQrRoute: typeof ApiPublicPortalGuestRoomQrRoute
@@ -1728,6 +1741,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalTokenIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/b/$token/': {
+      id: '/api/public/b/$token/'
+      path: '/api/public/b/$token'
+      fullPath: '/api/public/b/$token/'
+      preLoaderRoute: typeof ApiPublicBTokenIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/m/driver/$token/sign/$jobId': {
       id: '/m/driver/$token/sign/$jobId'
       path: '/sign/$jobId'
@@ -2034,6 +2054,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
   ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
   ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
+  ApiPublicBTokenIndexRoute: ApiPublicBTokenIndexRoute,
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
   ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
   ApiPublicPortalGuestRoomQrRoute: ApiPublicPortalGuestRoomQrRoute,
