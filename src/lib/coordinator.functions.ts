@@ -934,7 +934,12 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
 export const addJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ job_id: z.string().uuid(), name: z.string().trim().min(1).max(200) }).parse(i),
+    z.object({
+      job_id: z.string().uuid(),
+      name: z.string().trim().min(1).max(200),
+      phone: z.string().trim().max(40).optional().nullable(),
+      note: z.string().trim().max(500).optional().nullable(),
+    }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
@@ -946,10 +951,70 @@ export const addJobPax = createServerFn({ method: "POST" })
       .eq("company_id", c.id)
       .maybeSingle();
     if (je || !job) throw new Error("Job not found");
-    const { error } = await supabaseAdmin.from("pax").insert({ job_id: data.job_id, name: data.name });
+    const { error } = await supabaseAdmin.from("pax").insert({
+      job_id: data.job_id,
+      name: data.name,
+      phone: data.phone || null,
+      note: data.note || null,
+    } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Update phone/note on an existing passenger. */
+export const updateJobPax = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      pax_id: z.string().uuid(),
+      name: z.string().trim().min(1).max(200).optional(),
+      phone: z.string().trim().max(40).optional().nullable(),
+      note: z.string().trim().max(500).optional().nullable(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row } = await supabaseAdmin
+      .from("pax").select("id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+    if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
+    const patch: Record<string, unknown> = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.phone !== undefined) patch.phone = data.phone || null;
+    if (data.note !== undefined) patch.note = data.note || null;
+    if (Object.keys(patch).length === 0) return { ok: true };
+    const { error } = await supabaseAdmin.from("pax").update(patch as never).eq("id", data.pax_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/**
+ * Returns the personal shareable tracking token for a passenger. The DB
+ * trigger auto-creates one on pax insert; this function also self-heals for
+ * legacy pax rows that pre-date the trigger.
+ */
+export const getPaxPersonalToken = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ pax_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: row } = await supabaseAdmin
+      .from("pax").select("id, job_id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+    if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
+    let { data: tok } = await supabaseAdmin
+      .from("pax_tracking_tokens").select("token")
+      .eq("pax_id", data.pax_id).is("revoked_at", null).maybeSingle();
+    if (!tok) {
+      const ins = await supabaseAdmin
+        .from("pax_tracking_tokens")
+        .insert({ pax_id: data.pax_id, job_id: (row as any).job_id } as never)
+        .select("token").single();
+      tok = ins.data as any;
+    }
+    return { token: (tok as any)?.token as string };
+  });
+
 
 export const removeJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
