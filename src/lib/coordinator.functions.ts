@@ -5866,8 +5866,33 @@ export async function runAutoCoordinate(
     loadActivePartners(sb, companyId),
   ]);
 
+  // Phase 7 — surface pending-review counts so Auto-Coordinate acknowledges
+  // Phase 2 (driver On-The-Go) and Phase 4 (public booking portal) queues
+  // instead of silently ignoring them. Not part of proposals — informational only.
+  const [{ count: reviewCount }, portalIdsRes] = await Promise.all([
+    sb.from("jobs").select("id", { count: "exact", head: true })
+      .eq("company_id", companyId).eq("needs_review", true)
+      .not("status", "in", "(completed,cancelled)"),
+    sb.from("public_booking_portals" as any).select("id").eq("coordinator_company_id", companyId),
+  ]);
+  const portalIds = (portalIdsRes.data ?? []).map((p: any) => p.id);
+  let pendingRequestsCount = 0;
+  if (portalIds.length) {
+    const { count } = await sb
+      .from("public_booking_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .in("portal_id", portalIds);
+    pendingRequestsCount = count ?? 0;
+  }
+  const pendingReview = {
+    driver_otg_review: reviewCount ?? 0,
+    portal_requests_pending: pendingRequestsCount,
+  };
+
   const list = jobs ?? [];
   const drv = drivers ?? [];
+
 
   const { data: costRow } = await sb
     .from("ai_feature_costs")
