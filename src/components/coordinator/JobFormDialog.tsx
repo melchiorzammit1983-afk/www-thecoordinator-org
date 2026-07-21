@@ -220,6 +220,23 @@ function ManualForm({
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
   const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
 
+  // OTG-only: coordinator can reassign the trip to another connected
+  // coordinator company while it is still `created_by_driver && needs_review`.
+  const isOtgEditable = !!(job?.created_by_driver && job?.needs_review);
+  const [coordCompanyId, setCoordCompanyId] = useState<string>("");
+  const otgTargetsFn = useServerFn(listOtgReassignTargets);
+  const { data: otgTargets } = useQuery({
+    enabled: isOtgEditable && !!job?.id,
+    queryKey: ["otg-reassign", job?.id],
+    queryFn: () => otgTargetsFn({ data: { job_id: job!.id } }),
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    if (otgTargets?.current_company_id && !coordCompanyId) {
+      setCoordCompanyId(otgTargets.current_company_id);
+    }
+  }, [otgTargets, coordCompanyId]);
+
 
   // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
   // and return the normalized code plus the remaining text with the match removed.
