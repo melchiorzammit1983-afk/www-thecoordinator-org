@@ -327,3 +327,42 @@ function TodayTab({ token, exceptions, onSaved }: { token: string; exceptions: a
     </div>
   );
 }
+
+// ── Display prefs ───────────────────────────────────────────────────────
+// Simple per-device switch (localStorage) mirrored by the driver manifest.
+// When ON, completed/cancelled trips are auto-hidden from the active list
+// (still reachable via "Show old / hidden trips"). Default OFF so finished
+// trips stay visible until the driver hides each one manually.
+function DisplayPrefsCard({ token }: { token: string }) {
+  const key = `driver:autoHideDone:${token}`;
+  const [autoHide, setAutoHide] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(key) === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, autoHide ? "1" : "0");
+  }, [autoHide, key]);
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Trip list display</CardTitle>
+      </CardHeader>
+      <CardContent className="p-4 pt-0 space-y-2">
+        <div className="flex items-center justify-between rounded border p-2">
+          <div className="pr-3">
+            <div className="font-medium text-sm">Auto-hide finished trips</div>
+            <div className="text-[11px] text-muted-foreground">
+              When on, completed and cancelled trips drop off your active list.
+              When off, they stay visible until you hide each one from the trip
+              card. Old and hidden trips are always reachable from the
+              "Show old / hidden trips" button at the bottom of your list.
+            </div>
+          </div>
+          <Switch checked={autoHide} onCheckedChange={setAutoHide} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
