@@ -409,6 +409,22 @@ function ManualForm({
           Prefilled from paste — fill in any missing fields highlighted below.
         </div>
       )}
+      {job?.needs_review && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs flex items-center gap-2">
+          <span className="flex-1">
+            {job.created_by_driver
+              ? "This trip was created by the driver on the go. Fill in the client name / fare, then mark it reviewed."
+              : "This trip is pending your review."}
+          </span>
+          <Button
+            type="button" size="sm" variant="outline"
+            onClick={() => reviewMut.mutate()}
+            disabled={reviewMut.isPending}
+          >
+            {reviewMut.isPending ? "Marking…" : "Mark reviewed"}
+          </Button>
+        </div>
+      )}
       {isMobile && (
         <div className="flex items-center justify-between gap-2 text-[11px] font-medium">
           {[
