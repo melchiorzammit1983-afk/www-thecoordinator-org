@@ -115,7 +115,7 @@ export const listPublicBookingRequests = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({
     portal_id: z.string().uuid().optional(),
     status: z.enum(["pending", "accepted", "rejected", "cancelled"]).optional(),
-  }).parse(d).catch?.(() => ({})) ?? {})
+  }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) return [];
