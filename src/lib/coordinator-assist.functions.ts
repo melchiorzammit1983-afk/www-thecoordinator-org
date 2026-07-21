@@ -612,6 +612,30 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
 
+    // Enrich the currently-open trip with its passenger list + intermediate
+    // stops so the assistant can answer "who's on this trip?" / "what stops
+    // does it have?" and reason about editing them.
+    let openTripDetails = "(none)";
+    if (trip && typeof (trip as { id?: string }).id === "string") {
+      const tripId = (trip as { id: string }).id;
+      const [{ data: paxRows }, { data: stopRows }] = await Promise.all([
+        supabaseAdmin.from("pax").select("id, name, phone, note").eq("job_id", tripId).order("created_at", { ascending: true }),
+        supabaseAdmin.from("groups").select("id").eq("job_id", tripId).order("created_at", { ascending: true }).limit(1).maybeSingle().then(async (g) => {
+          const gid = (g.data as { id?: string } | null)?.id;
+          if (!gid) return { data: [] as Array<{ stop_index: number; address: string }> };
+          return await supabaseAdmin.from("group_stops").select("stop_index, address").eq("group_id", gid).order("stop_index", { ascending: true });
+        }),
+      ]);
+      const paxLine = (paxRows ?? []).length
+        ? (paxRows as Array<{ id: string; name: string; phone: string | null; note: string | null }>).map((p) => `  - [${p.id}] ${p.name}${p.phone ? ` · ${p.phone}` : ""}${p.note ? ` · note: ${p.note}` : ""}`).join("\n")
+        : "  (none)";
+      const stopLine = (stopRows ?? []).length
+        ? (stopRows as Array<{ stop_index: number; address: string }>).map((s) => `  #${s.stop_index + 1} — ${s.address}`).join("\n")
+        : "  (none — straight pickup → dropoff)";
+      openTripDetails = `${JSON.stringify(trip)}\nPassengers on this trip:\n${paxLine}\nIntermediate stops (in order):\n${stopLine}`;
+    }
+
+
     // Character-overage billing. Anything past the free threshold is billed
     // via `ai_char_overage`; if the wallet is empty the input is truncated
     // (oldest history first, then message tail) so the call still succeeds.
@@ -819,7 +843,7 @@ CURRENT FEATURE ENTITLEMENTS (admin-controlled — do NOT return setting_change 
 ${entitlementsBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
-Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
+Currently open trip: ${openTripDetails}
 
 Recent conversation:
 ${historyLines || "(none)"}

@@ -51,6 +51,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
+import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
@@ -314,6 +315,9 @@ function ManualForm({
   useEffect(() => { setAssignAnyway(false); }, [driverId, date, time, from, to]);
   const hardBlocked = conflictSeverity === "conflict" && !assignAnyway;
 
+  const [createdJobId, setCreatedJobId] = useState<string | null>(null);
+  const [createdDate, setCreatedDate] = useState<string | null>(null);
+
   const mut = useMutation({
     mutationFn: async () => {
       const effFrom = from || (fromFlight ? "Airport" : "");
@@ -333,17 +337,26 @@ function ManualForm({
         pickup_display_name: fromDisplayName,
         dropoff_display_name: toDisplayName,
       };
-      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return date; }
-      await createFn({ data: { ...payload, pax } });
-      return date;
+      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return { date, jobId: job.id, isNew: false }; }
+      const row: any = await createFn({ data: { ...payload, pax } });
+      return { date, jobId: row?.id as string | undefined, isNew: true };
     },
-    onSuccess: (savedDate) => {
+    onSuccess: (res) => {
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      onSaved(savedDate);
+      if (res.isNew && res.jobId) {
+        // Keep dialog open so the coordinator can add phone / note per
+        // passenger inline. onSaved() (which closes the dialog) fires from
+        // the Done / Skip buttons on that step.
+        setCreatedJobId(res.jobId);
+        setCreatedDate(res.date);
+        return;
+      }
+      onSaved(res.date);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
 
   // Live from→to ETA badge. Debounced auto-fetch so we only ping Google once
   // the user has stopped typing. Charged as "route_eta" — if the company has
@@ -404,8 +417,26 @@ function ManualForm({
     return () => clearTimeout(timer);
   }, [from, to, etaFn, job?.id]);
 
+  if (createdJobId) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          Trip created. Add phone / note per passenger and any intermediate stops, or skip and do it later.
+        </div>
+        <PaxEditor jobId={createdJobId} initiallyExpanded />
+        <StopsEditor jobId={createdJobId} />
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" onClick={() => onSaved(createdDate ?? undefined)}>Skip</Button>
+          <Button type="button" onClick={() => onSaved(createdDate ?? undefined)}>Done</Button>
+        </DialogFooter>
+      </div>
+    );
+  }
+
+
   return (
     <form className="flex flex-col min-h-0 gap-3" onSubmit={(e) => { e.preventDefault(); if (hardBlocked) { toast.error("Driver has a schedule conflict — tick 'Assign anyway' to override, or pick another driver."); return; } mut.mutate(); }}>
+
       {prefill && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           Prefilled from paste — fill in any missing fields highlighted below.
@@ -545,7 +576,9 @@ function ManualForm({
               )}
             </div>
           )}
+          {job && <StopsEditor jobId={job.id} />}
         </section>
+
 
         {/* STEP 3 — WHEN */}
         <section data-step="3" className="space-y-3">
@@ -1608,7 +1641,7 @@ function ToggleRow({
   );
 }
 
-function PaxEditor({ jobId }: { jobId: string }) {
+function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initiallyExpanded?: boolean }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listJobPax);
   const addFn = useServerFn(addJobPax);
@@ -1625,6 +1658,18 @@ function PaxEditor({ jobId }: { jobId: string }) {
     queryKey: ["job-pax", jobId],
     queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<Array<{ id: string; name: string; phone?: string | null; note?: string | null }>>,
   });
+
+  // Auto-expand every existing row when the parent asks for one-by-one entry
+  // (post-save step after creating a trip with a bulk name list).
+  useEffect(() => {
+    if (!initiallyExpanded || !data) return;
+    setExpanded((prev) => {
+      const next = { ...prev };
+      for (const p of data) if (!(p.id in next)) next[p.id] = true;
+      return next;
+    });
+  }, [initiallyExpanded, data]);
+
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["job-pax", jobId] });
@@ -1984,6 +2029,81 @@ function DriverAssignmentConflictHint({
     </div>
   );
 }
+
+// ── Intermediate stops (adds/removes rows in group_stops for the job) ───
+function StopsEditor({ jobId }: { jobId: string }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listStopsForJob);
+  const addFn = useServerFn(addStopToJob);
+  const removeFn = useServerFn(removeStopFromJob);
+  // AddressAutocomplete reads bias itself via the same hook.
+
+  const [addr, setAddr] = useState("");
+  const [placeId, setPlaceId] = useState<string | null>(null);
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+
+  const { data } = useQuery({
+    queryKey: ["job-stops", jobId],
+    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<{ group_id: string | null; stops: Array<{ id: string; stop_index: number; address: string }> }>,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["job-stops", jobId] });
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+  };
+  const addMut = useMutation({
+    mutationFn: () => addFn({ data: { job_id: jobId, address: addr.trim(), place_id: placeId, lat, lng } }),
+    onSuccess: () => { setAddr(""); setPlaceId(null); setLat(null); setLng(null); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removeFn({ data: { stop_id: id } }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const stops = data?.stops ?? [];
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <Label className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Intermediate stops ({stops.length})</Label>
+      {stops.length > 0 ? (
+        <ul className="space-y-1">
+          {stops.map((s, i) => (
+            <li key={s.id} className="flex items-center gap-2 rounded bg-muted/40 px-2 py-1.5 text-sm">
+              <span className="text-[10px] font-mono text-muted-foreground w-6 shrink-0">#{i + 1}</span>
+              <span className="flex-1 truncate">{s.address}</span>
+              <Button type="button" size="icon" variant="ghost" className="h-7 w-7" disabled={removeMut.isPending} onClick={() => removeMut.mutate(s.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No intermediate stops. The trip goes straight from pickup to drop-off.</p>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex-1 min-w-0">
+          <AddressAutocomplete
+            value={addr}
+            placeId={placeId}
+            onChange={(v) => {
+              setAddr(v.address);
+              setPlaceId(v.place_id);
+              setLat(v.lat ?? null);
+              setLng(v.lng ?? null);
+            }}
+            placeholder="Add a stop (address or place)"
+          />
+        </div>
+        <Button type="button" disabled={addMut.isPending || !addr.trim()} onClick={() => addMut.mutate()}>
+          <Plus className="h-4 w-4 mr-1" /> Add stop
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 
 
 
