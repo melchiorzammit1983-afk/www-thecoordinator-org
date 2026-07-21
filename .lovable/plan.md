@@ -1,34 +1,52 @@
-## End-to-end test: driver OTG trip lifecycle
+## Goal
 
-Drive the driver app via Playwright against `http://localhost:8080` using the seeded driver token from the network logs (`dd95bff350b8cbb3a57238b33aac431314fede37d5cf3b98`, driver **BaygorCab**, company `57858737-…`). Test runs headless at a 375-wide viewport.
+Rework the coordinator's Create Trip flow so that after typing passenger names, each one becomes an editable row (phone + note per person). Add real multi-stop support inside the same dialog, and teach the AI assistant to read and edit both.
 
-### Preconditions
+## 1. Passengers: one-by-one editing after Save
 
-1. Confirm no in-flight OTG job for this driver (guard in `startOnTheGoTrip` refuses a second concurrent start). If one exists, call `otgDeleteJob` to clear it before the test.
-2. Grant geolocation permission on the browser context and set a fixed Malta coordinate (`35.9042, 14.5189`) so the OTG start doesn't hang on GPS.
+Today (`JobFormDialog.tsx` lines 455-465), on Create the coordinator only sees a bulk textarea. Phone/note per passenger is only available after the trip is created (via `PaxEditor`, line 1580+). Result: names are saved but no per-passenger phone/note capture in the same flow.
 
-### Steps + assertions
+Change:
+- Keep the paste textarea as the fast entry point.
+- After the coordinator clicks Save on a new trip, do **not** close the dialog. Switch the dialog into a compact "Passenger details" view listing every parsed name as its own row with inline Phone + Note fields (reuse the existing `PaxEditor` list UI). Coordinator fills what they want, then taps "Done".
+- Skippable — a "Skip, I'll do it later" link closes the dialog immediately.
+- Names entered inline (typed into the "Add another" row) get the same row treatment.
 
-1. **Open manifest** → `/m/driver/<token>` → screenshot; assert filter chip visible.
-2. **Start OTG trip** → header menu → *Create trip (On The Go)* → destination "Malta International Airport" via autocomplete → tap **Start trip**.
-   - Assert dialog closes, toast "Trip started", a new job card appears in the "En route" lane.
-   - DB check: latest `jobs` row for driver has `status='en_route'`, `created_by_driver=true`, `needs_review=true`, `driver_started_at` set.
-3. **Arrived at pickup** → tap the sticky primary action on the new card.
-   - Assert `jobs.status='arrived'`, `arrival_at` set, `trip_map_events` row `event='arrived_pickup'`.
-   - Assert passenger dialog auto-opens (Phase 6/7 behavior).
-4. **Add + board a passenger** (John Doe, +35679000000) → mark boarded → save.
-   - Assert `pax` row inserted with `status='boarded'`; `trip_map_events` row `event='pax_boarded'` with lat/lng + name in metadata.
-5. **Start route** → tap *Passengers on board / Start route*.
-   - Assert `jobs.status='in_progress'`, `trip_map_events` row `event='passenger_on_board'`.
-6. **Complete trip** → tap *Complete trip*.
-   - Assert `jobs.status='completed'`, `completed_at` set, `trip_map_events` row `event='trip_completed'`.
-7. **Post-completion edit** → coordinator side: `deleteJob` on this job returns `pending`/rejection (approval required); `otgDeleteJob` from driver still works.
-8. **Cleanup** → delete the test job (`otgDeleteJob`) so the run is idempotent.
+Files: `src/components/coordinator/JobFormDialog.tsx` (new post-save step; reuse `PaxEditor` rendering), no schema change needed — pax rows already carry `phone`/`note`.
 
-### Deliverables
+## 2. Multi-stop in the same dialog
 
-- Playwright script at `/tmp/browser/otg-e2e/test.py` with screenshots after each step under `/tmp/browser/otg-e2e/screenshots/`.
-- A short pass/fail report per step, plus the final DB `trip_map_events` sequence for the created job so we can see the full timeline.
-- If any step fails, capture the failing screenshot + console errors and stop — no code changes; report back for the fix.
+Today: multi-stop only exists via `group_stops` after a group is created; `JobFormDialog` shows only From / To. Coordinator has no way to add intermediate stops at create time.
 
-Switch me to build mode to run it.
+Change:
+- Add a **Stops** section in Step 2 (Where) with an ordered list of intermediate stops. Each row: `AddressAutocomplete` + optional passenger count + drag handle + remove. "+ Add stop" appends a row.
+- Persistence:
+  - On create/save with ≥1 intermediate stop, auto-create a `groups` row for the job and insert `group_stops` rows: pickup as stop 0, each intermediate in order, drop-off as final stop.
+  - On edit of a job that already has a `group_id`, load its stops via existing `listGroupStops` and let the coordinator add/remove/reorder in-place.
+- Add a new authenticated server function `addGroupStop` in `src/lib/groups.functions.ts` (coordinator-scoped, mirrors `otgAddStop` shape) and `removeGroupStop`; reuse existing `reorderStops`.
+
+Files: `src/components/coordinator/JobFormDialog.tsx` (new StopsEditor sub-component), `src/lib/groups.functions.ts` (add/remove stop fns).
+
+## 3. AI assistant: read + edit passengers and stops
+
+Currently the assistant can parse `pax` at create/update time but has no vocabulary for "add a phone to John", "remove passenger X", "add a stop at the Marina", "reorder stops".
+
+Change in `src/lib/coordinator-assist.functions.ts`:
+- Extend the `command_actions` action set with new verbs: `add_pax`, `update_pax` (phone/note), `remove_pax`, `add_stop`, `remove_stop`, `reorder_stops`.
+- Include the currently-open trip's passenger list and (if grouped) its stop list in the assistant's context block so it can reference them by name/index.
+- Add a small executor in the client's command runner (same place existing `command_actions` like group/ungroup/message-driver dispatch) that calls the new pax/stop server functions.
+- Prompt guidance: examples like "add +356 9911 2233 to Elmer", "add a stop at St Julian's before the airport", "swap stops 2 and 3".
+
+## 4. Verification
+
+- Create trip with 3 names → after Save, 3 editable rows appear; add phone to one, note to another, close → reopen trip and confirm persisted.
+- Create trip with pickup + 2 intermediate stops + drop-off → group is auto-created, stops persist in `group_stops` in correct order, `GroupStopsPanel` (existing) shows them.
+- Chat "add +356 79 12 34 56 to <name>" on open trip → `PaxEditor` list refreshes with the phone.
+- Chat "add a stop at the Marina before the airport" → new `group_stops` row appears in the right position.
+
+## Technical notes
+
+- Reusing `PaxEditor` for the post-save step means no new list UI to maintain; only wrap it in a "Passenger details" panel with a Done button.
+- Auto-creating a `groups` row when intermediate stops exist keeps the rest of the app (route optimization, GroupStopsPanel, driver manifest) working unchanged — they already read from `group_stops`.
+- New `addGroupStop`/`removeGroupStop` follow the existing pattern in `groups.functions.ts` (`requireSupabaseAuth` + `assertGroupCompany`), including a `record_trip_audit` call so the change appears on the trip map/timeline like every other coordinator action.
+- Assistant vocabulary additions are additive to the existing `command_actions` kind — no schema change to the AI response contract.
