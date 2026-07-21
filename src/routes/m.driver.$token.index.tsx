@@ -79,7 +79,7 @@ const REJECT_REASONS = [
 
 
 
-export const Route = createFileRoute("/m/driver/$token")({
+export const Route = createFileRoute("/m/driver/$token/")({
   head: () => ({ meta: [{ title: "Driver Manifest" }] }),
   component: DriverManifest,
   errorComponent: ({ error }) => (
