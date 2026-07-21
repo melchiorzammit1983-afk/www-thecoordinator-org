@@ -277,7 +277,16 @@ export const otgAddStop = createServerFn({ method: "POST" })
     const { data: last } = await supabaseAdmin.from("group_stops")
       .select("stop_index").eq("group_id", groupId).order("stop_index", { ascending: false }).limit(1).maybeSingle();
     const nextIndex = ((last as any)?.stop_index ?? -1) + 1;
-    const label = data.address?.trim() || (data.lat && data.lng ? `Stop ${nextIndex + 1} (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : `Stop ${nextIndex + 1}`);
+    let label = data.address?.trim() || "";
+    if (!label && typeof data.lat === "number" && typeof data.lng === "number") {
+      const rg = await reverseGeocode(data.lat, data.lng);
+      if (rg?.address) label = rg.address;
+    }
+    if (!label) {
+      label = (typeof data.lat === "number" && typeof data.lng === "number")
+        ? `Stop ${nextIndex + 1} (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`
+        : `Stop ${nextIndex + 1}`;
+    }
     const now = new Date().toISOString();
     const { data: stop, error } = await supabaseAdmin.from("group_stops").insert({
       group_id: groupId,
