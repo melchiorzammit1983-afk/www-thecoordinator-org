@@ -53,10 +53,11 @@ export const Route = createFileRoute("/api/public/b/$token/")({
           if (jobIds.length) {
             const { data: jrows } = await admin
               .from("jobs")
-              .select("id, status, pickup_at, from_location, to_location")
+              .select("id, status, pickup_at, from_location, to_location, completed_at, vehicle, drivers(name, car_make_model, plate)")
               .in("id", jobIds);
             jobs = jrows ?? [];
           }
+
         }
         return Response.json({
           portal: { id: r.portal.id, name: r.portal.name, expires_at: r.portal.expires_at },
