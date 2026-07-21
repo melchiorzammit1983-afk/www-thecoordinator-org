@@ -843,7 +843,7 @@ CURRENT FEATURE ENTITLEMENTS (admin-controlled — do NOT return setting_change 
 ${entitlementsBlock}
 
 Current screen: ${data.screen?.path ?? "(unknown)"}
-Currently open trip: ${trip ? JSON.stringify(trip) : "(none)"}
+Currently open trip: ${openTripDetails}
 
 Recent conversation:
 ${historyLines || "(none)"}
