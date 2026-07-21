@@ -2209,6 +2209,9 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       loadCompanyFeatures(job.company_id),
     ]);
 
+    const { loadPastTripsForJob } = await import("./client-history.server");
+    const history = await loadPastTripsForJob(supabaseAdmin as any, job.id);
+
     return {
       job: {
         id: job.id, group_id: job.group_id, group_name: job.group_name,
@@ -2243,7 +2246,9 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       openSos: openSos ?? [],
       branding,
       features,
+      history,
     };
+
   });
 
 export const chooseClientIdentity = createServerFn({ method: "POST" })

@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { Loader2, Send, MessageCircle, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { PastTripsCard } from "@/components/client/PastTripsCard";
+
 
 export const Route = createFileRoute("/b/$token")({
   head: () => ({
@@ -202,6 +204,8 @@ function PublicBookingPage() {
       </Card>
 
       <RequestList bootstrap={bootstrap} />
+      <PastTripsCard trips={bootstrap?.history ?? []} />
+
 
       <div className="flex justify-end">
         <Button variant="outline" onClick={() => setShowChat((v) => !v)}>

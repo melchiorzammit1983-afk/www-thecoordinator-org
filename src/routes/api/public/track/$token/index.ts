@@ -46,6 +46,9 @@ export const Route = createFileRoute("/api/public/track/$token/")({
           plate: (job as any).drivers.plate,
         } : null;
 
+        const { loadPastTripsForJob } = await import("@/lib/client-history.server");
+        const history = await loadPastTripsForJob(admin as any, (tok as any).job_id);
+
         return Response.json({
           brand,
           status: (job as any).status,
@@ -55,7 +58,9 @@ export const Route = createFileRoute("/api/public/track/$token/")({
           driver,
           show_driver_location: (tok as any).show_driver_location === true,
           passenger: pax ? { name: (pax as any).name, note: (pax as any).note ?? null } : null,
+          history,
         });
+
       },
     },
   },

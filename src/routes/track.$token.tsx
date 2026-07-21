@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { PastTripsCard } from "@/components/client/PastTripsCard";
 import { toast } from "sonner";
+
 
 /**
  * Public passenger tracking page. Hotel-branded, coordinator invisible.
@@ -27,8 +29,10 @@ type Boot = {
   driver: { first_name: string; vehicle: string | null; plate: string | null } | null;
   show_driver_location: boolean;
   passenger?: { name: string; note: string | null } | null;
+  history?: Array<{ id: string; when: string | null; from: string | null; to: string | null; status: string; driver_name?: string | null; vehicle?: string | null; plate?: string | null }>;
 
 };
+
 
 const STAGES = ["pending", "confirmed", "assigned", "en_route", "arrived", "in_progress", "completed"] as const;
 const STAGE_LABELS: Record<string, string> = {
@@ -107,6 +111,9 @@ function TrackPage() {
             </CardContent>
           </Card>
         )}
+
+        <PastTripsCard trips={(boot as any).history ?? []} />
+
 
         {!jwt ? (
           <VerifyBox token={token} onVerified={setJwt} brandName={brandName} />

@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { readPortalCache, writePortalCache } from "@/lib/client-portal-cache";
 import { BrandingBar } from "@/components/branding/BrandingBar";
+import { PastTripsCard } from "@/components/client/PastTripsCard";
+
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { displayLocation } from "@/lib/trip-display";
 import { supabase } from "@/integrations/supabase/client";
@@ -358,6 +360,9 @@ function ClientTripPortal() {
               </ul>
             </section>
           )}
+
+          <PastTripsCard trips={(data as any)?.history ?? []} />
+
 
           {/* Emergency SOS */}
           {(data as any)?.features?.client_sos !== false && (
