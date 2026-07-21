@@ -587,6 +587,9 @@ const jobInput = z.object({
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
   tracking_kind: z.enum(["flight", "vessel"]).optional(),
   pax: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
+  // OTG-only: coordinator can reassign the trip to a connected coordinator
+  // company while the trip is still `created_by_driver && needs_review`.
+  company_id: z.string().uuid().optional(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
