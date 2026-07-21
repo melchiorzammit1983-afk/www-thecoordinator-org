@@ -2088,6 +2088,27 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
           }
         />
       )}
+      {job.created_by_driver && (
+        <div className="px-4 pb-3 -mt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-10"
+            onClick={() => setOtgManageOpen(true)}
+          >
+            Manage on-the-go trip
+          </Button>
+        </div>
+      )}
+      {otgManageOpen && (
+        <OtgManageDialog
+          open={otgManageOpen}
+          onOpenChange={setOtgManageOpen}
+          token={token}
+          jobId={job.id}
+          canDelete={!!job.needs_review}
+        />
+      )}
     </article>
 
   );
