@@ -142,7 +142,7 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       // Arrived / Waiting / Boarded / Complete buttons as any other trip.
       status: "en_route" as never,
       driver_accepted_at: now.toISOString(),
-      en_route_at: now.toISOString(),
+      driver_started_at: now.toISOString(),
       created_by_driver: true,
       needs_review: true,
       tracking_enabled: true,
