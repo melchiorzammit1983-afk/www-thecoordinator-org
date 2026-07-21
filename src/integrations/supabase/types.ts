@@ -6566,7 +6566,6 @@ export type Database = {
       }
       get_public_ai_daily_count: { Args: never; Returns: number }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
-      mark_job_reviewed: { Args: { _job_id: string }; Returns: undefined }
       match_ai_lessons: {
         Args: {
           _company_id: string
