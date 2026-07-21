@@ -43,12 +43,13 @@ async function ensureGroup(supabaseAdmin: Awaited<ReturnType<typeof admin>>, job
     .select("id").eq("job_id", jobId).maybeSingle();
   if (existing?.id) return (existing as any).id as string;
   const { data: created, error } = await supabaseAdmin.from("groups")
-    .insert({ job_id: jobId, name: "OTG trip", driver_id: driverId, status: "confirmed" as never } as any)
+    .insert({ job_id: jobId, name: "OTG trip", driver_id: driverId, status: "active" as never } as any)
     .select("id").single();
   if (error) throw new Error(error.message);
   await supabaseAdmin.from("jobs").update({ group_id: (created as any).id } as never).eq("id", jobId);
   return (created as any).id as string;
 }
+
 
 async function logMap(companyId: string, jobId: string, driverId: string, eventType: string, notes: string, meta: Record<string, unknown>, lat?: number, lng?: number) {
   try {
