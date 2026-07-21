@@ -154,13 +154,15 @@ type LockableJob = {
   driver_id: string | null;
   driver_accepted_at: string | null;
   status: string | null;
+  created_by_driver?: boolean | null;
+  needs_review?: boolean | null;
 };
 
 async function loadLockableJob(jobId: string, companyId: string): Promise<LockableJob | null> {
   const sb = await getAdminClient();
   const { data } = await sb
     .from("jobs")
-    .select("id, company_id, driver_id, driver_accepted_at, status")
+    .select("id, company_id, driver_id, driver_accepted_at, status, created_by_driver, needs_review")
     .eq("id", jobId)
     .eq("company_id", companyId)
     .maybeSingle();
@@ -169,6 +171,10 @@ async function loadLockableJob(jobId: string, companyId: string): Promise<Lockab
 
 function isJobLocked(job: LockableJob | null): boolean {
   if (!job) return false;
+  // OTG trips awaiting coordinator review are the coordinator's to finalize:
+  // driver_accepted_at / en_route are auto-set at OTG start, but the trip
+  // has no real schedule yet — so treat it as unlocked until marked reviewed.
+  if (job.created_by_driver && job.needs_review) return false;
   if (job.driver_accepted_at) return true;
   const s = (job.status ?? "").toLowerCase();
   return s !== "" && s !== "pending";
@@ -581,6 +587,9 @@ const jobInput = z.object({
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
   tracking_kind: z.enum(["flight", "vessel"]).optional(),
   pax: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
+  // OTG-only: coordinator can reassign the trip to a connected coordinator
+  // company while the trip is still `created_by_driver && needs_review`.
+  company_id: z.string().uuid().optional(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
@@ -684,7 +693,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled")
+      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
@@ -696,6 +705,8 @@ export const updateJob = createServerFn({ method: "POST" })
       driver_id: (existing as any).driver_id,
       driver_accepted_at: (existing as any).driver_accepted_at,
       status: (existing as any).status,
+      created_by_driver: (existing as any).created_by_driver,
+      needs_review: (existing as any).needs_review,
     };
     if (!c.isAdmin && isJobLocked(lockable)) {
       // Compare and stage only actually changed fields.
@@ -777,6 +788,30 @@ export const updateJob = createServerFn({ method: "POST" })
       patch.route_duration_sec = null;
       patch.route_distance_m = null;
       patch.route_computed_at = null;
+    }
+    // OTG-only: allow moving the trip to another coordinator company the
+    // driver is connected to, while the trip is still `needs_review`.
+    if (
+      data.company_id &&
+      data.company_id !== (existing as any).company_id &&
+      (existing as any).created_by_driver &&
+      (existing as any).needs_review
+    ) {
+      const driverId = (existing as any).driver_id as string | null;
+      let homeId: string = c.id;
+      if (driverId) {
+        const { data: drv } = await supabaseAdmin.from("drivers")
+          .select("linked_company_id, company_id").eq("id", driverId).maybeSingle();
+        homeId = ((drv as any)?.linked_company_id ?? (drv as any)?.company_id ?? c.id) as string;
+      }
+      if (data.company_id !== homeId && data.company_id !== c.id) {
+        const { data: conn } = await supabaseAdmin.from("coordinator_connections")
+          .select("id").eq("status", "active")
+          .or(`and(owner_company_id.eq.${homeId},partner_company_id.eq.${data.company_id}),and(owner_company_id.eq.${data.company_id},partner_company_id.eq.${homeId})`)
+          .maybeSingle();
+        if (!conn) throw new Error("coordinator_not_permitted");
+      }
+      patch.company_id = data.company_id;
     }
     const { error } = await supabaseAdmin
       .from("jobs")

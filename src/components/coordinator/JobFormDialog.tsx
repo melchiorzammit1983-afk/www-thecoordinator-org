@@ -52,7 +52,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
-import { markJobReviewed } from "@/lib/driver-otg.functions";
+import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
@@ -220,6 +220,23 @@ function ManualForm({
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
   const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
 
+  // OTG-only: coordinator can reassign the trip to another connected
+  // coordinator company while it is still `created_by_driver && needs_review`.
+  const isOtgEditable = !!(job?.created_by_driver && job?.needs_review);
+  const [coordCompanyId, setCoordCompanyId] = useState<string>("");
+  const otgTargetsFn = useServerFn(listOtgReassignTargets);
+  const { data: otgTargets } = useQuery({
+    enabled: isOtgEditable && !!job?.id,
+    queryKey: ["otg-reassign", job?.id],
+    queryFn: () => otgTargetsFn({ data: { job_id: job!.id } }),
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    if (otgTargets?.current_company_id && !coordCompanyId) {
+      setCoordCompanyId(otgTargets.current_company_id);
+    }
+  }, [otgTargets, coordCompanyId]);
+
 
   // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
   // and return the normalized code plus the remaining text with the match removed.
@@ -337,13 +354,21 @@ function ManualForm({
         pickup_display_name: fromDisplayName,
         dropoff_display_name: toDisplayName,
       };
-      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return { date, jobId: job.id, isNew: false }; }
+      if (job) {
+        const editPayload: any = { id: job.id, ...payload };
+        if (isOtgEditable && coordCompanyId && coordCompanyId !== otgTargets?.current_company_id) {
+          editPayload.company_id = coordCompanyId;
+        }
+        await updateFn({ data: editPayload });
+        return { date, jobId: job.id, isNew: false };
+      }
       const row: any = await createFn({ data: { ...payload, pax } });
       return { date, jobId: row?.id as string | undefined, isNew: true };
     },
     onSuccess: (res) => {
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
       if (res.isNew && res.jobId) {
         // Keep dialog open so the coordinator can add phone / note per
         // passenger inline. onSaved() (which closes the dialog) fires from
@@ -608,6 +633,22 @@ function ManualForm({
               <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
             </div>
           </div>
+          {isOtgEditable && (otgTargets?.coordinators?.length ?? 0) > 1 && (
+            <div className="space-y-1.5">
+              <Label>Coordinator company</Label>
+              <Select value={coordCompanyId} onValueChange={setCoordCompanyId}>
+                <SelectTrigger><SelectValue placeholder="Select coordinator" /></SelectTrigger>
+                <SelectContent>
+                  {(otgTargets?.coordinators ?? []).map((cc) => (
+                    <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-[10px] text-muted-foreground">
+                On-the-go trip — reassign to another connected coordinator before you mark it reviewed.
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Driver</Label>
             <Select value={driverId} onValueChange={setDriverId}>
