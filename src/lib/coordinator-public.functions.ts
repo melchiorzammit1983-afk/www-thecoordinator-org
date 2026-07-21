@@ -139,11 +139,11 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     } else {
       q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
     }
-    // Hide finished trips from the driver manifest. Completed/cancelled jobs
-    // remain fully visible on the coordinator side (calendar + history) for
-    // auditing, payouts and reference — this filter only trims what the
-    // driver's phone shows so their list stays focused on live work.
-    q = q.not("status", "in", "(completed,cancelled)");
+    // Finished trips stay visible on the driver's phone until they manually
+    // hide them (Hide from my list). Only hard-hidden rows drop out via the
+    // client-side `driver_hidden_at` filter, so the driver keeps a full
+    // history of their own recent work and can un-hide anything by choice.
+
 
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
