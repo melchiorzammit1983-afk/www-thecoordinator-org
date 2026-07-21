@@ -365,20 +365,23 @@ function FeatureCostCard({
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => setEnabled(!enabled)}>
-          <Badge variant={enabled ? "default" : "outline"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-        </button>
-        <button type="button" onClick={() => setBlock(!block)}>
-          <Badge variant={block ? "destructive" : "secondary"}>{block ? "Hard stop" : "Allow negative"}</Badge>
-        </button>
-        <button type="button" onClick={() => setIsAddon(!isAddon)}>
-          <Badge variant={isAddon ? "default" : "outline"}>{isAddon ? "Add-on" : "Core"}</Badge>
-        </button>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <label className="flex items-center justify-between gap-2" title="Off = feature is free and hidden from user surfaces">
+          <span className="text-muted-foreground">Enabled (charged)</span>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </label>
+        <label className="flex items-center justify-between gap-2" title="On = user can toggle this from their own Settings → Feature usage">
+          <span className="text-muted-foreground">User add-on</span>
+          <Switch checked={isAddon} onCheckedChange={setIsAddon} />
+        </label>
+        <label className="flex items-center justify-between gap-2" title="On = keep working when wallet is empty (goes negative). Off = block the action.">
+          <span className="text-muted-foreground">Allow when empty</span>
+          <Switch checked={!block} onCheckedChange={(v) => setBlock(!v)} />
+        </label>
         <select
           value={minPlan}
           onChange={(e) => setMinPlan(e.target.value)}
-          className="ml-auto h-7 rounded-md border bg-background px-2 text-[11px]"
+          className="h-7 rounded-md border bg-background px-2 text-[11px]"
           title="Minimum plan required"
         >
           <option value="any">Any plan</option>
