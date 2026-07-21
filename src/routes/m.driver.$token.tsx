@@ -1240,17 +1240,19 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [otgManageOpen, setOtgManageOpen] = useState(false);
-  // Auto-open the OTG manage sheet the first time the driver reaches
-  // "arrived" on their on-the-go trip so they can fill in / confirm the
-  // passenger list (unless the coordinator already added them).
+  // Auto-open the OTG manage sheet the first time the driver flips the
+  // trip into "Passenger on board / En route" — that's when they should
+  // confirm the passenger list (either coordinator-supplied or added on
+  // the spot) before driving off.
   const otgPromptedRef = useRef(false);
   useEffect(() => {
     if (!job.created_by_driver) return;
-    if (job.status !== "arrived") return;
+    if (job.status !== "in_progress") return;
     if (otgPromptedRef.current) return;
     otgPromptedRef.current = true;
     setOtgManageOpen(true);
   }, [job.created_by_driver, job.status]);
+
 
 
   
