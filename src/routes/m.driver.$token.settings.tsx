@@ -64,7 +64,9 @@ function DriverSettingsPage() {
       </header>
 
       <div className="p-3 space-y-3 max-w-lg mx-auto">
+        <DisplayPrefsCard token={token} />
         <Tabs defaultValue={needsOnboarding ? "vehicles" : "profile"}>
+
           <TabsList className="w-full grid grid-cols-4 h-11">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
