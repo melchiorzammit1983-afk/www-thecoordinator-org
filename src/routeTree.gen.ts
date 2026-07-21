@@ -97,6 +97,8 @@ import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/p
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
 import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
 import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
+import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
+import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
 import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/api/public/portal/guest/$session/index'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
 
@@ -596,6 +598,16 @@ const ApiPublicPortalTokenAdminRoute =
     path: '/api/public/portal/$token/admin',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBTokenSubmitRoute = ApiPublicBTokenSubmitRouteImport.update({
+  id: '/api/public/b/$token/submit',
+  path: '/api/public/b/$token/submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicBTokenMessagesRoute = ApiPublicBTokenMessagesRouteImport.update({
+  id: '/api/public/b/$token/messages',
+  path: '/api/public/b/$token/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPortalGuestSessionIndexRoute =
   ApiPublicPortalGuestSessionIndexRouteImport.update({
     id: '/api/public/portal/guest/$session/',
@@ -684,6 +696,8 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -771,6 +785,8 @@ export interface FileRoutesByTo {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -864,6 +880,8 @@ export interface FileRoutesById {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -957,6 +975,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -1044,6 +1064,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -1136,6 +1158,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -1184,6 +1208,8 @@ export interface RootRouteChildren {
   ApiPublicHooksSummarizeLearningRoute: typeof ApiPublicHooksSummarizeLearningRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
+  ApiPublicBTokenMessagesRoute: typeof ApiPublicBTokenMessagesRoute
+  ApiPublicBTokenSubmitRoute: typeof ApiPublicBTokenSubmitRoute
   ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -1818,6 +1844,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalTokenAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/b/$token/submit': {
+      id: '/api/public/b/$token/submit'
+      path: '/api/public/b/$token/submit'
+      fullPath: '/api/public/b/$token/submit'
+      preLoaderRoute: typeof ApiPublicBTokenSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/b/$token/messages': {
+      id: '/api/public/b/$token/messages'
+      path: '/api/public/b/$token/messages'
+      fullPath: '/api/public/b/$token/messages'
+      preLoaderRoute: typeof ApiPublicBTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/guest/$session/': {
       id: '/api/public/portal/guest/$session/'
       path: '/api/public/portal/guest/$session'
@@ -2044,6 +2084,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksSummarizeLearningRoute: ApiPublicHooksSummarizeLearningRoute,
   ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
+  ApiPublicBTokenMessagesRoute: ApiPublicBTokenMessagesRoute,
+  ApiPublicBTokenSubmitRoute: ApiPublicBTokenSubmitRoute,
   ApiPublicPortalTokenAdminRoute: ApiPublicPortalTokenAdminRoute,
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
   ApiPublicPortalTokenChangeRequestsRoute:
