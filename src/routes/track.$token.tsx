@@ -71,6 +71,18 @@ function TrackPage() {
       </header>
 
       <main className="max-w-lg mx-auto p-4 space-y-4">
+        {boot.passenger && (
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-muted-foreground">Passenger</div>
+              <div className="font-medium">{boot.passenger.name}</div>
+              {boot.passenger.note && (
+                <div className="text-xs mt-1 text-muted-foreground">{boot.passenger.note}</div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardContent className="p-4">
             <div className="text-xs text-muted-foreground">From</div>
