@@ -1233,6 +1233,20 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
   const unhideFn = useServerFn(unhideJobForDriver);
+  const finalizeDropoffFn = useServerFn(otgFinalizeDropoffFromGps);
+  // For OTG trips whose destination is still the "TBD" placeholder,
+  // reverse-geocode the driver's current GPS into a real street/place
+  // name just before opening the trip-completion summary.
+  async function maybeFinalizeOtgDropoff() {
+    try {
+      if (!job.created_by_driver) return;
+      if (!driverPos) return;
+      const to = job.to_location ?? "";
+      if (to && !/^TBD/i.test(to)) return;
+      await finalizeDropoffFn({ data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng } });
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    } catch { /* non-blocking */ }
+  }
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
