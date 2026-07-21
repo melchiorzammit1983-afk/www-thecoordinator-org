@@ -23,6 +23,7 @@ import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 import { DriverOtgSheet } from "@/components/driver/DriverOtgSheet";
 import { OtgManageDialog } from "@/components/driver/OtgManageDialog";
+import { otgFinalizeDropoffFromGps } from "@/lib/driver-otg.functions";
 
 
 import { Badge } from "@/components/ui/badge";
@@ -1232,6 +1233,20 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const payFn = useServerFn(setJobPaymentStatus);
   const hideFn = useServerFn(hideJobForDriver);
   const unhideFn = useServerFn(unhideJobForDriver);
+  const finalizeDropoffFn = useServerFn(otgFinalizeDropoffFromGps);
+  // For OTG trips whose destination is still the "TBD" placeholder,
+  // reverse-geocode the driver's current GPS into a real street/place
+  // name just before opening the trip-completion summary.
+  async function maybeFinalizeOtgDropoff() {
+    try {
+      if (!job.created_by_driver) return;
+      if (!driverPos) return;
+      const to = job.to_location ?? "";
+      if (to && !/^TBD/i.test(to)) return;
+      await finalizeDropoffFn({ data: { token, job_id: job.id, lat: driverPos.lat, lng: driverPos.lng } });
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+    } catch { /* non-blocking */ }
+  }
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
@@ -1240,17 +1255,19 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [otgManageOpen, setOtgManageOpen] = useState(false);
-  // Auto-open the OTG manage sheet the first time the driver reaches
-  // "arrived" on their on-the-go trip so they can fill in / confirm the
-  // passenger list (unless the coordinator already added them).
+  // Auto-open the OTG manage sheet the first time the driver flips the
+  // trip into "Passenger on board / En route" — that's when they should
+  // confirm the passenger list (either coordinator-supplied or added on
+  // the spot) before driving off.
   const otgPromptedRef = useRef(false);
   useEffect(() => {
     if (!job.created_by_driver) return;
-    if (job.status !== "arrived") return;
+    if (job.status !== "in_progress") return;
     if (otgPromptedRef.current) return;
     otgPromptedRef.current = true;
     setOtgManageOpen(true);
   }, [job.created_by_driver, job.status]);
+
 
 
   
@@ -1813,7 +1830,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                 className="w-full h-14 text-base font-semibold"
                 disabled={statusMut.isPending}
                 onClick={() => {
-                  if (nextStatus.value === "completed") setSummaryOpen(true);
+                  if (nextStatus.value === "completed") { void maybeFinalizeOtgDropoff(); setSummaryOpen(true); }
                   else if (shouldHandleBoardingInDialog(job.status, nextStatus.value, jobPaxSummary.pending)) onOpen();
                   else statusMut.mutate(nextStatus.value);
                 }}

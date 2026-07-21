@@ -17,6 +17,33 @@ async function admin() {
   return supabaseAdmin;
 }
 
+// Reverse-geocode {lat,lng} → street/place name via the Google Maps
+// connector gateway. Returns null on any failure so callers can fall
+// back to a generic label without breaking the OTG flow.
+async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; place_id: string | null } | null> {
+  try {
+    const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
+    const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+    if (!LOVABLE_API_KEY || !GOOGLE_MAPS_API_KEY) return null;
+    const url = `https://connector-gateway.lovable.dev/google_maps/maps/api/geocode/json?latlng=${lat},${lng}&language=en`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+      },
+    });
+    if (!res.ok) return null;
+    const j: any = await res.json();
+    const first = j?.results?.[0];
+    if (!first) return null;
+    return {
+      address: (first.formatted_address as string) ?? "",
+      place_id: (first.place_id as string) ?? null,
+    };
+  } catch { return null; }
+}
+
+
 async function requireDriver(token: string) {
   const supabaseAdmin = await admin();
   const { data } = await supabaseAdmin.from("magic_links")
@@ -142,13 +169,24 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toISOString().slice(11, 16);
-    const pickupLabel = data.pickup_label?.trim()
-      || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
+    let pickupLabel = data.pickup_label?.trim() || "";
+    let pickupPlaceId: string | null = null;
+    if (!pickupLabel && typeof data.lat === "number" && typeof data.lng === "number") {
+      const rg = await reverseGeocode(data.lat, data.lng);
+      if (rg?.address) { pickupLabel = rg.address; pickupPlaceId = rg.place_id; }
+    }
+    if (!pickupLabel) {
+      pickupLabel = (typeof data.lat === "number" && typeof data.lng === "number")
+        ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`
+        : "Driver current location";
+    }
 
     const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: coordinatorId,
       driver_id: link.subject_id,
       from_location: pickupLabel,
+      pickup_place_id: pickupPlaceId,
+      pickup_display_name: pickupPlaceId ? pickupLabel : null,
       to_location: data.to_location?.trim() || "TBD — set by driver",
       dropoff_place_id: data.dropoff_place_id || null,
       date, time,
@@ -239,7 +277,16 @@ export const otgAddStop = createServerFn({ method: "POST" })
     const { data: last } = await supabaseAdmin.from("group_stops")
       .select("stop_index").eq("group_id", groupId).order("stop_index", { ascending: false }).limit(1).maybeSingle();
     const nextIndex = ((last as any)?.stop_index ?? -1) + 1;
-    const label = data.address?.trim() || (data.lat && data.lng ? `Stop ${nextIndex + 1} (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : `Stop ${nextIndex + 1}`);
+    let label = data.address?.trim() || "";
+    if (!label && typeof data.lat === "number" && typeof data.lng === "number") {
+      const rg = await reverseGeocode(data.lat, data.lng);
+      if (rg?.address) label = rg.address;
+    }
+    if (!label) {
+      label = (typeof data.lat === "number" && typeof data.lng === "number")
+        ? `Stop ${nextIndex + 1} (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`
+        : `Stop ${nextIndex + 1}`;
+    }
     const now = new Date().toISOString();
     const { data: stop, error } = await supabaseAdmin.from("group_stops").insert({
       group_id: groupId,
@@ -306,6 +353,40 @@ export const otgAddPassenger = createServerFn({ method: "POST" })
       data.lat, data.lng,
     );
     return { pax_id: (pax as any).id as string };
+  });
+
+// ── Finalize the drop-off from the driver's current GPS ─────────────────
+// Called just before the driver marks the OTG trip complete. If
+// `to_location` is still the "TBD" placeholder, reverse-geocode the
+// current GPS and persist a real street/place name so the finished
+// trip reads sensibly.
+export const otgFinalizeDropoffFromGps = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      lat: z.number().gte(-90).lte(90),
+      lng: z.number().gte(-180).lte(180),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const job = await ensureOwnsJob(supabaseAdmin, data.job_id, link.subject_id!);
+    const { data: cur } = await supabaseAdmin.from("jobs")
+      .select("to_location, dropoff_display_name")
+      .eq("id", job.id).maybeSingle();
+    const to = ((cur as any)?.to_location as string | null) ?? "";
+    // Only overwrite when the driver never set a real destination.
+    if (to && !/^TBD/i.test(to)) return { ok: true, changed: false };
+    const rg = await reverseGeocode(data.lat, data.lng);
+    if (!rg?.address) return { ok: true, changed: false };
+    await supabaseAdmin.from("jobs").update({
+      to_location: rg.address,
+      dropoff_place_id: rg.place_id ?? null,
+      dropoff_display_name: rg.address,
+    } as never).eq("id", job.id);
+    return { ok: true, changed: true, to_location: rg.address };
   });
 
 // ── Set the final destination + mark trip in-flight ─────────────────────

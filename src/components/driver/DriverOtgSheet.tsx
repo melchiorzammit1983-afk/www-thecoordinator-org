@@ -1,30 +1,27 @@
 /**
- * Driver "On The Go" trip starter (v2).
+ * Driver "On The Go" trip starter (v3 — one-tap).
  *
- * Simplified single-step form. The driver picks the coordinator, optionally
- * types a pickup label + destination, and taps Start. The trip is created
- * at `status = "en_route"` and immediately shows up on the manifest as a
- * normal trip — the driver then uses the same Arrived / Waiting / Boarded
- * / Complete buttons. Passengers and extra stops are added later from the
- * trip card (see `OtgManageDialog`).
+ * The driver taps a single big button. We grab their GPS, reverse-geocode
+ * it server-side to a street/place name, and create the trip at
+ * `status = "en_route"`. Extra pickup stops, passengers and the final
+ * destination are added later from the trip card via `OtgManageDialog`.
+ *
+ * A coordinator picker appears only when the driver is linked to more
+ * than one company — otherwise their home coordinator is used silently.
  */
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { listOtgCoordinators, startOnTheGoTrip } from "@/lib/driver-otg.functions";
 import {
-  listOtgCoordinators, startOnTheGoTrip,
-} from "@/lib/driver-otg.functions";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, MapPin } from "lucide-react";
-import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { Loader2, MapPin, PlayCircle } from "lucide-react";
 
 type Props = {
   open: boolean;
@@ -53,17 +50,9 @@ function usePosition(open: boolean): Coord {
 export function DriverOtgSheet({ open, onOpenChange, token, onCreated }: Props) {
   const pos = usePosition(open);
   const [coordinatorId, setCoordinatorId] = useState<string>("");
-  const [pickupLabel, setPickupLabel] = useState("");
-  const [destAddr, setDestAddr] = useState("");
-  const [destPlaceId, setDestPlaceId] = useState<string | undefined>();
-  const [destLat, setDestLat] = useState<number | undefined>();
-  const [destLng, setDestLng] = useState<number | undefined>();
 
   useEffect(() => {
-    if (!open) {
-      setPickupLabel(""); setDestAddr(""); setDestPlaceId(undefined);
-      setDestLat(undefined); setDestLng(undefined); setCoordinatorId("");
-    }
+    if (!open) setCoordinatorId("");
   }, [open]);
 
   const listFn = useServerFn(listOtgCoordinators);
@@ -85,14 +74,10 @@ export function DriverOtgSheet({ open, onOpenChange, token, onCreated }: Props) 
         token,
         coordinator_company_id: coordinatorId || undefined,
         lat: pos?.lat, lng: pos?.lng,
-        pickup_label: pickupLabel.trim() || undefined,
-        to_location: destAddr.trim() || undefined,
-        dropoff_place_id: destPlaceId,
-        dropoff_lat: destLat, dropoff_lng: destLng,
       },
     }),
     onSuccess: (res) => {
-      toast.success("Trip started — use the trip card to mark Arrived, Waiting, Boarded and Complete.");
+      toast.success("Trip started — mark Arrived when you get to the pickup.");
       onCreated?.(res.job_id);
       onOpenChange(false);
     },
@@ -100,6 +85,7 @@ export function DriverOtgSheet({ open, onOpenChange, token, onCreated }: Props) 
   });
 
   const multiCoord = (coords?.coordinators?.length ?? 0) > 1;
+  const canStart = !!coordinatorId && !!pos && !startMut.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,8 +93,8 @@ export function DriverOtgSheet({ open, onOpenChange, token, onCreated }: Props) 
         <DialogHeader>
           <DialogTitle>Start on-the-go trip</DialogTitle>
           <DialogDescription>
-            Creates a live trip from your current location. Add passengers
-            and extra pickup stops from the trip card once it's started.
+            Pins your current location as the pickup. You'll add passengers,
+            extra stops and the destination from the trip card as you go.
           </DialogDescription>
         </DialogHeader>
 
@@ -136,48 +122,26 @@ export function DriverOtgSheet({ open, onOpenChange, token, onCreated }: Props) 
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <MapPin className="h-3.5 w-3.5" />
-            {pos ? `GPS ready (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})` : "Locating GPS…"}
+            {pos
+              ? `GPS locked (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`
+              : "Locating GPS… allow location to continue."}
           </div>
 
-          <div>
-            <Label>Pickup label (optional)</Label>
-            <Input
-              value={pickupLabel}
-              onChange={(e) => setPickupLabel(e.target.value)}
-              placeholder="e.g. Hotel Excelsior main entrance"
-              className="mt-1"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Leave blank to use your GPS location.
-            </p>
-          </div>
-
-          <div>
-            <Label>Destination (optional)</Label>
-            <AddressAutocomplete
-              value={destAddr}
-              onChange={(pick) => {
-                setDestAddr(pick.address);
-                setDestPlaceId(pick.place_id ?? undefined);
-                setDestLat(pick.lat ?? undefined);
-                setDestLng(pick.lng ?? undefined);
-              }}
-              placeholder="Where are you heading? (can add later)"
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={() => startMut.mutate()}
-            disabled={startMut.isPending || !coordinatorId}
+            disabled={!canStart}
             size="lg"
-            className="min-w-[140px]"
+            className="w-full h-14 text-base font-semibold"
           >
-            {startMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start trip"}
+            {startMut.isPending
+              ? <Loader2 className="h-5 w-5 animate-spin" />
+              : (<><PlayCircle className="h-5 w-5 mr-2" /> Start trip here</>)}
           </Button>
-        </DialogFooter>
+
+          <Button variant="ghost" className="w-full" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
