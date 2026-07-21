@@ -134,6 +134,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
+import { ClientLinkPicker } from "@/components/coordinator/ClientLinkPicker";
 import { NewTripsPreviewDialog, type NewTripRow } from "@/components/coordinator/NewTripsPreviewDialog";
 
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
@@ -2998,6 +2999,7 @@ function TripMenu({
 }) {
   const requiresApproval = !!(job.driver_id && job.driver_accepted_at);
   const pending = !!job.deletion_requested_at;
+  const [pickerOpen, setPickerOpen] = useState(false);
   const qc = useQueryClient();
   const delFn = useServerFn(deleteJob);
   const cancelFn = useServerFn(cancelDeletionRequest);
@@ -3208,7 +3210,17 @@ function TripMenu({
             <DropdownMenuItem onClick={() => shareClientWa.mutate()} disabled={shareClientWa.isPending}>
               <MessageCircle className="h-4 w-4 mr-2 text-sky-600" /> Share with client (WhatsApp)
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => copyClientLink.mutate()} disabled={copyClientLink.isPending}>
+            <DropdownMenuItem
+              onClick={() => {
+                const paxList = (job.pax ?? []).filter((p) => (p.name ?? "").trim().length > 0);
+                if (paxList.length > 1) {
+                  setPickerOpen(true);
+                } else {
+                  copyClientLink.mutate();
+                }
+              }}
+              disabled={copyClientLink.isPending}
+            >
               <Link2 className="h-4 w-4 mr-2" /> Copy client link
             </DropdownMenuItem>
           </>
@@ -3269,6 +3281,12 @@ function TripMenu({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
+      <ClientLinkPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        jobId={job.id}
+        pax={(job.pax ?? []).map((p) => ({ id: p.id, name: p.name ?? "" }))}
+      />
     </DropdownMenu>
   );
 }
