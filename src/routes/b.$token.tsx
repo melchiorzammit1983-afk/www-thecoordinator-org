@@ -153,11 +153,11 @@ function PublicBookingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Pickup</Label>
-              <AddressAutocomplete value={from} onChange={setFrom} placeholder="Hotel, airport, address…" />
+              <AddressAutocomplete value={from} onChange={(v) => setFrom(v.address)} placeholder="Hotel, airport, address…" />
             </div>
             <div className="space-y-1.5">
               <Label>Drop-off</Label>
-              <AddressAutocomplete value={to} onChange={setTo} placeholder="Destination" />
+              <AddressAutocomplete value={to} onChange={(v) => setTo(v.address)} placeholder="Destination" />
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>
