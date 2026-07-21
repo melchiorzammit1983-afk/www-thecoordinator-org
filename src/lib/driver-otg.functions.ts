@@ -243,9 +243,10 @@ export const otgSetDestination = createServerFn({ method: "POST" })
 
 // ── Coordinator: mark an OTG trip as reviewed ───────────────────────────
 export const markJobReviewed = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
-  .handler(async ({ data }) => {
-    const { requireSupabaseAuth } = await import("@/integrations/supabase/auth-middleware");
-    void requireSupabaseAuth; // referenced via middleware chain below
-    return { job_id: data.job_id };
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.rpc("mark_job_reviewed", { _job_id: data.job_id });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
