@@ -23,6 +23,7 @@ import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 import { DriverOtgSheet } from "@/components/driver/DriverOtgSheet";
 import { OtgManageDialog } from "@/components/driver/OtgManageDialog";
+import { otgFinalizeDropoffFromGps } from "@/lib/driver-otg.functions";
 
 
 import { Badge } from "@/components/ui/badge";
