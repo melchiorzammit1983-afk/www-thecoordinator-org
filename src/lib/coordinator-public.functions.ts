@@ -130,7 +130,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     }
 
     let q = supabaseAdmin.from("jobs")
-      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
+      .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, vehicle, qr_strict_mode, tracking_enabled, clientcompanyname, driver_accepted_at, deletion_requested_at, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, status, payment_status, driver_id, driver_hidden_at, grouped_count, grouped_at, group_id, group_name, group_note, created_by_driver, needs_review, drivers(name), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))")
       .order("pickup_at", { ascending: true, nullsFirst: false })
       .order("date", { ascending: true })
       .order("time", { ascending: true });

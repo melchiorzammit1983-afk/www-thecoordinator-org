@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
 import { DriverOtgSheet } from "@/components/driver/DriverOtgSheet";
+import { OtgManageDialog } from "@/components/driver/OtgManageDialog";
 
 
 import { Badge } from "@/components/ui/badge";
@@ -138,6 +139,8 @@ type Job = {
   pickup_lng?: number | null;
   dropoff_lat?: number | null;
   dropoff_lng?: number | null;
+  created_by_driver?: boolean | null;
+  needs_review?: boolean | null;
 };
 
 type Driver = {
@@ -1215,6 +1218,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [otgManageOpen, setOtgManageOpen] = useState(false);
   
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
@@ -2082,6 +2086,27 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
               </div>
             </div>
           }
+        />
+      )}
+      {job.created_by_driver && (
+        <div className="px-4 pb-3 -mt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-10"
+            onClick={() => setOtgManageOpen(true)}
+          >
+            Manage on-the-go trip
+          </Button>
+        </div>
+      )}
+      {otgManageOpen && (
+        <OtgManageDialog
+          open={otgManageOpen}
+          onOpenChange={setOtgManageOpen}
+          token={token}
+          jobId={job.id}
+          canDelete={!!job.needs_review}
         />
       )}
     </article>

@@ -90,6 +90,10 @@ export const listOtgCoordinators = createServerFn({ method: "GET" })
   });
 
 // ── Start an OTG trip ────────────────────────────────────────────────────
+// New behaviour: the trip enters the normal driver lifecycle at
+// `en_route`. The driver then presses the same Arrived / Waiting /
+// Boarded / Complete buttons as any assigned trip. Destination is optional
+// at start — the driver can set it later before completing.
 export const startOnTheGoTrip = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
@@ -98,17 +102,18 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       lat: z.number().gte(-90).lte(90).optional(),
       lng: z.number().gte(-180).lte(180).optional(),
       pickup_label: z.string().max(200).optional(),
+      to_location: z.string().max(200).optional(),
+      dropoff_place_id: z.string().max(200).optional(),
+      dropoff_lat: z.number().gte(-90).lte(90).optional(),
+      dropoff_lng: z.number().gte(-180).lte(180).optional(),
       note: z.string().max(500).optional(),
     }).parse(i),
   )
   .handler(async ({ data }) => {
     const link = await requireDriver(data.token);
     const supabaseAdmin = await admin();
-    // Resolve the target coordinator: default to the token-issuing company,
-    // but honour an explicit picker choice when the driver has partners.
     let coordinatorId = data.coordinator_company_id ?? link.company_id;
     if (data.coordinator_company_id && data.coordinator_company_id !== link.company_id) {
-      // Verify the driver actually can dispatch to this coordinator.
       const { data: driverRow } = await supabaseAdmin.from("drivers")
         .select("linked_company_id").eq("id", link.subject_id).maybeSingle();
       const homeId = (driverRow as any)?.linked_company_id ?? link.company_id;
@@ -122,17 +127,22 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toISOString().slice(11, 16);
-    const pickupLabel = data.pickup_label?.trim() || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
+    const pickupLabel = data.pickup_label?.trim()
+      || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
 
     const { data: row, error } = await supabaseAdmin.from("jobs").insert({
       company_id: coordinatorId,
       driver_id: link.subject_id,
       from_location: pickupLabel,
-      to_location: "TBD — set by driver",
+      to_location: data.to_location?.trim() || "TBD — set by driver",
+      dropoff_place_id: data.dropoff_place_id || null,
       date, time,
       pickup_at: now.toISOString(),
-      status: "in_progress" as never,
+      // Enter the normal lifecycle at en_route — driver uses the same
+      // Arrived / Waiting / Boarded / Complete buttons as any other trip.
+      status: "en_route" as never,
       driver_accepted_at: now.toISOString(),
+      en_route_at: now.toISOString(),
       created_by_driver: true,
       needs_review: true,
       tracking_enabled: true,
@@ -142,7 +152,9 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const jobId = (row as any).id as string;
 
-    // First stop = current location, already arrived.
+    // First stop = current location. Do NOT pre-set arrived_at — the
+    // driver presses "Arrived at pickup" when they get there, matching
+    // the normal flow (and starting the wait timer at that moment).
     const groupId = await ensureGroup(supabaseAdmin, jobId, link.subject_id!);
     await supabaseAdmin.from("group_stops").insert({
       group_id: groupId,
@@ -150,10 +162,9 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       address: pickupLabel,
       lat: data.lat ?? null,
       lng: data.lng ?? null,
-      arrived_at: now.toISOString(),
     } as any);
 
-    // Meter: charge the driver's company for a trip.
+    // Meter the trip creation on the coordinator's account (as today).
     try {
       await supabaseAdmin.rpc("spend_points", {
         _company_id: coordinatorId,
@@ -164,10 +175,34 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       });
     } catch { /* soft-meter */ }
 
-    await logMap(coordinatorId, jobId, link.subject_id!, "en_route", data.note ?? "Driver started on-the-go trip", { source: "driver_otg" }, data.lat, data.lng);
-    await logMap(coordinatorId, jobId, link.subject_id!, "arrived_pickup", "Arrived at first pickup", { stop_index: 0 }, data.lat, data.lng);
+    await logMap(coordinatorId, jobId, link.subject_id!, "en_route",
+      data.note ?? "Driver started on-the-go trip",
+      { source: "driver_otg" }, data.lat, data.lng);
 
     return { job_id: jobId };
+  });
+
+// ── Driver-side delete for OTG trips awaiting coordinator review ────────
+export const otgDeleteJob = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, driver_id, created_by_driver, needs_review, company_id")
+      .eq("id", data.job_id).maybeSingle();
+    if (!job) throw new Error("job_not_found");
+    if ((job as any).driver_id !== link.subject_id) throw new Error("not_your_job");
+    if (!(job as any).created_by_driver) throw new Error("only_otg_deletable");
+    if (!(job as any).needs_review) throw new Error("already_reviewed_ask_coordinator");
+    const { error } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // ── Add another pickup stop ─────────────────────────────────────────────
