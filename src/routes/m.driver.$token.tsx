@@ -138,6 +138,8 @@ type Job = {
   pickup_lng?: number | null;
   dropoff_lat?: number | null;
   dropoff_lng?: number | null;
+  created_by_driver?: boolean | null;
+  needs_review?: boolean | null;
 };
 
 type Driver = {
