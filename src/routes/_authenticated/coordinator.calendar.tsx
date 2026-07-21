@@ -2810,6 +2810,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   Track
                 </Badge>
               )}
+              {job.needs_review && (
+                <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/15">
+                  {job.created_by_driver ? "Driver trip · needs review" : "Needs review"}
+                </Badge>
+              )}
+
 
               {job.deletion_requested_at && (
                 <Badge variant="destructive" className="text-[10px]">
