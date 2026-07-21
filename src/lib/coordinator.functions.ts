@@ -5917,7 +5917,7 @@ export async function runAutoCoordinate(
   };
 
   if (list.length === 0) {
-    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0, pendingReview };
   }
 
   const directive = (opts.directive ?? "").trim();
@@ -6119,12 +6119,12 @@ export async function runAutoCoordinate(
       }));
     }
     await chargePlanIfNeeded(proposals);
-    return { proposals, metering_mode: meteringMode, considered: eligibleList.length };
+    return { proposals, metering_mode: meteringMode, considered: eligibleList.length, pendingReview };
   }
 
   const planningList = eligibleList;
   if (planningList.length === 0) {
-    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0, pendingReview };
   }
 
   // No target named. If directive is a simple assign/dispatch or empty, use
@@ -6134,7 +6134,7 @@ export async function runAutoCoordinate(
   if (simpleAssignIntent) {
     const r = planAvailability(planningList, null);
     await chargePlanIfNeeded(r.proposals);
-    return { proposals: r.proposals, metering_mode: meteringMode, considered: planningList.length };
+    return { proposals: r.proposals, metering_mode: meteringMode, considered: planningList.length, pendingReview };
   }
 
   const tripLines = planningList
@@ -6226,7 +6226,7 @@ export async function runAutoCoordinate(
 
   await chargePlanIfNeeded(proposals);
 
-  return { proposals, metering_mode: meteringMode, considered: planningList.length };
+  return { proposals, metering_mode: meteringMode, considered: planningList.length, pendingReview };
 }
 
 export const aiAutoCoordinate = createServerFn({ method: "POST" })
