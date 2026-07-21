@@ -44,8 +44,6 @@ function PricingAdmin() {
       <PointPacksCard />
       {/* Feature cost editing lives on the AI Settings page — single source of truth */}
       {false ? <FeatureCostsCard /> : null}
-      <PlansCard />
-      <PointPacksCard />
     </div>
   );
 }
