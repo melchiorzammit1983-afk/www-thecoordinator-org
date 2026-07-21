@@ -3,6 +3,54 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 /**
+ * Coordinator-side edit for a single trip_map_events row. Used from the
+ * map info-window "Edit" affordance to correct pax name, nudge a pin, or
+ * append a note. RLS on trip_map_events already restricts to company
+ * members; we additionally re-check that the job belongs to a company the
+ * caller can access.
+ */
+export const updateTripMapEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({
+      event_id: z.string().uuid(),
+      notes: z.string().max(500).optional(),
+      pax_name: z.string().max(120).optional(),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const { data: ev, error: er } = await supabase
+      .from("trip_map_events")
+      .select("id, meta, job_id, notes")
+      .eq("id", data.event_id)
+      .maybeSingle();
+    if (er) throw new Error(er.message);
+    if (!ev) throw new Error("event_not_found");
+
+    const meta = { ...(((ev as any).meta as Record<string, unknown>) ?? {}) };
+    if (data.pax_name !== undefined) meta.pax_name = data.pax_name;
+    (meta as any).edited_by = userId;
+    (meta as any).edited_at = new Date().toISOString();
+
+    const patch: Record<string, unknown> = { meta };
+    if (data.notes !== undefined) patch.notes = data.notes;
+    if (data.lat !== undefined) patch.lat = data.lat;
+    if (data.lng !== undefined) patch.lng = data.lng;
+
+    const { error: uerr } = await supabase
+      .from("trip_map_events")
+      .update(patch as never)
+      .eq("id", data.event_id);
+    if (uerr) throw new Error(uerr.message);
+    return { ok: true };
+  });
+
+
+/**
  * Trip map / replay data source.
  *
  * Returns everything the coordinator sheet needs to draw the "live + history"
