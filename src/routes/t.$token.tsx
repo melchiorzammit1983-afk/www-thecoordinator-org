@@ -361,6 +361,9 @@ function ClientTripPortal() {
             </section>
           )}
 
+          <PastTripsCard trips={(data as any)?.history ?? []} />
+
+
           {/* Emergency SOS */}
           {(data as any)?.features?.client_sos !== false && (
             <SosButton token={token} deviceId={deviceId} />
