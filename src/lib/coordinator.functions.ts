@@ -693,7 +693,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled")
+      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
@@ -705,6 +705,8 @@ export const updateJob = createServerFn({ method: "POST" })
       driver_id: (existing as any).driver_id,
       driver_accepted_at: (existing as any).driver_accepted_at,
       status: (existing as any).status,
+      created_by_driver: (existing as any).created_by_driver,
+      needs_review: (existing as any).needs_review,
     };
     if (!c.isAdmin && isJobLocked(lockable)) {
       // Compare and stage only actually changed fields.
