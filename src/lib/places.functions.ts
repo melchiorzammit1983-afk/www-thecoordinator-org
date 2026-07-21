@@ -62,7 +62,7 @@ const BiasSchema = z
   .optional();
 
 export const placesAutocomplete = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -118,7 +118,7 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
   });
 
 export const placesDetails = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -168,7 +168,7 @@ export const placesDetails = createServerFn({ method: "POST" })
 // confident (single result, or first result's main text overlaps the input).
 // The caller decides whether to swap the text.
 export const resolveAddresses = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  /* public: driver signboard uses this without a supabase session */
   .inputValidator((input: unknown) =>
     z
       .object({
