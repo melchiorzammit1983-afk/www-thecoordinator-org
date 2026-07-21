@@ -368,6 +368,7 @@ function ManualForm({
     onSuccess: (res) => {
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["driver-manifest"] });
       if (res.isNew && res.jobId) {
         // Keep dialog open so the coordinator can add phone / note per
         // passenger inline. onSaved() (which closes the dialog) fires from
