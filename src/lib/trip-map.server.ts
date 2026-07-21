@@ -64,17 +64,31 @@ export async function insertTripMapEvent(
   args: InsertTripMapEventArgs,
 ): Promise<void> {
   try {
-    // Dedup: if the same event landed in the last 5 s, skip.
+    // Dedup: if the same event (scoped per-pax when meta.pax_id is set)
+    // landed in the last 5 s, skip. Per-pax scoping lets 2nd/3rd passenger
+    // boardings survive while still guarding against double-tap doubles.
     try {
       const since = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
-      const { data: recent } = await sb
+      const paxId = (args.meta as any)?.pax_id as string | undefined;
+      let query = sb
         .from("trip_map_events")
-        .select("id")
+        .select("id, meta")
         .eq("job_id", args.jobId)
         .eq("event_type", args.eventType)
         .gte("occurred_at", since)
-        .limit(1);
-      if (recent && recent.length > 0) return;
+        .limit(5);
+      const { data: recent } = await query;
+      if (recent && recent.length > 0) {
+        if (!paxId) return;
+        // If paxId supplied, only skip when a recent row shares the same pax.
+        const collides = (recent as any[]).some((r) => {
+          try {
+            const m = typeof r.meta === "string" ? JSON.parse(r.meta) : r.meta;
+            return m && m.pax_id === paxId;
+          } catch { return false; }
+        });
+        if (collides) return;
+      }
     } catch {
       /* dedup failures shouldn't block insert */
     }
