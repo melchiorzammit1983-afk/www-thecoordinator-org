@@ -3213,7 +3213,7 @@ export const listJobPax = createServerFn({ method: "GET" })
     if (!job) return [];
     const { data: rows, error } = await supabaseAdmin
       .from("pax")
-      .select("id, name, status")
+      .select("id, name, status, phone, note")
       .eq("job_id", data.job_id)
       .order("name");
     if (error) throw new Error(error.message);
