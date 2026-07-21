@@ -910,10 +910,13 @@ function DriverManifest() {
                     <DropdownMenuItem onClick={() => setOtgOpen(true)}>
                       <Car className="h-4 w-4 mr-2" /> Create trip (On The Go)
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/m/driver/$token/settings" params={{ token }}>
-                        <Clock className="h-4 w-4 mr-2" /> Settings & hours
-                      </Link>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        navigate({ to: "/m/driver/$token/settings", params: { token } });
+                      }}
+                    >
+                      <Clock className="h-4 w-4 mr-2" /> Settings & hours
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
 
