@@ -51,6 +51,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
+import { markJobReviewed } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
@@ -107,6 +108,8 @@ type Job = {
   route_duration_sec?: number | null;
   route_distance_m?: number | null;
   labels?: { id: string; name: string; color: string }[];
+  needs_review?: boolean | null;
+  created_by_driver?: boolean | null;
 };
 
 type Prefill = Partial<{
@@ -270,6 +273,16 @@ function ManualForm({
   const updateFn = useServerFn(updateJob);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
+  const reviewFn = useServerFn(markJobReviewed);
+  const reviewMut = useMutation({
+    mutationFn: () => reviewFn({ data: { job_id: job!.id } }),
+    onSuccess: () => {
+      toast.success("Marked reviewed");
+      qc.invalidateQueries({ queryKey: ["coord-jobs"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Could not mark reviewed"),
+  });
 
   const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
   const previewMut = useMutation({
@@ -396,6 +409,22 @@ function ManualForm({
       {prefill && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           Prefilled from paste — fill in any missing fields highlighted below.
+        </div>
+      )}
+      {job?.needs_review && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs flex items-center gap-2">
+          <span className="flex-1">
+            {job.created_by_driver
+              ? "This trip was created by the driver on the go. Fill in the client name / fare, then mark it reviewed."
+              : "This trip is pending your review."}
+          </span>
+          <Button
+            type="button" size="sm" variant="outline"
+            onClick={() => reviewMut.mutate()}
+            disabled={reviewMut.isPending}
+          >
+            {reviewMut.isPending ? "Marking…" : "Mark reviewed"}
+          </Button>
         </div>
       )}
       {isMobile && (

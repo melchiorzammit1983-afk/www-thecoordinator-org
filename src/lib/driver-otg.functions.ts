@@ -62,10 +62,39 @@ async function logMap(companyId: string, jobId: string, driverId: string, eventT
 }
 
 // ── Start an OTG trip ────────────────────────────────────────────────────
+// ── List coordinators this driver can dispatch to ───────────────────────
+export const listOtgCoordinators = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) => z.object({ token: z.string().min(8).max(128) }).parse(i))
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    // Driver's home coordinator + any partner companies via active connections.
+    const { data: driverRow } = await supabaseAdmin.from("drivers")
+      .select("linked_company_id").eq("id", link.subject_id).maybeSingle();
+    const homeId = (driverRow as any)?.linked_company_id ?? link.company_id;
+    const { data: conns } = await supabaseAdmin.from("coordinator_connections")
+      .select("owner_company_id, partner_company_id, status")
+      .eq("status", "active")
+      .or(`owner_company_id.eq.${homeId},partner_company_id.eq.${homeId}`);
+    const ids = new Set<string>([homeId]);
+    for (const c of (conns ?? []) as any[]) {
+      if (c.owner_company_id !== homeId) ids.add(c.owner_company_id);
+      if (c.partner_company_id !== homeId) ids.add(c.partner_company_id);
+    }
+    const { data: companies } = await supabaseAdmin.from("companies")
+      .select("id, name").in("id", Array.from(ids));
+    return {
+      home_company_id: homeId,
+      coordinators: ((companies ?? []) as any[]).map((c) => ({ id: c.id as string, name: (c.name as string) ?? "Company" })),
+    };
+  });
+
+// ── Start an OTG trip ────────────────────────────────────────────────────
 export const startOnTheGoTrip = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z.object({
       token: z.string().min(8).max(128),
+      coordinator_company_id: z.string().uuid().optional(),
       lat: z.number().gte(-90).lte(90).optional(),
       lng: z.number().gte(-180).lte(180).optional(),
       pickup_label: z.string().max(200).optional(),
@@ -75,13 +104,28 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await requireDriver(data.token);
     const supabaseAdmin = await admin();
+    // Resolve the target coordinator: default to the token-issuing company,
+    // but honour an explicit picker choice when the driver has partners.
+    let coordinatorId = data.coordinator_company_id ?? link.company_id;
+    if (data.coordinator_company_id && data.coordinator_company_id !== link.company_id) {
+      // Verify the driver actually can dispatch to this coordinator.
+      const { data: driverRow } = await supabaseAdmin.from("drivers")
+        .select("linked_company_id").eq("id", link.subject_id).maybeSingle();
+      const homeId = (driverRow as any)?.linked_company_id ?? link.company_id;
+      const { data: conn } = await supabaseAdmin.from("coordinator_connections")
+        .select("id").eq("status", "active")
+        .or(`and(owner_company_id.eq.${homeId},partner_company_id.eq.${data.coordinator_company_id}),and(owner_company_id.eq.${data.coordinator_company_id},partner_company_id.eq.${homeId})`)
+        .maybeSingle();
+      if (!conn && data.coordinator_company_id !== homeId) throw new Error("coordinator_not_permitted");
+      coordinatorId = data.coordinator_company_id;
+    }
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toISOString().slice(11, 16);
     const pickupLabel = data.pickup_label?.trim() || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
 
     const { data: row, error } = await supabaseAdmin.from("jobs").insert({
-      company_id: link.company_id,
+      company_id: coordinatorId,
       driver_id: link.subject_id,
       from_location: pickupLabel,
       to_location: "TBD — set by driver",
@@ -112,7 +156,7 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
     // Meter: charge the driver's company for a trip.
     try {
       await supabaseAdmin.rpc("spend_points", {
-        _company_id: link.company_id,
+        _company_id: coordinatorId,
         _feature_key: "trip_created",
         _job_id: jobId as unknown as string,
         _note: "Driver on-the-go trip",
@@ -120,8 +164,8 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       });
     } catch { /* soft-meter */ }
 
-    await logMap(link.company_id, jobId, link.subject_id!, "en_route", data.note ?? "Driver started on-the-go trip", { source: "driver_otg" }, data.lat, data.lng);
-    await logMap(link.company_id, jobId, link.subject_id!, "arrived_pickup", "Arrived at first pickup", { stop_index: 0 }, data.lat, data.lng);
+    await logMap(coordinatorId, jobId, link.subject_id!, "en_route", data.note ?? "Driver started on-the-go trip", { source: "driver_otg" }, data.lat, data.lng);
+    await logMap(coordinatorId, jobId, link.subject_id!, "arrived_pickup", "Arrived at first pickup", { stop_index: 0 }, data.lat, data.lng);
 
     return { job_id: jobId };
   });
