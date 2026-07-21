@@ -110,6 +110,9 @@ function TrackPage() {
           </Card>
         )}
 
+        <PastTripsCard trips={(boot as any).history ?? []} />
+
+
         {!jwt ? (
           <VerifyBox token={token} onVerified={setJwt} brandName={brandName} />
         ) : (
