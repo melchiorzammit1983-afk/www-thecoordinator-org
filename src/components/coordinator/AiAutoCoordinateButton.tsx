@@ -14,7 +14,13 @@ type Proposal =
   | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
   | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
 
-type PlanResponse = { proposals: Proposal[]; metering_mode: string; considered: number };
+type PlanResponse = {
+  proposals: Proposal[];
+  metering_mode: string;
+  considered: number;
+  pendingReview?: { driver_otg_review: number; portal_requests_pending: number };
+};
+
 
 export function AiAutoCoordinateButton() {
   const enabled = useFeature("ai_auto_coordinate");
