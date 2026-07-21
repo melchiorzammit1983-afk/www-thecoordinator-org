@@ -4389,6 +4389,8 @@ export type Database = {
           job_id: string
           name: string
           noshow_at: string | null
+          note: string | null
+          phone: string | null
           status: Database["public"]["Enums"]["pax_status"]
           updated_at: string
         }
@@ -4402,6 +4404,8 @@ export type Database = {
           job_id: string
           name: string
           noshow_at?: string | null
+          note?: string | null
+          phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
@@ -4415,6 +4419,8 @@ export type Database = {
           job_id?: string
           name?: string
           noshow_at?: string | null
+          note?: string | null
+          phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           updated_at?: string
         }
@@ -4444,6 +4450,7 @@ export type Database = {
           location_share_expires_at: string | null
           location_share_granted_at: string | null
           location_share_requested_at: string | null
+          pax_id: string | null
           phone_last4: string | null
           portal_booking_id: string | null
           revoked_at: string | null
@@ -4458,6 +4465,7 @@ export type Database = {
           location_share_expires_at?: string | null
           location_share_granted_at?: string | null
           location_share_requested_at?: string | null
+          pax_id?: string | null
           phone_last4?: string | null
           portal_booking_id?: string | null
           revoked_at?: string | null
@@ -4472,6 +4480,7 @@ export type Database = {
           location_share_expires_at?: string | null
           location_share_granted_at?: string | null
           location_share_requested_at?: string | null
+          pax_id?: string | null
           phone_last4?: string | null
           portal_booking_id?: string | null
           revoked_at?: string | null
@@ -4484,6 +4493,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pax_tracking_tokens_pax_id_fkey"
+            columns: ["pax_id"]
+            isOneToOne: false
+            referencedRelation: "pax"
             referencedColumns: ["id"]
           },
           {

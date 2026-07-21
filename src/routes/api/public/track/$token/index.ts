@@ -13,12 +13,12 @@ export const Route = createFileRoute("/api/public/track/$token/")({
         if (!params.token || params.token.length < 20) return Response.json({ error: "bad_token" }, { status: 400 });
         const admin = await getAdmin();
         const { data: tok } = await admin.from("pax_tracking_tokens" as any)
-          .select("id, job_id, portal_booking_id, revoked_at, show_driver_location, location_share_expires_at")
+          .select("id, job_id, pax_id, portal_booking_id, revoked_at, show_driver_location, location_share_expires_at")
           .eq("token", params.token).maybeSingle();
         if (!tok || (tok as any).revoked_at)
           return Response.json({ error: "not_found" }, { status: 404 });
 
-        const [{ data: job }, { data: booking }] = await Promise.all([
+        const [{ data: job }, { data: booking }, { data: pax }] = await Promise.all([
           admin.from("jobs")
             .select("id, status, pickup_at, from_location, to_location, driver_id, drivers(name, car_make_model, plate)")
             .eq("id", (tok as any).job_id).maybeSingle(),
@@ -26,6 +26,9 @@ export const Route = createFileRoute("/api/public/track/$token/")({
             ? admin.from("portal_bookings" as any)
                 .select("portal_companies!inner(name, logo_url, brand_color, display_name_for_passenger)")
                 .eq("id", (tok as any).portal_booking_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+          (tok as any).pax_id
+            ? admin.from("pax").select("id, name, note").eq("id", (tok as any).pax_id).maybeSingle()
             : Promise.resolve({ data: null }),
         ]);
         if (!job) return Response.json({ error: "not_found" }, { status: 404 });
@@ -51,6 +54,7 @@ export const Route = createFileRoute("/api/public/track/$token/")({
           to: (job as any).to_location,
           driver,
           show_driver_location: (tok as any).show_driver_location === true,
+          passenger: pax ? { name: (pax as any).name, note: (pax as any).note ?? null } : null,
         });
       },
     },
