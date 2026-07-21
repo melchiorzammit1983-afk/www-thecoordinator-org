@@ -5866,8 +5866,33 @@ export async function runAutoCoordinate(
     loadActivePartners(sb, companyId),
   ]);
 
+  // Phase 7 — surface pending-review counts so Auto-Coordinate acknowledges
+  // Phase 2 (driver On-The-Go) and Phase 4 (public booking portal) queues
+  // instead of silently ignoring them. Not part of proposals — informational only.
+  const [{ count: reviewCount }, portalIdsRes] = await Promise.all([
+    sb.from("jobs").select("id", { count: "exact", head: true })
+      .eq("company_id", companyId).eq("needs_review", true)
+      .not("status", "in", "(completed,cancelled)"),
+    sb.from("public_booking_portals" as any).select("id").eq("coordinator_company_id", companyId),
+  ]);
+  const portalIds = (portalIdsRes.data ?? []).map((p: any) => p.id);
+  let pendingRequestsCount = 0;
+  if (portalIds.length) {
+    const { count } = await sb
+      .from("public_booking_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .in("portal_id", portalIds);
+    pendingRequestsCount = count ?? 0;
+  }
+  const pendingReview = {
+    driver_otg_review: reviewCount ?? 0,
+    portal_requests_pending: pendingRequestsCount,
+  };
+
   const list = jobs ?? [];
   const drv = drivers ?? [];
+
 
   const { data: costRow } = await sb
     .from("ai_feature_costs")
@@ -5892,7 +5917,7 @@ export async function runAutoCoordinate(
   };
 
   if (list.length === 0) {
-    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0, pendingReview };
   }
 
   const directive = (opts.directive ?? "").trim();
@@ -6094,12 +6119,12 @@ export async function runAutoCoordinate(
       }));
     }
     await chargePlanIfNeeded(proposals);
-    return { proposals, metering_mode: meteringMode, considered: eligibleList.length };
+    return { proposals, metering_mode: meteringMode, considered: eligibleList.length, pendingReview };
   }
 
   const planningList = eligibleList;
   if (planningList.length === 0) {
-    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0 };
+    return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0, pendingReview };
   }
 
   // No target named. If directive is a simple assign/dispatch or empty, use
@@ -6109,7 +6134,7 @@ export async function runAutoCoordinate(
   if (simpleAssignIntent) {
     const r = planAvailability(planningList, null);
     await chargePlanIfNeeded(r.proposals);
-    return { proposals: r.proposals, metering_mode: meteringMode, considered: planningList.length };
+    return { proposals: r.proposals, metering_mode: meteringMode, considered: planningList.length, pendingReview };
   }
 
   const tripLines = planningList
@@ -6201,7 +6226,7 @@ export async function runAutoCoordinate(
 
   await chargePlanIfNeeded(proposals);
 
-  return { proposals, metering_mode: meteringMode, considered: planningList.length };
+  return { proposals, metering_mode: meteringMode, considered: planningList.length, pendingReview };
 }
 
 export const aiAutoCoordinate = createServerFn({ method: "POST" })

@@ -14,7 +14,13 @@ type Proposal =
   | { kind: "assign"; trip_ids: string[]; driver_id: string; reason: string }
   | { kind: "dispatch"; trip_ids: string[]; partner_company_id: string; reason: string };
 
-type PlanResponse = { proposals: Proposal[]; metering_mode: string; considered: number };
+type PlanResponse = {
+  proposals: Proposal[];
+  metering_mode: string;
+  considered: number;
+  pendingReview?: { driver_otg_review: number; portal_requests_pending: number };
+};
+
 
 export function AiAutoCoordinateButton() {
   const enabled = useFeature("ai_auto_coordinate");
@@ -130,6 +136,19 @@ export function AiAutoCoordinateButton() {
                   Reviewed {plan.considered} unassigned trip{plan.considered === 1 ? "" : "s"} · metering: {plan.metering_mode.replace("_", " ")}
                 </p>
               )}
+              {!runMut.isPending && plan?.pendingReview &&
+                (plan.pendingReview.driver_otg_review > 0 || plan.pendingReview.portal_requests_pending > 0) && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 text-xs space-y-1">
+                  <div className="font-medium">Also needs your review (not auto-assigned):</div>
+                  {plan.pendingReview.driver_otg_review > 0 && (
+                    <div>• {plan.pendingReview.driver_otg_review} driver On-The-Go trip{plan.pendingReview.driver_otg_review === 1 ? "" : "s"} awaiting finalize</div>
+                  )}
+                  {plan.pendingReview.portal_requests_pending > 0 && (
+                    <div>• {plan.pendingReview.portal_requests_pending} public booking request{plan.pendingReview.portal_requests_pending === 1 ? "" : "s"} pending accept</div>
+                  )}
+                </div>
+              )}
+
               {plan?.proposals.map((p, i) => (
                 <div key={i} className={`rounded-md border p-3 space-y-2 ${done.has(i) ? "opacity-50" : ""}`}>
                   <div className="flex items-center gap-2 flex-wrap">

@@ -550,6 +550,64 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
       ? clientNotes.map((n) => `- ${n.client_display}: ${n.note.slice(0, 200)}`).join("\n")
       : "(no client notes saved)";
 
+    // Phase 7 — pending review queues the assistant must acknowledge instead of ignoring.
+    // 1) Driver "On The Go" trips awaiting coordinator finalization (needs_review=true).
+    // 2) Public booking portal requests still in 'pending' status.
+    const [{ data: reviewJobs }, { data: pendingReqs }] = await Promise.all([
+      supabaseAdmin
+        .from("jobs")
+        .select("id, trip_no, from_location, to_location, pickup_at, drivers:driver_id(name)")
+        .eq("company_id", company.id)
+        .eq("needs_review", true)
+        .not("status", "in", "(completed,cancelled)")
+        .order("pickup_at", { ascending: true, nullsFirst: false })
+        .limit(20),
+      supabaseAdmin
+        .from("public_booking_requests")
+        .select("id, from_location, to_location, requested_at, status, portal_id")
+        .eq("status", "pending")
+        .in(
+          "portal_id",
+          (
+            (
+              await supabaseAdmin
+                .from("public_booking_portals" as any)
+                .select("id")
+                .eq("coordinator_company_id", company.id)
+
+            ).data ?? []
+          ).map((p: any) => p.id),
+        )
+        .order("requested_at", { ascending: false })
+        .limit(20),
+    ]);
+    const reviewList = (reviewJobs ?? []) as any[];
+    const pendingList = (pendingReqs ?? []) as any[];
+    const pendingReviewBlock = (reviewList.length || pendingList.length)
+      ? [
+          reviewList.length
+            ? `DRIVER TRIPS AWAITING REVIEW (${reviewList.length}) — Phase 2 On-The-Go, needs coordinator finalize:\n${reviewList
+                .map(
+                  (j) =>
+                    `- #${j.trip_no ?? "?"} (${j.id}) drv:${j.drivers?.name ?? "?"} ${j.pickup_at ?? ""} | ${j.from_location ?? ""} → ${j.to_location ?? ""}`,
+                )
+                .join("\n")}`
+            : "",
+          pendingList.length
+            ? `PUBLIC BOOKING REQUESTS PENDING (${pendingList.length}) — Phase 4 portal, needs coordinator accept/edit:\n${pendingList
+                .map(
+                  (r) =>
+                    `- ${r.id} ${r.requested_at ?? ""} | ${r.from_location ?? ""} → ${r.to_location ?? ""}`,
+                )
+                .join("\n")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : "(nothing pending review)";
+
+
+
 
     const today = new Date().toISOString().slice(0, 10);
     const trip = data.screen?.trip ?? null;
@@ -744,6 +802,15 @@ ${referencedBlock}
 
 CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
 ${clientNotesBlock}
+
+PENDING REVIEW QUEUES (Phase 2 driver On-The-Go trips + Phase 4 public booking portal requests).
+When the coordinator asks about "what's pending", "review queue", "needs review", or asks Auto-Coordinate to plan, MENTION these counts in your answer and remind them these items require a manual accept/finalize step (they are not auto-assignable yet):
+${pendingReviewBlock}
+
+SEND LINK & PORTAL LINKS (Phase 3 + Phase 4). You do NOT execute these directly — respond with kind:"answer" that guides the coordinator to the existing UI:
+- To share a per-passenger tracking link on a trip: open the trip and tap "Copy client link". Multi-passenger trips open a picker so the coordinator chooses which passenger's personal link to copy.
+- To create/manage a public booking portal (open link for anyone to book, default 24h expiry): Coordinator → Portal Links.
+
 
 CURRENT AI TOGGLES (owner-controllable via kind:"setting_change"):
 ${aiConfigBlock}
