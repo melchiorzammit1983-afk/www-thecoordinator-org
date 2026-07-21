@@ -351,3 +351,48 @@ export const markJobReviewed = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ── Coordinator: list companies an OTG trip can be reassigned to ────────
+// Used by JobFormDialog to render a "Coordinator company" picker while the
+// OTG trip is still `created_by_driver && needs_review`. Returns the
+// driver's home coordinator plus any active partner coordinators.
+export const listOtgReassignTargets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await admin();
+    const { data: job } = await supabaseAdmin.from("jobs")
+      .select("id, company_id, driver_id, created_by_driver, needs_review")
+      .eq("id", data.job_id).maybeSingle();
+    if (!job) throw new Error("job_not_found");
+    // Caller must own the trip (RLS-checked via context.supabase read).
+    const { data: ownRead } = await context.supabase
+      .from("jobs").select("id").eq("id", data.job_id).maybeSingle();
+    if (!ownRead) throw new Error("forbidden");
+    const driverId = (job as any).driver_id as string | null;
+    let homeId = (job as any).company_id as string;
+    if (driverId) {
+      const { data: drv } = await supabaseAdmin.from("drivers")
+        .select("linked_company_id, company_id").eq("id", driverId).maybeSingle();
+      homeId = ((drv as any)?.linked_company_id ?? (drv as any)?.company_id ?? homeId) as string;
+    }
+    const { data: conns } = await supabaseAdmin.from("coordinator_connections")
+      .select("owner_company_id, partner_company_id, status")
+      .eq("status", "active")
+      .or(`owner_company_id.eq.${homeId},partner_company_id.eq.${homeId}`);
+    const ids = new Set<string>([homeId, (job as any).company_id]);
+    for (const c of (conns ?? []) as any[]) {
+      if (c.owner_company_id !== homeId) ids.add(c.owner_company_id);
+      if (c.partner_company_id !== homeId) ids.add(c.partner_company_id);
+    }
+    const { data: companies } = await supabaseAdmin.from("companies")
+      .select("id, name").in("id", Array.from(ids));
+    return {
+      home_company_id: homeId,
+      current_company_id: (job as any).company_id as string,
+      coordinators: ((companies ?? []) as any[]).map((c) => ({
+        id: c.id as string,
+        name: (c.name as string) ?? "Company",
+      })),
+    };
+  });
+
