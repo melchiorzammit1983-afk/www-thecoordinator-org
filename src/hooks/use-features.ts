@@ -36,8 +36,14 @@ export function useFeatures() {
 
 export function useFeature(key: FeatureKey): boolean {
   const { data, isLoading } = useFeatures();
+  const { data: billing } = useMyBilling();
   if (isLoading || !data) return true;
-  return data[key] !== false;
+  if (data[key] === false) return false;
+  // Admin-level kill switch: if the cost row exists and is explicitly disabled,
+  // hide the surface for every user regardless of entitlement.
+  const cost = billing?.costs?.find((c) => c.feature_key === key);
+  if (cost && cost.enabled === false) return false;
+  return true;
 }
 
 export function useMyBilling() {
