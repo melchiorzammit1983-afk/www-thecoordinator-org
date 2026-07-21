@@ -1,79 +1,63 @@
-## Phase 2 — Driver "On The Go" trip creation
+# Phase 4 — Public Booking Portal
 
-Adds a second entry point in the driver app that creates a real, live-tracked trip in one tap, then walks the driver through stops as they happen. Existing driver flows and coordinator flows stay unchanged.
+A new *open* booking link the coordinator can share anywhere (e.g. WhatsApp, Facebook). Anyone with the link can book without an account. Submissions are **pending only** (no job, no points) until the coordinator accepts.
 
-### 1. Database (single migration)
+Additive — does not touch existing company/hotel portals or the per-trip client link.
 
-Add two columns to `public.jobs`:
-- `created_by_driver` boolean not null default false
-- `needs_review` boolean not null default false
+## What the coordinator gets
 
-No new table — the existing `groups` + `group_stops` pair (already used by grouped trips) is the "linked stops" model. When the driver taps "Add another stop", we create a `groups` row for the job (if none) and append `group_stops` rows. Simple single-pickup on-the-go trips stay flat (no group created), so nothing changes for normal trips.
+- New tab **"Public booking"** on `/coordinator/portal-links` next to the existing Companies / Drivers / Clients tabs.
+- Create a link: name (e.g. "Website form"), expiry (1h / 24h [default] / 7d / 30d / never), enable/disable, rotate token, delete.
+- Copy branded URL `thecoordinator.org/b/{token}` (fallback `/b/{token}`).
+- **Pending requests inbox** section on the same tab: each row shows requester name/phone/email, route, date/time, notes, pax count, and submitted-at.
+  - **Edit & accept** → opens the existing `JobFormDialog` pre-filled → on save creates the job and charges `trip_created` via `spend_points` (same feature key as Phase 2).
+  - **Reject** with optional reason.
+  - Rejected/accepted rows collapse into a "Recent decisions" strip.
 
-RLS: extend the existing driver update policies on `jobs`/`group_stops` so an assigned driver can insert their own on-the-go job and append stops. No new grant surface.
+## What the public visitor gets
 
-### 2. Server functions (new file `src/lib/driver-otg.functions.ts`)
+`/b/{token}` (a new public route):
+- Booking form: from, to (AddressAutocomplete), date, time, pax count, primary passenger name + phone + email (optional), notes.
+- Submit → creates a pending request, shows success screen with a **request reference** (short code).
+- Chat panel (like existing `/t/{token}` client trip chat) scoped to *their* browser identity, so they can message the coordinator about their request(s).
+- **History**: any past requests submitted from the same browser (identified by a `visitor_id` stored in localStorage and tied server-side on first submit) are shown as a list with status pills (Pending / Accepted / Rejected). Accepted rows link to the resulting per-trip `/t/{tripToken}` client page.
 
-All authenticated via `requireSupabaseAuth`, resolve the caller to a driver via the existing driver-token lookup used in `m.driver.$token.tsx`.
+No login. No PII returned unless the request came from the same `visitor_id`.
 
-- `listCompanyCoordinators({ driver_token })` — returns coordinators (companies) the driver is linked to, for the picker.
-- `startOnTheGoTrip({ driver_token, company_id })` — inserts a job:
-  - `company_id` = chosen coordinator's company
-  - `driver_id` = caller
-  - `status = 'in_progress'`, `created_by_driver = true`, `needs_review = true`
-  - `pickup_at = now()`, empty client fields
-  - Charges `trip_created` immediately via existing `spend_points` (same key normal creation uses). If wallet is empty and `block_on_empty=true`, return `{ ok:false, reason:"insufficient_points" }` and don't create.
-  - Emits a `trip_map_events` "en_route" pin so the coordinator map picks it up instantly (existing realtime).
-- `otgArrivedAtStop({ job_id })` — records `arrived_pickup` event (reuses existing arrival telemetry columns; no auto-GPS trigger, matches current manual model).
-- `otgAddPassenger({ job_id, stop_index?, name, phone?, note? })` — inserts a `pax` row (Phase 1 fields), and if this is stop ≥ 2 also promotes/creates a `group` + writes/updates the corresponding `group_stops` row (address = current GPS reverse-geocoded label; falls back to lat/lng string).
-- `otgBoardStop({ job_id, stop_index? })` — marks `boarded_at` on the stop (or `pax_boarded` event on stop 1) — reuses existing `markPaxOnboard` per-pax event drop from the earlier map-pins work.
-- `otgAddAnotherStop({ job_id })` — clones the stop cycle: creates group if not present, appends next `group_stops` row with `stop_index+1`, returns the new stop id.
-- `otgFinishPickups({ job_id, dropoff })` — writes dropoff (address + geocode via existing places pipeline), from here the trip continues via the existing driver "in_progress → completed" flow untouched.
+## Data
 
-No new feature_key is invented; `trip_created` is reused per spec.
+New tables (RLS on; coordinator-scoped reads via `coordinator_company_id`, public writes only via server route with valid token):
 
-### 3. Driver UI (mobile-first, matches current driver app style)
+- `public_booking_portals`
+  - `id`, `coordinator_company_id`, `name`, `token` (unique), `enabled bool default true`, `expires_at timestamptz null` (default now()+24h at creation), `created_at`, `updated_at`
+- `public_booking_requests`
+  - `id`, `portal_id → public_booking_portals`, `visitor_id text` (browser-generated, ≤64 chars, hashed check), `payload jsonb` (route/date/time/pax/name/phone/email/notes), `status enum('pending','accepted','rejected','cancelled') default 'pending'`, `job_id → jobs null`, `decided_at`, `decided_reason text null`, `created_at`
+- `public_booking_messages`
+  - `id`, `portal_id`, `request_id null` (nullable so visitors can chat before submitting), `visitor_id`, `sender_role enum('visitor','coordinator')`, `body text`, `created_at`
 
-New screens inside `src/routes/m.driver.$token.tsx` (or a small `src/components/driver/OnTheGo/*` set imported by it), gated behind a new "Create Trip" FAB in the driver home:
+Grants: `authenticated` full on all three; `service_role` all. No `anon` grants — public traffic goes exclusively through server routes using `supabaseAdmin` after token validation and rate-limit check (reuse `checkRateLimit` from `portal-token.server.ts`).
 
-```text
-[ Create Trip ▾ ]
-   ├─ Normal          → opens existing full form (unchanged)
-   └─ On The Go       → opens OTG wizard
-```
+## Server surface
 
-OTG wizard steps (each = full-screen mobile sheet, one primary sticky CTA):
-1. **Coordinator picker** — list of coordinator companies with tap targets ≥ 48px, single tap starts the trip. Shows the `trip_created` cost inline and disables + explains if wallet empty.
-2. **Live "Driving to stop N"** — big current-status pill + a single "Arrived" button. No forms during driving.
-3. **Arrived → passenger form** — Name (required), Phone (optional), Note (optional). Same components used in Phase 1 `PaxEditor`. Second sticky CTA: "Boarding".
-4. **Boarding confirm** — two side-by-side buttons: **Add Another Stop** (loops back to step 2, incrementing stop_index and creating the group on first add) and **Finish Pickups** (step 5).
-5. **Enter destination** — reuse `AddressAutocomplete`, on confirm the trip snaps into the standard driver in-progress screen (existing drive/drop/complete flow).
+Auth-gated (`createServerFn` + `requireSupabaseAuth`) in a new `src/lib/public-portal.functions.ts`:
+- `listPublicPortals`, `createPublicPortal`, `updatePublicPortal`, `rotatePublicPortal`, `deletePublicPortal`
+- `listPublicBookingRequests({ status? })`
+- `acceptPublicBookingRequest({ id, patch? })` — inserts job, calls `spend_points('trip_created', …)`, links `job_id`, sets `status='accepted'`, seeds pax + tracking token exactly like `acceptPortalBooking` does today. On `insufficient_points`, rollback job (same pattern as existing acceptPortalBooking).
+- `rejectPublicBookingRequest({ id, reason? })`
 
-All steps show a slim breadcrumb chip so the driver knows where they are (Stop 1 → Stop 2 → Destination).
+Public HTTP routes in `src/routes/api/public/b/$token/`:
+- `index.ts` — `GET` returns portal metadata + `bookings[]` filtered by `visitor_id` header, plus their messages.
+- `submit.ts` — `POST` creates a pending request; rate-limited; validates token + expiry + enabled.
+- `messages.ts` — `GET` (scoped by visitor_id) / `POST` (visitor → coordinator).
 
-### 4. Coordinator UI
+## Public UI route
 
-- **Live dashboard & map**: driver-created trips already appear because they're real jobs — no extra wiring needed. Add a small purple **"Needs Review"** badge on the trip card when `needs_review = true`, and a **chain icon** with stop count when the job has an associated `group` (reuse existing group indicator). Both are read-only from the badge component; new prop in `TripCard`.
-- **Open while in progress**: uses the existing trip detail sheet — works today because it's a normal job. No changes needed.
-- **Review action**: after the trip completes, the review badge stays until the coordinator opens the existing edit dialog and taps a new **"Mark reviewed"** button (clears `needs_review`). Coordinator can freely edit any field (including finally filling the client/company name) in the same dialog they already use — no separate form.
+`src/routes/b.$token.tsx` — self-contained public page (SSR-safe): form on top, "Your requests" list, chat drawer. Mobile-first. Generates and stores `visitor_id` in `localStorage` on first mount.
 
-### 5. Verification checklist (self-run before reporting done)
+## Non-goals for this phase
 
-- Typecheck passes.
-- Migration runs; `jobs.created_by_driver` and `jobs.needs_review` present.
-- `startOnTheGoTrip` charges `trip_created` exactly once (verify via `points_ledger`).
-- On the coordinator dashboard, an OTG trip appears within the existing realtime refresh cadence and shows the "Needs Review" badge.
-- Simple single-stop OTG trip (never taps "Add another stop") never creates a `groups` row — stays a flat job.
-- Multi-stop OTG trip creates one `groups` row and N `group_stops` rows with correct `stop_index`, `arrived_at`, `boarded_at`.
-- Existing normal driver "Create Trip" flow is unchanged and still works.
-- Wallet-empty case blocks creation with a clear message; no ghost job is written.
+- No visitor-side edit of pending requests (they can cancel via chat; coordinator edits before accepting).
+- No email notifications (deferred; not requested).
+- Phase 7 will wire AI actions for portal-link management + acknowledging pending items.
 
-### Technical notes
-
-- Reuses `trip_created` cost key (confirmed present in `ai_feature_costs`).
-- Reuses `groups` + `group_stops` schema (confirmed present) — no parallel stops table.
-- Reuses per-pax `pax_boarded` map-event drop from the recent map-pins work — the driver gets per-passenger pins on the coordinator map automatically.
-- Coordinator card badges are cosmetic-only in `src/components/coordinator/TripCard.tsx`; no logic changes to trip visibility, filtering, or scheduling.
-- No changes to Phase 1 code paths.
-
-Deferred (Phase 7, per spec): teaching the AI assistant to create OTG trips via chat.
+Reply "go" and I'll ship it.

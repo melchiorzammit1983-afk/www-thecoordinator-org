@@ -27,6 +27,7 @@ import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as GSessionRouteImport } from './routes/g.$session'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as BTokenRouteImport } from './routes/b.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
@@ -86,6 +87,7 @@ import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/
 import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
 import { Route as ApiPublicTrackTokenIndexRouteImport } from './routes/api/public/track/$token/index'
 import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/public/portal/$token/index'
+import { Route as ApiPublicBTokenIndexRouteImport } from './routes/api/public/b/$token/index'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
 import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
 import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
@@ -96,6 +98,8 @@ import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/p
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
 import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
 import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
+import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
+import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
 import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/api/public/portal/guest/$session/index'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
 
@@ -186,6 +190,11 @@ const GSessionRoute = GSessionRouteImport.update({
 const CTokenRoute = CTokenRouteImport.update({
   id: '/c/$token',
   path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BTokenRoute = BTokenRouteImport.update({
+  id: '/b/$token',
+  path: '/b/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
@@ -531,6 +540,11 @@ const ApiPublicPortalTokenIndexRoute =
     path: '/api/public/portal/$token/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBTokenIndexRoute = ApiPublicBTokenIndexRouteImport.update({
+  id: '/api/public/b/$token/',
+  path: '/api/public/b/$token/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
   id: '/sign/$jobId',
   path: '/sign/$jobId',
@@ -590,6 +604,16 @@ const ApiPublicPortalTokenAdminRoute =
     path: '/api/public/portal/$token/admin',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBTokenSubmitRoute = ApiPublicBTokenSubmitRouteImport.update({
+  id: '/api/public/b/$token/submit',
+  path: '/api/public/b/$token/submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicBTokenMessagesRoute = ApiPublicBTokenMessagesRouteImport.update({
+  id: '/api/public/b/$token/messages',
+  path: '/api/public/b/$token/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPortalGuestSessionIndexRoute =
   ApiPublicPortalGuestSessionIndexRouteImport.update({
     id: '/api/public/portal/guest/$session/',
@@ -620,6 +644,7 @@ export interface FileRoutesByFullPath {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
@@ -678,6 +703,8 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -688,6 +715,7 @@ export interface FileRoutesByFullPath {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -707,6 +735,7 @@ export interface FileRoutesByTo {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/help/$topic': typeof HelpTopicRoute
@@ -764,6 +793,8 @@ export interface FileRoutesByTo {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -774,6 +805,7 @@ export interface FileRoutesByTo {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -798,6 +830,7 @@ export interface FileRoutesById {
   '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
@@ -856,6 +889,8 @@ export interface FileRoutesById {
   '/api/public/hooks/wait-thresholds': typeof ApiPublicHooksWaitThresholdsRoute
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
+  '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -866,6 +901,7 @@ export interface FileRoutesById {
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
+  '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
@@ -890,6 +926,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/h/$slug'
@@ -948,6 +985,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -958,6 +997,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/guest/room/$qr'
@@ -977,6 +1017,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/help/$topic'
@@ -1034,6 +1075,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -1044,6 +1087,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token'
     | '/api/public/portal/$token'
     | '/api/public/track/$token'
     | '/api/public/portal/guest/room/$qr'
@@ -1067,6 +1111,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-tickets'
     | '/_authenticated/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/h/$slug'
@@ -1125,6 +1170,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/wait-thresholds'
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
+    | '/api/public/b/$token/messages'
+    | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
@@ -1135,6 +1182,7 @@ export interface FileRouteTypes {
     | '/api/public/track/$token/messages'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
+    | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/guest/room/$qr'
@@ -1155,6 +1203,7 @@ export interface RootRouteChildren {
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiHelpChatRoute: typeof ApiHelpChatRoute
+  BTokenRoute: typeof BTokenRoute
   CTokenRoute: typeof CTokenRoute
   GSessionRoute: typeof GSessionRoute
   HSlugRoute: typeof HSlugRouteWithChildren
@@ -1172,6 +1221,8 @@ export interface RootRouteChildren {
   ApiPublicHooksSummarizeLearningRoute: typeof ApiPublicHooksSummarizeLearningRoute
   ApiPublicHooksWaitThresholdsRoute: typeof ApiPublicHooksWaitThresholdsRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
+  ApiPublicBTokenMessagesRoute: typeof ApiPublicBTokenMessagesRoute
+  ApiPublicBTokenSubmitRoute: typeof ApiPublicBTokenSubmitRoute
   ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
@@ -1181,6 +1232,7 @@ export interface RootRouteChildren {
   ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
   ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
   ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
+  ApiPublicBTokenIndexRoute: typeof ApiPublicBTokenIndexRoute
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
   ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
   ApiPublicPortalGuestRoomQrRoute: typeof ApiPublicPortalGuestRoomQrRoute
@@ -1313,6 +1365,13 @@ declare module '@tanstack/react-router' {
       path: '/c/$token'
       fullPath: '/c/$token'
       preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b/$token': {
+      id: '/b/$token'
+      path: '/b/$token'
+      fullPath: '/b/$token'
+      preLoaderRoute: typeof BTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/help-chat': {
@@ -1728,6 +1787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalTokenIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/b/$token/': {
+      id: '/api/public/b/$token/'
+      path: '/api/public/b/$token'
+      fullPath: '/api/public/b/$token/'
+      preLoaderRoute: typeof ApiPublicBTokenIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/m/driver/$token/sign/$jobId': {
       id: '/m/driver/$token/sign/$jobId'
       path: '/sign/$jobId'
@@ -1796,6 +1862,20 @@ declare module '@tanstack/react-router' {
       path: '/api/public/portal/$token/admin'
       fullPath: '/api/public/portal/$token/admin'
       preLoaderRoute: typeof ApiPublicPortalTokenAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/b/$token/submit': {
+      id: '/api/public/b/$token/submit'
+      path: '/api/public/b/$token/submit'
+      fullPath: '/api/public/b/$token/submit'
+      preLoaderRoute: typeof ApiPublicBTokenSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/b/$token/messages': {
+      id: '/api/public/b/$token/messages'
+      path: '/api/public/b/$token/messages'
+      fullPath: '/api/public/b/$token/messages'
+      preLoaderRoute: typeof ApiPublicBTokenMessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/portal/guest/$session/': {
@@ -2006,6 +2086,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiHelpChatRoute: ApiHelpChatRoute,
+  BTokenRoute: BTokenRoute,
   CTokenRoute: CTokenRoute,
   GSessionRoute: GSessionRoute,
   HSlugRoute: HSlugRouteWithChildren,
@@ -2024,6 +2105,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksSummarizeLearningRoute: ApiPublicHooksSummarizeLearningRoute,
   ApiPublicHooksWaitThresholdsRoute: ApiPublicHooksWaitThresholdsRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
+  ApiPublicBTokenMessagesRoute: ApiPublicBTokenMessagesRoute,
+  ApiPublicBTokenSubmitRoute: ApiPublicBTokenSubmitRoute,
   ApiPublicPortalTokenAdminRoute: ApiPublicPortalTokenAdminRoute,
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
   ApiPublicPortalTokenChangeRequestsRoute:
@@ -2034,6 +2117,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
   ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
   ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
+  ApiPublicBTokenIndexRoute: ApiPublicBTokenIndexRoute,
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
   ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
   ApiPublicPortalGuestRoomQrRoute: ApiPublicPortalGuestRoomQrRoute,

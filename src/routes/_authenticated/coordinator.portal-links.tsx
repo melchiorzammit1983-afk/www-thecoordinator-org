@@ -12,6 +12,11 @@ import {
   listPortals, createPortal, updatePortal, rotatePortalToken, deletePortal,
   checkSlugAvailable, slugify,
 } from "@/lib/portal.functions";
+import {
+  listPublicPortals, createPublicPortal, updatePublicPortal,
+  rotatePublicPortal, deletePublicPortal,
+  listPublicBookingRequests, acceptPublicBookingRequest, rejectPublicBookingRequest,
+} from "@/lib/public-portal.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,16 +47,248 @@ function PortalLinksPage() {
       <Tabs defaultValue="companies" className="mt-6">
         <TabsList>
           <TabsTrigger value="companies">Companies</TabsTrigger>
+          <TabsTrigger value="public">Public booking</TabsTrigger>
           <TabsTrigger value="driver">Drivers</TabsTrigger>
           <TabsTrigger value="client">Clients</TabsTrigger>
         </TabsList>
         <TabsContent value="companies" className="mt-4"><CompaniesPanel /></TabsContent>
+        <TabsContent value="public" className="mt-4"><PublicBookingPanel /></TabsContent>
         <TabsContent value="driver" className="mt-4"><LinksPanel kind="driver" /></TabsContent>
         <TabsContent value="client" className="mt-4"><LinksPanel kind="client" /></TabsContent>
       </Tabs>
     </div>
   );
 }
+
+/* ------------------------- Public booking portal ------------------------- */
+
+function publicBookingUrl(token: string) {
+  if (typeof window === "undefined") return `/b/${token}`;
+  return `${window.location.origin}/b/${token}`;
+}
+
+function PublicBookingPanel() {
+  const listFn = useServerFn(listPublicPortals);
+  const createFn = useServerFn(createPublicPortal);
+  const reqFn = useServerFn(listPublicBookingRequests);
+  const qc = useQueryClient();
+  const { data: portals } = useQuery({ queryKey: ["public-portals"], queryFn: () => listFn() as Promise<any[]> });
+  const { data: requests } = useQuery({ queryKey: ["public-portal-requests"], queryFn: () => reqFn({ data: {} }) as Promise<any[]>, refetchInterval: 30_000 });
+
+  const [name, setName] = useState("");
+  const [expiryPreset, setExpiryPreset] = useState<string>("24");
+
+  const create = useMutation({
+    mutationFn: () => createFn({ data: { name, expires_at: expiryToIso(expiryPreset) } }),
+    onSuccess: () => {
+      toast.success("Public booking link created");
+      setName("");
+      qc.invalidateQueries({ queryKey: ["public-portals"] });
+    },
+    onError: (e: Error) => toast.error(e.message ?? "Failed"),
+  });
+
+  const pending = (requests ?? []).filter((r: any) => r.status === "pending");
+  const recent = (requests ?? []).filter((r: any) => r.status !== "pending").slice(0, 10);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+        Share an open booking link anywhere (website, WhatsApp, Facebook). Anyone can request a ride — no account needed. Requests arrive here as <strong>pending</strong>: no job or points are used until you accept.
+      </div>
+
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Link name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Website booking form" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Expiry</Label>
+            <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 hour</SelectItem>
+                <SelectItem value="24">24 hours</SelectItem>
+                <SelectItem value="168">7 days</SelectItem>
+                <SelectItem value="720">30 days</SelectItem>
+                <SelectItem value="never">Never</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => create.mutate()} disabled={!name || create.isPending}>
+            <Link2 className="h-4 w-4 mr-1" /> Create link
+          </Button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>URL</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(!portals || portals.length === 0) && (
+              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No public links yet.</TableCell></TableRow>
+            )}
+            {(portals ?? []).map((p) => <PublicPortalRow key={p.id} portal={p} />)}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-2">Pending requests {pending.length ? <span className="text-muted-foreground">({pending.length})</span> : null}</h3>
+        {pending.length === 0 && <p className="text-xs text-muted-foreground">No pending requests.</p>}
+        <div className="space-y-2">
+          {pending.map((r: any) => <PendingRequestRow key={r.id} req={r} />)}
+        </div>
+      </div>
+
+      {recent.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Recent decisions</h3>
+          <div className="space-y-1">
+            {recent.map((r: any) => {
+              const p = r.payload ?? {};
+              return (
+                <div key={r.id} className="text-xs text-muted-foreground border rounded p-2 flex justify-between gap-2">
+                  <span className="truncate">{p.from_location} → {p.to_location} · {p.name ?? ""}</span>
+                  <span className="capitalize">{r.status}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PublicPortalRow({ portal }: { portal: any }) {
+  const updateFn = useServerFn(updatePublicPortal);
+  const rotateFn = useServerFn(rotatePublicPortal);
+  const deleteFn = useServerFn(deletePublicPortal);
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["public-portals"] });
+  const url = publicBookingUrl(portal.token);
+  const isExpired = portal.expires_at && new Date(portal.expires_at) < new Date();
+  const status: "live" | "off" | "expired" = !portal.enabled ? "off" : isExpired ? "expired" : "live";
+
+  const toggle = useMutation({
+    mutationFn: () => updateFn({ data: { id: portal.id, patch: { enabled: !portal.enabled } } }),
+    onSuccess: () => { toast.success(portal.enabled ? "Link disabled" : "Link enabled"); invalidate(); },
+  });
+  const rotate = useMutation({
+    mutationFn: () => rotateFn({ data: { id: portal.id } }),
+    onSuccess: () => { toast.success("Rotated — old URL no longer works"); invalidate(); },
+  });
+  const del = useMutation({
+    mutationFn: () => deleteFn({ data: { id: portal.id } }),
+    onSuccess: () => { toast.success("Deleted"); invalidate(); },
+  });
+  const extend = useMutation({
+    mutationFn: (hoursOrNever: number | null) => updateFn({ data: { id: portal.id, patch: {
+      expires_at: hoursOrNever === null ? null : new Date(Date.now() + hoursOrNever * 3600_000).toISOString(),
+    } } }),
+    onSuccess: () => { toast.success("Expiry updated"); invalidate(); },
+  });
+  function promptExpiry() {
+    const raw = prompt("Expire in how many hours? (24, 168, 720, or 'never')", "168");
+    if (raw === null) return;
+    const t = raw.trim().toLowerCase();
+    if (t === "never" || t === "") { extend.mutate(null); return; }
+    const h = Math.max(1, Math.min(24 * 366, Number(t) | 0));
+    if (h) extend.mutate(h);
+  }
+
+  return (
+    <TableRow className={status !== "live" ? "opacity-60" : ""}>
+      <TableCell className="font-medium">{portal.name}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1 max-w-[340px]">
+          <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">{url}</code>
+          <Button size="icon" variant="ghost" onClick={() => { navigator.clipboard.writeText(url); toast.success("Copied"); }}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <a href={url} target="_blank" rel="noopener"><Button size="icon" variant="ghost"><ExternalLink className="h-3.5 w-3.5" /></Button></a>
+        </div>
+      </TableCell>
+      <TableCell><StatusBadge status={status === "off" ? "disabled" : status === "expired" ? "expired" : "live"} /></TableCell>
+      <TableCell className="text-xs">
+        {isExpired ? <span className="text-destructive">Expired</span>
+          : portal.expires_at ? <span title={new Date(portal.expires_at).toLocaleString()}>in {formatDistanceToNowStrict(new Date(portal.expires_at))}</span>
+          : <span className="text-muted-foreground">Never</span>}
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap">
+        <Button size="icon" variant="ghost" title="Set expiry" onClick={promptExpiry}><Clock className="h-3.5 w-3.5" /></Button>
+        <Button size="icon" variant="ghost" title={portal.enabled ? "Disable" : "Enable"} onClick={() => toggle.mutate()}>
+          {portal.enabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+        </Button>
+        <Button size="icon" variant="ghost" title="Rotate token"
+          onClick={() => { if (confirm("Rotate? Old URL will stop working.")) rotate.mutate(); }}>
+          <RotateCw className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="icon" variant="ghost" title="Delete"
+          onClick={() => { if (confirm("Delete this link? All pending requests and messages will be removed.")) del.mutate(); }}>
+          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function PendingRequestRow({ req }: { req: any }) {
+  const acceptFn = useServerFn(acceptPublicBookingRequest);
+  const rejectFn = useServerFn(rejectPublicBookingRequest);
+  const qc = useQueryClient();
+  const p = req.payload ?? {};
+  const when = p.pickup_at
+    ? new Date(p.pickup_at).toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : `${p.date ?? ""} ${p.time ?? ""}`.trim();
+
+  const accept = useMutation({
+    mutationFn: () => acceptFn({ data: { id: req.id } }),
+    onSuccess: () => { toast.success("Accepted — trip created"); qc.invalidateQueries({ queryKey: ["public-portal-requests"] }); },
+    onError: (e: Error) => toast.error(e.message === "insufficient_points" ? "Top-Up Required" : e.message),
+  });
+  const reject = useMutation({
+    mutationFn: (reason?: string) => rejectFn({ data: { id: req.id, reason } }),
+    onSuccess: () => { toast.success("Rejected"); qc.invalidateQueries({ queryKey: ["public-portal-requests"] }); },
+  });
+
+  return (
+    <div className="border rounded-md p-3 text-sm bg-card">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium truncate">{when || "—"} · {p.from_location} → {p.to_location}</div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {p.name ?? "(no name)"} · {p.client_phone ?? "no phone"} · {p.pax_count ?? 1} pax
+            {p.flight_number ? ` · ${p.flight_number}` : ""}
+          </div>
+          {p.notes && <div className="text-xs text-muted-foreground mt-1 italic">"{p.notes}"</div>}
+          <div className="text-[10px] text-muted-foreground mt-1">Ref #{req.id.slice(0, 8)} · via {req.public_booking_portals?.name} · {new Date(req.created_at).toLocaleString()}</div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button size="sm" variant="outline" onClick={() => {
+            const r = prompt("Reject reason (optional):", "");
+            if (r === null) return;
+            reject.mutate(r || undefined);
+          }} disabled={reject.isPending}>Reject</Button>
+          <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
+            Accept & create trip
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 /* ------------------------- Companies (portals) ------------------------- */
 
