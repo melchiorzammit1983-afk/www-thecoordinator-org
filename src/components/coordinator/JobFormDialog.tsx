@@ -1584,12 +1584,17 @@ function PaxEditor({ jobId }: { jobId: string }) {
   const listFn = useServerFn(listJobPax);
   const addFn = useServerFn(addJobPax);
   const removeFn = useServerFn(removeJobPax);
+  const updateFn = useServerFn(updateJobPax);
   const setPhoneFn = useServerFn(setJobContactPhoneIfEmpty);
+  const tokenFn = useServerFn(getPaxPersonalToken);
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [note, setNote] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const { data } = useQuery({
     queryKey: ["job-pax", jobId],
-    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<Array<{ id: string; name: string }>>,
+    queryFn: () => listFn({ data: { job_id: jobId } }) as Promise<Array<{ id: string; name: string; phone?: string | null; note?: string | null }>>,
   });
 
   const invalidate = () => {
@@ -1598,23 +1603,25 @@ function PaxEditor({ jobId }: { jobId: string }) {
   };
 
   const addMut = useMutation({
-    mutationFn: async (raw: string) => {
-      const { cleanName, phone } = extractPhoneFromName(raw);
-      const hasName = isMeaningfulName(cleanName);
-      if (hasName) {
-        await addFn({ data: { job_id: jobId, name: cleanName } });
-      }
-      if (phone) {
-        try {
-          const r: any = await setPhoneFn({ data: { job_id: jobId, phone } });
-          if (r?.set) toast.success(hasName ? `Moved ${phone} to phone number` : `Saved phone number ${phone}`);
-        } catch { /* ignore */ }
-      } else if (!hasName) {
-        toast.error("Enter a passenger name or a phone number");
+    mutationFn: async () => {
+      const raw = name.trim();
+      const cleanPhone = phone.trim() || null;
+      const cleanNote = note.trim() || null;
+      const parsed = extractPhoneFromName(raw);
+      const finalName = parsed.cleanName || raw;
+      const finalPhone = cleanPhone || parsed.phone || null;
+      if (!isMeaningfulName(finalName)) {
+        if (finalPhone) {
+          const r: any = await setPhoneFn({ data: { job_id: jobId, phone: finalPhone } });
+          if (r?.set) toast.success(`Saved phone number ${finalPhone}`);
+          return;
+        }
+        toast.error("Enter a passenger name");
         throw new Error("empty");
       }
+      await addFn({ data: { job_id: jobId, name: finalName, phone: finalPhone, note: cleanNote } });
     },
-    onSuccess: () => { setName(""); invalidate(); },
+    onSuccess: () => { setName(""); setPhone(""); setNote(""); invalidate(); },
     onError: (e: Error) => { if (e.message !== "empty") toast.error(e.message); },
   });
   const removeMut = useMutation({
@@ -1622,11 +1629,22 @@ function PaxEditor({ jobId }: { jobId: string }) {
     onSuccess: invalidate,
     onError: (e: Error) => toast.error(e.message),
   });
+  const updateMut = useMutation({
+    mutationFn: (v: { pax_id: string; phone?: string | null; note?: string | null }) =>
+      updateFn({ data: v }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
 
-  const submitAdd = () => {
-    const n = name.trim();
-    if (!n) return;
-    addMut.mutate(n);
+  const copyLink = async (paxId: string) => {
+    try {
+      const r: any = await tokenFn({ data: { pax_id: paxId } });
+      const url = `${window.location.origin}/track/${r.token}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Personal link copied");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not copy link");
+    }
   };
 
   return (
@@ -1635,34 +1653,79 @@ function PaxEditor({ jobId }: { jobId: string }) {
       {(data ?? []).length > 0 ? (
         <ul className="space-y-1">
           {(data ?? []).map((p) => (
-            <li key={p.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1 text-sm">
-              <span className="truncate">{p.name}</span>
-              <Button
-                type="button" size="icon" variant="ghost" className="h-7 w-7"
-                disabled={removeMut.isPending}
-                onClick={() => removeMut.mutate(p.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+            <li key={p.id} className="rounded bg-muted/40 px-2 py-1.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  className="flex-1 text-left truncate hover:underline"
+                  onClick={() => setExpanded((s) => ({ ...s, [p.id]: !s[p.id] }))}
+                >
+                  <span className="font-medium">{p.name}</span>
+                  {p.phone && <span className="ml-2 text-xs text-muted-foreground">· {p.phone}</span>}
+                  {p.note && <span className="ml-2 text-xs text-muted-foreground italic">· {p.note}</span>}
+                </button>
+                <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => copyLink(p.id)}>
+                  Link
+                </Button>
+                <Button
+                  type="button" size="icon" variant="ghost" className="h-7 w-7"
+                  disabled={removeMut.isPending}
+                  onClick={() => removeMut.mutate(p.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {expanded[p.id] && (
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Input
+                    defaultValue={p.phone ?? ""}
+                    placeholder="Phone (optional)"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if ((p.phone ?? "") !== v) updateMut.mutate({ pax_id: p.id, phone: v || null });
+                    }}
+                  />
+                  <Input
+                    defaultValue={p.note ?? ""}
+                    placeholder="Note (e.g. Annex 1 needed)"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if ((p.note ?? "") !== v) updateMut.mutate({ pax_id: p.id, note: v || null });
+                    }}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>
       ) : (
         <p className="text-xs text-muted-foreground">No passengers yet.</p>
       )}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr,1fr]">
         <Input
           value={name} onChange={(e) => setName(e.target.value)}
-          placeholder="Add passenger name"
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAdd(); } }}
+          placeholder="Passenger name"
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (name.trim()) addMut.mutate(); } }}
         />
-        <Button type="button" onClick={submitAdd} disabled={addMut.isPending || !name.trim()}>
+        <Input
+          value={phone} onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone (optional)"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Note (optional)"
+          className="flex-1"
+        />
+        <Button type="button" onClick={() => addMut.mutate()} disabled={addMut.isPending || !name.trim()}>
           <Plus className="h-4 w-4 mr-1" /> Add
         </Button>
       </div>
     </div>
   );
 }
+
 
 function makeIsoOrNull(date: string, time: string): string | null {
   if (!date || !time) return null;
