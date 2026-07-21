@@ -1754,10 +1754,13 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
     const { job, supabaseAdmin } = await loadDriverJob(data.token, data.job_id);
     if (data.method === "manual" && job.qr_strict_mode) {
       throw new Error("qr_required");
     }
+    const { data: paxRow } = await supabaseAdmin.from("pax")
+      .select("name").eq("id", data.pax_id).eq("job_id", data.job_id).maybeSingle();
     const { error } = await supabaseAdmin.from("pax")
       .update({
         status: "onboard" as never,
@@ -1766,6 +1769,21 @@ export const markPaxOnboard = createServerFn({ method: "POST" })
       })
       .eq("id", data.pax_id).eq("job_id", data.job_id);
     if (error) throw new Error(error.message);
+    {
+      const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+      await insertTripMapEvent(supabaseAdmin, {
+        jobId: data.job_id,
+        companyId: (job as any).executor_company_id ?? job.company_id,
+        driverId: link?.subject_id ?? (job as any).driver_id ?? null,
+        eventType: "pax_boarded",
+        notes: `Boarded: ${(paxRow as any)?.name ?? "passenger"}`,
+        meta: {
+          pax_id: data.pax_id,
+          pax_name: (paxRow as any)?.name ?? null,
+          method: data.method,
+        },
+      });
+    }
     return { ok: true };
   });
 

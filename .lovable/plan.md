@@ -1,51 +1,76 @@
+
 ## Goal
 
-Prevent double-booking a driver by extending the existing schedule-collision system with (1) a configurable per-company boarding buffer, (2) a hard confirmation step before assigning, (3) a driver-side warning chip, and (4) the same rule applied to AI Auto-Coordinate / auto-assign.
+Make the coordinator trip map a complete, readable timeline of everything that happened on a trip — including a distinct pin for each passenger the moment they board (with their name, GPS location, and time). Works for grouped multi-stop trips too (e.g. pick up 1 pax in Sliema, then another in Tarxien).
 
-The math and Routes API infrastructure already exist in `src/lib/scheduling.functions.ts` (`evaluatePairs`, `previewAssignmentConflicts`, `suggestAlternativeDrivers`). We build on top of it — nothing about how trips or the map work changes.
+## 1. New event: `pax_boarded`
 
-## Changes
+Currently `markPaxOnboard` (in `src/lib/coordinator-public.functions.ts`) only flips the pax row's `status`/`boarded_at` — it does NOT drop a map pin. `pax_no_show` and `pax_cancelled` already do.
 
-### 1. Configurable boarding buffer (per company)
+Changes:
+- Add `pax_boarded` to the `TripMapEventType` union in `src/lib/trip-map.server.ts`.
+- Inside `markPaxOnboard` handler, after the pax update, call `insertTripMapEvent` with:
+  - `eventType: "pax_boarded"`
+  - `driverId` from the driver link — server-side GPS fallback (`driver_locations` for this job) already handled by the helper
+  - `meta: { pax_id, pax_name, method: "qr" | "manual", stop_index? }`
+- Add EVENT_META entry: `{ label: "Passenger boarded", color: "#16a34a", icon: "🧍" }`.
+- Same treatment for the `boarding_approved` path (already logs to map, but include `pax_id`/`pax_name` in meta) so the info-window shows which passenger it was.
 
-- Add column `boarding_buffer_min` (int, default 10) to `companies` (single global default per coordinator company — no per-driver setup needed).
-- New tiny server fn `getBoardingBufferMin` reads it inside `scheduling.functions.ts`; if unset, falls back to `10`.
-- `evaluatePairs` accepts a `bufferMin` param instead of the hard-coded constant. All three server fns (`checkDriverConflicts`, `previewAssignmentConflicts`, `suggestAlternativeDrivers`) look it up once from the caller's company and pass it through.
-- Coordinator can edit it in `coordinator.dispatch-rules.tsx` (existing page) — a single "Passenger boarding buffer (minutes)" field with a short explainer.
+Note: the existing `insertTripMapEvent` dedup key is `(job_id, event_type)` in a 5-second window. For per-pax pins we need each passenger's boarding to survive, so extend the dedup to include `meta->>pax_id` — same 5s window, but scoped per pax. This keeps double-tap protection without swallowing legitimate 2nd/3rd passenger boardings.
 
-### 2. Warn + require confirmation on assignment
+## 2. Coordinator can edit a pin
 
-Any UI that sets a driver on a trip goes through the same guard:
+Add a lightweight edit affordance in the info-window on `TripEventsMap`:
+- "Edit" link visible only to coordinators (already authenticated context here).
+- Opens a small dialog to correct the pax name and/or nudge the pin location (drag marker OR use current pickup coords).
+- New server fn `updateTripMapEvent({ event_id, notes?, meta_patch?, lat?, lng? })` in `src/lib/trip-map.functions.ts`, guarded by `requireSupabaseAuth` + membership check on the job's company. Writes back to `trip_map_events` and appends an audit note in `meta.edited_by`.
 
-- `JobFormDialog.tsx` — already runs `previewAssignmentConflicts` for the picker. On submit, if severity is `tight` or `conflict`, open a new `<ConflictConfirmDialog />` that shows: prev trip end time, drive time to next pickup, boarding buffer used, shortfall in minutes, and the top 3 alternative drivers from `suggestAlternativeDrivers`. Coordinator must click "Assign anyway" to proceed, or pick a suggested driver.
-- `TripDetailsSheet.tsx` — reassign flow reuses the same dialog.
-- `BulkActionBar.tsx` "assign to driver" reuses it once per conflicting trip (or a single summary dialog when >1 conflict).
+## 3. Filter chips + clustering
 
-Overrides are logged to `trip_audit_log` with reason "conflict_override" so we can see later who forced a known-bad assignment.
+`TripEventsMap.tsx`:
+- Replace the flat legend at the bottom with **toggleable category chips**, grouped into 5 buckets:
+  - **Movement** — en_route, arrived_pickup, in_progress, completed, actual_dropoff, back_to_waiting
+  - **Boarding** — pax_boarded, boarding_requested, boarding_approved, boarding_rejected, pax_no_show, pax_cancelled
+  - **Waiting** — wait_started, wait_ended
+  - **Driver actions** — navigate_opened, passenger_called, pickup_snap, dropoff_snap, status_corrected, arrived_pickup_override
+  - **Safety** — emergency_override, safety_concern, breakdown
+- Chip shows count + color dot; tap to hide/show that category. State kept in local `useState` (per-open session).
+- Add `@googlemaps/markerclusterer` (already a Google-recommended lib, small footprint) OR implement a simple in-house cluster: group any markers whose pixel distance < 28px at the current zoom, render a single numbered "N" bubble that expands on click. Simple in-house version keeps deps clean — go with that.
 
-### 3. Driver-side warning chip
+## 4. Emoji + sequence number pins
 
-- `checkDriverConflicts` is already the source of truth. Add a lightweight public-ish read path the driver's PWA already uses (driver's own trips only, via the driver token route) — or, simpler: run `checkDriverConflicts` server-side keyed by the driver's own `driver_id` in the token loader and pass `perJob` down.
-- In `m.driver.$token.tsx` trip card, when `perJob[jobId].severity !== "free"`, render a compact amber/red chip: "Tight — 3 min slack" or "Conflict — leaves 8 min short". Tapping opens a small sheet with the pair details (prev trip end, next pickup, drive time) so the driver can push back to the coordinator before hitting the road.
+Replace the plain colored `SymbolPath.CIRCLE` marker with a lightweight custom overlay:
+- Sort events by `occurred_at` and assign sequence numbers 1..N (per trip).
+- Each pin = a 26px round HTML label (Google `OverlayView` or an SVG data URL) with:
+  - Background = event color
+  - Big emoji from EVENT_META
+  - Small superscript number in the corner (chronological order)
+- Info-window unchanged (already rich).
 
-### 4. AI Auto-Coordinate / auto-assign respects the buffer
+## 5. Group / multi-stop trips
 
-- In `src/lib/coordinator.functions.ts`, wherever the AI planner picks a driver for an unassigned trip, call `previewAssignmentConflicts` (already imported infra) for each candidate driver *before* proposing the assignment.
-  - Skip drivers with severity `conflict`.
-  - `tight` drivers are allowed but the proposal note surfaces "tight — X min slack" so the coordinator sees it in the proposal review UI.
-  - If every candidate collides, the proposal falls back to "no eligible driver — needs manual review" instead of silently picking one.
-- Same gate applied to the `auto_assign_enabled` path.
+When the driver approves a group and boards multiple passengers from different pickup points, `pax_boarded` pins land at the driver's actual GPS at each stop. The map will visibly walk Sliema → Tarxien → drop-off. No extra logic needed once step 1 is done — the GPS fallback in `insertTripMapEvent` already grabs the last `driver_locations` fix per job.
 
-## Technical notes
+For the info-window on a `pax_boarded` pin, show:
+- Pax name
+- Stop label (derived server-side by finding the nearest `group_stops.pickup_lat/lng` when the trip has a group_id)
+- Timestamp + method (QR or manual)
 
-- Only two new UI pieces: `ConflictConfirmDialog.tsx` (shared) and the driver-card chip.
-- Schema change is a single `ALTER TABLE companies ADD COLUMN boarding_buffer_min integer NOT NULL DEFAULT 10;` migration.
-- `docs-facts.ts` `PAX_DROPOFF_BUFFER_MIN` becomes dynamic (per company) — Fact rendering falls back to the default when no company context.
-- Transit cache and Routes API usage do not change → no extra AI/Maps spend for the confirmation step (it re-uses the same in-memory cache hit from the picker preview).
-- No changes to trip cards, grouping, map, pricing, or any other subsystem.
+## 6. Suggestions to make it even better (not building unless you say yes)
 
-## Out of scope
+1. **"Play trip" scrubber** — a small time slider under the map that walks through the pins in order, redrawing the driver icon at that moment. Great for post-trip reviews.
+2. **Auto-open pin on hover in the audit timeline** — clicking a row in `TripAuditTimeline` centers/opens that pin on the map.
+3. **Pax roster overlay** — a stacked list of pax with their boarding pin numbers so coordinators can see "3/4 boarded" at a glance.
+4. **Heat trail** — color the breadcrumb polyline by speed (slow = red) so wait/traffic zones jump out.
+5. **Export to KML/GeoJSON** — one-click download of the full trip trace + pins for insurance / dispute cases.
 
-- Per-driver custom buffers.
-- Rerouting/rebalancing existing conflicts automatically — we only prevent new ones and surface existing ones.
-- Changing the "tight vs conflict" thresholds (still 5 min slack for tight, <0 for conflict).
+## Technical section
+
+### Files touched
+- `src/lib/trip-map.server.ts` — add `pax_boarded` to union; refine dedup key to include `meta->>pax_id`.
+- `src/lib/coordinator-public.functions.ts` — insert `pax_boarded` pin inside `markPaxOnboard`; enrich boarding approve/reject meta with `pax_id`+`pax_name`.
+- `src/lib/trip-map.functions.ts` — new `updateTripMapEvent` server fn (auth-gated).
+- `src/components/coordinator/TripEventsMap.tsx` — rewrite legend as filter chips, add clustering, replace pin rendering with emoji+number overlays, add edit dialog trigger.
+
+### No migration required
+`trip_map_events` already supports arbitrary `event_type` text and JSON `meta`. No schema change needed for pax pins. Coordinator edit uses existing columns.
