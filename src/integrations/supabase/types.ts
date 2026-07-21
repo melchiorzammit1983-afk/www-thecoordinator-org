@@ -2444,6 +2444,50 @@ export type Database = {
           },
         ]
       }
+      driver_vehicles: {
+        Row: {
+          created_at: string
+          default_price_eur: number | null
+          driver_id: string
+          id: string
+          is_default: boolean
+          name: string
+          per_km_eur: number | null
+          plate: string | null
+          seats: number
+        }
+        Insert: {
+          created_at?: string
+          default_price_eur?: number | null
+          driver_id: string
+          id?: string
+          is_default?: boolean
+          name: string
+          per_km_eur?: number | null
+          plate?: string | null
+          seats?: number
+        }
+        Update: {
+          created_at?: string
+          default_price_eur?: number | null
+          driver_id?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          per_km_eur?: number | null
+          plate?: string | null
+          seats?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_vehicles_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       drivers: {
         Row: {
           availability_note: string | null

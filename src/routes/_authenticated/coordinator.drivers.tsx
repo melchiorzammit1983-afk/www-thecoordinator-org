@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DriverOpenBadge } from "@/components/coordinator/DriverOpenBadge";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/drivers")({
   head: () => ({ meta: [{ title: "Drivers — Coordinator" }] }),
@@ -63,7 +65,7 @@ function DriversPage() {
                 <TableCell className="text-xs">
                   <RatesSummary d={d} />
                 </TableCell>
-                <TableCell><Badge variant="outline" className="capitalize">{d.status}</Badge></TableCell>
+                <TableCell><div className="flex flex-col gap-1"><Badge variant="outline" className="capitalize w-fit">{d.status}</Badge><DriverOpenBadge driverId={d.id} /></div></TableCell>
                 <TableCell className="text-right"><DriverRatesDialog driver={d} /></TableCell>
               </TableRow>
             ))}
