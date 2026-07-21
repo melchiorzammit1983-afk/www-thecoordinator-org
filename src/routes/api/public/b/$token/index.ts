@@ -59,10 +59,21 @@ export const Route = createFileRoute("/api/public/b/$token/")({
           }
 
         }
+        // Enrich completed jobs with driver info for the "Past trips" section
+        const past = (jobs as any[]).filter((j) => j.status === "completed" || j.status === "in_progress")
+          .map((j) => ({
+            id: j.id,
+            when: j.completed_at ?? j.pickup_at ?? null,
+            from: j.from_location, to: j.to_location, status: j.status,
+            driver_name: j.drivers?.name ?? null,
+            vehicle: j.drivers?.car_make_model ?? j.vehicle ?? null,
+            plate: j.drivers?.plate ?? null,
+          }));
         return Response.json({
           portal: { id: r.portal.id, name: r.portal.name, expires_at: r.portal.expires_at },
-          requests, messages, jobs,
+          requests, messages, jobs, history: past,
         });
+
       },
     },
   },
