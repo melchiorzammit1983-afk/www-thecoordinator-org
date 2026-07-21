@@ -789,6 +789,30 @@ export const updateJob = createServerFn({ method: "POST" })
       patch.route_distance_m = null;
       patch.route_computed_at = null;
     }
+    // OTG-only: allow moving the trip to another coordinator company the
+    // driver is connected to, while the trip is still `needs_review`.
+    if (
+      data.company_id &&
+      data.company_id !== (existing as any).company_id &&
+      (existing as any).created_by_driver &&
+      (existing as any).needs_review
+    ) {
+      const driverId = (existing as any).driver_id as string | null;
+      let homeId: string = c.id;
+      if (driverId) {
+        const { data: drv } = await supabaseAdmin.from("drivers")
+          .select("linked_company_id, company_id").eq("id", driverId).maybeSingle();
+        homeId = ((drv as any)?.linked_company_id ?? (drv as any)?.company_id ?? c.id) as string;
+      }
+      if (data.company_id !== homeId && data.company_id !== c.id) {
+        const { data: conn } = await supabaseAdmin.from("coordinator_connections")
+          .select("id").eq("status", "active")
+          .or(`and(owner_company_id.eq.${homeId},partner_company_id.eq.${data.company_id}),and(owner_company_id.eq.${data.company_id},partner_company_id.eq.${homeId})`)
+          .maybeSingle();
+        if (!conn) throw new Error("coordinator_not_permitted");
+      }
+      patch.company_id = data.company_id;
+    }
     const { error } = await supabaseAdmin
       .from("jobs")
       .update(patch as any)
