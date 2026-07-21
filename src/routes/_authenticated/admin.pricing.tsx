@@ -40,7 +40,10 @@ function PricingAdmin() {
         <p className="text-sm text-muted-foreground">Set plans, point packs, and per-feature costs.</p>
       </div>
       <WalletsCard />
-      <FeatureCostsCard />
+      <PlansCard />
+      <PointPacksCard />
+      {/* Feature cost editing lives on the AI Settings page — single source of truth */}
+      {false ? <FeatureCostsCard /> : null}
       <PlansCard />
       <PointPacksCard />
     </div>
