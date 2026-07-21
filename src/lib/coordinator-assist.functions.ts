@@ -571,9 +571,10 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
           (
             (
               await supabaseAdmin
-                .from("public_booking_portals")
+                .from("public_booking_portals" as any)
                 .select("id")
-                .eq("company_id", company.id)
+                .eq("coordinator_company_id", company.id)
+
             ).data ?? []
           ).map((p: any) => p.id),
         )
