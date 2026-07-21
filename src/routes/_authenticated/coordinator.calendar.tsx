@@ -257,6 +257,8 @@ type Job = {
   dropoff_place_id?: string | null;
   route_duration_sec?: number | null;
   route_distance_m?: number | null;
+  created_by_driver?: boolean | null;
+  needs_review?: boolean | null;
 };
 
 function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI", className }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string; className?: string }) {
