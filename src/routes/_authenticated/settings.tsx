@@ -237,6 +237,7 @@ function FeatureUsageSection() {
 
   const groups: Record<string, typeof TOGGLEABLE_FEATURES> = {};
   for (const f of TOGGLEABLE_FEATURES) {
+    if (!visibleKeys.has(f.key)) continue; // admin hid it or didn't mark it as add-on
     (groups[f.group] ||= []).push(f);
   }
   const groupOrder: Array<keyof typeof groups> = ["assistant", "extraction", "ops", "flights", "routing"];
