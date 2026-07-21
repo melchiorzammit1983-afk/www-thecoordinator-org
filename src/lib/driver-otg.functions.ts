@@ -17,6 +17,33 @@ async function admin() {
   return supabaseAdmin;
 }
 
+// Reverse-geocode {lat,lng} → street/place name via the Google Maps
+// connector gateway. Returns null on any failure so callers can fall
+// back to a generic label without breaking the OTG flow.
+async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; place_id: string | null } | null> {
+  try {
+    const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
+    const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+    if (!LOVABLE_API_KEY || !GOOGLE_MAPS_API_KEY) return null;
+    const url = `https://connector-gateway.lovable.dev/google_maps/maps/api/geocode/json?latlng=${lat},${lng}&language=en`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+      },
+    });
+    if (!res.ok) return null;
+    const j: any = await res.json();
+    const first = j?.results?.[0];
+    if (!first) return null;
+    return {
+      address: (first.formatted_address as string) ?? "",
+      place_id: (first.place_id as string) ?? null,
+    };
+  } catch { return null; }
+}
+
+
 async function requireDriver(token: string) {
   const supabaseAdmin = await admin();
   const { data } = await supabaseAdmin.from("magic_links")
