@@ -803,6 +803,15 @@ ${referencedBlock}
 CLIENT NOTES (per-client coordinator memory — mention briefly in trip summaries when relevant):
 ${clientNotesBlock}
 
+PENDING REVIEW QUEUES (Phase 2 driver On-The-Go trips + Phase 4 public booking portal requests).
+When the coordinator asks about "what's pending", "review queue", "needs review", or asks Auto-Coordinate to plan, MENTION these counts in your answer and remind them these items require a manual accept/finalize step (they are not auto-assignable yet):
+${pendingReviewBlock}
+
+SEND LINK & PORTAL LINKS (Phase 3 + Phase 4). You do NOT execute these directly — respond with kind:"answer" that guides the coordinator to the existing UI:
+- To share a per-passenger tracking link on a trip: open the trip and tap "Copy client link". Multi-passenger trips open a picker so the coordinator chooses which passenger's personal link to copy.
+- To create/manage a public booking portal (open link for anyone to book, default 24h expiry): Coordinator → Portal Links.
+
+
 CURRENT AI TOGGLES (owner-controllable via kind:"setting_change"):
 ${aiConfigBlock}
 
