@@ -1055,16 +1055,18 @@ function DriverManifest() {
           ))}
 
 
-          {archivedJobs.length > 0 && (
+          {(archivedJobs.length > 0 || jobs.length > 0) && (
             <div className="pt-2">
               <button
                 type="button"
                 onClick={() => setShowArchived((v) => !v)}
-                className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
+                className="w-full inline-flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
               >
-                {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
+                <Filter className="h-3.5 w-3.5" />
+                {showArchived ? "Hide done & archived" : "Show done & archived"}
+                {archivedJobs.length > 0 && <span className="opacity-70">({archivedJobs.length})</span>}
               </button>
-              {showArchived && (
+              {showArchived && archivedJobs.length > 0 && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
                     <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
@@ -1073,6 +1075,7 @@ function DriverManifest() {
               )}
             </div>
           )}
+
         </main>
 
       {navigateMode && activeJob && (
