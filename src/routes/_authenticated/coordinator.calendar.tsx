@@ -3281,6 +3281,12 @@ function TripMenu({
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
+      <ClientLinkPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        jobId={job.id}
+        pax={(job.pax ?? []).map((p) => ({ id: p.id, name: p.name ?? "" }))}
+      />
     </DropdownMenu>
   );
 }
