@@ -5510,6 +5510,146 @@ export type Database = {
         }
         Relationships: []
       }
+      public_booking_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          portal_id: string
+          request_id: string | null
+          sender_role: string
+          visitor_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          portal_id: string
+          request_id?: string | null
+          sender_role: string
+          visitor_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          portal_id?: string
+          request_id?: string | null
+          sender_role?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_booking_messages_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "public_booking_portals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "public_booking_messages_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "public_booking_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      public_booking_portals: {
+        Row: {
+          coordinator_company_id: string
+          created_at: string
+          enabled: boolean
+          expires_at: string | null
+          id: string
+          name: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          coordinator_company_id: string
+          created_at?: string
+          enabled?: boolean
+          expires_at?: string | null
+          id?: string
+          name: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          coordinator_company_id?: string
+          created_at?: string
+          enabled?: boolean
+          expires_at?: string | null
+          id?: string
+          name?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_booking_portals_coordinator_company_id_fkey"
+            columns: ["coordinator_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      public_booking_requests: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_reason: string | null
+          id: string
+          job_id: string | null
+          payload: Json
+          portal_id: string
+          status: string
+          updated_at: string
+          visitor_id: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_reason?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id: string
+          status?: string
+          updated_at?: string
+          visitor_id: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_reason?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id?: string
+          status?: string
+          updated_at?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_booking_requests_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "public_booking_requests_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "public_booking_portals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_devices: {
         Row: {
           auth: string | null
