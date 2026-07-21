@@ -223,12 +223,17 @@ function FeatureUsageSection() {
   const { prefs, isEnabled } = useFeaturePrefs();
   const setPref = useSetFeaturePref();
   const listCostsFn = useServerFn(listAiFeatureCosts);
-  const { data: costs } = useQuery<Array<{ feature_key: string; points_cost: number | string }>>({
+  const { data: costs } = useQuery<Array<{ feature_key: string; points_cost: number | string; enabled?: boolean; is_addon?: boolean }>>({
     queryKey: ["ai-feature-costs"],
     queryFn: () => listCostsFn() as any,
     staleTime: 5 * 60_000,
   });
   const pack = useReferencePack();
+
+  // Only surface features the admin has marked as an add-on AND left enabled.
+  const visibleKeys = new Set(
+    (costs ?? []).filter((c) => c.is_addon === true && c.enabled !== false).map((c) => c.feature_key),
+  );
 
   const groups: Record<string, typeof TOGGLEABLE_FEATURES> = {};
   for (const f of TOGGLEABLE_FEATURES) {
