@@ -43,12 +43,13 @@ async function ensureGroup(supabaseAdmin: Awaited<ReturnType<typeof admin>>, job
     .select("id").eq("job_id", jobId).maybeSingle();
   if (existing?.id) return (existing as any).id as string;
   const { data: created, error } = await supabaseAdmin.from("groups")
-    .insert({ job_id: jobId, name: "OTG trip", driver_id: driverId, status: "confirmed" as never } as any)
+    .insert({ job_id: jobId, name: "OTG trip", driver_id: driverId, status: "active" as never } as any)
     .select("id").single();
   if (error) throw new Error(error.message);
   await supabaseAdmin.from("jobs").update({ group_id: (created as any).id } as never).eq("id", jobId);
   return (created as any).id as string;
 }
+
 
 async function logMap(companyId: string, jobId: string, driverId: string, eventType: string, notes: string, meta: Record<string, unknown>, lat?: number, lng?: number) {
   try {
@@ -112,6 +113,19 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const link = await requireDriver(data.token);
     const supabaseAdmin = await admin();
+
+    // Guard: one on-the-go trip in flight at a time. Driver must finish
+    // (or delete) the current OTG before starting another.
+    const { data: openOtg } = await supabaseAdmin.from("jobs")
+      .select("id, status")
+      .eq("driver_id", link.subject_id)
+      .eq("created_by_driver", true)
+      .not("status", "in", "(completed,cancelled)")
+      .limit(1);
+    if (openOtg && openOtg.length > 0) {
+      throw new Error("Finish or delete your current on-the-go trip before starting another.");
+    }
+
     let coordinatorId = data.coordinator_company_id ?? link.company_id;
     if (data.coordinator_company_id && data.coordinator_company_id !== link.company_id) {
       const { data: driverRow } = await supabaseAdmin.from("drivers")
@@ -124,6 +138,7 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       if (!conn && data.coordinator_company_id !== homeId) throw new Error("coordinator_not_permitted");
       coordinatorId = data.coordinator_company_id;
     }
+
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toISOString().slice(11, 16);

@@ -58,7 +58,7 @@ import {
   CheckCircle2, Check, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
   Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
-  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone,
+  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone, Filter,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
 import { decodePolyline, distanceToPathMeters } from "@/lib/polyline";
@@ -1055,16 +1055,18 @@ function DriverManifest() {
           ))}
 
 
-          {archivedJobs.length > 0 && (
+          {(archivedJobs.length > 0 || jobs.length > 0) && (
             <div className="pt-2">
               <button
                 type="button"
                 onClick={() => setShowArchived((v) => !v)}
-                className="w-full text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
+                className="w-full inline-flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
               >
-                {showArchived ? "Hide" : "Show"} archived ({archivedJobs.length})
+                <Filter className="h-3.5 w-3.5" />
+                {showArchived ? "Hide done & archived" : "Show done & archived"}
+                {archivedJobs.length > 0 && <span className="opacity-70">({archivedJobs.length})</span>}
               </button>
-              {showArchived && (
+              {showArchived && archivedJobs.length > 0 && (
                 <div className="space-y-3 mt-3 opacity-75">
                   {archivedJobs.map((j) => (
                     <JobCard key={j.id} job={j} token={token} driverPos={driverPos} arrivalRadiusM={arrivalRadiusM} isSafetyMode={isSafetyMode} onOpen={() => setOpenJob(j)} onChat={() => setChatJob(j)} />
@@ -1073,6 +1075,7 @@ function DriverManifest() {
               )}
             </div>
           )}
+
         </main>
 
       {navigateMode && activeJob && (
@@ -1219,6 +1222,19 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [otgManageOpen, setOtgManageOpen] = useState(false);
+  // Auto-open the OTG manage sheet the first time the driver reaches
+  // "arrived" on their on-the-go trip so they can fill in / confirm the
+  // passenger list (unless the coordinator already added them).
+  const otgPromptedRef = useRef(false);
+  useEffect(() => {
+    if (!job.created_by_driver) return;
+    if (job.status !== "arrived") return;
+    if (otgPromptedRef.current) return;
+    otgPromptedRef.current = true;
+    setOtgManageOpen(true);
+  }, [job.created_by_driver, job.status]);
+
+
   
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
