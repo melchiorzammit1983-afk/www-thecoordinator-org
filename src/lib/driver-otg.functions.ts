@@ -1,0 +1,252 @@
+/**
+ * Driver "On The Go" trip creation.
+ *
+ * A driver in the field can start a trip themselves — grab passengers, add
+ * more stops, drive on. Every OTG job is flagged `created_by_driver` and
+ * `needs_review` so the coordinator sees it and cleans it up afterwards.
+ *
+ * Authentication is via the same magic-link token used for the rest of the
+ * driver app (`resolveToken(token, "driver")`) — no Supabase session.
+ */
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+async function admin() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
+async function requireDriver(token: string) {
+  const supabaseAdmin = await admin();
+  const { data } = await supabaseAdmin.from("magic_links")
+    .select("id, company_id, kind, subject_id, expires_at, revoked_at")
+    .eq("token", token).is("revoked_at", null).maybeSingle();
+  if (!data) throw new Error("invalid_or_expired_link");
+  if ((data as any).kind !== "driver") throw new Error("invalid_or_expired_link");
+  if ((data as any).expires_at && new Date((data as any).expires_at) < new Date()) throw new Error("invalid_or_expired_link");
+  if (!(data as any).subject_id) throw new Error("driver_required");
+  return data as { id: string; company_id: string; subject_id: string };
+}
+
+async function ensureOwnsJob(supabaseAdmin: Awaited<ReturnType<typeof admin>>, jobId: string, driverId: string) {
+  const { data: job } = await supabaseAdmin.from("jobs")
+    .select("id, company_id, driver_id, created_by_driver, group_id")
+    .eq("id", jobId).maybeSingle();
+  if (!job) throw new Error("job_not_found");
+  if ((job as any).driver_id !== driverId) throw new Error("not_your_job");
+  return job as { id: string; company_id: string; driver_id: string; created_by_driver: boolean; group_id: string | null };
+}
+
+async function ensureGroup(supabaseAdmin: Awaited<ReturnType<typeof admin>>, jobId: string, driverId: string) {
+  const { data: existing } = await supabaseAdmin.from("groups")
+    .select("id").eq("job_id", jobId).maybeSingle();
+  if (existing?.id) return (existing as any).id as string;
+  const { data: created, error } = await supabaseAdmin.from("groups")
+    .insert({ job_id: jobId, name: "OTG trip", driver_id: driverId, status: "confirmed" as never } as any)
+    .select("id").single();
+  if (error) throw new Error(error.message);
+  await supabaseAdmin.from("jobs").update({ group_id: (created as any).id } as never).eq("id", jobId);
+  return (created as any).id as string;
+}
+
+async function logMap(companyId: string, jobId: string, driverId: string, eventType: string, notes: string, meta: Record<string, unknown>, lat?: number, lng?: number) {
+  try {
+    const supabaseAdmin = await admin();
+    const { insertTripMapEvent } = await import("@/lib/trip-map.server");
+    await insertTripMapEvent(supabaseAdmin, {
+      jobId, companyId, driverId, eventType: eventType as any, notes, meta,
+      ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+    });
+  } catch { /* metering must not break the flow */ }
+}
+
+// ── Start an OTG trip ────────────────────────────────────────────────────
+export const startOnTheGoTrip = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+      pickup_label: z.string().max(200).optional(),
+      note: z.string().max(500).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const time = now.toISOString().slice(11, 16);
+    const pickupLabel = data.pickup_label?.trim() || (data.lat && data.lng ? `Driver location (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : "Driver current location");
+
+    const { data: row, error } = await supabaseAdmin.from("jobs").insert({
+      company_id: link.company_id,
+      driver_id: link.subject_id,
+      from_location: pickupLabel,
+      to_location: "TBD — set by driver",
+      date, time,
+      pickup_at: now.toISOString(),
+      status: "in_progress" as never,
+      driver_accepted_at: now.toISOString(),
+      created_by_driver: true,
+      needs_review: true,
+      tracking_enabled: true,
+      qr_strict_mode: false,
+      source: "driver_otg",
+    } as any).select("id").single();
+    if (error) throw new Error(error.message);
+    const jobId = (row as any).id as string;
+
+    // First stop = current location, already arrived.
+    const groupId = await ensureGroup(supabaseAdmin, jobId, link.subject_id!);
+    await supabaseAdmin.from("group_stops").insert({
+      group_id: groupId,
+      stop_index: 0,
+      address: pickupLabel,
+      lat: data.lat ?? null,
+      lng: data.lng ?? null,
+      arrived_at: now.toISOString(),
+    } as any);
+
+    // Meter: charge the driver's company for a trip.
+    try {
+      await supabaseAdmin.rpc("spend_points", {
+        _company_id: link.company_id,
+        _feature_key: "trip_created",
+        _job_id: jobId as unknown as string,
+        _note: "Driver on-the-go trip",
+        _cost_override: undefined as unknown as number,
+      });
+    } catch { /* soft-meter */ }
+
+    await logMap(link.company_id, jobId, link.subject_id!, "en_route", data.note ?? "Driver started on-the-go trip", { source: "driver_otg" }, data.lat, data.lng);
+    await logMap(link.company_id, jobId, link.subject_id!, "arrived_pickup", "Arrived at first pickup", { stop_index: 0 }, data.lat, data.lng);
+
+    return { job_id: jobId };
+  });
+
+// ── Add another pickup stop ─────────────────────────────────────────────
+export const otgAddStop = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+      address: z.string().max(200).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const job = await ensureOwnsJob(supabaseAdmin, data.job_id, link.subject_id!);
+    const groupId = await ensureGroup(supabaseAdmin, job.id, link.subject_id!);
+    const { data: last } = await supabaseAdmin.from("group_stops")
+      .select("stop_index").eq("group_id", groupId).order("stop_index", { ascending: false }).limit(1).maybeSingle();
+    const nextIndex = ((last as any)?.stop_index ?? -1) + 1;
+    const label = data.address?.trim() || (data.lat && data.lng ? `Stop ${nextIndex + 1} (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` : `Stop ${nextIndex + 1}`);
+    const now = new Date().toISOString();
+    const { data: stop, error } = await supabaseAdmin.from("group_stops").insert({
+      group_id: groupId,
+      stop_index: nextIndex,
+      address: label,
+      lat: data.lat ?? null,
+      lng: data.lng ?? null,
+      arrived_at: now,
+    } as any).select("id").single();
+    if (error) throw new Error(error.message);
+    await logMap(job.company_id, job.id, link.subject_id!, "arrived_pickup", `Arrived at stop ${nextIndex + 1}`, { stop_index: nextIndex, address: label }, data.lat, data.lng);
+    return { stop_id: (stop as any).id as string, stop_index: nextIndex };
+  });
+
+// ── Add a passenger to a stop ───────────────────────────────────────────
+export const otgAddPassenger = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      stop_id: z.string().uuid().optional(),
+      name: z.string().min(1).max(120),
+      phone: z.string().max(40).optional(),
+      note: z.string().max(300).optional(),
+      mark_onboard: z.boolean().optional(),
+      lat: z.number().gte(-90).lte(90).optional(),
+      lng: z.number().gte(-180).lte(180).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const job = await ensureOwnsJob(supabaseAdmin, data.job_id, link.subject_id!);
+    const groupId = await ensureGroup(supabaseAdmin, job.id, link.subject_id!);
+    let stopId = data.stop_id;
+    if (!stopId) {
+      const { data: lastStop } = await supabaseAdmin.from("group_stops")
+        .select("id").eq("group_id", groupId).order("stop_index", { ascending: false }).limit(1).maybeSingle();
+      stopId = (lastStop as any)?.id ?? undefined;
+    }
+    const now = new Date().toISOString();
+    const { data: pax, error } = await supabaseAdmin.from("pax").insert({
+      job_id: job.id,
+      group_id: groupId,
+      stop_id: stopId ?? null,
+      name: data.name.trim(),
+      phone: data.phone?.trim() || null,
+      note: data.note?.trim() || null,
+      status: (data.mark_onboard ? "onboard" : "pending") as never,
+      boarded_at: data.mark_onboard ? now : null,
+      boarded_method: data.mark_onboard ? "manual" : null,
+    } as any).select("id").single();
+    if (error) throw new Error(error.message);
+    if (stopId) {
+      // Increment pax_count on the stop.
+      const { data: cur } = await supabaseAdmin.from("group_stops").select("pax_count").eq("id", stopId).maybeSingle();
+      await supabaseAdmin.from("group_stops").update({ pax_count: ((cur as any)?.pax_count ?? 0) + 1 } as never).eq("id", stopId);
+    }
+    await logMap(
+      job.company_id, job.id, link.subject_id!,
+      data.mark_onboard ? "pax_boarded" : "pax_added",
+      data.mark_onboard ? `Boarded: ${data.name.trim()}` : `Added passenger: ${data.name.trim()}`,
+      { pax_id: (pax as any).id, pax_name: data.name.trim(), stop_id: stopId ?? null },
+      data.lat, data.lng,
+    );
+    return { pax_id: (pax as any).id as string };
+  });
+
+// ── Set the final destination + mark trip in-flight ─────────────────────
+export const otgSetDestination = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      to_location: z.string().min(1).max(200),
+      dropoff_place_id: z.string().max(200).optional(),
+      dropoff_display_name: z.string().max(200).optional(),
+      dropoff_lat: z.number().gte(-90).lte(90).optional(),
+      dropoff_lng: z.number().gte(-180).lte(180).optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const job = await ensureOwnsJob(supabaseAdmin, data.job_id, link.subject_id!);
+    const { error } = await supabaseAdmin.from("jobs").update({
+      to_location: data.to_location,
+      dropoff_place_id: data.dropoff_place_id || null,
+      dropoff_display_name: data.dropoff_display_name || null,
+    } as never).eq("id", job.id);
+    if (error) throw new Error(error.message);
+    await logMap(job.company_id, job.id, link.subject_id!, "in_progress", `Destination set: ${data.to_location}`, { to_location: data.to_location }, data.dropoff_lat, data.dropoff_lng);
+    return { ok: true };
+  });
+
+// ── Coordinator: mark an OTG trip as reviewed ───────────────────────────
+export const markJobReviewed = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.rpc("mark_job_reviewed", { _job_id: data.job_id });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

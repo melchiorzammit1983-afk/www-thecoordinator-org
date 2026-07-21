@@ -1,76 +1,79 @@
+## Phase 2 — Driver "On The Go" trip creation
 
-## Goal
+Adds a second entry point in the driver app that creates a real, live-tracked trip in one tap, then walks the driver through stops as they happen. Existing driver flows and coordinator flows stay unchanged.
 
-Make the coordinator trip map a complete, readable timeline of everything that happened on a trip — including a distinct pin for each passenger the moment they board (with their name, GPS location, and time). Works for grouped multi-stop trips too (e.g. pick up 1 pax in Sliema, then another in Tarxien).
+### 1. Database (single migration)
 
-## 1. New event: `pax_boarded`
+Add two columns to `public.jobs`:
+- `created_by_driver` boolean not null default false
+- `needs_review` boolean not null default false
 
-Currently `markPaxOnboard` (in `src/lib/coordinator-public.functions.ts`) only flips the pax row's `status`/`boarded_at` — it does NOT drop a map pin. `pax_no_show` and `pax_cancelled` already do.
+No new table — the existing `groups` + `group_stops` pair (already used by grouped trips) is the "linked stops" model. When the driver taps "Add another stop", we create a `groups` row for the job (if none) and append `group_stops` rows. Simple single-pickup on-the-go trips stay flat (no group created), so nothing changes for normal trips.
 
-Changes:
-- Add `pax_boarded` to the `TripMapEventType` union in `src/lib/trip-map.server.ts`.
-- Inside `markPaxOnboard` handler, after the pax update, call `insertTripMapEvent` with:
-  - `eventType: "pax_boarded"`
-  - `driverId` from the driver link — server-side GPS fallback (`driver_locations` for this job) already handled by the helper
-  - `meta: { pax_id, pax_name, method: "qr" | "manual", stop_index? }`
-- Add EVENT_META entry: `{ label: "Passenger boarded", color: "#16a34a", icon: "🧍" }`.
-- Same treatment for the `boarding_approved` path (already logs to map, but include `pax_id`/`pax_name` in meta) so the info-window shows which passenger it was.
+RLS: extend the existing driver update policies on `jobs`/`group_stops` so an assigned driver can insert their own on-the-go job and append stops. No new grant surface.
 
-Note: the existing `insertTripMapEvent` dedup key is `(job_id, event_type)` in a 5-second window. For per-pax pins we need each passenger's boarding to survive, so extend the dedup to include `meta->>pax_id` — same 5s window, but scoped per pax. This keeps double-tap protection without swallowing legitimate 2nd/3rd passenger boardings.
+### 2. Server functions (new file `src/lib/driver-otg.functions.ts`)
 
-## 2. Coordinator can edit a pin
+All authenticated via `requireSupabaseAuth`, resolve the caller to a driver via the existing driver-token lookup used in `m.driver.$token.tsx`.
 
-Add a lightweight edit affordance in the info-window on `TripEventsMap`:
-- "Edit" link visible only to coordinators (already authenticated context here).
-- Opens a small dialog to correct the pax name and/or nudge the pin location (drag marker OR use current pickup coords).
-- New server fn `updateTripMapEvent({ event_id, notes?, meta_patch?, lat?, lng? })` in `src/lib/trip-map.functions.ts`, guarded by `requireSupabaseAuth` + membership check on the job's company. Writes back to `trip_map_events` and appends an audit note in `meta.edited_by`.
+- `listCompanyCoordinators({ driver_token })` — returns coordinators (companies) the driver is linked to, for the picker.
+- `startOnTheGoTrip({ driver_token, company_id })` — inserts a job:
+  - `company_id` = chosen coordinator's company
+  - `driver_id` = caller
+  - `status = 'in_progress'`, `created_by_driver = true`, `needs_review = true`
+  - `pickup_at = now()`, empty client fields
+  - Charges `trip_created` immediately via existing `spend_points` (same key normal creation uses). If wallet is empty and `block_on_empty=true`, return `{ ok:false, reason:"insufficient_points" }` and don't create.
+  - Emits a `trip_map_events` "en_route" pin so the coordinator map picks it up instantly (existing realtime).
+- `otgArrivedAtStop({ job_id })` — records `arrived_pickup` event (reuses existing arrival telemetry columns; no auto-GPS trigger, matches current manual model).
+- `otgAddPassenger({ job_id, stop_index?, name, phone?, note? })` — inserts a `pax` row (Phase 1 fields), and if this is stop ≥ 2 also promotes/creates a `group` + writes/updates the corresponding `group_stops` row (address = current GPS reverse-geocoded label; falls back to lat/lng string).
+- `otgBoardStop({ job_id, stop_index? })` — marks `boarded_at` on the stop (or `pax_boarded` event on stop 1) — reuses existing `markPaxOnboard` per-pax event drop from the earlier map-pins work.
+- `otgAddAnotherStop({ job_id })` — clones the stop cycle: creates group if not present, appends next `group_stops` row with `stop_index+1`, returns the new stop id.
+- `otgFinishPickups({ job_id, dropoff })` — writes dropoff (address + geocode via existing places pipeline), from here the trip continues via the existing driver "in_progress → completed" flow untouched.
 
-## 3. Filter chips + clustering
+No new feature_key is invented; `trip_created` is reused per spec.
 
-`TripEventsMap.tsx`:
-- Replace the flat legend at the bottom with **toggleable category chips**, grouped into 5 buckets:
-  - **Movement** — en_route, arrived_pickup, in_progress, completed, actual_dropoff, back_to_waiting
-  - **Boarding** — pax_boarded, boarding_requested, boarding_approved, boarding_rejected, pax_no_show, pax_cancelled
-  - **Waiting** — wait_started, wait_ended
-  - **Driver actions** — navigate_opened, passenger_called, pickup_snap, dropoff_snap, status_corrected, arrived_pickup_override
-  - **Safety** — emergency_override, safety_concern, breakdown
-- Chip shows count + color dot; tap to hide/show that category. State kept in local `useState` (per-open session).
-- Add `@googlemaps/markerclusterer` (already a Google-recommended lib, small footprint) OR implement a simple in-house cluster: group any markers whose pixel distance < 28px at the current zoom, render a single numbered "N" bubble that expands on click. Simple in-house version keeps deps clean — go with that.
+### 3. Driver UI (mobile-first, matches current driver app style)
 
-## 4. Emoji + sequence number pins
+New screens inside `src/routes/m.driver.$token.tsx` (or a small `src/components/driver/OnTheGo/*` set imported by it), gated behind a new "Create Trip" FAB in the driver home:
 
-Replace the plain colored `SymbolPath.CIRCLE` marker with a lightweight custom overlay:
-- Sort events by `occurred_at` and assign sequence numbers 1..N (per trip).
-- Each pin = a 26px round HTML label (Google `OverlayView` or an SVG data URL) with:
-  - Background = event color
-  - Big emoji from EVENT_META
-  - Small superscript number in the corner (chronological order)
-- Info-window unchanged (already rich).
+```text
+[ Create Trip ▾ ]
+   ├─ Normal          → opens existing full form (unchanged)
+   └─ On The Go       → opens OTG wizard
+```
 
-## 5. Group / multi-stop trips
+OTG wizard steps (each = full-screen mobile sheet, one primary sticky CTA):
+1. **Coordinator picker** — list of coordinator companies with tap targets ≥ 48px, single tap starts the trip. Shows the `trip_created` cost inline and disables + explains if wallet empty.
+2. **Live "Driving to stop N"** — big current-status pill + a single "Arrived" button. No forms during driving.
+3. **Arrived → passenger form** — Name (required), Phone (optional), Note (optional). Same components used in Phase 1 `PaxEditor`. Second sticky CTA: "Boarding".
+4. **Boarding confirm** — two side-by-side buttons: **Add Another Stop** (loops back to step 2, incrementing stop_index and creating the group on first add) and **Finish Pickups** (step 5).
+5. **Enter destination** — reuse `AddressAutocomplete`, on confirm the trip snaps into the standard driver in-progress screen (existing drive/drop/complete flow).
 
-When the driver approves a group and boards multiple passengers from different pickup points, `pax_boarded` pins land at the driver's actual GPS at each stop. The map will visibly walk Sliema → Tarxien → drop-off. No extra logic needed once step 1 is done — the GPS fallback in `insertTripMapEvent` already grabs the last `driver_locations` fix per job.
+All steps show a slim breadcrumb chip so the driver knows where they are (Stop 1 → Stop 2 → Destination).
 
-For the info-window on a `pax_boarded` pin, show:
-- Pax name
-- Stop label (derived server-side by finding the nearest `group_stops.pickup_lat/lng` when the trip has a group_id)
-- Timestamp + method (QR or manual)
+### 4. Coordinator UI
 
-## 6. Suggestions to make it even better (not building unless you say yes)
+- **Live dashboard & map**: driver-created trips already appear because they're real jobs — no extra wiring needed. Add a small purple **"Needs Review"** badge on the trip card when `needs_review = true`, and a **chain icon** with stop count when the job has an associated `group` (reuse existing group indicator). Both are read-only from the badge component; new prop in `TripCard`.
+- **Open while in progress**: uses the existing trip detail sheet — works today because it's a normal job. No changes needed.
+- **Review action**: after the trip completes, the review badge stays until the coordinator opens the existing edit dialog and taps a new **"Mark reviewed"** button (clears `needs_review`). Coordinator can freely edit any field (including finally filling the client/company name) in the same dialog they already use — no separate form.
 
-1. **"Play trip" scrubber** — a small time slider under the map that walks through the pins in order, redrawing the driver icon at that moment. Great for post-trip reviews.
-2. **Auto-open pin on hover in the audit timeline** — clicking a row in `TripAuditTimeline` centers/opens that pin on the map.
-3. **Pax roster overlay** — a stacked list of pax with their boarding pin numbers so coordinators can see "3/4 boarded" at a glance.
-4. **Heat trail** — color the breadcrumb polyline by speed (slow = red) so wait/traffic zones jump out.
-5. **Export to KML/GeoJSON** — one-click download of the full trip trace + pins for insurance / dispute cases.
+### 5. Verification checklist (self-run before reporting done)
 
-## Technical section
+- Typecheck passes.
+- Migration runs; `jobs.created_by_driver` and `jobs.needs_review` present.
+- `startOnTheGoTrip` charges `trip_created` exactly once (verify via `points_ledger`).
+- On the coordinator dashboard, an OTG trip appears within the existing realtime refresh cadence and shows the "Needs Review" badge.
+- Simple single-stop OTG trip (never taps "Add another stop") never creates a `groups` row — stays a flat job.
+- Multi-stop OTG trip creates one `groups` row and N `group_stops` rows with correct `stop_index`, `arrived_at`, `boarded_at`.
+- Existing normal driver "Create Trip" flow is unchanged and still works.
+- Wallet-empty case blocks creation with a clear message; no ghost job is written.
 
-### Files touched
-- `src/lib/trip-map.server.ts` — add `pax_boarded` to union; refine dedup key to include `meta->>pax_id`.
-- `src/lib/coordinator-public.functions.ts` — insert `pax_boarded` pin inside `markPaxOnboard`; enrich boarding approve/reject meta with `pax_id`+`pax_name`.
-- `src/lib/trip-map.functions.ts` — new `updateTripMapEvent` server fn (auth-gated).
-- `src/components/coordinator/TripEventsMap.tsx` — rewrite legend as filter chips, add clustering, replace pin rendering with emoji+number overlays, add edit dialog trigger.
+### Technical notes
 
-### No migration required
-`trip_map_events` already supports arbitrary `event_type` text and JSON `meta`. No schema change needed for pax pins. Coordinator edit uses existing columns.
+- Reuses `trip_created` cost key (confirmed present in `ai_feature_costs`).
+- Reuses `groups` + `group_stops` schema (confirmed present) — no parallel stops table.
+- Reuses per-pax `pax_boarded` map-event drop from the recent map-pins work — the driver gets per-passenger pins on the coordinator map automatically.
+- Coordinator card badges are cosmetic-only in `src/components/coordinator/TripCard.tsx`; no logic changes to trip visibility, filtering, or scheduling.
+- No changes to Phase 1 code paths.
+
+Deferred (Phase 7, per spec): teaching the AI assistant to create OTG trips via chat.

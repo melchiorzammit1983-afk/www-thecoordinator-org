@@ -3782,6 +3782,7 @@ export type Database = {
           coord_approved_at: string | null
           coordinator_last_viewed_at: string | null
           created_at: string
+          created_by_driver: boolean
           date: string
           deletion_requested_at: string | null
           deletion_requested_by: string | null
@@ -3845,6 +3846,7 @@ export type Database = {
           live_eta_from_lng: number | null
           live_eta_sec: number | null
           live_eta_updated_at: string | null
+          needs_review: boolean
           origin_company_id: string | null
           paid_amount: number | null
           paid_at: string | null
@@ -3912,6 +3914,7 @@ export type Database = {
           coord_approved_at?: string | null
           coordinator_last_viewed_at?: string | null
           created_at?: string
+          created_by_driver?: boolean
           date: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
@@ -3977,6 +3980,7 @@ export type Database = {
           live_eta_from_lng?: number | null
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
+          needs_review?: boolean
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
@@ -4044,6 +4048,7 @@ export type Database = {
           coord_approved_at?: string | null
           coordinator_last_viewed_at?: string | null
           created_at?: string
+          created_by_driver?: boolean
           date?: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
@@ -4109,6 +4114,7 @@ export type Database = {
           live_eta_from_lng?: number | null
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
+          needs_review?: boolean
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
@@ -4392,6 +4398,7 @@ export type Database = {
           note: string | null
           phone: string | null
           status: Database["public"]["Enums"]["pax_status"]
+          stop_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4407,6 +4414,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
+          stop_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4422,6 +4430,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
+          stop_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4437,6 +4446,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pax_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "group_stops"
             referencedColumns: ["id"]
           },
         ]
@@ -6366,6 +6382,7 @@ export type Database = {
       }
       get_public_ai_daily_count: { Args: never; Returns: number }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
+      mark_job_reviewed: { Args: { _job_id: string }; Returns: undefined }
       match_ai_lessons: {
         Args: {
           _company_id: string
