@@ -1217,6 +1217,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   const [confirmHideOpen, setConfirmHideOpen] = useState(false);
   const [lateOpen, setLateOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [otgManageOpen, setOtgManageOpen] = useState(false);
   
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [lateNote, setLateNote] = useState("");
