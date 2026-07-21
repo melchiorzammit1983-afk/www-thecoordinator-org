@@ -565,6 +565,17 @@ function DriverManifest() {
 
 
   const [showArchived, setShowArchived] = useState(false);
+  // Driver preference: auto-hide completed/cancelled trips from the active
+  // list. Off by default so finished trips stay visible until the driver
+  // hides them manually via each card's "Hide from my list" action.
+  const [autoHideDone, setAutoHideDone] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(`driver:autoHideDone:${token}`) === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(`driver:autoHideDone:${token}`, autoHideDone ? "1" : "0");
+  }, [autoHideDone, token]);
   const isMobile = useIsMobile();
   const [dashboardCarouselApi, setDashboardCarouselApi] = useState<CarouselApi | null>(null);
   const [dashboardPanelIndex, setDashboardPanelIndex] = useState(0);
@@ -576,16 +587,18 @@ function DriverManifest() {
       return ta - tb;
     });
     const isDone = (s: string | null | undefined) => s === "completed" || s === "cancelled";
+    const hidden = (j: Job) => !!j.driver_hidden_at || (autoHideDone && isDone(j.status));
     return {
-      activeJobs: sorted.filter((j) => !j.driver_hidden_at && !isDone(j.status)),
-      archivedJobs: sorted.filter((j) => !!j.driver_hidden_at || isDone(j.status)),
+      activeJobs: sorted.filter((j) => !hidden(j)),
+      archivedJobs: sorted.filter((j) => hidden(j)),
     };
-  }, [data]);
+  }, [data, autoHideDone]);
   const jobs = activeJobs;
   // Auto-reveal archived when there are none active but archived exist.
   useEffect(() => {
     if (jobs.length === 0 && archivedJobs.length > 0) setShowArchived(true);
   }, [jobs.length, archivedJobs.length]);
+
 
   // Batch D — Auto Next Job: watch for completion transitions and surface next assigned trip.
   const autoNextEnabled = data?.companySettings?.auto_next_job_enabled ?? true;
