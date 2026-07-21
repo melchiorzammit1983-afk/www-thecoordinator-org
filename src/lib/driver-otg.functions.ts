@@ -355,6 +355,40 @@ export const otgAddPassenger = createServerFn({ method: "POST" })
     return { pax_id: (pax as any).id as string };
   });
 
+// ── Finalize the drop-off from the driver's current GPS ─────────────────
+// Called just before the driver marks the OTG trip complete. If
+// `to_location` is still the "TBD" placeholder, reverse-geocode the
+// current GPS and persist a real street/place name so the finished
+// trip reads sensibly.
+export const otgFinalizeDropoffFromGps = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z.object({
+      token: z.string().min(8).max(128),
+      job_id: z.string().uuid(),
+      lat: z.number().gte(-90).lte(90),
+      lng: z.number().gte(-180).lte(180),
+    }).parse(i),
+  )
+  .handler(async ({ data }) => {
+    const link = await requireDriver(data.token);
+    const supabaseAdmin = await admin();
+    const job = await ensureOwnsJob(supabaseAdmin, data.job_id, link.subject_id!);
+    const { data: cur } = await supabaseAdmin.from("jobs")
+      .select("to_location, dropoff_display_name")
+      .eq("id", job.id).maybeSingle();
+    const to = ((cur as any)?.to_location as string | null) ?? "";
+    // Only overwrite when the driver never set a real destination.
+    if (to && !/^TBD/i.test(to)) return { ok: true, changed: false };
+    const rg = await reverseGeocode(data.lat, data.lng);
+    if (!rg?.address) return { ok: true, changed: false };
+    await supabaseAdmin.from("jobs").update({
+      to_location: rg.address,
+      dropoff_place_id: rg.place_id ?? null,
+      dropoff_display_name: rg.address,
+    } as never).eq("id", job.id);
+    return { ok: true, changed: true, to_location: rg.address };
+  });
+
 // ── Set the final destination + mark trip in-flight ─────────────────────
 export const otgSetDestination = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
