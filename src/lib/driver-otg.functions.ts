@@ -10,7 +10,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { resolveToken } from "./coordinator-public.functions";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -18,10 +18,15 @@ async function admin() {
 }
 
 async function requireDriver(token: string) {
-  const link = await resolveToken(token, "driver");
-  if (!link) throw new Error("invalid_or_expired_link");
-  if (!link.subject_id) throw new Error("driver_required");
-  return link;
+  const supabaseAdmin = await admin();
+  const { data } = await supabaseAdmin.from("magic_links")
+    .select("id, company_id, kind, subject_id, expires_at, revoked_at")
+    .eq("token", token).is("revoked_at", null).maybeSingle();
+  if (!data) throw new Error("invalid_or_expired_link");
+  if ((data as any).kind !== "driver") throw new Error("invalid_or_expired_link");
+  if ((data as any).expires_at && new Date((data as any).expires_at) < new Date()) throw new Error("invalid_or_expired_link");
+  if (!(data as any).subject_id) throw new Error("driver_required");
+  return data as { id: string; company_id: string; subject_id: string };
 }
 
 async function ensureOwnsJob(supabaseAdmin: Awaited<ReturnType<typeof admin>>, jobId: string, driverId: string) {
