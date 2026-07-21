@@ -340,7 +340,14 @@ export const markJobReviewed = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("mark_job_reviewed", { _job_id: data.job_id });
+    // Direct authenticated update — RLS ("Company owners manage jobs")
+    // enforces that only the owning coordinator (or an admin) can flip
+    // needs_review on their own trip. No SECURITY DEFINER RPC needed.
+    const { error } = await context.supabase
+      .from("jobs")
+      .update({ needs_review: false } as never)
+      .eq("id", data.job_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
