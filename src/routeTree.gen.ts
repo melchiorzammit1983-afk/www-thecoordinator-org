@@ -27,6 +27,7 @@ import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as GSessionRouteImport } from './routes/g.$session'
 import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as BTokenRouteImport } from './routes/b.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
@@ -189,6 +190,11 @@ const GSessionRoute = GSessionRouteImport.update({
 const CTokenRoute = CTokenRouteImport.update({
   id: '/c/$token',
   path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BTokenRoute = BTokenRouteImport.update({
+  id: '/b/$token',
+  path: '/b/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
@@ -638,6 +644,7 @@ export interface FileRoutesByFullPath {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
@@ -728,6 +735,7 @@ export interface FileRoutesByTo {
   '/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/help/$topic': typeof HelpTopicRoute
@@ -822,6 +830,7 @@ export interface FileRoutesById {
   '/_authenticated/my-tickets': typeof AuthenticatedMyTicketsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/api/help-chat': typeof ApiHelpChatRoute
+  '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
@@ -917,6 +926,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/h/$slug'
@@ -1007,6 +1017,7 @@ export interface FileRouteTypes {
     | '/my-tickets'
     | '/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/help/$topic'
@@ -1100,6 +1111,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-tickets'
     | '/_authenticated/settings'
     | '/api/help-chat'
+    | '/b/$token'
     | '/c/$token'
     | '/g/$session'
     | '/h/$slug'
@@ -1191,6 +1203,7 @@ export interface RootRouteChildren {
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiHelpChatRoute: typeof ApiHelpChatRoute
+  BTokenRoute: typeof BTokenRoute
   CTokenRoute: typeof CTokenRoute
   GSessionRoute: typeof GSessionRoute
   HSlugRoute: typeof HSlugRouteWithChildren
@@ -1352,6 +1365,13 @@ declare module '@tanstack/react-router' {
       path: '/c/$token'
       fullPath: '/c/$token'
       preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b/$token': {
+      id: '/b/$token'
+      path: '/b/$token'
+      fullPath: '/b/$token'
+      preLoaderRoute: typeof BTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/help-chat': {
@@ -2066,6 +2086,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiHelpChatRoute: ApiHelpChatRoute,
+  BTokenRoute: BTokenRoute,
   CTokenRoute: CTokenRoute,
   GSessionRoute: GSessionRoute,
   HSlugRoute: HSlugRouteWithChildren,
