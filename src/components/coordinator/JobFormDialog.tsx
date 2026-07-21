@@ -632,6 +632,22 @@ function ManualForm({
               <div className="text-[10px] text-muted-foreground">Nudge the pickup time to re-check driver availability.</div>
             </div>
           </div>
+          {isOtgEditable && (otgTargets?.coordinators?.length ?? 0) > 1 && (
+            <div className="space-y-1.5">
+              <Label>Coordinator company</Label>
+              <Select value={coordCompanyId} onValueChange={setCoordCompanyId}>
+                <SelectTrigger><SelectValue placeholder="Select coordinator" /></SelectTrigger>
+                <SelectContent>
+                  {(otgTargets?.coordinators ?? []).map((cc) => (
+                    <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-[10px] text-muted-foreground">
+                On-the-go trip — reassign to another connected coordinator before you mark it reviewed.
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Driver</Label>
             <Select value={driverId} onValueChange={setDriverId}>
