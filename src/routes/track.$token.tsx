@@ -29,8 +29,10 @@ type Boot = {
   driver: { first_name: string; vehicle: string | null; plate: string | null } | null;
   show_driver_location: boolean;
   passenger?: { name: string; note: string | null } | null;
+  history?: Array<{ id: string; when: string | null; from: string | null; to: string | null; status: string; driver_name?: string | null; vehicle?: string | null; plate?: string | null }>;
 
 };
+
 
 const STAGES = ["pending", "confirmed", "assigned", "en_route", "arrived", "in_progress", "completed"] as const;
 const STAGE_LABELS: Record<string, string> = {
