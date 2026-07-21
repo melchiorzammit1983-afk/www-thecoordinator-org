@@ -12,6 +12,11 @@ import {
   listPortals, createPortal, updatePortal, rotatePortalToken, deletePortal,
   checkSlugAvailable, slugify,
 } from "@/lib/portal.functions";
+import {
+  listPublicPortals, createPublicPortal, updatePublicPortal,
+  rotatePublicPortal, deletePublicPortal,
+  listPublicBookingRequests, acceptPublicBookingRequest, rejectPublicBookingRequest,
+} from "@/lib/public-portal.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
