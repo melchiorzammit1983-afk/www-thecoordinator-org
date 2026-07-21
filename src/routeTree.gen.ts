@@ -76,6 +76,7 @@ import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as MDriverTokenIndexRouteImport } from './routes/m.driver.$token.index'
 import { Route as MDriverTokenSettingsRouteImport } from './routes/m.driver.$token.settings'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
@@ -477,6 +478,11 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MDriverTokenIndexRoute = MDriverTokenIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MDriverTokenRoute,
+} as any)
 const MDriverTokenSettingsRoute = MDriverTokenSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -710,6 +716,7 @@ export interface FileRoutesByFullPath {
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/settings': typeof MDriverTokenSettingsRoute
+  '/m/driver/$token/': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
@@ -787,7 +794,6 @@ export interface FileRoutesByTo {
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
   '/m/client/$token': typeof MClientTokenRoute
-  '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug': typeof HSlugIndexRoute
@@ -801,6 +807,7 @@ export interface FileRoutesByTo {
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/settings': typeof MDriverTokenSettingsRoute
+  '/m/driver/$token': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
@@ -898,6 +905,7 @@ export interface FileRoutesById {
   '/h/$slug/r/$qr': typeof HSlugRQrRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/m/driver/$token/settings': typeof MDriverTokenSettingsRoute
+  '/m/driver/$token/': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
@@ -995,6 +1003,7 @@ export interface FileRouteTypes {
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/settings'
+    | '/m/driver/$token/'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
@@ -1072,7 +1081,6 @@ export interface FileRouteTypes {
     | '/coordinator/refer'
     | '/coordinator/statements'
     | '/m/client/$token'
-    | '/m/driver/$token'
     | '/admin'
     | '/coordinator'
     | '/h/$slug'
@@ -1086,6 +1094,7 @@ export interface FileRouteTypes {
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/settings'
+    | '/m/driver/$token'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
@@ -1182,6 +1191,7 @@ export interface FileRouteTypes {
     | '/h/$slug/r/$qr'
     | '/lovable/email/queue/process'
     | '/m/driver/$token/settings'
+    | '/m/driver/$token/'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
@@ -1722,6 +1732,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/m/driver/$token/': {
+      id: '/m/driver/$token/'
+      path: '/'
+      fullPath: '/m/driver/$token/'
+      preLoaderRoute: typeof MDriverTokenIndexRouteImport
+      parentRoute: typeof MDriverTokenRoute
+    }
     '/m/driver/$token/settings': {
       id: '/m/driver/$token/settings'
       path: '/settings'
@@ -2080,11 +2097,13 @@ const HSlugRouteWithChildren = HSlugRoute._addFileChildren(HSlugRouteChildren)
 
 interface MDriverTokenRouteChildren {
   MDriverTokenSettingsRoute: typeof MDriverTokenSettingsRoute
+  MDriverTokenIndexRoute: typeof MDriverTokenIndexRoute
   MDriverTokenSignJobIdRoute: typeof MDriverTokenSignJobIdRoute
 }
 
 const MDriverTokenRouteChildren: MDriverTokenRouteChildren = {
   MDriverTokenSettingsRoute: MDriverTokenSettingsRoute,
+  MDriverTokenIndexRoute: MDriverTokenIndexRoute,
   MDriverTokenSignJobIdRoute: MDriverTokenSignJobIdRoute,
 }
 
