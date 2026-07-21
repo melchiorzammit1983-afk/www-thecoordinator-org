@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FEATURE_CATALOG } from "@/lib/features";
@@ -39,9 +40,10 @@ function PricingAdmin() {
         <p className="text-sm text-muted-foreground">Set plans, point packs, and per-feature costs.</p>
       </div>
       <WalletsCard />
-      <FeatureCostsCard />
       <PlansCard />
       <PointPacksCard />
+      {/* Feature cost editing lives on the AI Settings page — single source of truth */}
+      {false ? <FeatureCostsCard /> : null}
     </div>
   );
 }
@@ -120,9 +122,10 @@ function PlanEditor({ plan, onSave, onDelete }: { plan: any; onSave: (row: any) 
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <button type="button" onClick={() => setIsPublic(!isPublic)}>
-          <Badge variant={isPublic ? "default" : "outline"}>{isPublic ? "Listed publicly" : "Hidden"}</Badge>
-        </button>
+        <label className="flex items-center gap-2 text-xs">
+          <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+          <span className="text-muted-foreground">Listed publicly on pricing page</span>
+        </label>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onDelete}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
           <Button size="sm" onClick={() => onSave({
@@ -207,14 +210,16 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
       <TableCell><Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="h-8 w-24" /></TableCell>
       <TableCell>
-        <button type="button" onClick={() => setActive(!active)}>
-          <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Off"}</Badge>
-        </button>
+        <div className="flex items-center gap-2">
+          <Switch checked={active} onCheckedChange={setActive} />
+          <span className="text-[11px] text-muted-foreground">{active ? "Active" : "Off"}</span>
+        </div>
       </TableCell>
       <TableCell>
-        <button type="button" onClick={() => setIsRef(!isRef)} title="Only one pack can be the reference rate">
-          <Badge variant={isRef ? "default" : "outline"}>{isRef ? "Reference" : "Set as reference"}</Badge>
-        </button>
+        <div className="flex items-center gap-2" title="Only one pack can be the reference rate; drives EUR display across the app">
+          <Switch checked={isRef} onCheckedChange={setIsRef} />
+          <span className="text-[11px] text-muted-foreground">{isRef ? "Reference" : "—"}</span>
+        </div>
       </TableCell>
       <TableCell className="text-right space-x-1">
         <Button size="sm" variant="ghost" onClick={() => onSave({ id: pack.id, name, points: Number(points), price: Number(price), sort_order: pack.sort_order ?? 0, is_active: active, is_reference_rate: isRef })}>
@@ -360,20 +365,23 @@ function FeatureCostCard({
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => setEnabled(!enabled)}>
-          <Badge variant={enabled ? "default" : "outline"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-        </button>
-        <button type="button" onClick={() => setBlock(!block)}>
-          <Badge variant={block ? "destructive" : "secondary"}>{block ? "Hard stop" : "Allow negative"}</Badge>
-        </button>
-        <button type="button" onClick={() => setIsAddon(!isAddon)}>
-          <Badge variant={isAddon ? "default" : "outline"}>{isAddon ? "Add-on" : "Core"}</Badge>
-        </button>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <label className="flex items-center justify-between gap-2" title="Off = feature is free and hidden from user surfaces">
+          <span className="text-muted-foreground">Enabled (charged)</span>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </label>
+        <label className="flex items-center justify-between gap-2" title="On = user can toggle this from their own Settings → Feature usage">
+          <span className="text-muted-foreground">User add-on</span>
+          <Switch checked={isAddon} onCheckedChange={setIsAddon} />
+        </label>
+        <label className="flex items-center justify-between gap-2" title="On = keep working when wallet is empty (goes negative). Off = block the action.">
+          <span className="text-muted-foreground">Allow when empty</span>
+          <Switch checked={!block} onCheckedChange={(v) => setBlock(!v)} />
+        </label>
         <select
           value={minPlan}
           onChange={(e) => setMinPlan(e.target.value)}
-          className="ml-auto h-7 rounded-md border bg-background px-2 text-[11px]"
+          className="h-7 rounded-md border bg-background px-2 text-[11px]"
           title="Minimum plan required"
         >
           <option value="any">Any plan</option>

@@ -1,44 +1,49 @@
-## Goal
-Streamline the driver's On-The-Go (OTG) trip flow so it mirrors a normal trip lifecycle, with automatic location pinning, reverse-geocoded addresses, and a passenger sheet that opens at the right moment.
 
-## Current behaviour (verified)
-- `startOnTheGoTrip` already creates the job at `status: en_route` with `driver_started_at` set, and inserts stop 0 at the driver's GPS.
-- The start sheet (`DriverOtgSheet.tsx`) currently asks for coordinator + optional destination up front — extra friction.
-- Pickup label falls back to `"Driver location (lat, lng)"` — no street name.
-- The passenger sheet auto-opens at `arrived`, but the user wants it to open when the driver presses **"Passengers on board / En route"** (i.e. moving from `waiting`/`arrived` → `in_progress`).
-- `otgAddStop` records `arrived_pickup` but does not reverse-geocode the address.
-- Trip has no "to_location" until driver sets destination; final drop-off should auto-fill the street name on complete.
+# Admin cleanup & billing sync
 
-## Changes
+Goal: turn every "badge that acts like a switch" into a real Switch, make sure toggling actually gates the user, and merge the two overlapping cost pages so admins see one clear number per action — points charged vs. real Lovable-gateway cost — including flight tracking.
 
-### 1. Simplify start (`DriverOtgSheet.tsx` + `startOnTheGoTrip`)
-- Reduce the start dialog to a single big **"Start trip here"** button (keep coordinator picker collapsed under "Change coordinator" for the rare cross-company case).
-- On press: capture GPS, call `startOnTheGoTrip`, close sheet immediately (fix the "window stays open" residue).
-- Server: reverse-geocode the driver's `{lat,lng}` via `places.functions` and store the street name as `from_location` and stop-0 address (fallback to current label if geocoding fails).
+## Step 1 — Replace badge-buttons with real Switches
+Files: `admin.ai-settings.tsx`, `admin.pricing.tsx`, `admin.topups.tsx` (if present).
+- Swap every `<button><Badge>Enabled/Disabled</Badge></button>` pattern for shadcn `<Switch>` with a text label next to it.
+- Rows affected: `ActionRow` (Enabled, Hard stop), `FeatureCostCard` (Enabled, Hard stop, Add-on), `PackRow` (Active, Reference), `PlanEditor` (Listed publicly).
+- Semantics per user:
+  - **Enabled**: on = charged & available, off = free & hidden from user surfaces.
+  - **Hard stop → "Allow negative"**: rename to a single switch **"Allow when wallet is empty"** (on = allow negative / free-flow, off = block).
+  - **Add-on**: on = user can toggle it in their dashboard, off = admin-controlled only.
+  - **Reference rate**: on = this pack drives EUR display (only one at a time; server already enforces).
 
-### 2. Pickup arrival (existing normal button)
-- Driver presses **"Arrived at pickup"** — already logs `arrived_pickup` to the map. No change needed beyond confirming the OTG job flows through the same handler as normal trips.
+## Step 2 — Make Enabled/Add-on actually gate the UI
+- Server: extend `getMyFeatures` / `useMyBilling.costs` payload to include `enabled` and `is_addon` (already present in `costs`, verify propagation).
+- Client: in `useFeature(key)` and every `<IfFeature>` / `FeatureGate` call site, hide/disable the surface when `costs[key].enabled === false` regardless of admin entitlement.
+- User settings (`/settings` feature-usage list): show only rows where `is_addon === true AND enabled === true`.
+- Walk each active AI key from `ACTIVE_FEATURE_KEYS` and confirm its consumer respects the flag. Add a small server test route `/api/public/health/features` returning the resolved map for one company, so I can flip a switch and curl-verify it's off.
 
-### 3. Passenger sheet trigger
-- Change auto-open condition in `m.driver.$token.tsx` from `status === 'arrived'` to fire when driver taps **"Passengers on board / En route"** (transition to `in_progress`).
-- Sheet shows any passengers the coordinator pre-filled; driver can tap **"On board"** per row or **"Add passenger"** to type a name.
-- Each add / board action already logs `pax_added` / `pax_boarded` with GPS via `otgAddPassenger`. Keep.
+## Step 3 — Unified "Real cost vs charged" view (Lovable-synced)
+Rewrite `admin.ai-costs.tsx` into one table, one row per feature_key:
+```
+Feature | Uses (30d) | Points charged | EUR charged | Lovable credits used | USD cost | Margin €
+```
+- Source: aggregate `ai_cost_events` (already has `real_cost_credits`, `real_cost_usd_cents`, `points_charged`).
+- Add a top card **"Workspace credit spend, last 30d"** pulling from the same table's `real_cost_credits` sum, so the number matches what Lovable shows in Settings → Plans & credits.
+- Remove the current dual-column dance; keep drilldown by clicking a row.
 
-### 4. Add-stop flow (mid-trip)
-- In `otgAddStop`, when `{lat,lng}` present but no `address`, reverse-geocode to a street name before insert.
-- Map pin already logged; label will now read street instead of "Stop 2 (35.xxxx, 14.xxxx)".
+## Step 4 — Meter flight tracking properly
+- `flight_status_extra_lookup` and `flight_vessel_tracking` already exist in `ai_feature_costs`. Confirm every AeroDataBox call site in `src/lib/*flight*` and `fetchLiveStatusViaGemini` wraps with `spend_points(feature_key)` + `recordAiCost(...)` with the model/usage or a fixed-cost fallback (AeroDataBox has no tokens → charge fixed points, record `real_cost_usd_cents` from an admin-set `est_cost_usd_cents`).
+- Add a "Fixed cost per call (¢)" input to `ActionRow` (already exists as `est_cost_usd_cents`). Make sure it's used when `usage` is null.
 
-### 5. Trip completion
-- When driver presses **Complete**, if `to_location` is still `"TBD — set by driver"` or empty, reverse-geocode the driver's current GPS and store it as `to_location` + `dropoff_display_name`. Log `dropoff_actual` map event (already exists).
-- After completion the trip stays editable by coordinator (already true because `needs_review = true`).
+## Step 5 — Every AI agent action → charge as `ai_agent_message`
+- In the coordinator assistant (`coordinator-assist.functions.ts` and command executor), route every user-triggered chat turn through `spend_points('ai_agent_message', ...)` in addition to any per-tool cost. Admin sets the price on the AI Settings page (already listed in `ACTIVE_FEATURE_KEYS`).
 
-## Files to edit
-- `src/lib/driver-otg.functions.ts` — reverse-geocode in `startOnTheGoTrip`, `otgAddStop`; new `otgCompleteFinalize` (or extend existing complete path) to set drop-off address.
-- `src/components/driver/DriverOtgSheet.tsx` — collapse to one-tap start; ensure sheet closes on success.
-- `src/components/driver/OtgManageDialog.tsx` — no schema change; label refresh when server returns street name.
-- `src/routes/m.driver.$token.tsx` — retrigger passenger sheet on `in_progress` transition for OTG trips instead of `arrived`.
-- Reuse `src/lib/places.functions.ts` (`resolveAddresses` / details lookup) server-side for reverse geocoding via the Google Maps connector.
+## Step 6 — Merge & simplify
+- Delete the duplicate "Feature point costs" card on the Pricing page (Step 3 owns it) — Pricing keeps Plans + Point Packs + Wallets only.
+- AI Settings owns: per-action cost + enabled + allow-negative + fixed ¢ + free allowance.
+- Verify each switch end-to-end after each step: flip in admin → reload user preview → confirm surface disappears / stops charging.
 
-## Out of scope
-- Payment/pricing calculation changes (already handled by existing auto-price on complete).
-- Coordinator-side editing UI (already shipped previous turn).
+## Technical notes
+- No schema changes needed; `ai_feature_costs` already has `enabled`, `block_on_empty`, `is_addon`, `est_cost_usd_cents`.
+- Keep `PLAN_ORDER` / entitlement logic intact.
+- Use existing `<Switch>` from `@/components/ui/switch`.
+- No workflow changes to trip lifecycle, driver flow, or portal.
+
+I'll execute Step 1 → 6 in order and self-test after each without waiting for approval, as you asked.

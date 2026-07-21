@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 import { FeatureInfoTooltip } from "@/components/features/FeatureInfoTooltip";
 import { useReferencePack } from "@/hooks/use-reference-rate";
@@ -217,13 +218,15 @@ function ActionRow({
             {marginPct == null ? "—" : `${marginPct}%`}
           </div>
         </div>
-        <div className="flex flex-col gap-1">
-          <button type="button" onClick={() => setEnabled(!enabled)}>
-            <Badge variant={enabled ? "default" : "outline"} className="w-full justify-center">{enabled ? "Enabled" : "Disabled"}</Badge>
-          </button>
-          <button type="button" onClick={() => setBlock(!block)} title="What happens when wallet is empty">
-            <Badge variant={block ? "destructive" : "secondary"} className="w-full justify-center">{block ? "Hard stop" : "Allow negative"}</Badge>
-          </button>
+        <div className="flex flex-col gap-2 justify-end">
+          <label className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-muted-foreground">Enabled</span>
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </label>
+          <label className="flex items-center justify-between gap-2 text-xs" title="When ON, users can keep using this even after their wallet hits zero (goes negative). When OFF, action is blocked.">
+            <span className="text-muted-foreground">Allow when empty</span>
+            <Switch checked={!block} onCheckedChange={(v) => setBlock(!v)} />
+          </label>
         </div>
       </div>
 
