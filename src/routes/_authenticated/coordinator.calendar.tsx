@@ -134,6 +134,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { PaxSplitDialog } from "@/components/coordinator/PaxSplitDialog";
+import { ClientLinkPicker } from "@/components/coordinator/ClientLinkPicker";
 import { NewTripsPreviewDialog, type NewTripRow } from "@/components/coordinator/NewTripsPreviewDialog";
 
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
