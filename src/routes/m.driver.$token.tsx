@@ -1080,8 +1080,9 @@ function DriverManifest() {
                 className="w-full inline-flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground py-2 border-t"
               >
                 <Filter className="h-3.5 w-3.5" />
-                {showArchived ? "Hide done & archived" : "Show done & archived"}
+                {showArchived ? "Hide old trips" : "Show old / hidden trips"}
                 {archivedJobs.length > 0 && <span className="opacity-70">({archivedJobs.length})</span>}
+
               </button>
               {showArchived && archivedJobs.length > 0 && (
                 <div className="space-y-3 mt-3 opacity-75">
