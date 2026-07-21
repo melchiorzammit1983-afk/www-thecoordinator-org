@@ -271,6 +271,16 @@ function ManualForm({
   const updateFn = useServerFn(updateJob);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
+  const reviewFn = useServerFn(markJobReviewed);
+  const reviewMut = useMutation({
+    mutationFn: () => reviewFn({ data: { job_id: job!.id } }),
+    onSuccess: () => {
+      toast.success("Marked reviewed");
+      qc.invalidateQueries({ queryKey: ["coord-jobs"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Could not mark reviewed"),
+  });
 
   const canPreview = (!!from || !!to || !!fromFlight || !!toFlight) && !!date && !!time;
   const previewMut = useMutation({
