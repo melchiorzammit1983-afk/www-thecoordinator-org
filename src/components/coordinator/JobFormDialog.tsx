@@ -354,7 +354,14 @@ function ManualForm({
         pickup_display_name: fromDisplayName,
         dropoff_display_name: toDisplayName,
       };
-      if (job) { await updateFn({ data: { id: job.id, ...payload } }); return { date, jobId: job.id, isNew: false }; }
+      if (job) {
+        const editPayload: any = { id: job.id, ...payload };
+        if (isOtgEditable && coordCompanyId && coordCompanyId !== otgTargets?.current_company_id) {
+          editPayload.company_id = coordCompanyId;
+        }
+        await updateFn({ data: editPayload });
+        return { date, jobId: job.id, isNew: false };
+      }
       const row: any = await createFn({ data: { ...payload, pax } });
       return { date, jobId: row?.id as string | undefined, isNew: true };
     },
