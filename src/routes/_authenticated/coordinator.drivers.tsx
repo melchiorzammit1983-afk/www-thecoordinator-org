@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DriverOpenBadge } from "@/components/coordinator/DriverOpenBadge";
+
 
 export const Route = createFileRoute("/_authenticated/coordinator/drivers")({
   head: () => ({ meta: [{ title: "Drivers — Coordinator" }] }),
