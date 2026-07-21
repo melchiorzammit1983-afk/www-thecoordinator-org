@@ -907,7 +907,13 @@ function DriverManifest() {
                     <DropdownMenuItem onClick={() => setOtgOpen(true)}>
                       <Car className="h-4 w-4 mr-2" /> Create trip (On The Go)
                     </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/m/driver/$token/settings" params={{ token }}>
+                        <Clock className="h-4 w-4 mr-2" /> Settings & hours
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
+
                     {driver && (
                       <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                         <User className="h-4 w-4 mr-2" /> Edit profile
