@@ -564,7 +564,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
         .limit(20),
       supabaseAdmin
         .from("public_booking_requests")
-        .select("id, from_location, to_location, requested_at, status, portal_id")
+        .select("id, status, portal_id, payload, created_at")
         .eq("status", "pending")
         .in(
           "portal_id",
@@ -578,8 +578,9 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
             ).data ?? []
           ).map((p: any) => p.id),
         )
-        .order("requested_at", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(20),
+
     ]);
     const reviewList = (reviewJobs ?? []) as any[];
     const pendingList = (pendingReqs ?? []) as any[];
@@ -597,7 +598,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
             ? `PUBLIC BOOKING REQUESTS PENDING (${pendingList.length}) — Phase 4 portal, needs coordinator accept/edit:\n${pendingList
                 .map(
                   (r) =>
-                    `- ${r.id} ${r.requested_at ?? ""} | ${r.from_location ?? ""} → ${r.to_location ?? ""}`,
+                    `- ${r.id} ${r.created_at ?? ""} | ${r.payload?.from_location ?? ""} → ${r.payload?.to_location ?? ""}`,
                 )
                 .join("\n")}`
             : "",

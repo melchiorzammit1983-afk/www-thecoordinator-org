@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.record_trip_audit(uuid, text, jsonb, jsonb, text, numeric, numeric, numeric, text, numeric, timestamptz, uuid, uuid, text, uuid, text) TO authenticated;
