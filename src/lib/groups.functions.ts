@@ -305,14 +305,16 @@ export const addStopToJob = createServerFn({ method: "POST" })
       .select("id, stop_index")
       .single();
     if (error) throw new Error(error.message);
-    await supabase.rpc("record_trip_audit", {
-      _job_id: data.job_id,
-      _event_type: "stop_added",
-      _new: { stop_id: (stop as any).id, address: data.address, stop_index: insertAt } as any,
-      _group_id: groupId,
-      _approval_status: "approved",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: data.job_id,
+      event_type: "stop_added",
+      new: { stop_id: (stop as any).id, address: data.address, stop_index: insertAt },
+      group_id: groupId,
+      approval_status: "approved",
+      actor_label: "coordinator",
+      actor_user_id: context.userId,
     });
+
     return { ok: true, group_id: groupId, stop_id: (stop as any).id as string, stop_index: (stop as any).stop_index as number };
   });
 
