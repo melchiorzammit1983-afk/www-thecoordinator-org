@@ -220,15 +220,17 @@ export const requestStopReorder = createServerFn({ method: "POST" })
       .eq("id", data.group_id)
       .maybeSingle();
     if (group?.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: group.job_id,
-        _event_type: "stop_reorder_requested",
-        _new: { request_id: req.id, proposed_order: data.proposed_order } as any,
-        _group_id: data.group_id,
-        _approval_status: "pending",
-        _actor_label: "driver",
-        _driver_id: driver?.id ?? undefined,
+      await recordTripAudit({
+        job_id: group.job_id,
+        event_type: "stop_reorder_requested",
+        new: { request_id: req.id, proposed_order: data.proposed_order },
+        group_id: data.group_id,
+        approval_status: "pending",
+        actor_label: "driver",
+        driver_id: driver?.id ?? null,
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true, request_id: req.id };
   });
