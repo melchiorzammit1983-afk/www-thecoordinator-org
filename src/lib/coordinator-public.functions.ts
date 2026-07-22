@@ -139,14 +139,18 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     } else {
       q = q.or(`company_id.eq.${link.company_id},executor_company_id.eq.${link.company_id},origin_company_id.eq.${link.company_id},dispatch_chain_company_ids.cs.{${link.company_id}}`);
     }
-    // Finished trips stay visible on the driver's phone until they manually
-    // hide them (Hide from my list). Only hard-hidden rows drop out via the
-    // client-side `driver_hidden_at` filter, so the driver keeps a full
-    // history of their own recent work and can un-hide anything by choice.
-
+    // Keep the driver's list light: only include active trips + recently
+    // finished/cancelled ones (last 48h). Older completed history is not
+    // sent to the phone — the driver can still un-hide via server tools if
+    // needed. Hard cap the result set to keep manifest fetches bounded.
+    const recentCutoff = new Date(Date.now() - 48 * 60 * 60_000).toISOString();
+    q = q.or(
+      `status.not.in.(completed,cancelled),pickup_at.gte.${recentCutoff}`,
+    ).limit(200);
 
     const { data: jobsRaw, error } = await q;
     if (error) throw new Error(error.message);
+
 
 
     // Backfill missing hotel/business names so the driver never sees a raw
