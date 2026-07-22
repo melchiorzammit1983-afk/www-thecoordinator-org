@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { recordTripAudit } from "@/lib/trip-audit.server";
+
 
 async function assertGroupCompany(supabase: any, group_id: string, userId: string) {
   const { data, error } = await supabase

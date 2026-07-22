@@ -6609,6 +6609,7 @@ export type Database = {
         Args: {
           _accuracy?: number
           _actor_label?: string
+          _actor_user_id?: string
           _address?: string
           _approval_status?: string
           _device_time?: string

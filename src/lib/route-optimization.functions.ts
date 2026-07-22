@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { recordTripAudit } from "@/lib/trip-audit.server";
+
 
 /**
  * Batch D — AI Route Optimization
@@ -270,14 +272,16 @@ export const approveRouteOptimization = createServerFn({ method: "POST" })
       .eq("id", row.id);
     if (uErr) throw new Error(uErr.message);
 
-    await supabase.rpc("record_trip_audit", {
-      _job_id: row.job_id,
-      _event_type: "route_optimization_approved",
-      _new: { optimization_id: row.id, approved_order: row.suggested_order } as any,
-      _group_id: row.group_id,
-      _approval_status: "approved",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: row.job_id,
+      event_type: "route_optimization_approved",
+      new: { optimization_id: row.id, approved_order: row.suggested_order },
+      group_id: row.group_id,
+      approval_status: "approved",
+      actor_label: "coordinator",
+      actor_user_id: userId,
     });
+
 
     return { ok: true };
   });
@@ -308,14 +312,16 @@ export const rejectRouteOptimization = createServerFn({ method: "POST" })
       .eq("id", row.id);
     if (uErr) throw new Error(uErr.message);
 
-    await supabase.rpc("record_trip_audit", {
-      _job_id: row.job_id,
-      _event_type: "route_optimization_rejected",
-      _new: { optimization_id: row.id, note: data.note ?? null } as any,
-      _group_id: row.group_id,
-      _approval_status: "rejected",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: row.job_id,
+      event_type: "route_optimization_rejected",
+      new: { optimization_id: row.id, note: data.note ?? null },
+      group_id: row.group_id,
+      approval_status: "rejected",
+      actor_label: "coordinator",
+      actor_user_id: userId,
     });
+
 
     return { ok: true };
   });
