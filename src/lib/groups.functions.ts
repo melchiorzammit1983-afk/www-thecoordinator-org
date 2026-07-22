@@ -347,14 +347,16 @@ export const removeStopFromJob = createServerFn({ method: "POST" })
       }
     }
     if (jobId) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: jobId,
-        _event_type: "stop_removed",
-        _new: { stop_id: data.stop_id, removed_index: removedIndex } as any,
-        _group_id: groupId,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: jobId,
+        event_type: "stop_removed",
+        new: { stop_id: data.stop_id, removed_index: removedIndex },
+        group_id: groupId,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true };
   });
