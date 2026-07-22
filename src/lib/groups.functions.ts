@@ -59,15 +59,17 @@ export const reorderStops = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     if (group.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: group.job_id,
-        _event_type: "stop_reordered",
-        _new: { ordered_stop_ids: data.ordered_stop_ids } as any,
-        _group_id: data.group_id,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: group.job_id,
+        event_type: "stop_reordered",
+        new: { ordered_stop_ids: data.ordered_stop_ids },
+        group_id: data.group_id,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: userId,
       });
     }
+
     return { ok: true };
   });
 
