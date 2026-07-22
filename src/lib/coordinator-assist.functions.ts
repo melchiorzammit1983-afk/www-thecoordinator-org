@@ -598,7 +598,7 @@ export const askCoordinatorAssistant = createServerFn({ method: "POST" })
             ? `PUBLIC BOOKING REQUESTS PENDING (${pendingList.length}) — Phase 4 portal, needs coordinator accept/edit:\n${pendingList
                 .map(
                   (r) =>
-                    `- ${r.id} ${r.requested_at ?? ""} | ${r.from_location ?? ""} → ${r.to_location ?? ""}`,
+                    `- ${r.id} ${r.created_at ?? ""} | ${r.payload?.from_location ?? ""} → ${r.payload?.to_location ?? ""}`,
                 )
                 .join("\n")}`
             : "",
