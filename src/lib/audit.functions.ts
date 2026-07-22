@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { recordTripAudit } from "@/lib/trip-audit.server";
+
 
 /** List audit rows for a trip + chain integrity check. */
 export const listTripAudit = createServerFn({ method: "GET" })
@@ -89,16 +91,18 @@ export const approveStopReorder = createServerFn({ method: "POST" })
       .eq("id", req.group_id)
       .maybeSingle();
     if (group?.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: group.job_id,
-        _event_type: "stop_reorder_decided",
-        _previous: { status: "pending" } as any,
-        _new: { status: newStatus, proposed_order: req.proposed_order } as any,
-        _group_id: req.group_id,
-        _approval_status: newStatus,
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: group.job_id,
+        event_type: "stop_reorder_decided",
+        previous: { status: "pending" },
+        new: { status: newStatus, proposed_order: req.proposed_order },
+        group_id: req.group_id,
+        approval_status: newStatus,
+        actor_label: "coordinator",
+        actor_user_id: userId,
       });
     }
+
 
     return { ok: true, status: newStatus };
   });

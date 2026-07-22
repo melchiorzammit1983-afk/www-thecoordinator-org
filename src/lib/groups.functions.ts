@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { recordTripAudit } from "@/lib/trip-audit.server";
+
 
 async function assertGroupCompany(supabase: any, group_id: string, userId: string) {
   const { data, error } = await supabase
@@ -57,15 +59,17 @@ export const reorderStops = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     if (group.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: group.job_id,
-        _event_type: "stop_reordered",
-        _new: { ordered_stop_ids: data.ordered_stop_ids } as any,
-        _group_id: data.group_id,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: group.job_id,
+        event_type: "stop_reordered",
+        new: { ordered_stop_ids: data.ordered_stop_ids },
+        group_id: data.group_id,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: userId,
       });
     }
+
     return { ok: true };
   });
 
@@ -114,14 +118,16 @@ export const splitGroup = createServerFn({ method: "POST" })
       }
     }
 
-    await supabase.rpc("record_trip_audit", {
-      _job_id: source.job_id,
-      _event_type: "stop_split",
-      _new: { moved_stop_ids: data.stop_ids, new_group_id: newGroup.id } as any,
-      _group_id: data.group_id,
-      _approval_status: "approved",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: source.job_id,
+      event_type: "stop_split",
+      new: { moved_stop_ids: data.stop_ids, new_group_id: newGroup.id },
+      group_id: data.group_id,
+      approval_status: "approved",
+      actor_label: "coordinator",
+      actor_user_id: context.userId,
     });
+
     return { ok: true, new_group_id: newGroup.id };
   });
 
@@ -163,14 +169,16 @@ export const mergeGroups = createServerFn({ method: "POST" })
     }
 
     if (target.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: target.job_id,
-        _event_type: "stop_merged",
-        _new: { merged_from: data.source_group_ids } as any,
-        _group_id: data.target_group_id,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: target.job_id,
+        event_type: "stop_merged",
+        new: { merged_from: data.source_group_ids },
+        group_id: data.target_group_id,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true };
   });
@@ -212,15 +220,17 @@ export const requestStopReorder = createServerFn({ method: "POST" })
       .eq("id", data.group_id)
       .maybeSingle();
     if (group?.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: group.job_id,
-        _event_type: "stop_reorder_requested",
-        _new: { request_id: req.id, proposed_order: data.proposed_order } as any,
-        _group_id: data.group_id,
-        _approval_status: "pending",
-        _actor_label: "driver",
-        _driver_id: driver?.id ?? undefined,
+      await recordTripAudit({
+        job_id: group.job_id,
+        event_type: "stop_reorder_requested",
+        new: { request_id: req.id, proposed_order: data.proposed_order },
+        group_id: data.group_id,
+        approval_status: "pending",
+        actor_label: "driver",
+        driver_id: driver?.id ?? null,
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true, request_id: req.id };
   });
@@ -295,14 +305,16 @@ export const addStopToJob = createServerFn({ method: "POST" })
       .select("id, stop_index")
       .single();
     if (error) throw new Error(error.message);
-    await supabase.rpc("record_trip_audit", {
-      _job_id: data.job_id,
-      _event_type: "stop_added",
-      _new: { stop_id: (stop as any).id, address: data.address, stop_index: insertAt } as any,
-      _group_id: groupId,
-      _approval_status: "approved",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: data.job_id,
+      event_type: "stop_added",
+      new: { stop_id: (stop as any).id, address: data.address, stop_index: insertAt },
+      group_id: groupId,
+      approval_status: "approved",
+      actor_label: "coordinator",
+      actor_user_id: context.userId,
     });
+
     return { ok: true, group_id: groupId, stop_id: (stop as any).id as string, stop_index: (stop as any).stop_index as number };
   });
 
@@ -335,14 +347,16 @@ export const removeStopFromJob = createServerFn({ method: "POST" })
       }
     }
     if (jobId) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: jobId,
-        _event_type: "stop_removed",
-        _new: { stop_id: data.stop_id, removed_index: removedIndex } as any,
-        _group_id: groupId,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: jobId,
+        event_type: "stop_removed",
+        new: { stop_id: data.stop_id, removed_index: removedIndex },
+        group_id: groupId,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true };
   });
