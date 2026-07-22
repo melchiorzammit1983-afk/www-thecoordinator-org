@@ -118,14 +118,16 @@ export const splitGroup = createServerFn({ method: "POST" })
       }
     }
 
-    await supabase.rpc("record_trip_audit", {
-      _job_id: source.job_id,
-      _event_type: "stop_split",
-      _new: { moved_stop_ids: data.stop_ids, new_group_id: newGroup.id } as any,
-      _group_id: data.group_id,
-      _approval_status: "approved",
-      _actor_label: "coordinator",
+    await recordTripAudit({
+      job_id: source.job_id,
+      event_type: "stop_split",
+      new: { moved_stop_ids: data.stop_ids, new_group_id: newGroup.id },
+      group_id: data.group_id,
+      approval_status: "approved",
+      actor_label: "coordinator",
+      actor_user_id: context.userId,
     });
+
     return { ok: true, new_group_id: newGroup.id };
   });
 
