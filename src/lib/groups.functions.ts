@@ -169,14 +169,16 @@ export const mergeGroups = createServerFn({ method: "POST" })
     }
 
     if (target.job_id) {
-      await supabase.rpc("record_trip_audit", {
-        _job_id: target.job_id,
-        _event_type: "stop_merged",
-        _new: { merged_from: data.source_group_ids } as any,
-        _group_id: data.target_group_id,
-        _approval_status: "approved",
-        _actor_label: "coordinator",
+      await recordTripAudit({
+        job_id: target.job_id,
+        event_type: "stop_merged",
+        new: { merged_from: data.source_group_ids },
+        group_id: data.target_group_id,
+        approval_status: "approved",
+        actor_label: "coordinator",
+        actor_user_id: context.userId,
       });
+
     }
     return { ok: true };
   });
