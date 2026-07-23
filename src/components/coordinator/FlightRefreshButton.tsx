@@ -16,9 +16,9 @@ type Props = {
 
 /**
  * Manual "Refresh flight status" trigger. Calls refreshJobLiveStatus which
- * hits AeroDataBox (or the vessel provider), persists the result on the
- * jobs row, and toasts the outcome. Cache-fresh lookups (<5 min) are free;
- * older ones are metered as `flight_status_extra_lookup`.
+ * asks Lovable AI (web-grounded) for the latest status, persists it on the
+ * jobs row, and toasts the outcome. Cache-fresh lookups (<10 min) are free;
+ * older ones are metered as `flight_lookup_refresh` (or `flight_lookup_vessel`).
  */
 export function FlightRefreshButton({ jobId, hasCode, variant = "button", className, onDone }: Props) {
   const qc = useQueryClient();

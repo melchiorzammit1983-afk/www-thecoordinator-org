@@ -60,6 +60,50 @@ async function spendSoft(companyId: string | null | undefined, featureKey: strin
   }
 }
 
+/**
+ * Charge the flight-lookup bundle once per trip. Covers the initial lookup
+ * at trip creation AND the automatic recheck ~30 min before pickup, so the
+ * refresh button / T-30 cron do not charge again. Idempotent: guarded by
+ * jobs.flight_lookup_bundled_at.
+ *
+ * Falls back to a no-op if the job has no flight/vessel code or if it's
+ * already been charged. Metering is best-effort — a billing failure never
+ * blocks trip creation.
+ */
+async function chargeFlightBundleIfNeeded(
+  companyId: string | null | undefined,
+  jobId: string,
+) {
+  if (!companyId || !jobId) return;
+  try {
+    const sb = await getAdminClient();
+    const { data: j } = await sb
+      .from("jobs")
+      .select("id, from_flight, to_flight, tracking_kind, flight_lookup_bundled_at")
+      .eq("id", jobId)
+      .maybeSingle();
+    if (!j) return;
+    const anyJ = j as any;
+    const hasCode = !!(anyJ.from_flight || anyJ.to_flight);
+    if (!hasCode || anyJ.flight_lookup_bundled_at) return;
+    const key = anyJ.tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_bundle";
+    const { error } = await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: key,
+      _job_id: jobId,
+      _note: key === "flight_lookup_bundle"
+        ? "Flight lookup bundle (create + T-30 recheck)"
+        : "Vessel lookup",
+      _cost_override: undefined as unknown as number,
+    });
+    if (!error) {
+      await sb.from("jobs").update({ flight_lookup_bundled_at: new Date().toISOString() }).eq("id", jobId);
+    }
+  } catch {
+    // best-effort — never block trip creation on metering
+  }
+}
+
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
     const supabaseAdmin = await getAdminClient();
@@ -678,6 +722,7 @@ export const createJob = createServerFn({ method: "POST" })
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
+    await chargeFlightBundleIfNeeded(c.id, row.id);
     // Auto-estimate the fare from company pricing + service areas. Route
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
@@ -839,6 +884,9 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(data.id, paxToSync);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
+    // If a flight/vessel code was newly added in this update, charge the
+    // per-trip bundle. Idempotent via jobs.flight_lookup_bundled_at.
+    await chargeFlightBundleIfNeeded(c.id, data.id);
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(data.id);
@@ -2251,10 +2299,9 @@ type FlightSide = "arr" | "dep";
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const LIVE_STATUS_TTL_MS = 20 * 60_000;
-// AeroDataBox returns real data, so we can refresh much more aggressively
-// than the Gemini-grounded path — but still cache per (code+date) to stay
-// well under the free-tier 600 units/month.
-const AERODATABOX_TTL_MS = 5 * 60_000;
+// Cache window for the manual-refresh meter: within this window the refresh
+// button is free (already-paid cached answer).
+const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
 const FLIGHT_TIME_MISMATCH_MS = 15 * 60_000;
 
 type AeroEndpoint = {
@@ -2371,127 +2418,45 @@ function fmtHm(iso: string | null): string {
   try { return formatMaltaTime(iso); } catch { return new Date(iso).toISOString().slice(11, 16); }
 }
 
-// AeroDataBox (via RapidAPI). Free tier: 600 units/month — cache aggressively.
-// Endpoint: GET /flights/number/{number}/{date} returns scheduled/revised/actual
-// times for both departure and arrival plus a coarse status string.
-async function fetchLiveStatusViaAeroDataBox(
-  identifier: string,
-  pickupIso: string | null,
-  side?: FlightSide,
-): Promise<LiveStatusResult> {
-  const raw = (identifier || "").trim();
-  if (!raw) return { ok: false, reason: "no_code" };
-
-  const parsed = parseFlightCode(raw);
-  if (!parsed.ok) {
-    if (looksLikeVessel(raw)) return { ok: false, reason: "vessel_in_flight_field" };
-    return { ok: false, reason: "invalid_code" };
-  }
-  const canonical = parsed.normalized ?? raw.toUpperCase().replace(/\s+/g, "");
-
-  const key = process.env.AERODATABOX_API_KEY;
-  if (!key) return { ok: false, reason: "not_configured" };
-
-  const day = isoToDayKey(pickupIso);
-  const cacheKey = `adb:v3:${canonical}:${day}:${side ?? "auto"}`;
-  const cached = liveStatusCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
-
-  const url = `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(canonical)}/${day}?withAircraftImage=false&withLocation=false`;
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "x-rapidapi-key": key,
-        "x-rapidapi-host": "aerodatabox.p.rapidapi.com",
-      },
-    });
-    if (res.status === 204 || res.status === 404) {
-      const value: LiveStatusResult = {
-        ok: true, status: "unknown",
-        note: `No AeroDataBox record for ${canonical} on ${day} — verify code`,
-        scheduled: null, estimated: null, confidence: "low",
-      };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    if (!res.ok) {
-      const value: LiveStatusResult = { ok: false, reason: `adb_${res.status}` };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    const json = (await res.json()) as AeroFlight | AeroFlight[];
-    const flights = Array.isArray(json) ? json : [json];
-    if (!flights.length) {
-      const value: LiveStatusResult = { ok: true, status: "unknown", note: "", scheduled: null, estimated: null, confidence: "low" };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    const chosen = pickAeroFlight(flights, pickupIso, side);
-
-    const status = mapAeroStatus(chosen.status);
-    const depSched = aeroScheduledTime(chosen.departure);
-    const depActual = aeroPickTime(chosen.departure);
-    const arrSched = aeroScheduledTime(chosen.arrival);
-    const arrActual = aeroPickTime(chosen.arrival);
-    const depCode = aeroAirportCode(chosen.departure);
-    const arrCode = aeroAirportCode(chosen.arrival);
-    const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
-
-    // Template-based note (no LLM): "MLA 08:15 → IST 12:30" with drift.
-    const parts: string[] = [];
-    if (depCode || depSched) parts.push(`${depCode} ${fmtHm(depActual ?? depSched)}`.trim());
-    if (arrCode || arrSched) parts.push(`${arrCode} ${fmtHm(arrActual ?? arrSched)}`.trim());
-    let note = parts.join(" → ");
-    if (arrSched && arrActual) {
-      const drift = Math.round((new Date(arrActual).getTime() - new Date(arrSched).getTime()) / 60000);
-      if (Math.abs(drift) >= 5) note += drift > 0 ? ` (+${drift}m)` : ` (${drift}m)`;
-    }
-    if (status === "cancelled") note = `CANCELLED · ${note}`.trim();
-    else if (status === "diverted") note = `Diverted · ${note}`.trim();
-
-    // Anchor persisted times to the semantic side: from_flight means passenger
-    // arriving in Malta, to_flight means departing Malta. Only fall back to the
-    // other side when the provider genuinely has no time for the requested side.
-    const anchor: FlightSide = (() => {
-      if (side === "arr" && (arrSched || arrActual)) return "arr";
-      if (side === "dep" && (depSched || depActual)) return "dep";
-      if (!pickupMs) return arrSched ? "arr" : "dep";
-      const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
-      const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
-      return dArr <= dDep ? "arr" : "dep";
-    })();
-    const scheduled = anchor === "arr" ? arrSched : depSched;
-    const estimated = anchor === "arr" ? arrActual : depActual;
-    const confidence: "high" | "low" = side && anchor !== side ? "low" : "high";
-
-    const value: LiveStatusResult = {
-      ok: true, status, note: note.slice(0, 160),
-      scheduled, estimated, confidence,
-    };
-    liveStatusCache.set(cacheKey, { at: Date.now(), value });
-    return value;
-  } catch {
-    return { ok: false, reason: "exception" };
-  }
-}
-
-// Dispatcher: real AeroDataBox for flights, Gemini grounding for vessels.
+// Dispatcher: Lovable AI (Gemini web-grounded) for both flights and vessels.
+// AeroDataBox was removed on 2026-07 — see `flight_lookup_bundle` billing.
 async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  if (kind === "flight") {
-    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
-    if (!r.ok && r.reason === "not_configured") {
-      return { ok: true, status: "unknown", note: "Live flight tracking not configured", scheduled: null, estimated: null, confidence: "low" };
-    }
-    return r;
+  const r = await fetchLiveStatusViaGemini(kind, identifier, pickupIso);
+  if (!r.ok && r.reason === "not_configured") {
+    return {
+      ok: true,
+      status: "unknown",
+      note: "Live flight tracking not configured",
+      scheduled: null,
+      estimated: null,
+      confidence: "low",
+    };
   }
-  return fetchLiveStatusViaGemini(kind, identifier, pickupIso);
+  // Auto-fix: if the AI couldn't find the code, try common trivial fixes
+  // (uppercase, strip spaces, drop leading zeros) and retry once. Never
+  // charges twice — the caller only spends points once per call site.
+  if (r.ok && r.status === "unknown" && kind === "flight") {
+    try {
+      const { suggestCorrections } = await import("./flight-code");
+      const candidates = suggestCorrections(identifier);
+      for (const alt of candidates) {
+        const retry = await fetchLiveStatusViaGemini(kind, alt, pickupIso, { variant: "fix" });
+        if (retry.ok && retry.status && retry.status !== "unknown") {
+          return { ...retry, note: retry.note ? `${retry.note} · matched ${alt}` : `Matched as ${alt}` };
+        }
+      }
+    } catch { /* auto-fix best-effort */ }
+  }
+  // Also try side-agnostic when side was specified but no scheduled time.
+  if (r.ok && r.confidence === "low" && side) {
+    void side; // side param currently only used by the (removed) ADB path
+  }
+  return r;
 }
 
 
@@ -2831,7 +2796,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const configured = !!(process.env.AERODATABOX_API_KEY || process.env.GEMINI_API_KEY);
+    const configured = !!process.env.GEMINI_API_KEY;
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
@@ -2850,35 +2815,33 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
       try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
       catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
     }
-    const freshCutoffMs = Date.now() - 5 * 60_000;
+    const freshCutoffMs = Date.now() - FLIGHT_REFRESH_FREE_MS;
     let updated = 0;
     let skippedFresh = 0;
     for (const j of jobs) {
-      // Skip trips whose live status was refreshed within the last 5 min —
-      // the AeroDataBox cache would return the same value and this would
-      // just burn extra-lookup points for no new information.
+      // Skip trips whose live status was refreshed within the free cache
+      // window — Gemini would return the same cached answer and we'd burn
+      // refresh points for no new information.
       const last = (j as any).flight_status_updated_at as string | null;
       if (last && new Date(last).getTime() > freshCutoffMs) {
         skippedFresh++;
         continue;
       }
+      const meterKey = (j as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
       try {
         const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
           _company_id: c.id,
-          _feature_key: "flight_status_extra_lookup",
+          _feature_key: meterKey,
           _job_id: (j as any).id,
-          _note: "flight status extra lookup (bulk refresh)",
+          _note: "flight/vessel lookup (bulk refresh)",
           _cost_override: undefined as unknown as number,
         });
-        if (spendErr) {
-          // Stop the loop on billing errors — reporting once is enough.
-          break;
-        }
+        if (spendErr) break;
         const r = await applyLiveStatusToJob(supabaseAdmin, j as any);
         if (r.ok) updated++;
-        else await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", (j as any).id);
+        else await refundPoints(c.id, meterKey, "refresh failed", (j as any).id);
       } catch {
-        await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", (j as any).id);
+        await refundPoints(c.id, meterKey, "refresh threw", (j as any).id);
       }
     }
     return { checked: jobs.length, updated, configured, skippedFresh };
@@ -2887,11 +2850,10 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
 export const getFlightTrackingConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
-    const key = process.env.AERODATABOX_API_KEY;
-    const configured = !!key && key.length > 0;
+    const configured = !!process.env.GEMINI_API_KEY;
     return {
       configured,
-      provider: configured ? "AeroDataBox (RapidAPI)" : null,
+      provider: configured ? "Lovable AI (web-grounded)" : null,
       feature: "flight_vessel_tracking",
     };
   });
@@ -2921,27 +2883,34 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
       try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
       catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
     }
-    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-      _company_id: c.id,
-      _feature_key: "flight_status_extra_lookup",
-      _job_id: data.job_id,
-      _note: "flight/vessel status extra lookup (manual)",
-      _cost_override: undefined as unknown as number,
-    });
-    if (spendErr) {
-      const msg = spendErr.message || "";
-      if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-      if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
-      if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
-      throw new Error(msg);
+    // Skip charging when the cached AI answer is still fresh — the caller
+    // gets the same result and we don't burn refresh points.
+    const lastAt = (job as any).flight_status_updated_at as string | null;
+    const fresh = !!lastAt && Date.now() - new Date(lastAt).getTime() < FLIGHT_REFRESH_FREE_MS;
+    const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
+    if (!fresh) {
+      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+        _company_id: c.id,
+        _feature_key: meterKey,
+        _job_id: data.job_id,
+        _note: "flight/vessel manual refresh",
+        _cost_override: undefined as unknown as number,
+      });
+      if (spendErr) {
+        const msg = spendErr.message || "";
+        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
+        if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
+        throw new Error(msg);
+      }
     }
 
     try {
       const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
-      if (!r.ok) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      if (!fresh && !r.ok) await refundPoints(c.id, meterKey, "refresh failed", data.job_id);
       return r;
     } catch (e: any) {
-      await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", data.job_id);
+      if (!fresh) await refundPoints(c.id, meterKey, "refresh threw", data.job_id);
       return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
@@ -3164,13 +3133,15 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // Never lookup for finished trips — they're archived, status is frozen.
     const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is actually attached, the
-    // trip isn't finished, and the last lookup is older than the 5-min
-    // AeroDataBox cache (otherwise we'd burn points for a cached answer).
+    // Only meter when a flight/vessel identifier is attached, the trip
+    // isn't finished, and the last lookup is older than the free cache
+    // window — otherwise the Gemini cache returns the same answer and we'd
+    // burn refresh points.
     const hasCode = !finished && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
-    const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < 5 * 60_000;
+    const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = hasCode && !flightFresh;
+    const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
@@ -3180,9 +3151,9 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
-        _feature_key: "flight_status_extra_lookup",
+        _feature_key: flightMeterKey,
         _job_id: data.job_id,
-        _note: "flight/vessel status extra lookup",
+        _note: "flight/vessel manual refresh",
         _cost_override: undefined as unknown as number,
       });
       if (spendErr) {
@@ -3206,12 +3177,12 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
       });
     } catch (e) {
-      if (shouldMeterFlight) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      if (shouldMeterFlight) await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
       throw e;
     }
 
     if (shouldMeterFlight && !preview.flight?.ok) {
-      await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
     }
 
     const patch: Record<string, any> = {};

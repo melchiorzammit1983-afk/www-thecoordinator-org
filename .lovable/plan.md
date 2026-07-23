@@ -1,49 +1,74 @@
+# Switch flight tracking to AI-only, with bundled + metered charging
 
-# Admin cleanup & billing sync
+## Goal
+Kill the AeroDataBox/RapidAPI path (source of the `adb_429` errors) and make every flight lookup go through Lovable AI. Charge cleanly:
+- **1 bundled fee** at trip creation when a flight code is present → covers the creation lookup **and** the automatic T-30 recheck.
+- **Per-refresh fee** (default `0.5 pts`) for every manual refresh after that.
+- If the AI can't find the flight, no charge, and the UI advises the user to double-check the code — AI will still try to auto-fix common formatting issues first.
 
-Goal: turn every "badge that acts like a switch" into a real Switch, make sure toggling actually gates the user, and merge the two overlapping cost pages so admins see one clear number per action — points charged vs. real Lovable-gateway cost — including flight tracking.
+## Code changes
 
-## Step 1 — Replace badge-buttons with real Switches
-Files: `admin.ai-settings.tsx`, `admin.pricing.tsx`, `admin.topups.tsx` (if present).
-- Swap every `<button><Badge>Enabled/Disabled</Badge></button>` pattern for shadcn `<Switch>` with a text label next to it.
-- Rows affected: `ActionRow` (Enabled, Hard stop), `FeatureCostCard` (Enabled, Hard stop, Add-on), `PackRow` (Active, Reference), `PlanEditor` (Listed publicly).
-- Semantics per user:
-  - **Enabled**: on = charged & available, off = free & hidden from user surfaces.
-  - **Hard stop → "Allow negative"**: rename to a single switch **"Allow when wallet is empty"** (on = allow negative / free-flow, off = block).
-  - **Add-on**: on = user can toggle it in their dashboard, off = admin-controlled only.
-  - **Reference rate**: on = this pack drives EUR display (only one at a time; server already enforces).
+### 1. `src/lib/coordinator.functions.ts` — one provider, one code path
+- Delete `fetchLiveStatusViaAeroDataBox`, the `adb:v3:*` cache map, `AERODATABOX_TTL_MS`, and every `process.env.AERODATABOX_API_KEY` read.
+- `fetchLiveStatus()` always calls `fetchLiveStatusViaGemini(kind, code, pickupIso, opts)` (already handles airport-hint retries and vessels).
+- `fetchLiveStatusViaGemini()` hardening:
+  - Normalize every input through `parseFlightCode()` before caching (`ai:v1:${canonical}:${day}` key).
+  - Extend cache TTL to 10 min so double-refreshes don't double-charge.
+  - Before returning "not found", retry once with `parseFlightCode`'s auto-fix suggestion (e.g. `KM 117` → `KM117`, `RY 1234` → `FR1234`).
+  - Return a structured `{ ok: false, reason: 'not_found', hint: 'Please verify the flight code' }` on final failure — no `adb_*` codes leak to UI.
+- `getFlightTrackingConfig()` → provider label `"Lovable AI"`; `configured` gated on `LOVABLE_API_KEY`.
 
-## Step 2 — Make Enabled/Add-on actually gate the UI
-- Server: extend `getMyFeatures` / `useMyBilling.costs` payload to include `enabled` and `is_addon` (already present in `costs`, verify propagation).
-- Client: in `useFeature(key)` and every `<IfFeature>` / `FeatureGate` call site, hide/disable the surface when `costs[key].enabled === false` regardless of admin entitlement.
-- User settings (`/settings` feature-usage list): show only rows where `is_addon === true AND enabled === true`.
-- Walk each active AI key from `ACTIVE_FEATURE_KEYS` and confirm its consumer respects the flag. Add a small server test route `/api/public/health/features` returning the resolved map for one company, so I can flip a switch and curl-verify it's off.
+### 2. Billing — new charge policy
+Introduce three feature keys in `ai_feature_costs` (seeded via migration):
+| key | default pts | when it fires |
+|---|---|---|
+| `flight_lookup_bundle` | `1.5` | Once per trip on create/update, only when a flight code is set AND wasn't previously charged for this `job_id` |
+| `flight_lookup_refresh` | `0.5` | Every manual refresh via `FlightRefreshButton` after the bundle is spent |
+| `flight_lookup_vessel` | `0.5` | Vessel lookups (kept for parity) |
 
-## Step 3 — Unified "Real cost vs charged" view (Lovable-synced)
-Rewrite `admin.ai-costs.tsx` into one table, one row per feature_key:
-```
-Feature | Uses (30d) | Points charged | EUR charged | Lovable credits used | USD cost | Margin €
-```
-- Source: aggregate `ai_cost_events` (already has `real_cost_credits`, `real_cost_usd_cents`, `points_charged`).
-- Add a top card **"Workspace credit spend, last 30d"** pulling from the same table's `real_cost_credits` sum, so the number matches what Lovable shows in Settings → Plans & credits.
-- Remove the current dual-column dance; keep drilldown by clicking a row.
+Existing `flight_status_extra_lookup` / `flight_vessel_tracking` rows → migrated into the two new keys (values preserved if admin already customized them), then hidden as Legacy.
 
-## Step 4 — Meter flight tracking properly
-- `flight_status_extra_lookup` and `flight_vessel_tracking` already exist in `ai_feature_costs`. Confirm every AeroDataBox call site in `src/lib/*flight*` and `fetchLiveStatusViaGemini` wraps with `spend_points(feature_key)` + `recordAiCost(...)` with the model/usage or a fixed-cost fallback (AeroDataBox has no tokens → charge fixed points, record `real_cost_usd_cents` from an admin-set `est_cost_usd_cents`).
-- Add a "Fixed cost per call (¢)" input to `ActionRow` (already exists as `est_cost_usd_cents`). Make sure it's used when `usage` is null.
+Bundle-tracking column on `jobs`: `flight_lookup_bundled_at timestamptz null` (migration + grants). Charge logic:
+- On `createJob` / `updateJob`, when `from_flight` or `to_flight` becomes set and `flight_lookup_bundled_at is null` → `spend_points('flight_lookup_bundle')`, stamp column, then fire the first lookup async (uses bundle, not another charge).
+- T-30 cron (`src/routes/api/public/cron/flight-t30.ts`) → runs for every trip with a code and `pickup_at` between now+25min and now+35min. **No charge** — reads the pre-paid bundle.
+- `refreshJobLiveStatus` → if cache hit (<10 min): free. Otherwise `spend_points('flight_lookup_refresh')`; only mark spent on `ok:true` results (failures = no charge, per your rule).
+- If flight code is changed on an existing trip → re-charge the bundle (new flight = new tracking).
 
-## Step 5 — Every AI agent action → charge as `ai_agent_message`
-- In the coordinator assistant (`coordinator-assist.functions.ts` and command executor), route every user-triggered chat turn through `spend_points('ai_agent_message', ...)` in addition to any per-tool cost. Admin sets the price on the AI Settings page (already listed in `ACTIVE_FEATURE_KEYS`).
+### 3. Admin UI — dedicated Flight lookup card
+New section in `src/routes/_authenticated/admin.ai-settings.tsx` above the generic action list:
+- **Flight lookup**
+  - Bundled lookups per trip (read-only note: "2 lookups included: creation + T-30")
+  - Bundled fee (pts) — editable, wired to `flight_lookup_bundle`
+  - Manual refresh fee (pts) — editable, wired to `flight_lookup_refresh`
+  - Cache TTL (min) — editable, stored in `admin_portal_settings` (new col `flight_cache_ttl_min` default 10)
+  - Provider status (read-only) — "Lovable AI · configured" / not configured
+  - Enabled + Allow when empty switches
+- Corresponding legacy keys move under the collapsible "Legacy / unused" group.
 
-## Step 6 — Merge & simplify
-- Delete the duplicate "Feature point costs" card on the Pricing page (Step 3 owns it) — Pricing keeps Plans + Point Packs + Wallets only.
-- AI Settings owns: per-action cost + enabled + allow-negative + fixed ¢ + free allowance.
-- Verify each switch end-to-end after each step: flip in admin → reload user preview → confirm surface disappears / stops charging.
+### 4. UI copy / removal of AeroDataBox references
+- `FlightTrackingIndicator.tsx` → "Live flight tracking via Lovable AI" / "not configured (missing LOVABLE_API_KEY)".
+- `FlightRefreshButton.tsx` toast:
+  - Success → status + note.
+  - `reason: not_found` → `toast.message("Couldn't find <code>. Please verify the flight number.")`.
+  - Other failure → `toast.error("Flight lookup temporarily unavailable, try again in a minute.")`.
+- `feature-descriptions.ts` → rewrite `flight_lookup_bundle` / `flight_lookup_refresh` / `auto_shift_early_flight` descriptions to reference AI, not AeroDataBox.
+- `docs/…` help articles + `src/content/help/articles/coordinator-ai-extraction.tsx` → replace "AeroDataBox" wording.
+- `AERODATABOX_API_KEY` secret becomes unused (leave in secrets store, safe to delete manually later).
 
-## Technical notes
-- No schema changes needed; `ai_feature_costs` already has `enabled`, `block_on_empty`, `is_addon`, `est_cost_usd_cents`.
-- Keep `PLAN_ORDER` / entitlement logic intact.
-- Use existing `<Switch>` from `@/components/ui/switch`.
-- No workflow changes to trip lifecycle, driver flow, or portal.
+### 5. Watchtower & entitlements
+- `watchtower.functions.ts` "Flight code not tracked" banner: keep, but link to the new hint.
+- `user-prefs.functions.ts` "auto_flight_tracking" description → "Uses AI to look up live flight status."
 
-I'll execute Step 1 → 6 in order and self-test after each without waiting for approval, as you asked.
+## Verification (manual, on preview)
+1. **Create a trip with `LO673`** → wallet ledger shows one `flight_lookup_bundle` charge, `flight_lookup_bundled_at` stamped, trip card shows live status within ~5s. Refresh twice quickly → no additional charge (cache hit). Refresh after 10 min → one `flight_lookup_refresh` charge.
+2. **Create a trip with `AA9999` (fake)** → bundle charge fires, AI returns `not_found`, toast asks user to verify code, `flight_status = unknown`. Fix to `AA100`, save → new bundle charge fires (flight code changed).
+3. **Trigger T-30 cron manually** (`/api/public/cron/flight-t30`) with a trip due in 30 min → status refreshes, **no** wallet charge.
+4. **Vessel lookup** ("Virtu Ferries 10:00") → routed through Gemini, `flight_lookup_vessel` charge, arrival ETA populated.
+5. **Delete `LOVABLE_API_KEY` env in preview** → indicator shows "not configured", refresh button returns friendly error, no charge.
+6. **Admin AI Settings** → edit refresh fee to `1.0`, save; next refresh charges `1.0`. Toggle Bundle "Allow when empty" off; user with 0 wallet sees "Not enough points" on trip create with flight code (trip still saves, flight fields stay unknown).
+7. Confirm no `adb_*` string appears anywhere in the running app (grep the built bundle for regression).
+
+## Out of scope
+- No DB changes to flight status columns themselves (`flight_status`, `flight_scheduled_at`, etc. keep their existing shape).
+- No changes to trip creation UX, calendar filters, or how flight status shows on trip cards.
+- Not rewriting AeroDataBox secret UX (the secret can stay, it just becomes unused).

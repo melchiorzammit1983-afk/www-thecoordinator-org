@@ -3865,6 +3865,7 @@ export type Database = {
           flight_delay_minutes: number | null
           flight_estimated_at: string | null
           flight_gate: string | null
+          flight_lookup_bundled_at: string | null
           flight_scheduled_at: string | null
           flight_status: string | null
           flight_status_confidence: string | null
@@ -3999,6 +4000,7 @@ export type Database = {
           flight_delay_minutes?: number | null
           flight_estimated_at?: string | null
           flight_gate?: string | null
+          flight_lookup_bundled_at?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_confidence?: string | null
@@ -4133,6 +4135,7 @@ export type Database = {
           flight_delay_minutes?: number | null
           flight_estimated_at?: string | null
           flight_gate?: string | null
+          flight_lookup_bundled_at?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_confidence?: string | null
