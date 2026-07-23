@@ -60,6 +60,50 @@ async function spendSoft(companyId: string | null | undefined, featureKey: strin
   }
 }
 
+/**
+ * Charge the flight-lookup bundle once per trip. Covers the initial lookup
+ * at trip creation AND the automatic recheck ~30 min before pickup, so the
+ * refresh button / T-30 cron do not charge again. Idempotent: guarded by
+ * jobs.flight_lookup_bundled_at.
+ *
+ * Falls back to a no-op if the job has no flight/vessel code or if it's
+ * already been charged. Metering is best-effort — a billing failure never
+ * blocks trip creation.
+ */
+async function chargeFlightBundleIfNeeded(
+  companyId: string | null | undefined,
+  jobId: string,
+) {
+  if (!companyId || !jobId) return;
+  try {
+    const sb = await getAdminClient();
+    const { data: j } = await sb
+      .from("jobs")
+      .select("id, from_flight, to_flight, tracking_kind, flight_lookup_bundled_at")
+      .eq("id", jobId)
+      .maybeSingle();
+    if (!j) return;
+    const anyJ = j as any;
+    const hasCode = !!(anyJ.from_flight || anyJ.to_flight);
+    if (!hasCode || anyJ.flight_lookup_bundled_at) return;
+    const key = anyJ.tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_bundle";
+    const { error } = await sb.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: key,
+      _job_id: jobId,
+      _note: key === "flight_lookup_bundle"
+        ? "Flight lookup bundle (create + T-30 recheck)"
+        : "Vessel lookup",
+      _cost_override: undefined as unknown as number,
+    });
+    if (!error) {
+      await sb.from("jobs").update({ flight_lookup_bundled_at: new Date().toISOString() }).eq("id", jobId);
+    }
+  } catch {
+    // best-effort — never block trip creation on metering
+  }
+}
+
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
     const supabaseAdmin = await getAdminClient();
