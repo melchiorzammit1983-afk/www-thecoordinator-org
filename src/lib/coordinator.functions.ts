@@ -3133,13 +3133,15 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // Never lookup for finished trips — they're archived, status is frozen.
     const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is actually attached, the
-    // trip isn't finished, and the last lookup is older than the 5-min
-    // AeroDataBox cache (otherwise we'd burn points for a cached answer).
+    // Only meter when a flight/vessel identifier is attached, the trip
+    // isn't finished, and the last lookup is older than the free cache
+    // window — otherwise the Gemini cache returns the same answer and we'd
+    // burn refresh points.
     const hasCode = !finished && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
-    const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < 5 * 60_000;
+    const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = hasCode && !flightFresh;
+    const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
@@ -3149,9 +3151,9 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
-        _feature_key: "flight_status_extra_lookup",
+        _feature_key: flightMeterKey,
         _job_id: data.job_id,
-        _note: "flight/vessel status extra lookup",
+        _note: "flight/vessel manual refresh",
         _cost_override: undefined as unknown as number,
       });
       if (spendErr) {
@@ -3175,12 +3177,12 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
       });
     } catch (e) {
-      if (shouldMeterFlight) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      if (shouldMeterFlight) await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
       throw e;
     }
 
     if (shouldMeterFlight && !preview.flight?.ok) {
-      await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
     }
 
     const patch: Record<string, any> = {};
