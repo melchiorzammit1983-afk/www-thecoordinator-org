@@ -2251,10 +2251,9 @@ type FlightSide = "arr" | "dep";
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const LIVE_STATUS_TTL_MS = 20 * 60_000;
-// AeroDataBox returns real data, so we can refresh much more aggressively
-// than the Gemini-grounded path — but still cache per (code+date) to stay
-// well under the free-tier 600 units/month.
-const AERODATABOX_TTL_MS = 5 * 60_000;
+// Cache window for the manual-refresh meter: within this window the refresh
+// button is free (already-paid cached answer).
+const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
 const FLIGHT_TIME_MISMATCH_MS = 15 * 60_000;
 
 type AeroEndpoint = {
