@@ -1,7 +1,10 @@
+import { isOptionalAiModuleEnabled } from "@/lib/optional-ai.server";
+
 /**
  * Embed text via Lovable AI Gateway (OpenAI text-embedding-3-small, 1536 dims).
  */
 export async function embedText(input: string): Promise<number[] | null> {
+  if (!isOptionalAiModuleEnabled()) return null;
   const key = process.env.LOVABLE_API_KEY;
   if (!key || !input.trim()) return null;
   try {

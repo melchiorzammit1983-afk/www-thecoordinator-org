@@ -2,24 +2,19 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Coins, Sparkles } from "lucide-react";
+import { Coins, CreditCard } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
   adminGetCompanyBilling, adminListPlans, adminSetCompanyPlan, adminGrantPoints,
-  adminSetFeatureCap, listFeatureEntitlements, setFeatureEntitlement, clearFeatureEntitlement,
   adminListCompanyPriceOverrides, adminSetCompanyPriceOverride,
 } from "@/lib/admin.functions";
 import { listAiFeatureCosts } from "@/lib/billing.functions";
-import type { FeatureKey } from "@/lib/features";
-import { AI_FEATURE_KEYS, FEATURE_CATALOG } from "@/lib/features";
 
 export function CompanyBillingDialog({ company }: { company: { id: string; name: string } }) {
   const [open, setOpen] = useState(false);
@@ -29,8 +24,6 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
   const plansFn = useServerFn(adminListPlans);
   const setPlanFn = useServerFn(adminSetCompanyPlan);
   const grantFn = useServerFn(adminGrantPoints);
-  const capFn = useServerFn(adminSetFeatureCap);
-  const listEntFn = useServerFn(listFeatureEntitlements);
 
   const { data: billing, isLoading } = useQuery({
     queryKey: ["admin-billing", company.id],
@@ -38,15 +31,9 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
     enabled: open,
   });
   const { data: plans } = useQuery({ queryKey: ["admin-plans"], queryFn: () => plansFn(), enabled: open });
-  const { data: entRows } = useQuery({
-    queryKey: ["feature-entitlements", company.id],
-    queryFn: () => listEntFn({ data: { company_id: company.id } }) as Promise<any[]>,
-    enabled: open,
-  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["admin-billing", company.id] });
-    qc.invalidateQueries({ queryKey: ["feature-entitlements", company.id] });
   };
 
   const setPlanMut = useMutation({
@@ -58,28 +45,6 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
   const grantMut = useMutation({
     mutationFn: (points: number) => grantFn({ data: { company_id: company.id, points, note: "admin grant from dialog" } }),
     onSuccess: () => { toast.success("Points granted"); invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const capMut = useMutation({
-    mutationFn: ({ feature, monthly_cap }: { feature: string; monthly_cap: number | null }) =>
-      capFn({ data: { company_id: company.id, feature, monthly_cap } }),
-    onSuccess: () => { toast.success("Cap saved"); invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const setEntFn = useServerFn(setFeatureEntitlement);
-  const clearEntFn = useServerFn(clearFeatureEntitlement);
-  const toggleMut = useMutation({
-    mutationFn: ({ feature, enabled }: { feature: FeatureKey; enabled: boolean }) =>
-      setEntFn({ data: { company_id: company.id, feature, enabled } }),
-    onSuccess: () => { toast.success("Access updated"); invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const clearMut = useMutation({
-    mutationFn: (feature: FeatureKey) =>
-      clearEntFn({ data: { company_id: company.id, feature } }),
-    onSuccess: () => { toast.success("Reverted to plan default"); invalidate(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -99,14 +64,14 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Billing & access — {company.name}</DialogTitle>
-          <DialogDescription>Set plan, top up points, and cap AI feature usage.</DialogDescription>
+          <DialogDescription>Set the plan, manage points and configure service pricing.</DialogDescription>
         </DialogHeader>
 
         {isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div> : (
           <div className="space-y-5 max-h-[65vh] overflow-y-auto -mx-6 px-6">
             {/* Plan */}
             <section>
-              <h3 className="text-sm font-medium mb-2 flex items-center gap-2"><Sparkles className="h-4 w-4" /> Plan</h3>
+              <h3 className="text-sm font-medium mb-2 flex items-center gap-2"><CreditCard className="h-4 w-4" /> Plan</h3>
               <div className="flex items-center gap-2">
                 <Select value={currentPlanId} onValueChange={(v) => setPlanMut.mutate(v)}>
                   <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="Select a plan…" /></SelectTrigger>
@@ -132,54 +97,6 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
                 <Input type="number" value={grantAmt} onChange={(e) => setGrantAmt(e.target.value)} className="h-9 w-24" />
                 <Button size="sm" onClick={() => grantMut.mutate(Number(grantAmt))} disabled={grantMut.isPending}>Grant</Button>
                 <Button size="sm" variant="outline" onClick={() => grantMut.mutate(-Number(grantAmt))} disabled={grantMut.isPending}>Deduct</Button>
-              </div>
-            </section>
-
-            {/* Feature caps */}
-            <section>
-              <h3 className="text-sm font-medium mb-2">AI feature monthly caps</h3>
-              <p className="text-xs text-muted-foreground mb-3">Blocks the feature once N uses in the current period are reached. Empty = unlimited.</p>
-              <div className="space-y-2">
-                {AI_FEATURE_KEYS.map((k) => {
-                  const label = FEATURE_CATALOG.find((f) => f.key === k)?.label ?? k;
-                  const row = (entRows ?? []).find((e: any) => e.key === k);
-                  return <CapRow key={k} feature={k} label={label} row={row} onSave={(cap) => capMut.mutate({ feature: k, monthly_cap: cap })} />;
-                })}
-              </div>
-            </section>
-
-            {/* AI feature access (per-company override of plan) */}
-            <section>
-              <h3 className="text-sm font-medium mb-2 flex items-center gap-2"><Sparkles className="h-4 w-4" /> AI feature access</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Toggle each AI feature for this company. Overrides the plan default; use "Reset" to revert.
-              </p>
-              <div className="space-y-1.5">
-                {AI_FEATURE_KEYS.map((k) => {
-                  const label = FEATURE_CATALOG.find((f) => f.key === k)?.label ?? k;
-                  const row = (entRows ?? []).find((e: any) => e.key === k);
-                  const enabled = row ? !!row.enabled : true;
-                  const overridden = !!row?.has_override;
-                  return (
-                    <div key={k} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{label}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {overridden ? "Custom override" : "Plan default"}
-                        </div>
-                      </div>
-                      {overridden && (
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => clearMut.mutate(k)}>
-                          Reset
-                        </Button>
-                      )}
-                      <Switch
-                        checked={enabled}
-                        onCheckedChange={(v) => toggleMut.mutate({ feature: k, enabled: v })}
-                      />
-                    </div>
-                  );
-                })}
               </div>
             </section>
 
@@ -212,21 +129,25 @@ export function CompanyBillingDialog({ company }: { company: { id: string; name:
   );
 }
 
-function CapRow({ feature, label, row, onSave }: { feature: FeatureKey; label: string; row: any; onSave: (cap: number | null) => void }) {
-  const [cap, setCap] = useState<string>(row?.monthly_cap != null ? String(row.monthly_cap) : "");
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <div className="flex-1">
-        <div className="font-medium">{label}</div>
-        {row?.usage_this_period != null ? (
-          <div className="text-xs text-muted-foreground">Used this period: {row.usage_this_period}</div>
-        ) : null}
-      </div>
-      <Input type="number" placeholder="∞" value={cap} onChange={(e) => setCap(e.target.value)} className="h-8 w-24" />
-      <Button size="sm" variant="outline" onClick={() => onSave(cap === "" ? null : Number(cap))}>Save</Button>
-    </div>
-  );
-}
+const DEACTIVATED_PRICE_KEYS = new Set([
+  "ai_coordinator_assist",
+  "ai_extraction",
+  "ai_extraction_media",
+  "ai_voice_to_trip",
+  "ai_auto_coordinate",
+  "ai_daily_plan",
+  "ai_reply_drafter",
+  "ai_watchtower_scan",
+  "ai_char_overage",
+  "ai_guide_chat",
+  "sales_bot",
+  "flight_lookup_bundle",
+  "flight_lookup_refresh",
+  "flight_lookup_vessel",
+  "flight_vessel_tracking",
+  "auto_shift_early_flight",
+  "route_optimization",
+]);
 
 function PriceOverridesSection({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
@@ -254,6 +175,7 @@ function PriceOverridesSection({ companyId }: { companyId: string }) {
   });
 
   const overrideMap = new Map((overrides ?? []).map((o) => [o.feature_key, Number(o.points_cost)]));
+  const visibleCosts = (costs ?? []).filter((c: any) => !DEACTIVATED_PRICE_KEYS.has(c.feature_key));
 
   return (
     <section>
@@ -262,7 +184,7 @@ function PriceOverridesSection({ companyId }: { companyId: string }) {
         Set a custom point cost for this company. Leave blank to use the global default.
       </p>
       <div className="rounded-md border divide-y max-h-64 overflow-y-auto">
-        {(costs ?? []).map((c: any) => (
+        {visibleCosts.map((c: any) => (
           <OverrideRow
             key={c.feature_key}
             cost={c}

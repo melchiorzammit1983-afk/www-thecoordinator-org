@@ -1,110 +1,38 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
-import { Sparkles, ThumbsDown, Ticket, MessageSquare, Search, ChevronRight } from "lucide-react";
-import { adminHelpInsights, adminListTickets, adminSetTicketStatus, getTicket, addTicketMessage } from "@/lib/support.functions";
+import { useState } from "react";
+import { LifeBuoy, ChevronRight } from "lucide-react";
+import { adminListTickets, adminSetTicketStatus, getTicket, addTicketMessage } from "@/lib/support.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { AdminAiHeaderTabs } from "@/components/admin/AdminAiHeaderTabs";
 
 export const Route = createFileRoute("/_authenticated/admin/ai-insights")({
-  component: AiInsights,
+  component: SupportPage,
 });
 
-function AiInsights() {
-  const insFn = useServerFn(adminHelpInsights);
-  const { data } = useQuery({ queryKey: ["ai-insights"], queryFn: () => insFn() });
-  const [q, setQ] = useState("");
+function SupportPage() {
   const [openTicket, setOpenTicket] = useState<string | null>(null);
 
-  const recent = data?.recent ?? [];
-  const filtered = useMemo(() =>
-    recent.filter((r: any) => !q || (r.question ?? "").toLowerCase().includes(q.toLowerCase())),
-    [recent, q]);
-  const lowConf = recent.filter((r: any) => (r.confidence ?? 1) < 0.6);
-  const escalated = recent.filter((r: any) => r.escalated_ticket_id);
-
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-5 w-5 text-primary" />
-        <h1 className="text-2xl font-semibold">AI insights</h1>
-      </div>
-      <AdminAiHeaderTabs active="insights" />
-
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Questions (30d)" value={recent.length} icon={<MessageSquare className="h-4 w-4" />} />
-        <Stat label="Low confidence" value={lowConf.length} icon={<Sparkles className="h-4 w-4" />} tone="warn" />
-        <Stat label="Thumbs-down" value={data?.thumbsDownCount ?? 0} icon={<ThumbsDown className="h-4 w-4" />} tone="warn" />
-        <Stat label="Open tickets" value={data?.openTicketsCount ?? 0} icon={<Ticket className="h-4 w-4" />} tone="danger" />
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+      <div>
+        <div className="flex items-center gap-2">
+          <LifeBuoy className="h-5 w-5 text-primary" />
+          <h1 className="text-2xl font-semibold">Support</h1>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Review customer support requests and reply to users.
+        </p>
       </div>
 
       <TicketsSection onOpen={setOpenTicket} />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Recent Guide questions</CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input className="h-8 pl-7 text-sm" placeholder="Search questions…" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2 max-h-[60vh] overflow-y-auto">
-          {filtered.length === 0 && <div className="text-sm text-muted-foreground py-8 text-center">No questions yet.</div>}
-          {filtered.map((r: any) => (
-            <div key={r.id} className="rounded-md border p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium">{r.question}</div>
-                  <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.answer}</div>
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-[10px] text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
-                  {r.confidence != null && (
-                    <Badge variant={r.confidence < 0.6 ? "destructive" : "secondary"} className="text-[10px]">
-                      {Math.round(r.confidence * 100)}%
-                    </Badge>
-                  )}
-                  {r.thumbs === -1 && <Badge variant="destructive" className="text-[10px]">👎</Badge>}
-                  {r.escalated_ticket_id && (
-                    <button className="text-[10px] text-primary underline" onClick={() => setOpenTicket(r.escalated_ticket_id)}>
-                      Escalated →
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
       {openTicket && <AdminTicketDialog id={openTicket} onClose={() => setOpenTicket(null)} />}
-      {escalated.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          {escalated.length} of these were escalated to a <Link to="/admin/ai-insights" className="text-primary underline">support ticket</Link>.
-        </div>
-      )}
     </div>
-  );
-}
-
-function Stat({ label, value, icon, tone = "default" }: { label: string; value: number; icon: React.ReactNode; tone?: "default" | "warn" | "danger" }) {
-  const color = tone === "danger" ? "text-destructive" : tone === "warn" ? "text-amber-600" : "text-foreground";
-  return (
-    <Card>
-      <CardContent className="p-3 flex items-center gap-3">
-        <div className="grid place-items-center h-9 w-9 rounded-md bg-muted">{icon}</div>
-        <div>
-          <div className={`text-2xl font-bold tabular-nums ${color}`}>{value}</div>
-          <div className="text-xs text-muted-foreground">{label}</div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -184,12 +112,6 @@ function AdminTicketDialog({ id, onClose }: { id: string; onClose: () => void })
             ))}
           </div>
         </div>
-        {data.ticket.ai_thread && (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted-foreground">Guide conversation before escalation</summary>
-            <pre className="mt-2 whitespace-pre-wrap bg-muted p-2 rounded max-h-40 overflow-y-auto">{JSON.stringify(data.ticket.ai_thread, null, 2)}</pre>
-          </details>
-        )}
         <div className="flex-1 space-y-2 overflow-y-auto">
           {data.messages.map((m: any) => (
             <div key={m.id} className={`rounded-lg p-2 text-sm ${m.author === "admin" ? "bg-primary/10 border border-primary/20" : "bg-muted"}`}>

@@ -25,25 +25,23 @@ export type AiToggleKey =
   | "route_deviation_alerts"
   | "traffic_badges";
 
-export type AiToggleCategory = "background" | "ondemand" | "routing";
+export type OperationToggleCategory = "background" | "ondemand" | "routing";
 
-export const AI_TOGGLES: {
+/**
+ * Core operational preferences that remain available while the optional AI
+ * module is inactive. The database column is still named `ai_toggles` for
+ * backwards compatibility; a later migration can rename it without mixing
+ * that schema change into the AI deactivation release.
+ */
+export const OPERATION_TOGGLES: {
   key: AiToggleKey;
-  category: AiToggleCategory;
+  category: OperationToggleCategory;
   label: string;
   description: string;
 }[] = [
-  { key: "auto_flight_tracking", category: "background", label: "Flight status auto-tracking", description: "Look up live flight status for trips linked to a flight code." },
-  { key: "flight_t30_cron", category: "background", label: "T-30 flight recheck", description: "Recheck flight status 30 min before pickup." },
-  { key: "ai_watchtower", category: "background", label: "AI Watchtower", description: "Proactive scan for delays, missing data, conflicts." },
+  { key: "ai_watchtower", category: "background", label: "Operations monitor", description: "Check for delays, missing trip data, conflicts and workload imbalance." },
   { key: "schedule_collision", category: "background", label: "Schedule collision alerts", description: "Warn when a driver assignment will overlap another trip." },
-  { key: "ai_learning_capture", category: "background", label: "Silent learning", description: "Log your actions so the AI adapts to your style." },
-  { key: "assistant_fab", category: "ondemand", label: "AI assistant (chat)", description: "The floating assistant button and chat." },
-  { key: "assistant_voice", category: "ondemand", label: "Voice input", description: "Microphone button on the assistant." },
-  { key: "ai_bulk_paste", category: "ondemand", label: "AI bulk-paste parser", description: "Parse pasted messages into trips using AI. Off = classic regex parser." },
-  { key: "ai_auto_pricing", category: "ondemand", label: "AI auto-pricing", description: "Suggest fares automatically on new trips." },
   { key: "ai_address_enrichment", category: "ondemand", label: "Address name lookup", description: "Google Places calls when typing an address." },
-  { key: "ai_lesson_suggestions", category: "ondemand", label: "AI lesson suggestions", description: "Ask AI to summarize suggested lessons from your activity." },
   { key: "live_eta_polling", category: "routing", label: "Live ETA polling", description: "Refresh dashboard ETAs from Google Routes every minute." },
   { key: "route_deviation_alerts", category: "routing", label: "Route deviation reroute", description: "Automatically reroute the driver when off by >60 m." },
   { key: "traffic_badges", category: "routing", label: "Traffic badges", description: "Show traffic delta chip on trip cards." },

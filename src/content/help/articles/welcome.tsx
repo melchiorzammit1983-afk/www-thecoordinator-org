@@ -25,7 +25,7 @@ export default function Article() {
       <StepList
         items={[
           { title: "Live everywhere", body: "Every driver action pins itself on the trip map instantly — arrival, waiting, delays, everything." },
-          { title: "AI-native", body: "Paste a booking email; AI extracts trips. Ask the Guide anywhere; it knows why your screen looks the way it does." },
+          { title: "Built for dispatch", body: "Import spreadsheet rows, assign drivers, coordinate partners and monitor every active trip from one place." },
           { title: "Payment & trust are automatic", body: "Trip events (no-show, cancel, wait) automatically adjust driver payout and trust score — no manual claims to chase." },
         ]}
       />

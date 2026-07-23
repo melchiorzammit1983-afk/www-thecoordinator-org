@@ -288,7 +288,7 @@ function BoardingBufferCard() {
         <CardDescription>
           Minutes reserved after a drop-off for the passengers to disembark before the
           driver can start their next pickup. Used by conflict warnings on trip cards,
-          the driver picker, and AI Auto-Coordinate.
+          the driver picker and automatic grouping suggestions.
         </CardDescription>
       </CardHeader>
       <CardContent>

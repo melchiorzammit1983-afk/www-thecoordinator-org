@@ -58,6 +58,7 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
     queryFn: () => listFn({ data: { company_id: company.id } }) as Promise<Row[]>,
     enabled: open,
   });
+  const visibleRows = data?.filter((row) => !AI_FEATURE_KEYS.includes(row.key)) ?? null;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["feature-entitlements", company.id] });
 
@@ -84,16 +85,8 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
         </DialogHeader>
         <div className="flex flex-wrap gap-2 py-2 border-y">
           <span className="text-xs font-medium text-muted-foreground self-center mr-1">Master switches:</span>
-          <Button size="sm" variant="outline" disabled={bulkMut.isPending}
-            onClick={() => bulkMut.mutate({ enabled: false, features: AI_FEATURE_KEYS as FeatureKey[], label: "All AI turned off" })}>
-            Turn all AI OFF
-          </Button>
-          <Button size="sm" variant="outline" disabled={bulkMut.isPending}
-            onClick={() => bulkMut.mutate({ enabled: true, features: AI_FEATURE_KEYS as FeatureKey[], label: "All AI turned on" })}>
-            Turn all AI ON
-          </Button>
           <Button size="sm" variant="destructive" disabled={bulkMut.isPending}
-            onClick={() => { if (confirm("Disable EVERY feature for this workspace? Only Help Guide will remain.")) bulkMut.mutate({ enabled: false, label: "Workspace paused (all features off)" }); }}>
+            onClick={() => { if (confirm("Disable every active feature for this workspace?")) bulkMut.mutate({ enabled: false, label: "Workspace paused (all features off)" }); }}>
             Kill switch (all off)
           </Button>
           <Button size="sm" variant="secondary" disabled={bulkMut.isPending}
@@ -102,10 +95,10 @@ export function FeatureEntitlementsDialog({ company }: { company: { id: string; 
           </Button>
         </div>
         <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6 divide-y">
-          {isLoading || !data ? (
+          {isLoading || !visibleRows ? (
             <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>
           ) : (
-            data.map((row) => (
+            visibleRows.map((row) => (
               <FeatureRow
                 key={row.key}
                 row={row}

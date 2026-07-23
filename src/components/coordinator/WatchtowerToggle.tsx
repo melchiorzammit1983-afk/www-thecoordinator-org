@@ -1,12 +1,10 @@
 /**
- * AI Watchtower control — opt-in, points-metered background scanner.
+ * Operations monitor — opt-in, deterministic background checks.
  *
- * Off by default. When on, ticks on the user's chosen interval and calls
- * `runWatchtowerScan`. Each scan charges `ai_watchtower_scan` points; a
- * daily cap plus auto-pause on insufficient points keeps spend predictable.
- * Shows the most recent alerts inside the popover with dismiss actions.
+ * Off by default. When on, it checks upcoming trips for known operational
+ * problems. No generative model or AI provider is involved.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -78,7 +76,6 @@ export function WatchtowerToggle() {
   });
 
   const settings = settingsData?.settings;
-  const pointsPerScan = settingsData?.points_per_scan ?? 1;
   const alerts = (alertsData?.alerts ?? []) as any[];
   const unread = alerts.filter((a) => a.status === "new").length;
 
@@ -98,31 +95,13 @@ export function WatchtowerToggle() {
         qc.invalidateQueries({ queryKey: ["watchtower-alerts"] });
         qc.invalidateQueries({ queryKey: ["watchtower-settings"] });
         if (r.new_alerts > 0) {
-          toast(`Watchtower found ${r.new_alerts} new issue${r.new_alerts === 1 ? "" : "s"}`);
+          toast(`Operations monitor found ${r.new_alerts} new issue${r.new_alerts === 1 ? "" : "s"}`);
         }
-      } else if (r?.reason === "feature_disabled") {
-        toast.error("Watchtower is switched off in your Settings → Features. Turn on 'AI Watchtower scan' to resume.", {
-          action: { label: "Open Settings", onClick: () => { window.location.href = "/settings"; } },
-        });
-        refetchSettings();
-      } else if (r?.reason === "feature_unavailable") {
-        toast.error(
-          "Watchtower is not available on your current plan or has been disabled by the platform admin. Contact support to enable it.",
-        );
-        refetchSettings();
-      } else if (r?.reason === "insufficient_points") {
-        toast.error(
-          r?.message
-            ? `Watchtower paused — ${r.message}. Top up to resume.`
-            : "Watchtower paused — not enough points. Top up to resume.",
-          { action: { label: "Top up", onClick: () => { window.location.href = "/coordinator/billing"; } } },
-        );
-        refetchSettings();
       } else if (r?.reason === "daily_cap_reached") {
-        toast("Watchtower daily scan cap reached — pausing until tomorrow.");
+        toast("Operations monitor daily scan cap reached — pausing until tomorrow.");
       }
     } catch (e: any) {
-      toast.error(`Watchtower scan failed: ${e?.message ?? "unknown"}`);
+      toast.error(`Operations monitor failed: ${e?.message ?? "unknown"}`);
     } finally {
       setRunning(false);
     }
@@ -158,13 +137,6 @@ export function WatchtowerToggle() {
     refetchSettings();
   }
 
-  const scansToday = settings?.scans_today ?? 0;
-  const dailyCap = settings?.daily_scan_cap ?? 200;
-  const pointsPerHour = useMemo(
-    () => Math.round((3600 / intervalSec) * pointsPerScan),
-    [intervalSec, pointsPerScan],
-  );
-
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -172,7 +144,7 @@ export function WatchtowerToggle() {
           size="sm"
           variant={enabled ? "default" : "outline"}
           className="h-8 gap-1.5 relative"
-          title="AI Watchtower"
+          title="Operations monitor"
         >
           {enabled ? (
             <>
@@ -182,7 +154,7 @@ export function WatchtowerToggle() {
           ) : (
             <>
               <Eye className="h-3.5 w-3.5" />
-              <span className="text-xs">AI Watch</span>
+              <span className="text-xs">Monitor</span>
             </>
           )}
           {unread > 0 && (
@@ -197,7 +169,7 @@ export function WatchtowerToggle() {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-sm font-semibold">
               <ShieldAlert className="h-4 w-4 text-primary" />
-              AI Watchtower
+              Operations monitor
             </div>
             <p className="text-[11px] text-muted-foreground mt-0.5">
               Background scans that flag issues before they hurt trips.
@@ -207,16 +179,6 @@ export function WatchtowerToggle() {
             checked={enabled}
             onCheckedChange={(v) => save({ enabled: v })}
           />
-        </div>
-
-        {/* Cost banner */}
-        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border-b flex items-start gap-2">
-          <Zap className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
-          <div className="text-[11px] leading-snug">
-            <b>{pointsPerScan} point{pointsPerScan === 1 ? "" : "s"}</b> per scan · ~<b>{pointsPerHour}</b> pts/hour at current interval.
-            <br />
-            Today: <b>{scansToday}</b> / {dailyCap} scans.
-          </div>
         </div>
 
         {/* Controls */}
@@ -306,7 +268,7 @@ export function WatchtowerToggle() {
           </div>
           {alerts.length === 0 ? (
             <p className="px-3 pb-3 text-[11px] text-muted-foreground">
-              {enabled ? "All quiet. Scanning…" : "Turn on the Watchtower to start receiving alerts."}
+              {enabled ? "All quiet. Monitoring…" : "Turn on the operations monitor to start receiving alerts."}
             </p>
           ) : (
             <div className="max-h-64 overflow-y-auto divide-y">

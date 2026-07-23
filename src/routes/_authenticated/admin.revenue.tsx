@@ -59,7 +59,7 @@ function RevenuePage() {
         <Card>
           <CardHeader><CardTitle className="text-base">Feature usage (30d)</CardTitle></CardHeader>
           <CardContent>
-            {data.feature_usage_30d.length === 0 ? <p className="text-sm text-muted-foreground">No AI usage yet.</p> : (
+            {data.feature_usage_30d.length === 0 ? <p className="text-sm text-muted-foreground">No feature usage yet.</p> : (
               <div className="space-y-2">
                 {data.feature_usage_30d.slice(0, 10).map((f: any) => (
                   <div key={f.feature_key} className="flex items-center justify-between text-sm">

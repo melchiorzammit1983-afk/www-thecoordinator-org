@@ -20,7 +20,6 @@ const A = {
   "install-apps": lazy(() => import("./articles/install-apps")),
   "coordinator-dashboard": lazy(() => import("./articles/coordinator-dashboard")),
   "coordinator-dispatch": lazy(() => import("./articles/coordinator-dispatch")),
-  "coordinator-ai-extraction": lazy(() => import("./articles/coordinator-ai-extraction")),
   "driver-guide": lazy(() => import("./articles/driver-guide")),
   "event-catalog": lazy(() => import("./articles/event-catalog")),
   faq: lazy(() => import("./articles/faq")),
@@ -65,15 +64,6 @@ export const HELP_ARTICLES: HelpArticle[] = [
     summary: "How the dense dispatch view works: chain reflow, ETA chips, red-glow conflict detection, and alternative driver suggestions.",
     keywords: ["dispatch", "calendar", "conflict", "red", "assign", "buffer"],
     component: load("coordinator-dispatch"),
-  },
-  {
-    slug: "coordinator-ai-extraction",
-    title: "AI trip extraction",
-    group: "Coordinator",
-    roles: ["coordinator"],
-    summary: "Paste an email or booking, let AI turn it into structured trips. Includes retries, cost, and error handling.",
-    keywords: ["ai", "extraction", "paste", "email", "bulk", "gemini"],
-    component: load("coordinator-ai-extraction"),
   },
   {
     slug: "driver-guide",

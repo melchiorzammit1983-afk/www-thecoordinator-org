@@ -1,14 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { HELP_ARTICLES, HELP_GROUPS } from "@/content/help/manifest";
-import { ArrowRight, Sparkles } from "lucide-react";
-import { useAskGuide } from "@/components/help/AskGuideProvider";
+import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/help/")({
   component: HelpIndex,
 });
 
 function HelpIndex() {
-  const { open } = useAskGuide();
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-8">
       <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-8">
@@ -19,12 +17,6 @@ function HelpIndex() {
           Everything you need to know — for coordinators, drivers, clients and admins.
           Every article stays in sync with the live app, so numbers you see here match what's actually running.
         </p>
-        <button
-          onClick={() => open()}
-          className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-        >
-          <Sparkles className="h-4 w-4" /> Ask the Guide anything
-        </button>
       </div>
 
       <div className="mt-10 space-y-8">

@@ -42,7 +42,7 @@ function PricingAdmin() {
       <WalletsCard />
       <PlansCard />
       <PointPacksCard />
-      {/* Feature cost editing lives on the AI Settings page — single source of truth */}
+      {/* Usage-based feature cost editing is hidden during the service cleanup. */}
       {false ? <FeatureCostsCard /> : null}
     </div>
   );

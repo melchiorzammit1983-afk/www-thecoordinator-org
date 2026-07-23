@@ -1,15 +1,11 @@
 /**
- * AI Watchtower — opt-in, points-metered proactive monitoring.
+ * Operations monitor — opt-in deterministic trip monitoring.
  *
- * The coordinator turns this on from the dashboard; every scan charges
- * `ai_watchtower_scan` points via `spend_points`. Nothing runs unless the
- * user explicitly enables it, and a per-user daily cap prevents runaway
- * spend even if the tab is left open.
- *
- * Scan logic is deterministic (no per-scan AI cost by default): it looks at
+ * It looks at
  * today's active jobs for flight disruptions, ETA slippage, driver conflicts
  * and obvious data problems. Deduping via (company_id, dedupe_key) means an
  * unchanged issue does not re-notify on every tick.
+ * No generative model is called and scans do not consume AI points.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -47,12 +43,7 @@ export const getWatchtowerSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const s = await loadSettings(supabaseAdmin, context.userId);
-    const { data: cost } = await supabaseAdmin
-      .from("ai_feature_costs")
-      .select("points_cost")
-      .eq("feature_key", "ai_watchtower_scan")
-      .maybeSingle();
-    return { settings: s, points_per_scan: Number(cost?.points_cost ?? 1) };
+    return { settings: s };
   });
 
 export const saveWatchtowerSettings = createServerFn({ method: "POST" })
@@ -289,65 +280,6 @@ export const runWatchtowerScan = createServerFn({ method: "POST" })
     const scansToday = s.scans_reset_on === today ? s.scans_today : 0;
     if (scansToday >= s.daily_scan_cap) {
       return { ok: false, reason: "daily_cap_reached" as const };
-    }
-
-    // Meter (soft — but we treat failure as pause)
-    let charged = true;
-    let chargeErr: string | null = null;
-    const trySpend = async () => {
-      const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
-      await assertUserFeatureEnabled(supabaseAdmin, companyId, "ai_watchtower_scan");
-      return await supabaseAdmin.rpc("spend_points", {
-        _company_id: companyId,
-        _feature_key: "ai_watchtower_scan",
-        _job_id: undefined as unknown as string,
-        _note: "watchtower scan",
-        _cost_override: undefined as unknown as number,
-      });
-    };
-    try {
-      let { error } = await trySpend();
-      // If out of AI-bucket points but the general wallet is funded, enable
-      // fallback for this company and retry once so coordinators aren't
-      // stranded when only the general pool has credit.
-      if (error && /insufficient_ai_points/i.test(error.message ?? "")) {
-        const { data: co } = await supabaseAdmin
-          .from("companies")
-          .select("points_balance, ai_fallback_to_general")
-          .eq("id", companyId)
-          .maybeSingle();
-        if (co && Number(co.points_balance ?? 0) > 0 && !co.ai_fallback_to_general) {
-          await supabaseAdmin
-            .from("companies")
-            .update({ ai_fallback_to_general: true })
-            .eq("id", companyId);
-          const retry = await trySpend();
-          error = retry.error;
-        }
-      }
-      if (error) {
-        charged = false;
-        chargeErr = error.message ?? "spend_failed";
-      }
-    } catch (e: any) {
-      charged = false;
-      chargeErr = e?.message ?? "spend_failed";
-    }
-    if (!charged) {
-      await supabaseAdmin
-        .from("watchtower_settings")
-        .update({ enabled: false, updated_at: new Date().toISOString() })
-        .eq("user_id", context.userId);
-      const err = chargeErr ?? "";
-      // Distinguish: user opt-out (Settings → Features) vs admin catalog / entitlement disable vs no points.
-      const isUserOptOut = /feature_disabled_by_user/i.test(err);
-      const isAdminDisabled = !isUserOptOut && /feature_disabled|feature_capped/i.test(err);
-      const reason = isUserOptOut
-        ? ("feature_disabled" as const)
-        : isAdminDisabled
-          ? ("feature_unavailable" as const)
-          : ("insufficient_points" as const);
-      return { ok: false, reason, message: chargeErr };
     }
 
     // Scan today's + upcoming (24h) active jobs
