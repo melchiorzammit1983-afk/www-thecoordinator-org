@@ -6,13 +6,12 @@ export default function Article() {
     <HelpArticle slug="coordinator-dashboard" title="The coordinator dashboard">
       <p>
         Your dashboard is the home base. It surfaces trips that need attention right now,
-        the day's activity feed, and one-tap access to add a trip or chat with the AI.
+        the day's activity feed, and one-tap access to add a trip or open dispatch.
       </p>
 
       <h2>Quick actions (top of screen)</h2>
       <ul>
         <li><strong>New trip</strong> — opens the trip form (supports single, group, and time-nudge with live conflict math).</li>
-        <li><strong>Ask the AI</strong> — pastes a booking, extracts trips, or answers questions about the system.</li>
         <li><strong>Open dispatch</strong> — jumps to the dense calendar with schedule conflict detection.</li>
       </ul>
 

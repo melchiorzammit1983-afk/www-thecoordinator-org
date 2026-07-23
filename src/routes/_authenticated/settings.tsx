@@ -1,15 +1,14 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Bot, LayoutGrid, Palette, Bell, User } from "lucide-react";
+import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Activity, LayoutGrid, Palette, Bell, User } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { AI_TOGGLES, type AiToggleKey, type AiToggleCategory } from "@/lib/user-prefs.functions";
+import { OPERATION_TOGGLES, type AiToggleKey, type OperationToggleCategory } from "@/lib/user-prefs.functions";
 import { usePreferences, useUpdatePreferences, useResetPreferences } from "@/hooks/use-preferences";
 import { useFeatures } from "@/hooks/use-features";
 import { TAB_CATALOG, tabsByFeatureVisible, resolveMobileLayout } from "@/lib/tab-catalog";
@@ -31,17 +30,16 @@ function SettingsPage() {
   const [layoutOpen, setLayoutOpen] = useState(false);
   const { prefs } = usePreferences();
   const update = useUpdatePreferences();
-  const reset = useResetPreferences();
 
-  const aiOffCount = Object.values(prefs.ai_toggles).filter((v) => v === false).length;
-  const totalAi = AI_TOGGLES.length;
-  const allAiOff = aiOffCount === totalAi;
+  const operationOffCount = OPERATION_TOGGLES.filter((t) => prefs.ai_toggles[t.key] === false).length;
+  const totalOperations = OPERATION_TOGGLES.length;
+  const allOperationsOff = operationOffCount === totalOperations;
 
   function toggleAll(off: boolean) {
     const next: Partial<Record<AiToggleKey, boolean>> = {};
-    for (const t of AI_TOGGLES) next[t.key] = !off;
+    for (const t of OPERATION_TOGGLES) next[t.key] = !off;
     update.mutate({ ai_toggles: next }, {
-      onSuccess: () => toast.success(off ? "All AI features off" : "All AI features on"),
+      onSuccess: () => toast.success(off ? "Automation switched off" : "Automation switched on"),
     });
   }
 
@@ -50,8 +48,8 @@ function SettingsPage() {
   }
 
   const byCat = useMemo(() => {
-    const g: Record<AiToggleCategory, typeof AI_TOGGLES> = { background: [], ondemand: [], routing: [] };
-    for (const t of AI_TOGGLES) g[t.category].push(t);
+    const g: Record<OperationToggleCategory, typeof OPERATION_TOGGLES> = { background: [], ondemand: [], routing: [] };
+    for (const t of OPERATION_TOGGLES) g[t.category].push(t);
     return g;
   }, []);
 
@@ -78,24 +76,14 @@ function SettingsPage() {
         />
       </Section>
 
-      {/* AI section */}
-      <Section
-        title="AI & automation"
-        icon={Bot}
-        action={
-          <button
-            className="text-xs font-medium text-muted-foreground hover:text-foreground"
-            onClick={() => reset.mutate("ai", { onSuccess: () => toast.success("AI settings reset") })}
-          >
-            Reset
-          </button>
-        }
-      >
+      {/* Core operational automation. The legacy database field is still
+          called ai_toggles until the later schema-cleanup phase. */}
+      <Section title="Automation & routing" icon={Activity}>
         <Row
-          leftIcon={Bot}
+          leftIcon={Activity}
           title="Master switch"
-          subtitle={aiOffCount === 0 ? "All AI features on" : `${aiOffCount}/${totalAi} disabled`}
-          trailing={<Switch checked={!allAiOff} onCheckedChange={(v) => toggleAll(!v)} />}
+          subtitle={operationOffCount === 0 ? "All operational automation on" : `${operationOffCount}/${totalOperations} disabled`}
+          trailing={<Switch checked={!allOperationsOff} onCheckedChange={(v) => toggleAll(!v)} />}
         />
         <SubHeading>Background (automatic)</SubHeading>
         {byCat.background.map((t) => (
@@ -103,7 +91,7 @@ function SettingsPage() {
             checked={prefs.ai_toggles[t.key] !== false}
             onChange={(v) => toggleOne(t.key, v)} />
         ))}
-        <SubHeading>On-demand</SubHeading>
+        <SubHeading>Address & data</SubHeading>
         {byCat.ondemand.map((t) => (
           <ToggleRow key={t.key} label={t.label} description={t.description}
             checked={prefs.ai_toggles[t.key] !== false}
@@ -117,7 +105,7 @@ function SettingsPage() {
         ))}
       </Section>
 
-      {/* Per-feature opt-out — separate from the AI master switch */}
+      {/* Per-feature opt-out for paid operational services. */}
       <FeatureUsageSection />
 
 
@@ -469,9 +457,8 @@ function MobileLayoutSheet({ open, onOpenChange }: { open: boolean; onOpenChange
         <div className="mt-6">
           <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Presets</div>
           <div className="flex flex-wrap gap-2">
-            <PresetChip label="Default" onClick={() => { setBottomIds(["home", "dispatch", "ai"]); setDefaultTab("home"); setHidden(new Set()); }} />
+            <PresetChip label="Default" onClick={() => { setBottomIds(["home", "dispatch", "pending"]); setDefaultTab("home"); setHidden(new Set()); }} />
             <PresetChip label="Dispatcher-first" onClick={() => { setBottomIds(["dispatch", "pending", "drivers"]); setDefaultTab("dispatch"); setHidden(new Set()); }} />
-            <PresetChip label="AI-first" onClick={() => { setBottomIds(["ai", "home", "dispatch"]); setDefaultTab("ai"); setHidden(new Set()); }} />
             <PresetChip label="Driver-first" onClick={() => { setBottomIds(["my_driving", "home", "dispatch"]); setDefaultTab("my_driving"); setHidden(new Set()); }} />
           </div>
         </div>

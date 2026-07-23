@@ -144,20 +144,12 @@ import { TripProgress } from "@/components/coordinator/TripProgress";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { TripDetailsSheet } from "@/components/coordinator/TripDetailsSheet";
 import { FlightCodeFixDialog } from "@/components/coordinator/FlightCodeFixDialog";
-import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
 import { TripConflictBadge } from "@/components/coordinator/TripConflictBadge";
-import {
-  RouteOptimizationAlertBanner,
-  useRouteOptimizationAlerts,
-} from "@/components/coordinator/RouteOptimizationAlerts";
 import { AutoRefreshToggle } from "@/components/coordinator/AutoRefreshToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/coordinator/BulkActionBar";
 import { GroupDialog } from "@/components/coordinator/GroupDialog";
-import { AiAutoCoordinateButton } from "@/components/coordinator/AiAutoCoordinateButton";
-import { useOpenAssistant } from "@/components/coordinator/CoordinatorAssistant";
-import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { useFeature } from "@/hooks/use-features";
 import { useAiToggle } from "@/hooks/use-preferences";
 import { IfFeature } from "@/components/billing/IfFeature";
@@ -262,51 +254,6 @@ type Job = {
   needs_review?: boolean | null;
 };
 
-function AskAiInlineButton({ trip, size = "sm", variant = "outline", label = "Ask AI", className }: { trip?: Job | null; size?: "sm" | "xs"; variant?: "outline" | "ghost"; label?: string; className?: string }) {
-  const openAi = useOpenAssistant();
-  const assistantEnabled = useFeature("ai_coordinator_assist");
-  if (!assistantEnabled) return null;
-  return (
-    <Button
-      size="sm"
-      variant={variant}
-      className={
-        size === "xs"
-          ? `h-6 px-2 text-[10px] ${className ?? ""}`
-          : `flex-1 min-h-11 ${className ?? ""}`
-      }
-      onClick={(e) => {
-        e.stopPropagation();
-        openAi(
-          trip
-            ? {
-                path: typeof window !== "undefined" ? window.location.pathname : null,
-                trip: {
-                  id: trip.id,
-                  trip_no: trip.trip_no ?? null,
-                  from_location: trip.from_location,
-                  to_location: trip.to_location,
-                  date: trip.date,
-                  time: trip.time,
-                  driver_id: trip.driver_id,
-                  driver_name: trip.drivers?.name ?? null,
-                  from_flight: trip.from_flight,
-                  to_flight: trip.to_flight,
-                  vehicle: trip.vehicle,
-                  contact_phone: trip.contact_phone,
-                  clientcompanyname: trip.clientcompanyname,
-                },
-              }
-            : null,
-        );
-      }}
-    >
-      <Sparkles className={size === "xs" ? "h-3 w-3 mr-1" : "h-4 w-4 mr-1.5"} />
-      {label}
-    </Button>
-  );
-}
-
 type Driver = { id: string; name: string; vehicle: string | null };
 
 type TripFlagInfo = {
@@ -365,7 +312,6 @@ function CalendarPage() {
   const [paxJob, setPaxJob] = useState<Job | null>(null);
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [detailsJob, setDetailsJob] = useState<Job | null>(null);
-  const { count: pendingRouteOptCount } = useRouteOptimizationAlerts();
   const [justAcceptedId, setJustAcceptedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -883,7 +829,6 @@ function CalendarPage() {
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg sm:text-xl font-semibold truncate">Dispatch board</h1>
           <div className="flex items-center gap-2">
-            <FlightTrackingIndicator />
             <Button size="sm" onClick={() => setOpenNew(true)}>
               <Plus className="h-4 w-4 mr-1" /> New
             </Button>
@@ -1146,14 +1091,10 @@ function CalendarPage() {
       />
 
       {/* Trip list with concise ETA */}
-      <RouteOptimizationAlertBanner />
-
-      {/* Trip list with concise ETA */}
       <DispatchTripList
         jobs={visibleJobs}
         onOpenDetails={(j) => setDetailsJob(j)}
         onOpenChat={(j) => setChatJob(j)}
-        pendingApprovalCount={pendingRouteOptCount}
       />
 
       {/* Inbound (pending my decision) */}
@@ -1163,11 +1104,6 @@ function CalendarPage() {
 
       {/* Client-requested trips awaiting coordinator approval */}
       <PendingClientApprovalBoard jobs={pendingClientJobs} ctx={cardCtx} onChanged={() => refetch()} />
-
-      <div className="flex justify-end mb-2 gap-2">
-        <AskAiInlineButton />
-        <AiAutoCoordinateButton />
-      </div>
 
       {trafficSorted ? (
         <div className="rounded-md border bg-card p-3 space-y-2">
@@ -1682,8 +1618,7 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
 function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
   const { setNodeRef, isOver } = useDroppable({ id: "unassigned" });
   const items = bucketByGroup(jobs);
-  const suggestionsEnabled = useFeature("ai_auto_coordinate");
-  const suggestions = useMemo(() => (suggestionsEnabled ? suggestGroups(jobs) : []), [jobs, suggestionsEnabled]);
+  const suggestions = useMemo(() => suggestGroups(jobs), [jobs]);
   return (
     <div
       ref={setNodeRef}
@@ -1692,7 +1627,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
         Unassigned ({jobs.length})
       </div>
-      {suggestionsEnabled && suggestions.length > 0 && (
+      {suggestions.length > 0 && (
         <div className="mb-2 rounded-md border border-primary/40 bg-primary/5 p-2 space-y-1.5">
           <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
             <Sparkles className="h-3 w-3" /> Auto-group suggestions
@@ -2748,10 +2683,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 ✈ {flightCode} · Not tracked · fix code
               </button>
             )}
-            {hasFlightCode && (
-              <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-1 align-middle" />
-            )}
-
             {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
@@ -2929,7 +2860,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
       {/* Action bar — large tap targets, well spaced from top-right kebab */}
       <div className="mt-2 flex items-stretch gap-1.5 border-t border-border/60 pt-2">
-        <AskAiInlineButton trip={job} label="Ask AI" />
         <Button
           size="sm"
           variant="outline"

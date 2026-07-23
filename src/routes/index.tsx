@@ -31,17 +31,17 @@ import logoAsset from "@/assets/coordinators-logo.png.asset.json";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "The Coordinators — Your AI dispatcher, on call 24/7" },
+      { title: "The Coordinators — Transport operations in one place" },
       {
         name: "description",
         content:
-          "Just tell it what you need. Type or talk to your AI dispatcher — create trips, catch driver conflicts automatically, and undo any AI action with one click. Built for Malta's hotels, shipping agents, and fleet owners.",
+          "Create trips, assign drivers, catch schedule conflicts and share live tracking links from one transport operations platform. Built for Malta's hotels, shipping agents and fleet owners.",
       },
-      { property: "og:title", content: "The Coordinators — Your AI dispatcher, on call 24/7" },
+      { property: "og:title", content: "The Coordinators — Transport operations in one place" },
       {
         property: "og:description",
         content:
-          "Type or talk to an AI dispatcher that drafts every action before running it. Automatic conflict detection, one-click undo, no driver app required.",
+          "Plan trips, manage drivers, detect schedule conflicts and send secure tracking links. No driver app required.",
       },
       { property: "og:type", content: "website" },
     ],
@@ -264,14 +264,14 @@ function Hero() {
 
             {/* Main Heading */}
             <h1 className="mt-5 text-[2rem] leading-[1.05] font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-              <span style={{ color: COLORS.white }}>Just tell it</span>
+              <span style={{ color: COLORS.white }}>Run every trip</span>
               <br />
-              <span style={{ color: COLORS.yellow }}>what you need.</span>
+              <span style={{ color: COLORS.yellow }}>from one place.</span>
             </h1>
 
             {/* Description */}
             <p className="mx-auto md:mx-0 mt-4 max-w-xl text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
-              Your AI dispatcher, on call 24/7. Type or talk to it in plain language — create trips, move them, paste in a whole email of bookings. It catches driver schedule conflicts before they happen, and every action can be undone with one click.
+              Create and import trips, assign drivers, coordinate trusted partners and share live tracking links. Built-in checks warn you about schedule conflicts before they disrupt the day.
             </p>
 
             {/* CTA Buttons */}
@@ -301,7 +301,7 @@ function Hero() {
 
             {/* Features List */}
             <div className="mt-5 flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-[11px] md:text-xs">
-              {["Pay as you go", "No driver app required", "Undo any AI action"].map((feature) => (
+              {["Pay as you go", "No driver app required", "Schedule conflict alerts"].map((feature) => (
                 <span key={feature} className="inline-flex items-center gap-1.5" style={{ color: COLORS.yellow }}>
                   <Check className="h-3.5 w-3.5" /> {feature}
                 </span>
@@ -460,7 +460,7 @@ function ProblemSolution() {
             <Check className="h-3.5 w-3.5" /> The new way
           </div>
           <p className="mt-4 text-base md:text-lg leading-relaxed" style={{ color: COLORS.greyLight }}>
-            Drag-and-drop dispatching, AI-powered bulk uploads, and instant live tracking links.
+            Drag-and-drop dispatching, spreadsheet bulk imports, and instant live tracking links.
             <span style={{ color: COLORS.yellow, fontWeight: "600" }}> Total control in seconds.</span>
           </p>
         </div>
@@ -474,26 +474,26 @@ function HowItWorks() {
   const steps = [
     {
       n: "01",
-      title: "Tell the assistant",
-      body: "Type or talk. Paste a full email of bookings, describe a change, or just say what you need — plain language works.",
+      title: "Enter or import trips",
+      body: "Add one trip manually, paste rows from your template, or import an Excel or CSV file.",
       visual: <StepPasteVisual />,
     },
     {
       n: "02",
-      title: "See the draft first",
-      body: "It shows you exactly what will happen — the trip, the driver, the times — before touching a thing. Nothing runs without you.",
+      title: "Review the schedule",
+      body: "Check pickup times, addresses, passengers and driver availability before saving.",
       visual: <StepAIVisual />,
     },
     {
       n: "03",
-      title: "Confirm and it's done",
-      body: "One tap. Trips get created, drivers get their web link, runs get grouped, messages go out — whatever was needed.",
+      title: "Assign and dispatch",
+      body: "Assign a driver, group compatible runs and send secure driver or client links.",
       visual: <StepDriverVisual />,
     },
     {
       n: "04",
-      title: "It keeps watch",
-      body: "The assistant flags driver schedule collisions automatically, so overlaps don't sneak into your day. Undo any AI action with one click.",
+      title: "Monitor operations",
+      body: "The operations monitor flags late trips, missing data and driver schedule conflicts.",
       visual: <StepTrackVisual />,
     },
   ];
@@ -562,7 +562,7 @@ function StepPasteVisual() {
       <div>Guest 2 — Corinthia → MLA 16:00</div>
       <div>Guest 3 — MLA → Valletta RY4501</div>
       <div className="mt-1.5 inline-block rounded px-1.5 py-0.5 text-[8px] font-sans" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
-        Parse with AI
+        Import rows
       </div>
     </div>
   );
@@ -572,7 +572,7 @@ function StepAIVisual() {
   return (
     <div className="absolute inset-2 rounded-lg border p-2 space-y-1 overflow-hidden" style={{ borderColor: COLORS.yellow, backgroundColor: COLORS.blackLight }}>
       <div className="text-[9px] font-semibold flex items-center gap-1" style={{ color: COLORS.yellow }}>
-        <Sparkles className="h-2.5 w-2.5" /> 3 trips parsed
+        <Sparkles className="h-2.5 w-2.5" /> 3 trips imported
       </div>
       {[
         { t: "14:20", r: "MLA → Le Meridien", f: "KM110" },
@@ -668,8 +668,8 @@ function Bento() {
         <BentoCard
           className="md:col-span-4 md:row-span-2"
           icon={<Sparkles className="h-5 w-5" />}
-          title="Your AI dispatcher"
-          body="Type it, paste a whole email, or just say it out loud — the assistant creates trips, moves them, groups runs, and messages drivers. It drafts every action first so you see exactly what will change, catches driver schedule conflicts before they happen, and lets you undo anything with one click."
+          title="Dispatch control center"
+          body="Create and import trips, assign drivers, group compatible runs and manage partner overflow from one operational view. Schedule checks help prevent driver overlaps before dispatch."
           visual={<AssistantVisual />}
         />
         <BentoCard
@@ -791,8 +791,8 @@ function AssistantVisual() {
         <div className="grid h-5 w-5 place-items-center rounded" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
           <Sparkles className="h-3 w-3" />
         </div>
-        <div className="text-[10px] font-semibold" style={{ color: COLORS.white }}>Assistant</div>
-        <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>drafting</span>
+        <div className="text-[10px] font-semibold" style={{ color: COLORS.white }}>Dispatch board</div>
+        <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${COLORS.yellow}20`, color: COLORS.yellow }}>reviewing</span>
       </div>
       <div className="p-2 space-y-1.5 text-[9px] leading-snug">
         <div className="rounded-lg px-2 py-1.5 ml-6" style={{ backgroundColor: COLORS.yellow, color: COLORS.black }}>
@@ -1054,8 +1054,8 @@ function TrustStrip() {
 function FaqSection() {
   const faqs = [
     {
-      q: "Can I really just talk to it?",
-      a: "Yes. Type or tap the mic and speak — the assistant works in plain language, and it can also read short replies back to you. Every action it takes is drafted first so you see exactly what will change, and nothing runs without your approval. Change your mind? Any AI action can be undone with one click.",
+      q: "Can I use it on my phone?",
+      a: "Yes. The Coordinator works in a mobile browser and can be installed as a web app. Drivers receive secure links, so they do not need an app-store download or a separate account.",
     },
     {
       q: "How much does it cost?",

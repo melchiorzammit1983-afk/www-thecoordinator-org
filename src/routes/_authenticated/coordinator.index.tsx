@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -14,7 +14,6 @@ import {
   Truck,
   Euro,
   Plus,
-  Bot,
   ArrowRight,
   Clock,
 } from "lucide-react";
@@ -23,12 +22,9 @@ import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
 import { SuspiciousActivityCard } from "@/components/coordinator/SuspiciousActivityCard";
 import { WatchtowerToggle } from "@/components/coordinator/WatchtowerToggle";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
-import { FlightTrackingIndicator } from "@/components/coordinator/FlightTrackingIndicator";
-import { FlightRefreshButton } from "@/components/coordinator/FlightRefreshButton";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
-import { IfFeature } from "@/components/billing/IfFeature";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
@@ -37,7 +33,6 @@ export const Route = createFileRoute("/_authenticated/coordinator/")({
 });
 
 function DashboardPage() {
-  const navigate = useNavigate();
   const summaryFn = useServerFn(getDashboardSummary);
   const activityFn = useServerFn(getDashboardActivity);
   const driversFn = useServerFn(listDrivers);
@@ -77,7 +72,6 @@ function DashboardPage() {
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <WatchtowerToggle />
-          <FlightTrackingIndicator />
         </div>
       </div>
 
@@ -94,20 +88,15 @@ function DashboardPage() {
             <span className="block text-[11px] font-normal opacity-80">Schedule a transfer</span>
           </span>
         </Button>
-        <IfFeature feature="ai_coordinator_assist">
-          <Button
-            size="lg"
-            variant="secondary"
-            className="h-14 justify-start gap-3 text-base shadow-sm"
-            onClick={() => navigate({ to: "/coordinator/ai-center" })}
-          >
-            <Bot className="h-5 w-5 text-primary" />
+        <Button asChild size="lg" variant="secondary" className="h-14 justify-start gap-3 text-base shadow-sm">
+          <Link to="/coordinator/calendar">
+            <CalendarDays className="h-5 w-5 text-primary" />
             <span className="text-left leading-tight">
-              <span className="block font-semibold">Chat with AI</span>
-              <span className="block text-[11px] font-normal opacity-70">Voice, rules & auto‑dispatch</span>
+              <span className="block font-semibold">Open dispatch</span>
+              <span className="block text-[11px] font-normal opacity-70">Manage today&apos;s trips</span>
             </span>
-          </Button>
-        </IfFeature>
+          </Link>
+        </Button>
       </div>
 
       {/* Stats – tight grid, no clipping on 375px */}
@@ -327,9 +316,6 @@ function TripRow({
             </span>
           );
         })()}
-        {job?.id && (job.from_flight || job.to_flight) && (
-          <FlightRefreshButton jobId={job.id} hasCode variant="icon" className="ml-0.5" />
-        )}
         {meta && <span>· {meta}</span>}
       </div>
     </Link>

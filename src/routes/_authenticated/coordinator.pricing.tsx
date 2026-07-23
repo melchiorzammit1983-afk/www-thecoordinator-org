@@ -117,7 +117,7 @@ function BaseRatesTab() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Base transport rates</CardTitle>
-        <CardDescription>Used for AI quotes and any trip that doesn't fall inside a service area.</CardDescription>
+        <CardDescription>Used for automatic quotes and any trip that doesn't fall inside a service area.</CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Currency" hint="3-letter code, e.g. EUR, USD, GBP.">

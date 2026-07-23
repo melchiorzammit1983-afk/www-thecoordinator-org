@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { getMaltaFlightStatus, normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
+import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
@@ -27,9 +27,7 @@ import { GroupStopsPanel } from "./GroupStopsPanel";
 import { TripEventsMap } from "./TripEventsMap";
 import { TripRouteInsights } from "./TripRouteInsights";
 import { ScheduleConflictBanner } from "./ScheduleConflictBanner";
-import { FlightRefreshButton } from "./FlightRefreshButton";
 import { ClientNameWithNote } from "./ClientNameWithNote";
-import { useSetAssistantScreen } from "./CoordinatorAssistant";
 import {
   Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
@@ -153,40 +151,14 @@ export function TripDetailsSheet({
   const paid = job.payment_status === "paid";
 
   const qc = useQueryClient();
-  const refreshFlightFn = useServerFn(getMaltaFlightStatus);
   const normalizeFn = useServerFn(normalizeJobData);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
-  const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
   const [driverChatOpen, setDriverChatOpen] = useState(false);
   const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
   const [boardingNote, setBoardingNote] = useState("");
 
   const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
-
-  // Expose the currently open trip to the floating AI assistant so it can
-  // resolve "this trip", "move it to 7pm", etc.
-  useSetAssistantScreen(
-    open && isRealJobId
-      ? {
-          path: typeof window !== "undefined" ? window.location.pathname : null,
-          trip: {
-            id: job.id,
-            from_location: job.from_location ?? null,
-            to_location: job.to_location ?? null,
-            date: (job as unknown as { date?: string | null }).date ?? null,
-            time: (job as unknown as { time?: string | null }).time ?? null,
-            driver_id: (job as unknown as { driver_id?: string | null }).driver_id ?? null,
-            driver_name: shownDriver ?? null,
-            from_flight: job.from_flight ?? null,
-            to_flight: job.to_flight ?? null,
-            vehicle: (job as unknown as { vehicle?: string | null }).vehicle ?? null,
-            contact_phone: (job as unknown as { contact_phone?: string | null }).contact_phone ?? null,
-            clientcompanyname: (job as unknown as { clientcompanyname?: string | null }).clientcompanyname ?? null,
-          },
-        }
-      : null,
-  );
 
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
@@ -341,23 +313,6 @@ export function TripDetailsSheet({
     })();
     return () => { cancelled = true; };
   }, [open, job?.id]);
-  const handleRefreshFlight = async () => {
-    if (!job) return;
-    setRefreshingFlight(true);
-    try {
-      const r: any = await refreshFlightFn({ data: { job_id: job.id } });
-      if (r?.ok) toast.success(`Flight: ${r.status}${r.note ? ` — ${r.note}` : ""}`);
-      else if (r?.reason === "not_found") toast.info("Flight not on Malta Airport board");
-      else if (r?.reason === "scrape_failed") toast.error("Could not fetch Malta Airport board");
-      else if (r?.reason === "no_flight") toast.info("No flight code on this trip");
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Refresh failed");
-    } finally {
-      setRefreshingFlight(false);
-    }
-  };
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-0">
@@ -780,18 +735,7 @@ export function TripDetailsSheet({
           {/* Flight */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
-                <Button
-                  variant="ghost" size="sm"
-                  className="h-6 px-2 text-[10px]"
-                  onClick={handleRefreshFlight}
-                  disabled={refreshingFlight}
-                >
-                  <RefreshCw className={`h-3 w-3 mr-1 ${refreshingFlight ? "animate-spin" : ""}`} />
-                  Refresh
-                </Button>
-              </div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
               <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
@@ -820,7 +764,6 @@ export function TripDetailsSheet({
                       : "Not checked yet"}
                   </span>
                   <div className="flex items-center gap-2">
-                    <FlightRefreshButton jobId={job.id} hasCode={!!(job.from_flight || job.to_flight)} />
                     <a
                       href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
                       target="_blank" rel="noopener noreferrer"
@@ -830,6 +773,9 @@ export function TripDetailsSheet({
                     </a>
                   </div>
                 </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Automatic live updates are temporarily unavailable. Check the airport board before dispatch.
+                </p>
               </div>
             </section>
           )}

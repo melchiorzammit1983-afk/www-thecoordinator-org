@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
 import { parseFlightCode, describeFlight, looksLikeVessel } from "./flight-code";
+import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 
 /**
  * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
@@ -57,50 +58,6 @@ async function spendSoft(companyId: string | null | undefined, featureKey: strin
     });
   } catch {
     // swallow — metering must never break the primary action
-  }
-}
-
-/**
- * Charge the flight-lookup bundle once per trip. Covers the initial lookup
- * at trip creation AND the automatic recheck ~30 min before pickup, so the
- * refresh button / T-30 cron do not charge again. Idempotent: guarded by
- * jobs.flight_lookup_bundled_at.
- *
- * Falls back to a no-op if the job has no flight/vessel code or if it's
- * already been charged. Metering is best-effort — a billing failure never
- * blocks trip creation.
- */
-async function chargeFlightBundleIfNeeded(
-  companyId: string | null | undefined,
-  jobId: string,
-) {
-  if (!companyId || !jobId) return;
-  try {
-    const sb = await getAdminClient();
-    const { data: j } = await sb
-      .from("jobs")
-      .select("id, from_flight, to_flight, tracking_kind, flight_lookup_bundled_at")
-      .eq("id", jobId)
-      .maybeSingle();
-    if (!j) return;
-    const anyJ = j as any;
-    const hasCode = !!(anyJ.from_flight || anyJ.to_flight);
-    if (!hasCode || anyJ.flight_lookup_bundled_at) return;
-    const key = anyJ.tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_bundle";
-    const { error } = await sb.rpc("spend_points", {
-      _company_id: companyId,
-      _feature_key: key,
-      _job_id: jobId,
-      _note: key === "flight_lookup_bundle"
-        ? "Flight lookup bundle (create + T-30 recheck)"
-        : "Vessel lookup",
-      _cost_override: undefined as unknown as number,
-    });
-    if (!error) {
-      await sb.from("jobs").update({ flight_lookup_bundled_at: new Date().toISOString() }).eq("id", jobId);
-    }
-  } catch {
-    // best-effort — never block trip creation on metering
   }
 }
 
@@ -722,7 +679,6 @@ export const createJob = createServerFn({ method: "POST" })
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
-    await chargeFlightBundleIfNeeded(c.id, row.id);
     // Auto-estimate the fare from company pricing + service areas. Route
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
@@ -884,9 +840,6 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(data.id, paxToSync);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
-    // If a flight/vessel code was newly added in this update, charge the
-    // per-trip bundle. Idempotent via jobs.flight_lookup_bundled_at.
-    await chargeFlightBundleIfNeeded(c.id, data.id);
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(data.id);
@@ -2299,6 +2252,12 @@ type FlightSide = "arr" | "dep";
 
 const liveStatusCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const LIVE_STATUS_TTL_MS = 20 * 60_000;
+// Live flight/vessel status previously depended on Gemini web grounding.
+// Keep the domain fields and deterministic status handling, but block all
+// provider calls until a dedicated transport-data provider is integrated.
+function liveStatusProviderEnabled(): boolean {
+  return false;
+}
 // Cache window for the manual-refresh meter: within this window the refresh
 // button is free (already-paid cached answer).
 const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
@@ -2636,6 +2595,9 @@ export async function applyLiveStatusToJob(
 ): Promise<LiveStatusResult> {
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
+  if (!liveStatusProviderEnabled()) {
+    return { ok: false, reason: "provider_unavailable" };
+  }
   const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
   const side: FlightSide | undefined =
@@ -2772,7 +2734,9 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
       .eq("company_id", c.id);
     if (upErr) throw new Error(upErr.message);
 
-    if (!data.retry) return { ok: true, retried: false as const };
+    if (!data.retry || !liveStatusProviderEnabled()) {
+      return { ok: true, retried: false as const, reason: "provider_unavailable" as const };
+    }
 
     const { data: job } = await supabaseAdmin
       .from("jobs")
@@ -2796,7 +2760,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const configured = !!process.env.GEMINI_API_KEY;
+    const configured = liveStatusProviderEnabled();
     const fromIso = new Date(Date.now() - 6 * 3600_000).toISOString();
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
@@ -2850,10 +2814,10 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
 export const getFlightTrackingConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
-    const configured = !!process.env.GEMINI_API_KEY;
+    const configured = liveStatusProviderEnabled();
     return {
       configured,
-      provider: configured ? "Lovable AI (web-grounded)" : null,
+      provider: null,
       feature: "flight_vessel_tracking",
     };
   });
@@ -2873,6 +2837,9 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
     if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    if (!liveStatusProviderEnabled()) {
+      return { ok: false as const, reason: "provider_unavailable" as const };
+    }
     if ((job as any).status === "completed" || (job as any).status === "cancelled") {
       return { ok: false as const, reason: "trip_finished" };
     }
@@ -2949,7 +2916,9 @@ async function _computeTripLiveStatus(data: {
   } | null = null;
   const code = (data.from_flight || data.to_flight || "").trim();
   const kind: "flight" | "vessel" = data.tracking_kind === "vessel" ? "vessel" : "flight";
-  if (code) {
+  if (code && !liveStatusProviderEnabled()) {
+    flight = { ok: false, code, reason: "provider_unavailable" };
+  } else if (code) {
     const side: FlightSide | undefined =
       kind === "flight" ? (data.from_flight ? "arr" : data.to_flight ? "dep" : undefined) : undefined;
     const r = await fetchLiveStatus(kind, code, pickupIso, side);
@@ -3140,7 +3109,7 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const hasCode = !finished && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
     const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
-    const shouldMeterFlight = hasCode && !flightFresh;
+    const shouldMeterFlight = liveStatusProviderEnabled() && hasCode && !flightFresh;
     const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
@@ -4752,6 +4721,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    assertOptionalAiModuleEnabled();
     const supabaseAdmin = await getAdminClient();
     const { data: co } = await supabaseAdmin
       .from("companies")
@@ -5707,6 +5677,7 @@ async function callGemini(
   model = "gemini-2.5-flash-lite",
   opts?: { temperature?: number; maxOutputTokens?: number },
 ): Promise<any> {
+  assertOptionalAiModuleEnabled();
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;

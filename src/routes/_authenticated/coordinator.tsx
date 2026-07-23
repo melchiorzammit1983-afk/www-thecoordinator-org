@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, Bot, KeyRound, Gift, AlertTriangle, MapPin, Clock, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, KeyRound, Gift, AlertTriangle, MapPin, Clock, Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTop
 
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
-import { CoordinatorAssistant } from "@/components/coordinator/CoordinatorAssistant";
 import { CriticalAlertModal } from "@/components/coordinator/CriticalAlertModal";
 
 
@@ -25,7 +24,7 @@ export const Route = createFileRoute("/_authenticated/coordinator")({
   component: CoordinatorLayout,
 });
 
-import { AI_FEATURE_KEYS, type FeatureKey } from "@/lib/features";
+import type { FeatureKey } from "@/lib/features";
 
 type NavItem = {
   to: string;
@@ -53,7 +52,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
       { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
       { to: "/coordinator/availability", label: "Availability", icon: Clock, exact: false, feature: "availability_autoforward" },
-      { to: "/coordinator/ai-center", label: "AI Center", icon: Bot, exact: false, feature: null },
     ],
   },
   {
@@ -117,14 +115,12 @@ function CoordinatorLayout() {
   useEffect(() => {
     if (!features) return;
     const match = NAV.find((n) => n.feature && (n.exact ? pathname === n.to : pathname.startsWith(n.to)));
-    const aiRoute = pathname.startsWith("/coordinator/ai-center");
-    const aiAllOff = aiRoute && !AI_FEATURE_KEYS.some((k) => features[k] !== false);
     const featureOff = !!(match && match.feature && features[match.feature] === false);
 
     const pathChanged = lastPathnameRef.current !== pathname;
     lastPathnameRef.current = pathname;
 
-    if (featureOff || aiAllOff) {
+    if (featureOff) {
       if (pathChanged) {
         toast.error(`${match?.label ?? "This feature"} is currently disabled by your administrator.`);
         navigate({ to: "/coordinator", replace: true });
@@ -136,8 +132,6 @@ function CoordinatorLayout() {
       setDisabledBanner(null);
     }
   }, [features, pathname, navigate]);
-
-  const anyAiEnabled = !features || AI_FEATURE_KEYS.some((k) => features[k] !== false);
 
   if (isLoading || (!company && identityLoading)) {
     return <div className="min-h-screen grid place-items-center text-muted-foreground text-sm">Loading…</div>;
@@ -191,7 +185,6 @@ function CoordinatorLayout() {
         <nav className="flex flex-col p-3 overflow-y-auto">
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter((item) => {
-              if (item.to === "/coordinator/ai-center") return anyAiEnabled;
               if (!item.feature) return true;
               return features?.[item.feature] !== false;
             });
@@ -246,9 +239,7 @@ function CoordinatorLayout() {
             </Button>
           </div>
         )}
-        <CoordinatorAssistant>
-          <Outlet />
-        </CoordinatorAssistant>
+        <Outlet />
       </main>
 
       <MobileTabBar onOpenChangePassword={() => setShowChangePw(true)} />

@@ -50,15 +50,15 @@ function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange:
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, extractTripsFromText, previewTripStatus, refreshJobLiveStatus, logAiTrainingSample } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, previewTripStatus, refreshJobLiveStatus } from "@/lib/coordinator.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
-import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv, SHEET_HEADERS } from "@/lib/sheet-template";
+import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv } from "@/lib/sheet-template";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FileDown, Paperclip, X } from "lucide-react";
+import { FileDown, Paperclip } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogDescription,
   ResponsiveDialogFooter, ResponsiveDialogHeader, ResponsiveDialogTitle,
@@ -74,10 +74,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { LabelPicker } from "@/components/coordinator/LabelPicker";
-import { Users, PencilLine, Plus, Trash2, Sparkles, ChevronDown, Undo2, Wand2 } from "lucide-react";
+import { Users, PencilLine, Plus, Trash2, ChevronDown, Undo2, Wand2 } from "lucide-react";
 import { useFeature } from "@/hooks/use-features";
-import { useAiToggle } from "@/hooks/use-preferences";
-import { VoiceToTripButton, type VoiceTrip } from "@/components/coordinator/VoiceToTripButton";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
@@ -131,9 +129,8 @@ export function JobFormDialog({
   onSaved: (createdDate?: string) => void;
 }) {
   const isEdit = !!job;
-  // Bulk paste tab: shown whenever the admin allows `bulk_paste`. When
-  // `ai_extraction` is off the BulkForm falls back to the pure-regex parser
-  // (see aiEnabled branch inside BulkForm) — same behaviour as before AI.
+  // Bulk paste remains a core feature. It parses pasted rows and spreadsheet
+  // files locally without relying on an external language model.
   const bulkEnabled = useFeature("bulk_paste");
   const [tab, setTab] = useState<"manual" | "bulk">("manual");
   const [prefill, setPrefill] = useState<Prefill | undefined>(undefined);
@@ -808,27 +805,6 @@ function ManualForm({
 }
 
 
-type AiRow = {
-  pickupDate: string; pickupTime: string;
-  pickupAddress: string; deliveryAddress: string;
-  customerName: string; contactNumber: string;
-  transportType: string; quantity: string;
-};
-type AiResp =
-  | { type: "question"; payload: string }
-  | { type: "questions"; payload: string[] }
-  | { type: "data"; payload: AiRow[]; is_low_confidence?: boolean; accuracy_score?: number; is_half_price?: boolean; follow_up_questions?: string[] };
-type ChatMsg = { role: "user" | "model"; text: string };
-
-function rowsToTsv(rows: AiRow[]): string {
-  const header = (SHEET_HEADERS as readonly string[]).join("\t");
-  const body = rows.map((r) => [
-    r.pickupDate, r.pickupTime, r.pickupAddress, r.deliveryAddress,
-    r.customerName, r.contactNumber, r.transportType, r.quantity,
-  ].map((c) => (c ?? "").toString().replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"));
-  return [header, ...body].join("\n");
-}
-
 function recomputeTripErrors(t: ParsedTrip): ParsedTrip {
   const errors: string[] = [];
   if (!t.date?.trim()) errors.push("Missing date");
@@ -838,31 +814,11 @@ function recomputeTripErrors(t: ParsedTrip): ParsedTrip {
   return { ...t, errors };
 }
 
-type Attachment = { name: string; mimeType: string; size: number; dataBase64: string };
-
-const MAX_FILES = 5;
-const MAX_BYTES = 10 * 1024 * 1024;
-const AI_MIME_RE = /^image\/(png|jpe?g|webp|heic|heif|gif)$|^application\/pdf$/i;
 const SHEET_EXT_RE = /\.(xlsx|xls|csv)$/i;
-const URL_RE = /https?:\/\/[^\s<>"']+/gi;
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = () => reject(r.error);
-    r.onload = () => {
-      const s = String(r.result || "");
-      const i = s.indexOf(",");
-      resolve(i >= 0 ? s.slice(i + 1) : s);
-    };
-    r.readAsDataURL(file);
-  });
-}
 
 function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: string) => void; onComplete: (t: ParsedTrip) => void; onCancel: () => void }) {
   const [raw, setRaw] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const parsed = useMemo(
@@ -875,10 +831,6 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const withErrors = useMemo(() => edited.map(recomputeTripErrors), [edited]);
   const valid = withErrors.filter((t) => t.errors.length === 0);
   const incomplete = withErrors.filter((t) => t.errors.length > 0);
-  const aiFeatureOn = useFeature("ai_extraction");
-  const aiUserOn = useAiToggle("ai_bulk_paste");
-  const aiEnabled = aiFeatureOn && aiUserOn;
-
   // ------- Address auto-fix (Google Places) -------
   // When enabled in settings, replace fuzzy From/To text with Google's top
   // match. Original text is stashed in trip.autoFixed so the user can undo.
@@ -942,136 +894,19 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   // Any new paste resets the auto-fix guard.
   useEffect(() => { setAutoFixed(false); }, [raw]);
 
-  // Chat state for the "Understand with AI" mini-chat
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chat, setChat] = useState<ChatMsg[]>([]);
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
-  const [pendingQuestions, setPendingQuestions] = useState<string[]>([]);
-  const [reply, setReply] = useState("");
-
-  // Preview draft — AI's proposal held for review before it overwrites the paste.
-  type PendingDraft = {
-    rows: AiRow[];
-    is_low_confidence: boolean;
-    accuracy_score: number;
-    is_half_price: boolean;
-    follow_up_questions: string[];
-    keep: boolean[];
-  };
-  const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
-
-  // Voice-to-trip transcript (surfaced when the coordinator uses the voice button)
-  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
-
-  // AI confidence — true when Gemini flags the extraction as fuzzy / partial.
-  const [aiLowConfidence, setAiLowConfidence] = useState(false);
-
-  // Learning-loop capture: remember the exact text + first AI draft so we
-  // can compare it against the coordinator's final edits on save.
-  const [aiOriginalText, setAiOriginalText] = useState<string | null>(null);
-  const [aiInitialOutput, setAiInitialOutput] = useState<AiRow[] | null>(null);
-  // Dynamic billing flags from the AI extraction (accuracy < 75% → half-price).
-  const [aiBilling, setAiBilling] = useState<{ is_half_price: boolean; accuracy_score: number } | null>(null);
-
-  const handleVoiceTrips = (trips: VoiceTrip[], transcript: string) => {
-    setRaw((prev) => {
-      const tsv = rowsToTsv(trips);
-      return prev.trim() ? prev + "\n" + tsv : tsv;
-    });
-    setVoiceTranscript(transcript || null);
-    setShowTranscript(false);
-    setChatOpen(false);
-  };
-
   const qc = useQueryClient();
   const bulkFn = useServerFn(createJobsBulk);
-  const aiFn = useServerFn(extractTripsFromText);
-  const logAiFn = useServerFn(logAiTrainingSample);
-
-  const aiMut = useMutation({
-    mutationFn: (payload: { messages: ChatMsg[]; attachments?: Omit<Attachment, "size">[]; urls?: string[] }) =>
-      aiFn({ data: payload }) as Promise<AiResp>,
-    onSuccess: (res) => {
-      if (res.type === "question") {
-        setPendingQuestion(res.payload);
-        setPendingQuestions([]);
-        setChat((prev) => [...prev, { role: "model", text: res.payload }]);
-        return;
-      }
-      if (res.type === "questions") {
-        const intro = "I need a quick clarification before I extract the trips:";
-        setPendingQuestion(intro);
-        setPendingQuestions(res.payload);
-        setChat((prev) => [
-          ...prev,
-          { role: "model", text: `${intro}\n${res.payload.map((q, i) => `${i + 1}. ${q}`).join("\n")}` },
-        ]);
-        return;
-      }
-      const rows = res.payload ?? [];
-      if (!rows.length) { toast.error("AI could not find any trips"); return; }
-      // Stage the draft for the coordinator to review before we overwrite `raw`.
-      setPendingDraft({
-        rows,
-        is_low_confidence: res.is_low_confidence === true,
-        accuracy_score: typeof res.accuracy_score === "number" ? res.accuracy_score : 1,
-        is_half_price: res.is_half_price === true,
-        follow_up_questions: res.follow_up_questions ?? [],
-        keep: rows.map(() => true),
-      });
-      setPendingQuestion(null);
-      setPendingQuestions([]);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const applyPendingDraft = () => {
-    if (!pendingDraft) return;
-    const kept = pendingDraft.rows.filter((_, i) => pendingDraft.keep[i]);
-    if (!kept.length) { toast.error("Pick at least one trip to apply"); return; }
-    const firstUserMsg = aiMut.variables?.messages?.find((m) => m.role === "user")?.text ?? raw;
-    setAiOriginalText(firstUserMsg);
-    setAiInitialOutput(kept);
-    setRaw(rowsToTsv(kept));
-    setAiLowConfidence(pendingDraft.is_low_confidence);
-    setAiBilling({ is_half_price: pendingDraft.is_half_price, accuracy_score: pendingDraft.accuracy_score });
-    setChatOpen(false);
-    setChat([]);
-    setPendingQuestion(null);
-    setPendingQuestions([]);
-    setAttachments([]);
-    if (pendingDraft.is_half_price) {
-      toast.warning(`AI accuracy ${Math.round(pendingDraft.accuracy_score * 100)}% — 50% discount will apply on save.`);
-    } else if (pendingDraft.is_low_confidence) {
-      toast.warning(`Applied ${kept.length} trip${kept.length === 1 ? "" : "s"} — confidence low, please review.`);
-    } else {
-      toast.success(`Applied ${kept.length} trip${kept.length === 1 ? "" : "s"}`);
-    }
-    setPendingDraft(null);
-  };
-
-  const discardPendingDraft = () => {
-    setPendingDraft(null);
-    setChatOpen(false);
-    setChat([]);
-    setPendingQuestion(null);
-    setPendingQuestions([]);
-  };
-
-
   const addFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files);
     if (!arr.length) return;
 
-    // 1) Handle spreadsheet files locally — no AI, no attachments.
     const sheets = arr.filter((f) => SHEET_EXT_RE.test(f.name) || /spreadsheet|excel|csv/i.test(f.type));
     for (const f of sheets) {
       try {
         const tsv = await fileToSheetTsv(f);
         if (tsv) {
           setRaw((prev) => (prev.trim() ? prev + "\n" + tsv : tsv));
-          toast.success(`Loaded ${f.name} — parsed without AI`);
+          toast.success(`Loaded ${f.name}`);
         } else {
           toast.error(`${f.name}: empty spreadsheet`);
         }
@@ -1079,66 +914,8 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         toast.error(`${f.name}: ${e?.message || "could not read"}`);
       }
     }
-
-    // 2) Handle images/PDFs as AI attachments.
-    const media = arr.filter((f) => AI_MIME_RE.test(f.type));
-    const rejected = arr.filter((f) => !sheets.includes(f) && !media.includes(f));
-    if (rejected.length) toast.error(`Unsupported: ${rejected.map((f) => f.name).join(", ")}`);
-
-    const next: Attachment[] = [];
-    for (const f of media) {
-      if (f.size > MAX_BYTES) { toast.error(`${f.name} is over 10 MB`); continue; }
-      if (attachments.length + next.length >= MAX_FILES) { toast.error(`Max ${MAX_FILES} attachments`); break; }
-      try {
-        const dataBase64 = await fileToBase64(f);
-        next.push({ name: f.name, mimeType: f.type, size: f.size, dataBase64 });
-      } catch {
-        toast.error(`Could not read ${f.name}`);
-      }
-    }
-    if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, MAX_FILES));
-  };
-
-  const startAi = () => {
-    const text = raw.trim();
-    if (!text && attachments.length === 0) return;
-    // Skip the AI entirely when the paste already looks like sheet/CSV rows —
-    // parseSheetPaste handles it locally at zero token cost.
-    if (text && !attachments.length && looksLikeSheetPaste(text)) {
-      toast.message("Looks like sheet data — parsed without AI");
-      return;
-    }
-    const urls = Array.from(new Set(text.match(URL_RE) ?? [])).slice(0, 3);
-    const userText = text || (attachments.length ? "Extract trips from the attached file(s)." : "");
-    const messages: ChatMsg[] = [{ role: "user", text: userText }];
-    setChat(messages);
-    setChatOpen(true);
-    setPendingQuestion(null);
-    aiMut.mutate({
-      messages,
-      attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
-      urls,
-    });
-  };
-
-  const sendReply = () => {
-    const t = reply.trim();
-    if (!t) return;
-    const next: ChatMsg[] = [...chat, { role: "user", text: t }];
-    setChat(next);
-    setReply("");
-    setPendingQuestion(null);
-    // Follow-ups keep attachments/urls (AI may need to re-read them for context).
-    const urls = Array.from(new Set((raw.match(URL_RE) ?? []))).slice(0, 3);
-    aiMut.mutate({
-      messages: next,
-      attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
-      urls,
-    });
-  };
-
-  const cancelChat = () => {
-    setChatOpen(false); setChat([]); setPendingQuestion(null); setPendingQuestions([]); setReply("");
+    const rejected = arr.filter((f) => !sheets.includes(f));
+    if (rejected.length) toast.error(`Only Excel and CSV files are supported: ${rejected.map((f) => f.name).join(", ")}`);
   };
 
 
@@ -1158,26 +935,10 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         pax: t.pax,
       })),
       label_ids: labelIds,
-      billing_flags: aiBilling ? {
-        is_half_price: aiBilling.is_half_price,
-        accuracy_score: aiBilling.accuracy_score,
-      } : undefined,
     } }),
-    onSuccess: (res: { created: string[]; billing?: { is_half_price: boolean; accuracy_score: number | null } }) => {
-      const discountNote = res.billing?.is_half_price ? " (50% AI-accuracy discount applied)" : "";
-      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}${discountNote}`);
+    onSuccess: (res: { created: string[] }) => {
+      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      // Learning loop — fire-and-forget capture of AI draft vs. final human data.
-      if (aiOriginalText && aiInitialOutput && aiInitialOutput.length) {
-        logAiFn({ data: {
-          original_text: aiOriginalText,
-          ai_initial_output: aiInitialOutput,
-          human_corrected_output: valid,
-        } }).catch(() => { /* silent — must not block save */ });
-        setAiOriginalText(null);
-        setAiInitialOutput(null);
-      }
-      setAiBilling(null);
       if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
     },
@@ -1207,270 +968,30 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {aiEnabled && !chatOpen && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,application/pdf,.xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files) void addFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button" size="sm" variant="outline"
-                  className="h-7"
-                  disabled={aiMut.isPending || attachments.length >= MAX_FILES}
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Attach images, PDFs, or spreadsheet files"
-                >
-                  <Paperclip className="h-3 w-3 mr-1" />
-                  Attach
-                </Button>
-                <Button
-                  type="button" size="sm" variant="outline"
-                  disabled={aiMut.isPending || (raw.trim().length < 3 && attachments.length === 0)}
-                  onClick={startAi}
-                  className="h-7"
-                >
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  {aiMut.isPending ? "Understanding…" : "Understand with AI"}
-                </Button>
-              </>
-            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button" size="sm" variant="outline"
+              className="h-7"
+              onClick={() => fileInputRef.current?.click()}
+              title="Import an Excel or CSV file"
+            >
+              <Paperclip className="h-3 w-3 mr-1" />
+              Import file
+            </Button>
           </div>
         </div>
 
-        {!chatOpen && (
-          <div className="flex items-center gap-2">
-            <VoiceToTripButton onTrips={handleVoiceTrips} disabled={aiMut.isPending} />
-            <span className="text-[11px] text-muted-foreground">Record a voice note or upload audio — AI extracts trips.</span>
-          </div>
-        )}
-
-        {!chatOpen && voiceTranscript && (
-          <div className="rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
-            <button
-              type="button"
-              className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowTranscript((v) => !v)}
-            >
-              <ChevronDown className={`h-3 w-3 transition-transform ${showTranscript ? "" : "-rotate-90"}`} />
-              Voice transcript
-            </button>
-            {showTranscript && (
-              <p className="mt-1.5 whitespace-pre-wrap text-foreground/80">{voiceTranscript}</p>
-            )}
-          </div>
-        )}
-
-
-        {!chatOpen && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {attachments.map((a, i) => (
-              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-                <Paperclip className="h-3 w-3" />
-                <span className="max-w-[160px] truncate">{a.name}</span>
-                <span className="text-muted-foreground">({Math.round(a.size / 1024)} KB)</span>
-                <button
-                  type="button"
-                  className="ml-0.5 rounded-full hover:bg-background"
-                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                  aria-label={`Remove ${a.name}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {chatOpen ? (
-          <div className="rounded-md border bg-muted/30 p-3 space-y-2">
-            <div className="max-h-60 overflow-auto space-y-2">
-              {chat.map((m, i) => (
-                <div key={i} className={`text-xs rounded-md px-2 py-1.5 whitespace-pre-wrap ${
-                  m.role === "user"
-                    ? "bg-primary text-primary-foreground ml-auto max-w-[85%] w-fit"
-                    : "bg-background border max-w-[85%] w-fit"
-                }`}>
-                  {m.text}
-                </div>
-              ))}
-              {aiMut.isPending && (
-                <div className="text-xs text-muted-foreground italic">
-                  {attachments.length > 0 ? "Analyzing attachment(s)…" : "AI is thinking…"}
-                </div>
-              )}
-            </div>
-            {pendingQuestions.length > 0 && !aiMut.isPending && (
-              <div className="flex flex-wrap gap-1.5">
-                {pendingQuestions.map((q, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className="rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] text-primary hover:bg-primary/10 text-left"
-                    title="Click to prefill your answer"
-                    onClick={() => setReply((prev) => (prev.trim() ? `${prev.trim()}\n${q} — ` : `${q} — `))}
-                  >
-                    ❓ {q}
-                  </button>
-                ))}
-              </div>
-            )}
-            {pendingQuestion && !aiMut.isPending && (
-              <div className="flex gap-2">
-                <Input
-                  autoFocus value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  placeholder={pendingQuestions.length > 0 ? "Answer the question(s) above…" : "Type your answer…"}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendReply(); } }}
-                />
-                <Button type="button" size="sm" onClick={sendReply} disabled={!reply.trim()}>
-                  Send
-                </Button>
-              </div>
-            )}
-            <div className="flex justify-end">
-              <Button type="button" size="sm" variant="ghost" className="h-7" onClick={cancelChat}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : pendingDraft ? (
-          <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-medium flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                AI proposed {pendingDraft.rows.length} trip{pendingDraft.rows.length === 1 ? "" : "s"} — review before applying
-              </div>
-              <span className={`text-[10px] rounded-full px-2 py-0.5 ${pendingDraft.is_low_confidence ? "bg-amber-500/20 text-amber-900 dark:text-amber-200" : "bg-emerald-500/20 text-emerald-900 dark:text-emerald-200"}`}>
-                {Math.round(pendingDraft.accuracy_score * 100)}% confidence
-              </span>
-            </div>
-            {pendingDraft.follow_up_questions.length > 0 && (
-              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
-                <div className="text-[11px] font-medium text-amber-900 dark:text-amber-200">
-                  A few clarifying questions would improve accuracy:
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {pendingDraft.follow_up_questions.map((q, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="rounded-full border border-amber-500/50 bg-background px-2.5 py-1 text-[11px] hover:bg-amber-500/10 text-left"
-                      onClick={() => {
-                        // Reopen the chat and send the clarification back to the AI.
-                        setChatOpen(true);
-                        setPendingDraft(null);
-                        const next: ChatMsg[] = [...chat, { role: "user", text: `Answer: ${q}` }];
-                        setChat(next);
-                        const urls = Array.from(new Set((raw.match(URL_RE) ?? []))).slice(0, 3);
-                        aiMut.mutate({
-                          messages: next,
-                          attachments: attachments.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 })),
-                          urls,
-                        });
-                      }}
-                    >
-                      ❓ {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="max-h-64 overflow-auto rounded border bg-background">
-              <table className="w-full text-[11px]">
-                <thead className="bg-muted/60 text-muted-foreground">
-                  <tr>
-                    <th className="w-8 px-2 py-1"></th>
-                    <th className="px-2 py-1 text-left">#</th>
-                    <th className="px-2 py-1 text-left">Date · Time</th>
-                    <th className="px-2 py-1 text-left">Pickup → Delivery</th>
-                    <th className="px-2 py-1 text-left">Customer</th>
-                    <th className="px-2 py-1 text-left">Pax</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingDraft.rows.map((r, i) => {
-                    const missing: string[] = [];
-                    if (!r.pickupDate?.trim()) missing.push("date");
-                    if (!r.pickupTime?.trim()) missing.push("time");
-                    if (!r.pickupAddress?.trim()) missing.push("pickup");
-                    if (!r.deliveryAddress?.trim()) missing.push("delivery");
-                    return (
-                      <tr key={i} className={`border-t ${pendingDraft.keep[i] ? "" : "opacity-40 line-through"}`}>
-                        <td className="px-2 py-1 align-top">
-                          <input
-                            type="checkbox"
-                            checked={pendingDraft.keep[i]}
-                            onChange={(e) =>
-                              setPendingDraft((prev) =>
-                                prev
-                                  ? { ...prev, keep: prev.keep.map((k, j) => (j === i ? e.target.checked : k)) }
-                                  : prev,
-                              )
-                            }
-                          />
-                        </td>
-                        <td className="px-2 py-1 align-top text-muted-foreground">{i + 1}</td>
-                        <td className="px-2 py-1 align-top whitespace-nowrap">
-                          {(r.pickupDate || "—") + " · " + (r.pickupTime || "—")}
-                        </td>
-                        <td className="px-2 py-1 align-top">
-                          <div className="truncate max-w-[240px]">{r.pickupAddress || <em className="text-destructive">missing</em>}</div>
-                          <div className="truncate max-w-[240px] text-muted-foreground">↓ {r.deliveryAddress || <em className="text-destructive">missing</em>}</div>
-                          {missing.length > 0 && (
-                            <div className="text-[10px] text-destructive">Missing: {missing.join(", ")}</div>
-                          )}
-                        </td>
-                        <td className="px-2 py-1 align-top">
-                          <div className="truncate max-w-[120px]">{r.customerName || "—"}</div>
-                          <div className="truncate max-w-[120px] text-muted-foreground">{r.contactNumber || ""}</div>
-                        </td>
-                        <td className="px-2 py-1 align-top">{r.quantity || "1"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              {pendingDraft.is_half_price
-                ? "⚠ Accuracy under 75% — a 50% AI-processing discount will apply on save."
-                : "Unchecked rows are skipped. You can still edit every field after applying."}
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button" size="sm" variant="ghost"
-                onClick={() => setPendingDraft((p) => (p ? { ...p, keep: p.keep.map(() => true) } : p))}
-              >
-                Keep all
-              </Button>
-              <Button
-                type="button" size="sm" variant="ghost"
-                onClick={() => setPendingDraft((p) => (p ? { ...p, keep: p.keep.map(() => false) } : p))}
-              >
-                Clear all
-              </Button>
-              <Button type="button" size="sm" variant="outline" onClick={discardPendingDraft}>
-                Discard
-              </Button>
-              <Button
-                type="button" size="sm"
-                onClick={applyPendingDraft}
-                disabled={pendingDraft.keep.every((k) => !k)}
-              >
-                Apply {pendingDraft.keep.filter(Boolean).length} trip
-                {pendingDraft.keep.filter(Boolean).length === 1 ? "" : "s"}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div
+        <div
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={(e) => {
@@ -1486,28 +1007,17 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                 const files = Array.from(e.clipboardData.files || []);
                 if (files.length) { e.preventDefault(); void addFiles(files); }
               }}
-              placeholder={"Paste text, drop an image/PDF, or paste a link.\nExcel/CSV rows also work — headers optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
+              placeholder={"Paste trip rows here, or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
               className="font-mono text-xs"
             />
-          </div>
-        )}
+        </div>
 
-        {!chatOpen && (
-          <p className="text-xs text-muted-foreground">
-            {aiEnabled
-              ? "Paste text, a link, or attach an image/PDF (WhatsApp screenshot, booking confirmation, itinerary). Excel/CSV files are parsed locally with no AI cost."
-              : "You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual."}
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground">
+          You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual.
+        </p>
 
 
       </div>
-      {aiLowConfidence && withErrors.length > 0 && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-          <div className="font-medium">⚠ The AI had trouble reading parts of this request.</div>
-          <div className="mt-0.5">Please review and complete the fields below before creating trips.</div>
-        </div>
-      )}
       {autoFixBusy && (
         <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           <Wand2 className="h-3.5 w-3.5 animate-pulse text-primary" />

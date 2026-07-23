@@ -48,20 +48,12 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
       </p>
     ),
   },
-  {
-    q: "The AI extraction failed. Did I lose my points?",
-    a: (
-      <p>
-        No. If the AI provider (e.g. Gemini) returns a 503 or errors after all retries, points are refunded automatically.
-      </p>
-    ),
-  },
 ];
 
 export default function Article() {
   return (
     <HelpArticle slug="faq" title="FAQ & troubleshooting">
-      <p>Quick answers to the most common questions. Can't find yours? Ask the Guide — it knows your live data.</p>
+      <p>Quick answers to the most common operational questions.</p>
       <div className="not-prose mt-6 space-y-3">
         {FAQS.map(({ q, a }) => (
           <details key={q} className="group rounded-lg border border-border p-4 open:bg-muted/30">

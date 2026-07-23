@@ -41,7 +41,7 @@ function TicketList({ onOpen }: { onOpen: (id: string) => void }) {
   const { data } = useQuery({ queryKey: ["my-tickets"], queryFn: () => listFn() });
   const rows = data ?? [];
   if (rows.length === 0) {
-    return <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No tickets yet. Ask the Guide to help, or open a new ticket.</CardContent></Card>;
+    return <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No support tickets yet.</CardContent></Card>;
   }
   return (
     <div className="space-y-2">

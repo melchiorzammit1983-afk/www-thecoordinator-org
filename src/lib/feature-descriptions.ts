@@ -61,8 +61,8 @@ export const FEATURE_META: FeatureMeta[] = [
     description: "Resolves plus-codes and coordinates to a hotel or business name via Google Places." },
 
   // Watchtower / auto-forward
-  { key: "ai_watchtower_scan", label: "AI Watchtower scan", group: "ops", toggleable: true,
-    description: "Background scan that watches flights, ETAs and schedule conflicts and alerts you when action is needed." },
+  { key: "ai_watchtower_scan", label: "Operations monitor scan", group: "ops", toggleable: false,
+    description: "Deterministic background checks for delays, ETAs, schedule conflicts and missing trip data." },
   { key: "trip_auto_forward", label: "Off-hours auto-forward", group: "ops", toggleable: true,
     description: "Forwards trips that arrive outside your opening hours to the next available partner." },
 
@@ -83,4 +83,23 @@ export const FEATURE_META_BY_KEY: Record<string, FeatureMeta> = Object.fromEntri
   FEATURE_META.map((f) => [f.key, f]),
 );
 
-export const TOGGLEABLE_FEATURES = FEATURE_META.filter((f) => f.toggleable);
+/** Active paid services shown to coordinators while the optional AI module is inactive. */
+const DEACTIVATED_AI_USAGE_KEYS = new Set([
+  "ai_coordinator_assist",
+  "ai_extraction",
+  "ai_extraction_media",
+  "ai_voice_to_trip",
+  "ai_auto_coordinate",
+  "ai_daily_plan",
+  "ai_reply_drafter",
+  "flight_lookup_bundle",
+  "flight_lookup_refresh",
+  "flight_lookup_vessel",
+  "flight_vessel_tracking",
+  "auto_shift_early_flight",
+  "route_optimization",
+]);
+
+export const TOGGLEABLE_FEATURES = FEATURE_META.filter(
+  (f) => f.toggleable && !DEACTIVATED_AI_USAGE_KEYS.has(f.key),
+);

@@ -1,6 +1,5 @@
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Coins, Bot, Gift, MapPin, Clock } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Coins, Gift, MapPin, Clock } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
-import { AI_FEATURE_KEYS } from "@/lib/features";
 
 export type TabDef = {
   id: string;
@@ -9,7 +8,6 @@ export type TabDef = {
   icon: typeof LayoutDashboard;
   exact: boolean;
   feature: FeatureKey | null;
-  aiGroup?: boolean;
   /** default slot when the user has never customized */
   defaultSlot: "bottom" | "more";
 };
@@ -17,7 +15,6 @@ export type TabDef = {
 export const TAB_CATALOG: TabDef[] = [
   { id: "home",       to: "/coordinator",                   label: "Home",         icon: LayoutDashboard, exact: true,  feature: null,             defaultSlot: "bottom" },
   { id: "dispatch",   to: "/coordinator/calendar",          label: "Dispatch",     icon: CalendarDays,    exact: false, feature: "dispatch",       defaultSlot: "bottom" },
-  { id: "ai",         to: "/coordinator/ai-center",         label: "AI",           icon: Bot,             exact: false, feature: null, aiGroup: true, defaultSlot: "bottom" },
   { id: "pending",    to: "/coordinator/pending",           label: "Pending",      icon: Inbox,           exact: false, feature: "pending",        defaultSlot: "more" },
   { id: "drivers",    to: "/coordinator/drivers",           label: "Drivers",      icon: Users,           exact: false, feature: "drivers",        defaultSlot: "more" },
   { id: "my_driving", to: "/coordinator/my-driving",        label: "My Driving",   icon: Car,             exact: false, feature: "my_driving",     defaultSlot: "more" },
@@ -34,7 +31,6 @@ export const TAB_CATALOG: TabDef[] = [
 
 export function tabsByFeatureVisible(features?: Record<string, boolean>) {
   return TAB_CATALOG.filter((t) => {
-    if (t.aiGroup) return !features || AI_FEATURE_KEYS.some((k) => features[k] !== false);
     if (!t.feature) return true;
     return features?.[t.feature] !== false;
   });
