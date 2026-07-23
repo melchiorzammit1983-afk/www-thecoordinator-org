@@ -2883,27 +2883,34 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
       try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
       catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
     }
-    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-      _company_id: c.id,
-      _feature_key: "flight_status_extra_lookup",
-      _job_id: data.job_id,
-      _note: "flight/vessel status extra lookup (manual)",
-      _cost_override: undefined as unknown as number,
-    });
-    if (spendErr) {
-      const msg = spendErr.message || "";
-      if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-      if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
-      if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
-      throw new Error(msg);
+    // Skip charging when the cached AI answer is still fresh — the caller
+    // gets the same result and we don't burn refresh points.
+    const lastAt = (job as any).flight_status_updated_at as string | null;
+    const fresh = !!lastAt && Date.now() - new Date(lastAt).getTime() < FLIGHT_REFRESH_FREE_MS;
+    const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
+    if (!fresh) {
+      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+        _company_id: c.id,
+        _feature_key: meterKey,
+        _job_id: data.job_id,
+        _note: "flight/vessel manual refresh",
+        _cost_override: undefined as unknown as number,
+      });
+      if (spendErr) {
+        const msg = spendErr.message || "";
+        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
+        if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
+        throw new Error(msg);
+      }
     }
 
     try {
       const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
-      if (!r.ok) await refundPoints(c.id, "flight_status_extra_lookup", "refresh failed", data.job_id);
+      if (!fresh && !r.ok) await refundPoints(c.id, meterKey, "refresh failed", data.job_id);
       return r;
     } catch (e: any) {
-      await refundPoints(c.id, "flight_status_extra_lookup", "refresh threw", data.job_id);
+      if (!fresh) await refundPoints(c.id, meterKey, "refresh threw", data.job_id);
       return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
