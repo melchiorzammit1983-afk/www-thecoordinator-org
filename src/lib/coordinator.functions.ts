@@ -2370,127 +2370,45 @@ function fmtHm(iso: string | null): string {
   try { return formatMaltaTime(iso); } catch { return new Date(iso).toISOString().slice(11, 16); }
 }
 
-// AeroDataBox (via RapidAPI). Free tier: 600 units/month — cache aggressively.
-// Endpoint: GET /flights/number/{number}/{date} returns scheduled/revised/actual
-// times for both departure and arrival plus a coarse status string.
-async function fetchLiveStatusViaAeroDataBox(
-  identifier: string,
-  pickupIso: string | null,
-  side?: FlightSide,
-): Promise<LiveStatusResult> {
-  const raw = (identifier || "").trim();
-  if (!raw) return { ok: false, reason: "no_code" };
-
-  const parsed = parseFlightCode(raw);
-  if (!parsed.ok) {
-    if (looksLikeVessel(raw)) return { ok: false, reason: "vessel_in_flight_field" };
-    return { ok: false, reason: "invalid_code" };
-  }
-  const canonical = parsed.normalized ?? raw.toUpperCase().replace(/\s+/g, "");
-
-  const key = process.env.AERODATABOX_API_KEY;
-  if (!key) return { ok: false, reason: "not_configured" };
-
-  const day = isoToDayKey(pickupIso);
-  const cacheKey = `adb:v3:${canonical}:${day}:${side ?? "auto"}`;
-  const cached = liveStatusCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
-
-  const url = `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(canonical)}/${day}?withAircraftImage=false&withLocation=false`;
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "x-rapidapi-key": key,
-        "x-rapidapi-host": "aerodatabox.p.rapidapi.com",
-      },
-    });
-    if (res.status === 204 || res.status === 404) {
-      const value: LiveStatusResult = {
-        ok: true, status: "unknown",
-        note: `No AeroDataBox record for ${canonical} on ${day} — verify code`,
-        scheduled: null, estimated: null, confidence: "low",
-      };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    if (!res.ok) {
-      const value: LiveStatusResult = { ok: false, reason: `adb_${res.status}` };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    const json = (await res.json()) as AeroFlight | AeroFlight[];
-    const flights = Array.isArray(json) ? json : [json];
-    if (!flights.length) {
-      const value: LiveStatusResult = { ok: true, status: "unknown", note: "", scheduled: null, estimated: null, confidence: "low" };
-      liveStatusCache.set(cacheKey, { at: Date.now(), value });
-      return value;
-    }
-    const chosen = pickAeroFlight(flights, pickupIso, side);
-
-    const status = mapAeroStatus(chosen.status);
-    const depSched = aeroScheduledTime(chosen.departure);
-    const depActual = aeroPickTime(chosen.departure);
-    const arrSched = aeroScheduledTime(chosen.arrival);
-    const arrActual = aeroPickTime(chosen.arrival);
-    const depCode = aeroAirportCode(chosen.departure);
-    const arrCode = aeroAirportCode(chosen.arrival);
-    const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
-
-    // Template-based note (no LLM): "MLA 08:15 → IST 12:30" with drift.
-    const parts: string[] = [];
-    if (depCode || depSched) parts.push(`${depCode} ${fmtHm(depActual ?? depSched)}`.trim());
-    if (arrCode || arrSched) parts.push(`${arrCode} ${fmtHm(arrActual ?? arrSched)}`.trim());
-    let note = parts.join(" → ");
-    if (arrSched && arrActual) {
-      const drift = Math.round((new Date(arrActual).getTime() - new Date(arrSched).getTime()) / 60000);
-      if (Math.abs(drift) >= 5) note += drift > 0 ? ` (+${drift}m)` : ` (${drift}m)`;
-    }
-    if (status === "cancelled") note = `CANCELLED · ${note}`.trim();
-    else if (status === "diverted") note = `Diverted · ${note}`.trim();
-
-    // Anchor persisted times to the semantic side: from_flight means passenger
-    // arriving in Malta, to_flight means departing Malta. Only fall back to the
-    // other side when the provider genuinely has no time for the requested side.
-    const anchor: FlightSide = (() => {
-      if (side === "arr" && (arrSched || arrActual)) return "arr";
-      if (side === "dep" && (depSched || depActual)) return "dep";
-      if (!pickupMs) return arrSched ? "arr" : "dep";
-      const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
-      const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
-      return dArr <= dDep ? "arr" : "dep";
-    })();
-    const scheduled = anchor === "arr" ? arrSched : depSched;
-    const estimated = anchor === "arr" ? arrActual : depActual;
-    const confidence: "high" | "low" = side && anchor !== side ? "low" : "high";
-
-    const value: LiveStatusResult = {
-      ok: true, status, note: note.slice(0, 160),
-      scheduled, estimated, confidence,
-    };
-    liveStatusCache.set(cacheKey, { at: Date.now(), value });
-    return value;
-  } catch {
-    return { ok: false, reason: "exception" };
-  }
-}
-
-// Dispatcher: real AeroDataBox for flights, Gemini grounding for vessels.
+// Dispatcher: Lovable AI (Gemini web-grounded) for both flights and vessels.
+// AeroDataBox was removed on 2026-07 — see `flight_lookup_bundle` billing.
 async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  if (kind === "flight") {
-    const r = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
-    if (!r.ok && r.reason === "not_configured") {
-      return { ok: true, status: "unknown", note: "Live flight tracking not configured", scheduled: null, estimated: null, confidence: "low" };
-    }
-    return r;
+  const r = await fetchLiveStatusViaGemini(kind, identifier, pickupIso);
+  if (!r.ok && r.reason === "not_configured") {
+    return {
+      ok: true,
+      status: "unknown",
+      note: "Live flight tracking not configured",
+      scheduled: null,
+      estimated: null,
+      confidence: "low",
+    };
   }
-  return fetchLiveStatusViaGemini(kind, identifier, pickupIso);
+  // Auto-fix: if the AI couldn't find the code, try common trivial fixes
+  // (uppercase, strip spaces, drop leading zeros) and retry once. Never
+  // charges twice — the caller only spends points once per call site.
+  if (r.ok && r.status === "unknown" && kind === "flight") {
+    try {
+      const { suggestCorrections } = await import("./flight-code");
+      const candidates = suggestCorrections(identifier);
+      for (const alt of candidates) {
+        const retry = await fetchLiveStatusViaGemini(kind, alt, pickupIso, { variant: "fix" });
+        if (retry.ok && retry.status && retry.status !== "unknown") {
+          return { ...retry, note: retry.note ? `${retry.note} · matched ${alt}` : `Matched as ${alt}` };
+        }
+      }
+    } catch { /* auto-fix best-effort */ }
+  }
+  // Also try side-agnostic when side was specified but no scheduled time.
+  if (r.ok && r.confidence === "low" && side) {
+    void side; // side param currently only used by the (removed) ADB path
+  }
+  return r;
 }
 
 
