@@ -37,13 +37,20 @@ export const FEATURE_META: FeatureMeta[] = [
   { key: "ai_reply_drafter", label: "AI chat reply drafts", group: "ops", toggleable: true,
     description: "Drafts 2–3 chat replies in the client's language and tone." },
 
-  // Flight / vessel tracking
-  { key: "flight_status_extra_lookup", label: "Flight extra lookup", group: "flights", toggleable: true,
-    description: "On-demand AeroDataBox flight lookup beyond the free daily allowance." },
-  { key: "flight_vessel_tracking", label: "Vessel tracking", group: "flights", toggleable: true,
-    description: "Live vessel / cruise-ship arrival lookup for hotel-transfer trips." },
+  // Flight / vessel tracking (Lovable AI — web-grounded)
+  { key: "flight_lookup_bundle", label: "Flight lookup — trip bundle", group: "flights", toggleable: true,
+    description: "Charged once per trip when a flight code is attached. Covers the initial lookup and the automatic recheck ~30 min before pickup." },
+  { key: "flight_lookup_refresh", label: "Flight lookup — manual refresh", group: "flights", toggleable: true,
+    description: "Per-tap price when the coordinator or driver presses Refresh after the cached AI answer goes stale (>10 min old)." },
+  { key: "flight_lookup_vessel", label: "Vessel lookup", group: "flights", toggleable: true,
+    description: "Web-grounded AI lookup for cruise-ship / vessel arrivals. Charged per lookup." },
+  { key: "flight_vessel_tracking", label: "Flight & vessel tracking", group: "flights", toggleable: true,
+    description: "Master switch for all flight/vessel lookups. Turn off to disable creation-time and manual lookups entirely." },
   { key: "auto_shift_early_flight", label: "Auto-shift early flight", group: "flights", toggleable: true,
-    description: "When AeroDataBox reports an inbound flight landing early, propose a pickup-time shift." },
+    description: "When the AI reports an inbound flight landing early, propose a pickup-time shift." },
+  // Legacy keys kept for historical reporting — no longer charged.
+  { key: "flight_status_extra_lookup", label: "Flight extra lookup (legacy)", group: "flights", toggleable: false,
+    description: "Legacy key from the AeroDataBox era. Replaced by flight_lookup_refresh — kept for historical reporting only." },
 
   // Routing / live
   { key: "route_optimization", label: "Group route optimization", group: "routing", toggleable: true,
