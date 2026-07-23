@@ -60,9 +60,9 @@ export function FlightTrackingIndicator() {
         <TooltipContent side="bottom" className="max-w-xs">
           <p>
             {isConfigured
-              ? "Flight tracking is live via AeroDataBox (RapidAPI). Trip cards will update automatically when real-time data is available."
+              ? "Flight tracking is live via Lovable AI (web-grounded). Trip cards refresh automatically when new information is available."
               : isNotConfigured
-                ? "Live flight tracking is not configured. Add your AERODATABOX_API_KEY secret to enable real-time flight status on trips."
+                ? "Live flight tracking is not configured. Ask an admin to enable Lovable AI (GEMINI_API_KEY) to activate real-time flight status."
                 : "Checking whether the flight tracking integration is configured…"}
           </p>
         </TooltipContent>
