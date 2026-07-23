@@ -884,6 +884,9 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(data.id, paxToSync);
     await syncJobLabels(context, c.id, data.id, data.label_ids);
+    // If a flight/vessel code was newly added in this update, charge the
+    // per-trip bundle. Idempotent via jobs.flight_lookup_bundled_at.
+    await chargeFlightBundleIfNeeded(c.id, data.id);
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(data.id);
