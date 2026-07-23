@@ -54,8 +54,10 @@ const ACTIVE_FEATURE_KEYS = new Set<string>([
   "ai_watchtower_scan",
   // Guide / help
   "ai_guide_chat",
-  // Flight tracking
-  "flight_status_extra_lookup",
+  // Flight / vessel tracking (Lovable AI)
+  "flight_lookup_bundle",
+  "flight_lookup_refresh",
+  "flight_lookup_vessel",
   "flight_vessel_tracking",
   "auto_shift_early_flight",
   // Ops
