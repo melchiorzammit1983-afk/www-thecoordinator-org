@@ -274,15 +274,16 @@ export const updateMyOperationsPhone = createServerFn({ method: "POST" })
     const phone = data.phone?.trim() || null;
     const { data: updated, error } = await supabaseAdmin
       .from("companies")
-      .update({ operations_phone: phone })
+      .update({ operations_phone: phone } as any)
       .eq("id", company.id)
-      .select("operations_phone")
+      .select("operations_phone" as any)
       .single();
     if (error) throw new Error(error.message);
-    if ((updated?.operations_phone ?? null) !== phone) {
+    const updatedPhone = (updated as any)?.operations_phone ?? null;
+    if (updatedPhone !== phone) {
       throw new Error("The 24/7 operations number could not be verified after saving.");
     }
-    return { ok: true as const, operations_phone: updated.operations_phone };
+    return { ok: true as const, operations_phone: updatedPhone as string | null };
   });
 
 export const updateMyBranding = createServerFn({ method: "POST" })
