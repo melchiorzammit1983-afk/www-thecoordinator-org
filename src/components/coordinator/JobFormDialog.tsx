@@ -50,7 +50,7 @@ function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange:
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, setJobContactPhoneIfEmpty, previewTripStatus, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus } from "@/lib/coordinator.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
@@ -83,6 +83,7 @@ import { formatEta } from "@/lib/trip-display";
 import { Clock, AlertTriangle } from "lucide-react";
 import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
 import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
+import { useMyCompany } from "@/hooks/use-coordinator";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -118,6 +119,17 @@ type Prefill = Partial<{
   clientcompanyname: string;
   pax: string[];
 }>;
+
+type PassengerDraft = {
+  key: string;
+  name: string;
+  phone: string;
+  note: string;
+};
+
+function passengerDraft(key: string, name = ""): PassengerDraft {
+  return { key, name, phone: "", note: "" };
+}
 
 export function JobFormDialog({
   open, onOpenChange, drivers, job, onSaved,
@@ -207,15 +219,62 @@ function ManualForm({
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
-  const [phone, setPhone] = useState(job?.contact_phone ?? "");
+  const [operationsPhone, setOperationsPhone] = useState("");
+  const [operationsPhoneDirty, setOperationsPhoneDirty] = useState(false);
   const [driverId, setDriverId] = useState<string>(job?.driver_id ?? "__none__");
   const isMobile = useIsMobile();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
-  const [paxText, setPaxText] = useState(prefill?.pax?.join("\n") ?? "");
+  const [passengers, setPassengers] = useState<PassengerDraft[]>(() =>
+    prefill?.pax?.length
+      ? prefill.pax.map((name, index) => passengerDraft(`prefill-${index}`, name))
+      : [passengerDraft("passenger-0")],
+  );
+  const nextPassengerKey = useRef(prefill?.pax?.length ?? 1);
+  const [showPassengerPaste, setShowPassengerPaste] = useState(false);
+  const [passengerPasteText, setPassengerPasteText] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
   const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
+
+  const duplicatePassengerNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const passenger of passengers) {
+      const key = passenger.name.trim().toLocaleLowerCase();
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+  }, [passengers]);
+
+  function patchPassenger(key: string, patch: Partial<Omit<PassengerDraft, "key">>) {
+    setPassengers((current) =>
+      current.map((passenger) => passenger.key === key ? { ...passenger, ...patch } : passenger),
+    );
+  }
+
+  function addPassenger(name = "") {
+    const key = `passenger-${nextPassengerKey.current++}`;
+    setPassengers((current) => [...current, passengerDraft(key, name)]);
+  }
+
+  function removePassenger(key: string) {
+    setPassengers((current) => current.filter((passenger) => passenger.key !== key));
+  }
+
+  function addPastedPassengers() {
+    const names = passengerPasteText.split(/\r?\n/).map((name) => name.trim()).filter(Boolean);
+    if (names.length === 0) return;
+    setPassengers((current) => {
+      const additions = names.map((name) => passengerDraft(`passenger-${nextPassengerKey.current++}`, name));
+      const onlyBlankRow = current.length === 1
+        && !current[0].name.trim()
+        && !current[0].phone.trim()
+        && !current[0].note.trim();
+      return onlyBlankRow ? additions : [...current, ...additions];
+    });
+    setPassengerPasteText("");
+    setShowPassengerPaste(false);
+  }
 
   // OTG-only: coordinator can reassign the trip to another connected
   // coordinator company while it is still `created_by_driver && needs_review`.
@@ -284,11 +343,18 @@ function ManualForm({
   }
 
   const qc = useQueryClient();
+  const { data: myCompany } = useMyCompany();
+  const saveOperationsPhoneFn = useServerFn(updateMyOperationsPhone);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
   const reviewFn = useServerFn(markJobReviewed);
+  useEffect(() => {
+    if (!myCompany || operationsPhoneDirty) return;
+    setOperationsPhone(myCompany.operations_phone ?? "");
+  }, [myCompany, operationsPhoneDirty]);
+
   const reviewMut = useMutation({
     mutationFn: () => reviewFn({ data: { job_id: job!.id } }),
     onSuccess: () => {
@@ -336,13 +402,40 @@ function ManualForm({
     mutationFn: async () => {
       const effFrom = from || (fromFlight ? "Airport" : "");
       const effTo = to || (toFlight ? "Airport" : "");
-      const pax = paxText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      const incompletePassengerIndex = passengers.findIndex((passenger) =>
+        !passenger.name.trim() && (!!passenger.phone.trim() || !!passenger.note.trim()),
+      );
+      if (incompletePassengerIndex >= 0) {
+        throw new Error(`Passenger ${incompletePassengerIndex + 1} needs a name.`);
+      }
+      const passengerPayload = passengers
+        .filter((passenger) => passenger.name.trim())
+        .map((passenger) => ({
+          name: passenger.name.trim(),
+          phone: passenger.phone.trim() || null,
+          note: passenger.note.trim() || null,
+        }));
+
+      const cleanOperationsPhone = operationsPhone.trim();
+      const savedOperationsPhone = myCompany?.operations_phone?.trim() ?? "";
+      if (operationsPhoneDirty && cleanOperationsPhone !== savedOperationsPhone) {
+        const saved = await saveOperationsPhoneFn({ data: { phone: cleanOperationsPhone || null } });
+        qc.setQueryData(["my-company"], (current: any) =>
+          current ? { ...current, operations_phone: saved.operations_phone } : current,
+        );
+        setOperationsPhoneDirty(false);
+      }
+
       const payload = {
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
         tracking_kind: trackingKind,
-        clientcompanyname: client, contact_phone: phone,
+        clientcompanyname: client,
+        // This legacy field is the customer/booking phone. The visible 24/7
+        // number is company-level, so preserve an existing value on edit and
+        // never write the operations number into it.
+        contact_phone: job?.contact_phone ?? "",
         driver_id: driverId === "__none__" ? null : driverId,
         qr_strict_mode: false, tracking_enabled: track,
         label_ids: labelIds,
@@ -359,7 +452,7 @@ function ManualForm({
         await updateFn({ data: editPayload });
         return { date, jobId: job.id, isNew: false };
       }
-      const row: any = await createFn({ data: { ...payload, pax } });
+      const row: any = await createFn({ data: { ...payload, passengers: passengerPayload } });
       return { date, jobId: row?.id as string | undefined, isNew: true };
     },
     onSuccess: (res) => {
@@ -367,9 +460,8 @@ function ManualForm({
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["driver-manifest"] });
       if (res.isNew && res.jobId) {
-        // Keep dialog open so the coordinator can add phone / note per
-        // passenger inline. onSaved() (which closes the dialog) fires from
-        // the Done / Skip buttons on that step.
+        // Keep the dialog open for a quick passenger review and optional
+        // intermediate stops. onSaved() closes it from Done / Skip.
         setCreatedJobId(res.jobId);
         setCreatedDate(res.date);
         return;
@@ -443,7 +535,7 @@ function ManualForm({
     return (
       <div className="flex flex-col gap-3">
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
-          Trip created. Add phone / note per passenger and any intermediate stops, or skip and do it later.
+          Trip created. Review the passenger details and add any intermediate stops, or finish now.
         </div>
         <PaxEditor jobId={createdJobId} initiallyExpanded />
         <StopsEditor jobId={createdJobId} />
@@ -503,16 +595,114 @@ function ManualForm({
         <section data-step="1" className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label>Client / company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Hilton Malta" /></div>
-            <div className="space-y-1.5"><Label>Contact phone</Label><Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+356 …" /></div>
+            <div className="space-y-1.5">
+              <Label>24/7 trip support number</Label>
+              <Input
+                type="tel"
+                value={operationsPhone}
+                maxLength={40}
+                onChange={(e) => {
+                  setOperationsPhone(e.target.value);
+                  setOperationsPhoneDirty(true);
+                }}
+                placeholder="+356 …"
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Shown on every client link. Changing it updates the current on-duty number for all active trips.
+              </p>
+            </div>
           </div>
           {!job && (
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (one per line, optional)</Label>
-              <Textarea
-                rows={4} value={paxText}
-                onChange={(e) => setPaxText(e.target.value)}
-                placeholder={"ELMER CLEMENTE AGUINALDO\nNIXON KALATHILAPARAMBIL VINCENT"}
-              />
+            <div className="space-y-2 rounded-lg border bg-muted/10 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Passengers (optional)</Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Add contact details once, before creating the trip.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => addPassenger()}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add passenger
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowPassengerPaste((value) => !value)}>
+                    Paste many names
+                  </Button>
+                </div>
+              </div>
+
+              {showPassengerPaste && (
+                <div className="space-y-2 rounded-md border bg-background p-2">
+                  <Textarea
+                    rows={4}
+                    value={passengerPasteText}
+                    onChange={(e) => setPassengerPasteText(e.target.value)}
+                    placeholder={"ELMER CLEMENTE AGUINALDO\nNIXON KALATHILAPARAMBIL VINCENT"}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowPassengerPaste(false)}>Cancel</Button>
+                    <Button type="button" size="sm" onClick={addPastedPassengers} disabled={!passengerPasteText.trim()}>Add names</Button>
+                  </div>
+                </div>
+              )}
+
+              {passengers.length === 0 && (
+                <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+                  No passengers added yet.
+                </p>
+              )}
+
+              <div className="space-y-2">
+                {passengers.map((passenger, index) => {
+                  const duplicate = duplicatePassengerNames.has(passenger.name.trim().toLocaleLowerCase());
+                  return (
+                    <div key={passenger.key} className="rounded-md border bg-background p-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium">Passenger {index + 1}</span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          aria-label={`Remove passenger ${index + 1}`}
+                          onClick={() => removePassenger(passenger.key)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div>
+                          <Input
+                            value={passenger.name}
+                            maxLength={200}
+                            onChange={(e) => patchPassenger(passenger.key, { name: e.target.value })}
+                            placeholder="Full name"
+                            aria-label={`Passenger ${index + 1} full name`}
+                          />
+                          {duplicate && <p className="mt-1 text-[10px] text-amber-700">Duplicate name — both passengers will be kept.</p>}
+                        </div>
+                        <Input
+                          type="tel"
+                          value={passenger.phone}
+                          maxLength={40}
+                          onChange={(e) => patchPassenger(passenger.key, { phone: e.target.value })}
+                          placeholder="Phone (optional)"
+                          aria-label={`Passenger ${index + 1} phone`}
+                        />
+                        <Input
+                          value={passenger.note}
+                          maxLength={500}
+                          onChange={(e) => patchPassenger(passenger.key, { note: e.target.value })}
+                          placeholder="Internal note — e.g. wheelchair, room, luggage"
+                          aria-label={`Passenger ${index + 1} internal note`}
+                          className="sm:col-span-2"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Passenger notes are private: only the coordinator and assigned driver can see them.
+              </p>
             </div>
           )}
           {job && <PaxEditor jobId={job.id} />}
@@ -828,6 +1018,16 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   // Editable overrides — mirror `parsed` and let coordinators tweak fields in place.
   const [edited, setEdited] = useState<ParsedTrip[]>(parsed);
   useEffect(() => { setEdited(parsed); }, [parsed]);
+  const inferredOperationName = useMemo(() => {
+    const values = parsed.map((t) => t.operation_name?.trim()).filter((value): value is string => !!value);
+    if (values.length === 0) return "";
+    const first = values[0];
+    return values.every((value) => value === first) ? first : "";
+  }, [parsed]);
+  const [operationName, setOperationName] = useState("");
+  useEffect(() => {
+    setOperationName((current) => (current.trim() ? current : inferredOperationName));
+  }, [inferredOperationName]);
   const withErrors = useMemo(() => edited.map(recomputeTripErrors), [edited]);
   const valid = withErrors.filter((t) => t.errors.length === 0);
   const incomplete = withErrors.filter((t) => t.errors.length > 0);
@@ -926,6 +1126,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
 
   const mut = useMutation({
     mutationFn: () => bulkFn({ data: {
+      operation_name: operationName.trim() || undefined,
       trips: valid.map((t) => ({
         from_location: t.from_location, to_location: t.to_location,
         date: t.date, time: t.time,
@@ -936,8 +1137,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       })),
       label_ids: labelIds,
     } }),
-    onSuccess: (res: { created: string[] }) => {
-      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}`);
+    onSuccess: (res: { created: string[]; operation_name?: string }) => {
+      const operationLabel = res.operation_name ? ` in operation "${res.operation_name}"` : "";
+      toast.success(`Created ${res.created.length} trip${res.created.length === 1 ? "" : "s"}${operationLabel}`);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       if (incomplete.length === 0) onSaved(earliestValidDate);
       else toast.message(`${incomplete.length} incomplete — finish them in Manual`);
@@ -991,6 +1193,19 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
           </div>
         </div>
 
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Operation name (optional)</Label>
+          <Input
+            value={operationName}
+            onChange={(e) => setOperationName(e.target.value)}
+            placeholder="e.g. Everest Crew Change"
+            className="h-8 text-xs"
+          />
+          <p className="text-xs text-muted-foreground">
+            Leave this blank if you want the system to derive a name from the first row.
+          </p>
+        </div>
+
         <div
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
@@ -1007,13 +1222,13 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                 const files = Array.from(e.clipboardData.files || []);
                 if (files.length) { e.preventDefault(); void addFiles(files); }
               }}
-              placeholder={"Paste trip rows here, or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity"}
+              placeholder={"Paste trip rows here, or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity  Operation Name"}
               className="font-mono text-xs"
             />
         </div>
 
         <p className="text-xs text-muted-foreground">
-          You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Incomplete trips can be finished in Manual.
+          You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Use the operation name to keep rows grouped together. Incomplete trips can be finished in Manual.
         </p>
 
 
@@ -1135,7 +1350,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       onChange={(e) => patch({ clientcompanyname: e.target.value })} />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground">Contact phone</span>
+                    <span className="text-[10px] text-muted-foreground">Booking contact phone</span>
                     <Input value={t.contact_phone} className="h-7 text-xs"
                       placeholder="+…"
                       onChange={(e) => patch({ contact_phone: e.target.value })} />
@@ -1198,7 +1413,6 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
   const addFn = useServerFn(addJobPax);
   const removeFn = useServerFn(removeJobPax);
   const updateFn = useServerFn(updateJobPax);
-  const setPhoneFn = useServerFn(setJobContactPhoneIfEmpty);
   const tokenFn = useServerFn(getPaxPersonalToken);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -1236,11 +1450,6 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
       const finalName = parsed.cleanName || raw;
       const finalPhone = cleanPhone || parsed.phone || null;
       if (!isMeaningfulName(finalName)) {
-        if (finalPhone) {
-          const r: any = await setPhoneFn({ data: { job_id: jobId, phone: finalPhone } });
-          if (r?.set) toast.success(`Saved phone number ${finalPhone}`);
-          return;
-        }
         toast.error("Enter a passenger name");
         throw new Error("empty");
       }
@@ -1255,7 +1464,7 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
     onError: (e: Error) => toast.error(e.message),
   });
   const updateMut = useMutation({
-    mutationFn: (v: { pax_id: string; phone?: string | null; note?: string | null }) =>
+    mutationFn: (v: { pax_id: string; name?: string; phone?: string | null; note?: string | null }) =>
       updateFn({ data: v }),
     onSuccess: invalidate,
     onError: (e: Error) => toast.error(e.message),
@@ -1303,7 +1512,18 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
               {expanded[p.id] && (
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Input
+                    defaultValue={p.name}
+                    maxLength={200}
+                    placeholder="Passenger name"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v && p.name !== v) updateMut.mutate({ pax_id: p.id, name: v });
+                    }}
+                  />
+                  <Input
+                    type="tel"
                     defaultValue={p.phone ?? ""}
+                    maxLength={40}
                     placeholder="Phone (optional)"
                     onBlur={(e) => {
                       const v = e.target.value.trim();
@@ -1312,7 +1532,9 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
                   />
                   <Input
                     defaultValue={p.note ?? ""}
-                    placeholder="Note (e.g. Annex 1 needed)"
+                    maxLength={500}
+                    placeholder="Internal note (e.g. wheelchair or luggage)"
+                    className="sm:col-span-2"
                     onBlur={(e) => {
                       const v = e.target.value.trim();
                       if ((p.note ?? "") !== v) updateMut.mutate({ pax_id: p.id, note: v || null });
@@ -1329,24 +1551,31 @@ function PaxEditor({ jobId, initiallyExpanded = false }: { jobId: string; initia
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr,1fr]">
         <Input
           value={name} onChange={(e) => setName(e.target.value)}
+          maxLength={200}
           placeholder="Passenger name"
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (name.trim()) addMut.mutate(); } }}
         />
         <Input
+          type="tel"
           value={phone} onChange={(e) => setPhone(e.target.value)}
+          maxLength={40}
           placeholder="Phone (optional)"
         />
       </div>
       <div className="flex gap-2">
         <Input
           value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder="Note (optional)"
+          maxLength={500}
+          placeholder="Internal note (optional)"
           className="flex-1"
         />
         <Button type="button" onClick={() => addMut.mutate()} disabled={addMut.isPending || !name.trim()}>
           <Plus className="h-4 w-4 mr-1" /> Add
         </Button>
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        Internal notes are visible only to the coordinator and assigned driver.
+      </p>
     </div>
   );
 }
