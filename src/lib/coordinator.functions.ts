@@ -744,14 +744,15 @@ export const createJob = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const operationName = data.operation_name?.trim();
-    if (operationName && row?.operation_id) {
-      const { error: opErr } = await supabaseAdmin
+    const rowAny = row as any;
+    if (operationName && rowAny?.operation_id) {
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
           company: data.clientcompanyname || null,
         })
-        .eq("id", row.operation_id);
+        .eq("id", rowAny.operation_id);
       if (opErr) throw new Error(opErr.message);
     }
     // If the caller didn't send explicit passenger names, try to auto-fill
