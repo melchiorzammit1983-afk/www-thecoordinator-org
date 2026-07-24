@@ -922,7 +922,7 @@ export const updateJob = createServerFn({ method: "POST" })
     // no explicit pax array AND the trip has no existing passenger rows.
     const operationName = data.operation_name?.trim();
     if (operationName && (existing as any).operation_id) {
-      const { error: opErr } = await supabaseAdmin
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
