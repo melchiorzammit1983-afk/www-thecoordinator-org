@@ -33,10 +33,51 @@ function normalizeMaltaIso(raw: unknown): string | null {
 }
 
 type Ctx = { supabase: any; userId: string };
+type CompanyRecord = {
+  id: string;
+  name?: string | null;
+  status?: string | null;
+  [key: string]: any;
+};
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
+}
+
+async function lookupCompanyForUser(
+  supabaseAdmin: any,
+  userId: string,
+  selectColumns: string,
+): Promise<CompanyRecord | null> {
+  const { data: byOwner, error: ownerErr } = await supabaseAdmin
+    .from("companies")
+    .select(selectColumns)
+    .eq("owner_user_id", userId)
+    .maybeSingle();
+  if (ownerErr) throw new Error(ownerErr.message);
+  if (byOwner) return byOwner as CompanyRecord;
+
+  const { data: authUser, error: authErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (authErr) throw new Error(authErr.message);
+  const phoneCandidates = Array.from(
+    new Set(
+      [
+        (authUser?.user?.phone ?? "").trim(),
+        String((authUser?.user?.user_metadata as { phone?: string | null } | undefined)?.phone ?? "").trim(),
+      ].filter((phone) => !!phone),
+    ),
+  );
+  for (const phone of phoneCandidates) {
+    const { data: byPhone, error: phoneErr } = await supabaseAdmin
+      .from("companies")
+      .select(selectColumns)
+      .eq("coordinator_phone", phone)
+      .maybeSingle();
+    if (phoneErr) throw new Error(phoneErr.message);
+    if (byPhone) return byPhone as CompanyRecord;
+  }
+  return null;
 }
 
 /**
@@ -118,7 +159,7 @@ function makePickupIso(date: string, time: string) {
   }
 }
 
-async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
+async function resolveCompany(ctx: Ctx, companyIdOverride?: string): Promise<CompanyRecord & { isAdmin: boolean }> {
   const supabaseAdmin = await getAdminClient();
   const isAdmin = await checkIsAdmin(ctx.userId);
   if (isAdmin && companyIdOverride) {
@@ -129,14 +170,9 @@ async function resolveCompany(ctx: Ctx, companyIdOverride?: string) {
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error("Company not found");
-    return { ...data, isAdmin: true };
+    return { ...(data as CompanyRecord), isAdmin: true };
   }
-  const { data, error } = await supabaseAdmin
-    .from("companies")
-    .select("id, name, status")
-    .eq("owner_user_id", ctx.userId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
+  const data = await lookupCompanyForUser(supabaseAdmin, ctx.userId, "id, name, status");
   if (!data) throw new Error("No company assigned to this account");
   return { ...data, isAdmin };
 }
@@ -240,15 +276,11 @@ export const getMyCompany = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const supabaseAdmin = await getAdminClient();
-    const { data, error } = await supabaseAdmin
-      .from("companies")
-      .select(
-        "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code, operations_phone",
-      )
-      .eq("owner_user_id", context.userId)
-      .maybeSingle();
-    if (error) return null;
-    return data ?? null;
+    return await lookupCompanyForUser(
+      supabaseAdmin,
+      context.userId,
+      "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code, operations_phone",
+    );
   });
 
 const operationsPhoneInput = z
@@ -300,12 +332,8 @@ export const updateMyBranding = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const supabaseAdmin = await getAdminClient();
-    const { data: co, error: cErr } = await supabaseAdmin
-      .from("companies")
-      .select("id")
-      .eq("owner_user_id", context.userId)
-      .maybeSingle();
-    if (cErr || !co) throw new Error("No company assigned");
+    const co = await lookupCompanyForUser(supabaseAdmin, context.userId, "id");
+    if (!co) throw new Error("No company assigned");
     const patch: Record<string, unknown> = {};
     if ("logo_url" in data) patch.logo_url = data.logo_url ?? null;
     if ("advert_url" in data) patch.advert_url = data.advert_url ?? null;
@@ -325,11 +353,7 @@ export const getMyFeatures = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const supabaseAdmin = await getAdminClient();
     const { FEATURE_KEYS } = await import("@/lib/features");
-    const { data: co } = await supabaseAdmin
-      .from("companies")
-      .select("id")
-      .eq("owner_user_id", context.userId)
-      .maybeSingle();
+    const co = await lookupCompanyForUser(supabaseAdmin, context.userId, "id");
     const features: Record<string, boolean> = {};
     for (const k of FEATURE_KEYS) features[k] = true;
     if (!co) return features;
@@ -1715,26 +1739,28 @@ async function syncVirtualDrivers(ctx: Ctx, companyId: string) {
     .select("id, name, owner_user_id")
     .eq("id", companyId)
     .maybeSingle();
-  if (me?.owner_user_id) {
+  const linkedUserId = me?.owner_user_id ?? ctx.userId;
+  if (linkedUserId) {
+    const companyName = me?.name ?? "Coordinator";
     const { data: existsMe } = await supabaseAdmin
       .from("drivers")
       .select("id, name")
       .eq("company_id", companyId)
       .eq("kind", "coordinator")
-      .eq("linked_user_id", me.owner_user_id)
+      .eq("linked_user_id", linkedUserId)
       .maybeSingle();
     if (!existsMe) {
       await supabaseAdmin.from("drivers").insert({
         company_id: companyId,
         kind: "coordinator",
-        linked_user_id: me.owner_user_id,
-        name: `${me.name} (me)`,
+        linked_user_id: linkedUserId,
+        name: `${companyName} (me)`,
         status: "available",
       });
     } else if (!existsMe.name?.includes("(me)")) {
       await supabaseAdmin
         .from("drivers")
-        .update({ name: `${me.name} (me)` })
+        .update({ name: `${companyName} (me)` })
         .eq("id", existsMe.id);
     }
   }
@@ -4840,11 +4866,7 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     assertOptionalAiModuleEnabled();
     const supabaseAdmin = await getAdminClient();
-    const { data: co } = await supabaseAdmin
-      .from("companies")
-      .select("id")
-      .eq("owner_user_id", context.userId)
-      .maybeSingle();
+    const co = await lookupCompanyForUser(supabaseAdmin, context.userId, "id");
     if (co) await assertFeatureEnabled(co.id, "ai_extraction");
 
     // Meter: 1pt for text-only, 3pts when files/urls attached.
@@ -7765,11 +7787,7 @@ export const getMyGpsSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const sb = await getAdminClient();
-    const { data } = await sb
-      .from("companies")
-      .select("id, arrival_radius_m")
-      .eq("owner_user_id", context.userId)
-      .maybeSingle();
+    const data = await lookupCompanyForUser(sb, context.userId, "id, arrival_radius_m");
     return { arrival_radius_m: (data as any)?.arrival_radius_m ?? null };
   });
 
@@ -7780,7 +7798,7 @@ export const updateMyGpsSettings = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const sb = await getAdminClient();
-    const { data: co } = await sb.from("companies").select("id").eq("owner_user_id", context.userId).maybeSingle();
+    const co = await lookupCompanyForUser(sb, context.userId, "id");
     if (!co) throw new Error("No company assigned");
     const { error } = await sb
       .from("companies")
@@ -7930,11 +7948,7 @@ export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
 
     const isAdmin = await checkIsAdmin(context.userId);
     if (!isAdmin) {
-      const { data: co } = await sb
-        .from("companies")
-        .select("id")
-        .eq("owner_user_id", context.userId)
-        .maybeSingle();
+      const co = await lookupCompanyForUser(sb, context.userId, "id");
       const myCompanyId = co?.id as string | undefined;
       const allowedCompanyIds = new Set(
         [
