@@ -7,6 +7,7 @@ export type Company = {
   name: string;
   status: string;
   isAdmin: boolean;
+  operations_phone?: string | null;
 } | null;
 
 export function useMyCompany() {
