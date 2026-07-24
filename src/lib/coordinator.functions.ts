@@ -2327,7 +2327,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           vehicle: null,
           driver_id: null,
           tracking_kind: t.tracking_kind ?? "flight",
-        })
+        } as any)
         .select("id")
         .single();
       if (error) throw new Error(error.message);
