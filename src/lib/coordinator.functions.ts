@@ -274,15 +274,16 @@ export const updateMyOperationsPhone = createServerFn({ method: "POST" })
     const phone = data.phone?.trim() || null;
     const { data: updated, error } = await supabaseAdmin
       .from("companies")
-      .update({ operations_phone: phone })
+      .update({ operations_phone: phone } as any)
       .eq("id", company.id)
-      .select("operations_phone")
+      .select("operations_phone" as any)
       .single();
     if (error) throw new Error(error.message);
-    if ((updated?.operations_phone ?? null) !== phone) {
+    const updatedPhone = (updated as any)?.operations_phone ?? null;
+    if (updatedPhone !== phone) {
       throw new Error("The 24/7 operations number could not be verified after saving.");
     }
-    return { ok: true as const, operations_phone: updated.operations_phone };
+    return { ok: true as const, operations_phone: updatedPhone as string | null };
   });
 
 export const updateMyBranding = createServerFn({ method: "POST" })
@@ -743,14 +744,15 @@ export const createJob = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const operationName = data.operation_name?.trim();
-    if (operationName && row?.operation_id) {
-      const { error: opErr } = await supabaseAdmin
+    const rowAny = row as any;
+    if (operationName && rowAny?.operation_id) {
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
           company: data.clientcompanyname || null,
         })
-        .eq("id", row.operation_id);
+        .eq("id", rowAny.operation_id);
       if (opErr) throw new Error(opErr.message);
     }
     // If the caller didn't send explicit passenger names, try to auto-fill
@@ -920,7 +922,7 @@ export const updateJob = createServerFn({ method: "POST" })
     // no explicit pax array AND the trip has no existing passenger rows.
     const operationName = data.operation_name?.trim();
     if (operationName && (existing as any).operation_id) {
-      const { error: opErr } = await supabaseAdmin
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
@@ -2287,7 +2289,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
-    const { data: operation, error: opErr } = await supabaseAdmin
+    const { data: operationRaw, error: opErr } = await (supabaseAdmin as any)
       .from("operations")
       .insert({
         company_id: c.id,
@@ -2298,7 +2300,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       })
       .select("id, name")
       .single();
-    if (opErr || !operation) throw new Error(opErr?.message || "Could not create operation");
+    if (opErr || !operationRaw) throw new Error(opErr?.message || "Could not create operation");
+    const operation = operationRaw as { id: string; name: string };
 
     const created: string[] = [];
     for (const t of data.trips) {
@@ -2324,7 +2327,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           vehicle: null,
           driver_id: null,
           tracking_kind: t.tracking_kind ?? "flight",
-        })
+        } as any)
         .select("id")
         .single();
       if (error) throw new Error(error.message);
