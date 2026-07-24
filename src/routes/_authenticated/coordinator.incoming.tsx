@@ -51,7 +51,7 @@ function IncomingPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <h1 className="text-2xl font-semibold flex items-center gap-2"><Send className="h-5 w-5" /> Partner jobs</h1>
+      <h1 className="text-2xl font-semibold flex items-center gap-2"><Send className="h-5 w-5" /> Partner trips</h1>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Incoming — pending your decision</CardTitle></CardHeader>
@@ -64,7 +64,9 @@ function IncomingPage() {
                 <span className="font-medium">{j.date} {j.time?.slice(0, 5)}</span>
                 <span className="text-sm">{j.from_location} → {j.to_location}</span>
                 {j.vehicle && <span className="text-xs text-muted-foreground">{j.vehicle}</span>}
-                <span className="text-xs text-muted-foreground ml-auto">{(j.pax ?? []).length} pax</span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {(j.pax ?? []).length} passenger{(j.pax ?? []).length === 1 ? "" : "s"}
+                </span>
               </div>
               {j.dispatch_note && <div className="text-xs text-muted-foreground">Note: {j.dispatch_note}</div>}
               <div className="pt-2">

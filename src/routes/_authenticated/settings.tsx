@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Activity, LayoutGrid, Palette, Bell, User } from "lucide-react";
+import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Activity, LayoutGrid, Palette, Bell, User, Phone } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -14,12 +14,15 @@ import { useFeatures } from "@/hooks/use-features";
 import { TAB_CATALOG, tabsByFeatureVisible, resolveMobileLayout } from "@/lib/tab-catalog";
 import { TOGGLEABLE_FEATURES } from "@/lib/feature-descriptions";
 import { useFeaturePrefs, useSetFeaturePref } from "@/hooks/use-feature-prefs";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listAiFeatureCosts } from "@/lib/billing.functions";
 import { useReferencePack } from "@/hooks/use-reference-rate";
 import { formatPoints } from "@/lib/points-eur";
 import { Wallet } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { updateMyOperationsPhone } from "@/lib/coordinator.functions";
+import { useMyCompany } from "@/hooks/use-coordinator";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — The Coordinator" }] }),
@@ -75,6 +78,8 @@ function SettingsPage() {
           trailing={<ChevronRight className="h-4 w-4 text-muted-foreground" />}
         />
       </Section>
+
+      <OperationsPhoneSection />
 
       {/* Core operational automation. The legacy database field is still
           called ai_toggles until the later schema-cleanup phase. */}
@@ -147,6 +152,65 @@ function SettingsPage() {
 
       <MobileLayoutSheet open={layoutOpen} onOpenChange={setLayoutOpen} />
     </div>
+  );
+}
+
+function OperationsPhoneSection() {
+  const { data: company, isLoading } = useMyCompany();
+  const updateFn = useServerFn(updateMyOperationsPhone);
+  const qc = useQueryClient();
+  const [phone, setPhone] = useState("");
+
+  useEffect(() => {
+    if (company) setPhone(company.operations_phone ?? "");
+  }, [company]);
+
+  const save = useMutation({
+    mutationFn: () => updateFn({ data: { phone: phone.trim() || null } }),
+    onSuccess: (result) => {
+      qc.setQueryData(["my-company"], (current: any) =>
+        current ? { ...current, operations_phone: result.operations_phone } : current,
+      );
+      toast.success(result.operations_phone ? "24/7 trip support number updated" : "24/7 trip support number cleared");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const savedPhone = company?.operations_phone ?? "";
+  const changed = phone.trim() !== savedPhone;
+
+  return (
+    <Section title="24/7 trip support" icon={Phone}>
+      <div className="space-y-3 px-4 py-4">
+        <div>
+          <div className="text-sm font-medium">Current on-duty number</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            Clients can call this number from every active trip link. Change it when the person on duty changes.
+            Your permanent network/company number and login phone stay separate.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="tel"
+            autoComplete="tel"
+            maxLength={40}
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+356 …"
+            disabled={isLoading}
+            aria-label="Current 24/7 trip support number"
+          />
+          <Button
+            type="button"
+            className="sm:w-auto"
+            onClick={() => save.mutate()}
+            disabled={isLoading || save.isPending || !changed}
+          >
+            {save.isPending ? "Saving…" : "Save number"}
+          </Button>
+        </div>
+      </div>
+    </Section>
   );
 }
 

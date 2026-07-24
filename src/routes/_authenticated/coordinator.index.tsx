@@ -141,7 +141,7 @@ function DashboardPage() {
               time={b.time}
               badge={b.status === "modification_pending" ? "Change" : "Pending"}
               badgeTone="bg-amber-500/15 text-amber-700 dark:text-amber-300"
-              meta={b.pax_count ? `${b.pax_count} pax` : undefined}
+              meta={b.pax_count ? `${b.pax_count} passenger${b.pax_count === 1 ? "" : "s"}` : undefined}
               job={b}
             />
 
@@ -149,10 +149,10 @@ function DashboardPage() {
         )}
       </div>
 
-      {/* Unassigned jobs */}
+      {/* Unassigned trips */}
       <SectionHeader
         icon={Truck}
-        title="Unassigned jobs"
+        title="Unassigned trips"
         subtitle="Upcoming trips still needing a driver"
         to="/coordinator/calendar"
         badge={activity?.unassigned?.length ?? 0}
