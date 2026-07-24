@@ -19,7 +19,13 @@ export const listTripAudit = createServerFn({ method: "GET" })
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
 
-    const { data: chain } = await supabase.rpc("verify_trip_audit_chain", {
+    // The chain-verification function is a SECURITY DEFINER helper whose
+    // EXECUTE privilege was revoked from authenticated users to avoid direct
+    // exposure. Call it from the service-role client inside this server function
+    // so the user still gets the integrity result without being able to invoke
+    // it directly.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: chain } = await supabaseAdmin.rpc("verify_trip_audit_chain", {
       _job_id: data.job_id,
     });
     const okMap = new Map<string, boolean>();
