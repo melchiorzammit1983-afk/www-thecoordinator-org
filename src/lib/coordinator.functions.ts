@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
 import { parseFlightCode, describeFlight, looksLikeVessel } from "./flight-code";
+import { normalizePhone } from "./parse-trips";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 
 /**
@@ -40,6 +41,30 @@ type CompanyRecord = {
   [key: string]: any;
 };
 
+function phoneLookupCandidates(raw: string): string[] {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return [];
+  const digits = trimmed.replace(/\D/g, "");
+  return Array.from(
+    new Set(
+      [
+        trimmed,
+        normalizePhone(trimmed),
+        digits,
+        digits ? `+${digits}` : "",
+      ].filter((v) => !!v),
+    ),
+  );
+}
+
+function emailLookupCandidates(email: string): string[] {
+  const trimmed = String(email ?? "").trim();
+  const match = trimmed.match(/^p(\d+)@phone\.(?:thecoordinator|crewchange)\.local$/i);
+  if (!match) return [];
+  const digits = match[1];
+  return Array.from(new Set([`+${digits}`, digits]));
+}
+
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
@@ -63,9 +88,9 @@ async function lookupCompanyForUser(
   const phoneCandidates = Array.from(
     new Set(
       [
-        (authUser?.user?.phone ?? "").trim(),
-        String((authUser?.user?.user_metadata as { phone?: string | null } | undefined)?.phone ?? "").trim(),
-      ].filter((phone) => !!phone),
+        ...phoneLookupCandidates(authUser?.user?.phone ?? ""),
+        ...emailLookupCandidates(authUser?.user?.email ?? ""),
+      ],
     ),
   );
   for (const phone of phoneCandidates) {
@@ -76,6 +101,15 @@ async function lookupCompanyForUser(
       .maybeSingle();
     if (phoneErr) throw new Error(phoneErr.message);
     if (byPhone) return byPhone as CompanyRecord;
+  }
+  if (phoneCandidates.length) {
+    const { data: byCompanyPhone, error: companyPhoneErr } = await supabaseAdmin
+      .from("companies")
+      .select(selectColumns)
+      .in("phone", phoneCandidates)
+      .limit(1);
+    if (companyPhoneErr) throw new Error(companyPhoneErr.message);
+    if (byCompanyPhone?.[0]) return byCompanyPhone[0] as CompanyRecord;
   }
   return null;
 }
