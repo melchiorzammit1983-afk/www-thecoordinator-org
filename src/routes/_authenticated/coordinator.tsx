@@ -145,7 +145,7 @@ function CoordinatorLayout() {
         <div className="max-w-md text-center">
           <h1 className="text-xl font-semibold">No company assigned</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            Ask an administrator to add your email as the coordinator for a company, then sign in again.
+            Ask an administrator to link your coordinator phone number to a company, then sign in again.
           </p>
           <Button
             variant="outline" className="mt-4"

@@ -21,6 +21,7 @@ import {
 } from "@/lib/availability.functions";
 import { IfFeature } from "@/components/billing/IfFeature";
 import { HelpLink } from "@/components/help/HelpLink";
+import { useMyCompany } from "@/hooks/use-coordinator";
 
 export const Route = createFileRoute("/_authenticated/coordinator/availability")({
   component: AvailabilityPage,
@@ -37,26 +38,29 @@ function AvailabilityPage() {
 }
 
 function AvailabilityInner() {
-  const [companyId, setCompanyId] = useState<string | null>(null);
+  const { data: company, isLoading: companyLoading } = useMyCompany();
+  const companyId = company?.id ?? null;
   const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
   const [ownerType, setOwnerType] = useState<"company" | "driver">("company");
   const [ownerId, setOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!companyId) return;
+    setOwnerId(companyId);
     (async () => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u?.user) return;
-      const { data: c } = await supabase.from("companies").select("id").eq("owner_user_id", u.user.id).maybeSingle();
-      if (c?.id) {
-        setCompanyId(c.id);
-        setOwnerId(c.id);
-        const { data: dr } = await supabase.from("drivers").select("id, name").eq("company_id", c.id).order("name");
-        setDrivers(dr ?? []);
-      }
+      const { data: dr } = await supabase.from("drivers").select("id, name").eq("company_id", companyId).order("name");
+      setDrivers(dr ?? []);
     })();
-  }, []);
+  }, [companyId]);
 
-  if (!companyId) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (companyLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (!companyId) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        No company assigned to this coordinator account.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl">
