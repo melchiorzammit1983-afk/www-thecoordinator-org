@@ -117,7 +117,7 @@ type Prefill = Partial<{
   date: string; time: string;
   from_flight: string; to_flight: string;
   clientcompanyname: string;
-  pax: string[];
+  passengers: string[];
 }>;
 
 type PassengerDraft = {
@@ -154,7 +154,7 @@ export function JobFormDialog({
       date: t.date, time: t.time,
       from_flight: t.from_flight, to_flight: t.to_flight,
       clientcompanyname: t.clientcompanyname,
-      pax: t.pax,
+      passengers: t.pax,
     });
     setTab("manual");
   };
@@ -227,11 +227,11 @@ function ManualForm({
 
   const [track, setTrack] = useState(job?.tracking_enabled ?? false);
   const [passengers, setPassengers] = useState<PassengerDraft[]>(() =>
-    prefill?.pax?.length
-      ? prefill.pax.map((name, index) => passengerDraft(`prefill-${index}`, name))
+    prefill?.passengers?.length
+      ? prefill.passengers.map((name, index) => passengerDraft(`prefill-${index}`, name))
       : [passengerDraft("passenger-0")],
   );
-  const nextPassengerKey = useRef(prefill?.pax?.length ?? 1);
+  const nextPassengerKey = useRef(prefill?.passengers?.length ?? 1);
   const [showPassengerPaste, setShowPassengerPaste] = useState(false);
   const [passengerPasteText, setPassengerPasteText] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
@@ -1367,12 +1367,17 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       placeholder="e.g. KM102"
                       onChange={(e) => patch({ to_flight: e.target.value })} />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="text-[10px] text-muted-foreground">Passengers (one per line)</span>
-                    <Textarea rows={2} value={t.pax.join("\n")} className="text-xs font-mono"
-                      placeholder="One name per line"
-                      onChange={(e) => patch({ pax: e.target.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) })} />
-                  </label>
+                  <div className="space-y-1 col-span-2 rounded-md border bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
+                    <div className="font-medium text-foreground">Passengers</div>
+                    {t.pax.length > 0 ? (
+                      <p>
+                        {t.pax.length} passenger{t.pax.length === 1 ? "" : "s"} imported. Open Manual to review names, phone
+                        numbers, or notes.
+                      </p>
+                    ) : (
+                      <p>No passenger names detected in this row.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             );

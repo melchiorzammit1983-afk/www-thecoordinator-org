@@ -135,20 +135,27 @@ function ClientTripPortal() {
 
   const [tab, setTab] = useState<"trip" | "chat" | "rebook">("trip");
 
-  const uniquePax = useMemo(() => {
-    const seen = new Set<string>();
-    const out: any[] = [];
-    for (const p of (data?.pax ?? [])) {
-      const k = (p?.name ?? "").trim().toLowerCase();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push(p);
+  const displayPax = useMemo(() => {
+    const rows = (data?.pax ?? []).filter((passenger: any) => passenger?.id && passenger?.name?.trim());
+    const totals = new Map<string, number>();
+    for (const passenger of rows) {
+      const key = passenger.name.trim().toLocaleLowerCase();
+      totals.set(key, (totals.get(key) ?? 0) + 1);
     }
-    return out;
+    const seen = new Map<string, number>();
+    return rows.map((passenger: any) => {
+      const key = passenger.name.trim().toLocaleLowerCase();
+      const occurrence = (seen.get(key) ?? 0) + 1;
+      seen.set(key, occurrence);
+      return {
+        ...passenger,
+        display_name: (totals.get(key) ?? 0) > 1 ? `${passenger.name} (${occurrence})` : passenger.name,
+      };
+    });
   }, [data?.pax]);
   const hasIdentity = !!data?.identity;
   const isGroup = (data?.siblings?.length ?? 0) > 1;
-  const needsIdentity = !hasIdentity && (uniquePax.length > 1 || (isGroup && uniquePax.length > 0));
+  const needsIdentity = !hasIdentity && (displayPax.length > 1 || (isGroup && displayPax.length > 0));
 
   // Auto-claim identity when the coordinator shared a per-passenger link with ?pax=<uuid>.
   const chooseFn = useServerFn(chooseClientIdentity);
@@ -244,13 +251,13 @@ function ClientTripPortal() {
         {data.identity?.pax_name ? (
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs">
             <span>Signed in as <b>{data.identity.pax_name}</b></span>
-            {uniquePax.length > 1 && !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax")) && (
+            {displayPax.length > 1 && !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pax")) && (
               <button onClick={() => setPickerOpen(true)} className="underline underline-offset-2 opacity-90 hover:opacity-100">
                 Change
               </button>
             )}
           </div>
-        ) : uniquePax.length > 1 ? (
+        ) : displayPax.length > 1 ? (
           <button
             onClick={() => setPickerOpen(true)}
             className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-400 text-amber-950 px-2.5 py-1 text-xs font-medium shadow-sm"
@@ -265,7 +272,7 @@ function ClientTripPortal() {
         onOpenChange={setPickerOpen}
         token={token}
         deviceId={deviceId}
-        pax={uniquePax}
+        pax={displayPax}
         allowSkip={!needsIdentity || hasIdentity}
         onDone={() => { setPickerOpen(false); qc.invalidateQueries({ queryKey: ["client-portal"] }); }}
       />
@@ -305,6 +312,23 @@ function ClientTripPortal() {
           {/* Flight card */}
           {(job.from_flight || job.to_flight) && (
             <FlightCard job={job} />
+          )}
+
+          {company?.support_phone && (
+            <section className="rounded-2xl border border-teal-200 bg-teal-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase text-teal-800">24/7 trip support</div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-teal-950">{company.support_phone}</div>
+                  <p className="mt-0.5 text-xs text-teal-800">Call the current on-duty coordinator for help with this trip.</p>
+                </div>
+                <a href={`tel:${company.support_phone}`}>
+                  <Button size="sm" className="bg-teal-700 hover:bg-teal-800">
+                    <Phone className="mr-1.5 h-4 w-4" /> Call
+                  </Button>
+                </a>
+              </div>
+            </section>
           )}
 
 
@@ -679,7 +703,7 @@ function IdentityPickerDialog({ open, onOpenChange, token, deviceId, pax, allowS
               disabled={mut.isPending}
               onClick={() => mut.mutate({ pax_id: p.id, pax_name: p.name })}
             >
-              {p.name}
+              {p.display_name ?? p.name}
             </Button>
           ))}
           {pax.length === 0 && (

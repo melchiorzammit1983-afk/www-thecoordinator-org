@@ -1440,7 +1440,9 @@ function InboundBoard({
                 <span className="font-medium">
                   {j.date} {j.time?.slice(0, 5)}
                 </span>
-                <span className="ml-auto text-muted-foreground">{(j.pax ?? []).length} pax</span>
+                <span className="ml-auto text-muted-foreground">
+                  {(j.pax ?? []).length} passenger{(j.pax ?? []).length === 1 ? "" : "s"}
+                </span>
               </div>
               <div className="text-sm font-medium truncate">
                 {j.from_location} → {j.to_location}
@@ -1584,7 +1586,7 @@ function PendingClientApprovalBoard({ jobs, ctx, onChanged }: { jobs: Job[]; ctx
               </div>
               <div className="text-muted-foreground">
                 {j.date} · {j.time?.slice(0, 5)}
-                {(j.pax?.length ?? 0) > 0 && <> · {j.pax!.length} pax</>}
+                {(j.pax?.length ?? 0) > 0 && <> · {j.pax!.length} passenger{j.pax!.length === 1 ? "" : "s"}</>}
               </div>
               {paxLine && <div className="truncate text-muted-foreground">{paxLine}</div>}
               {j.clientcompanyname && (
@@ -2006,7 +2008,7 @@ function GroupedStackCard({
       const lines: string[] = [];
       lines.push(`🚐 Group assignment${res.driver_name ? ` — ${res.driver_name}` : ""}`);
       if (res.group_name) lines.push(`📎 ${res.group_name}`);
-      lines.push(`🧾 ${res.jobs.length} trips · ${res.total_pax} pax total`);
+      lines.push(`🧾 ${res.jobs.length} trips · ${res.total_pax} passengers total`);
       lines.push("");
       for (const j of res.jobs) {
         const when = j.pickup_at
@@ -2014,7 +2016,7 @@ function GroupedStackCard({
           : `${j.date} ${j.time?.slice(0, 5) ?? ""}`;
         const from = [j.from_location, j.from_flight].filter(Boolean).join(" ");
         const to = [j.to_location, j.to_flight].filter(Boolean).join(" ");
-        lines.push(`• ${when} — ${from} → ${to} (${j.pax_count}p)`);
+        lines.push(`• ${when} — ${from} → ${to} (${j.pax_count} passenger${j.pax_count === 1 ? "" : "s"})`);
       }
       if (res.group_note) {
         lines.push("");
@@ -2124,7 +2126,7 @@ function GroupedStackCard({
             <Link2 className="h-3 w-3" />
             <span className="truncate">{groupName || "Grouped"}</span>
             <Badge variant="secondary" className="ml-auto text-[10px]">
-              {jobs.length} trips · {totalPax} pax
+              {jobs.length} trips · {totalPax} passengers
             </Badge>
           </div>
           {driverNames.length > 0 && (
@@ -2140,7 +2142,9 @@ function GroupedStackCard({
                 <span className="truncate">
                   {j.from_location} <span className="text-muted-foreground">→</span> {j.to_location}
                 </span>
-                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{j.pax?.length ?? 0}p</span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                  {j.pax?.length ?? 0} passenger{(j.pax?.length ?? 0) === 1 ? "" : "s"}
+                </span>
               </div>
             ))}
             {jobs.length > 4 && <div className="text-[10px] text-muted-foreground">+ {jobs.length - 4} more…</div>}
@@ -3001,7 +3005,7 @@ function TripMenu({
         `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
         `🕒 ${when}`,
         `📍 ${from || "?"} → ${to || "?"}`,
-        `👥 ${res.job.pax_count ?? job.pax?.length ?? 0} pax`,
+        `👥 ${res.job.pax_count ?? job.pax?.length ?? 0} passenger${(res.job.pax_count ?? job.pax?.length ?? 0) === 1 ? "" : "s"}`,
       ];
       if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
       lines.push("", `Open your manifest: ${url}`);
@@ -3277,7 +3281,7 @@ function SplitDialog({ open, onOpenChange, job }: { open: boolean; onOpenChange:
   const mut = useMutation({
     mutationFn: () => fn({ data: { job_id: job.id, splits: labels.filter(Boolean).map((l) => ({ label: l })) } }),
     onSuccess: (rows: any) => {
-      toast.success("Split into new jobs");
+      toast.success("Split into new trips");
       onOpenChange(false);
       qc.invalidateQueries({ queryKey: ["jobs"] });
       if (Array.isArray(rows) && rows.length) setPreview(rows as NewTripRow[]);
@@ -3451,7 +3455,7 @@ function DetailsSheetHost({
         `🚐 New trip assigned${driverName ? ` — ${driverName}` : ""}`,
         `🕒 ${when}`,
         `📍 ${from || "?"} → ${to || "?"}`,
-        `👥 ${res.job.pax_count ?? 0} pax`,
+        `👥 ${res.job.pax_count ?? 0} passenger${(res.job.pax_count ?? 0) === 1 ? "" : "s"}`,
       ];
       if (res.job.vehicle) lines.push(`🚙 ${res.job.vehicle}`);
       lines.push("", `Open your manifest: ${url}`);
@@ -3518,7 +3522,7 @@ function BoardingApprovalAlertPanel({
                 {displayLocation(a.job?.to_location ?? "", a.job?.dropoff_display_name)}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                Onboard {Number(a.pax_summary?.onboard ?? 0)} · No-show {Number(a.pax_summary?.noshow ?? 0)} ·
+                Passengers onboard {Number(a.pax_summary?.onboard ?? 0)} · No-show {Number(a.pax_summary?.noshow ?? 0)} ·
                 {" "}Cancelled {Number(a.pax_summary?.cancelled ?? 0)} · Pending {Number(a.pax_summary?.pending ?? 0)}
               </div>
               <div className="text-[10px] text-muted-foreground">
@@ -4022,7 +4026,7 @@ function GroupedRunRow({
             {totalPax > 0 && (
               <span className="inline-flex items-center gap-1 tabular-nums">
                 <Users2 className="h-3 w-3" />
-                {totalPax} pax
+                {totalPax} passengers
               </span>
             )}
           </div>
@@ -4076,7 +4080,7 @@ function GroupedRunRow({
                       </div>
                       <div className="text-[10px] text-muted-foreground flex gap-2">
                         {j.time && <span className="tabular-nums">{j.time.slice(0, 5)}</span>}
-                        {(j.pax?.length ?? 0) > 0 && <span>{j.pax!.length} pax</span>}
+                        {(j.pax?.length ?? 0) > 0 && <span>{j.pax!.length} passenger{j.pax!.length === 1 ? "" : "s"}</span>}
                         <span className={`uppercase tracking-wider ${TONE_CLASS[st.tone]}`}>
                           {st.label}
                         </span>

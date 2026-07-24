@@ -2167,7 +2167,7 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
         .select("id, from_location, to_location, from_flight, to_flight, date, time, pickup_at, status, flight_status, driver_id, group_id, group_name")
         .in("id", ids),
       supabaseAdmin.from("pax").select("id, name, status, job_id").eq("job_id", job.id).order("name"),
-      supabaseAdmin.from("companies").select("id, name").eq("id", job.company_id).maybeSingle(),
+      supabaseAdmin.from("companies").select("id, name, operations_phone").eq("id", job.company_id).maybeSingle(),
       job.driver_id
         ? supabaseAdmin.from("drivers").select("id, name, phone").eq("id", job.driver_id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -2243,7 +2243,11 @@ export const getClientTripPortal = createServerFn({ method: "GET" })
       },
       siblings: siblings ?? [],
       pax: pax ?? [],
-      company,
+      company: company ? {
+        id: company.id,
+        name: company.name,
+        support_phone: company.operations_phone ?? null,
+      } : null,
       driver,
       driverLocations,
       identity,

@@ -6,6 +6,7 @@ export type Company = {
   id: string;
   name: string;
   status: string;
+  operations_phone: string | null;
   isAdmin: boolean;
   operations_phone?: string | null;
 } | null;

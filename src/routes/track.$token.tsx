@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { PastTripsCard } from "@/components/client/PastTripsCard";
 import { toast } from "sonner";
+import { Phone } from "lucide-react";
 
 
 /**
@@ -27,8 +28,9 @@ type Boot = {
   from: string;
   to: string;
   driver: { first_name: string; vehicle: string | null; plate: string | null } | null;
+  support_phone: string | null;
   show_driver_location: boolean;
-  passenger?: { name: string; note: string | null } | null;
+  passenger?: { name: string } | null;
   history?: Array<{ id: string; when: string | null; from: string | null; to: string | null; status: string; driver_name?: string | null; vehicle?: string | null; plate?: string | null }>;
 
 };
@@ -47,11 +49,25 @@ function TrackPage() {
   const [jwt, setJwt] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/public/track/${token}/`).then(async (r) => {
-      if (!r.ok) { setErr("This tracking link is unavailable."); return; }
-      setBoot(await r.json());
-    });
+    let loaded = false;
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/public/track/${token}/`);
+        if (!response.ok) {
+          if (!loaded) setErr("This tracking link is unavailable.");
+          return;
+        }
+        loaded = true;
+        setErr(null);
+        setBoot(await response.json());
+      } catch {
+        if (!loaded) setErr("This tracking link is unavailable.");
+      }
+    };
+    load();
+    const refresh = window.setInterval(load, 30_000);
     setJwt(sessionStorage.getItem(`pax_jwt_${token}`));
+    return () => window.clearInterval(refresh);
   }, [token]);
 
   if (err) return <div className="min-h-screen grid place-items-center p-8 text-center"><p>{err}</p></div>;
@@ -80,9 +96,22 @@ function TrackPage() {
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Passenger</div>
               <div className="font-medium">{boot.passenger.name}</div>
-              {boot.passenger.note && (
-                <div className="text-xs mt-1 text-muted-foreground">{boot.passenger.note}</div>
-              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {boot.support_phone && (
+          <Card className="border-emerald-200 bg-emerald-50">
+            <CardContent className="flex items-center justify-between gap-3 p-4">
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-800">24/7 trip support</div>
+                <div className="mt-1 font-medium text-emerald-950">{boot.support_phone}</div>
+              </div>
+              <a href={`tel:${boot.support_phone}`}>
+                <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800">
+                  <Phone className="mr-1.5 h-4 w-4" /> Call
+                </Button>
+              </a>
             </CardContent>
           </Card>
         )}
