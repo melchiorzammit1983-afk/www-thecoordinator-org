@@ -1,6 +1,6 @@
 // Parses free-form multi-trip paste blocks into structured trips.
-// Tolerates messages with or without emojis. Blocks are split on 📅 markers,
-// or (when no emojis are present) on blank lines / any line containing a full date.
+// Blocks are split on calendar markers, blank lines, or any line containing
+// a full date when no calendar marker is present.
 
 export type ParsedTrip = {
   date: string; // yyyy-mm-dd
@@ -8,22 +8,19 @@ export type ParsedTrip = {
   from_location: string;
   to_location: string;
   clientcompanyname: string;
+  operation_name?: string;
   flightorship: string;
   from_flight: string;
   to_flight: string;
   pax: string[];
   contact_phone: string;
   errors: string[];
-  // Optional Places metadata attached by the bulk auto-fix pass.
   from_place_id?: string | null;
   from_lat?: number | null;
   from_lng?: number | null;
   to_place_id?: string | null;
   to_lat?: number | null;
   to_lng?: number | null;
-  // When set, records the original text before Google auto-fix so the
-  // user can undo in the review UI. Only fields the auto-fix touched
-  // are present.
   autoFixed?: {
     from_location?: string;
     to_location?: string;
@@ -32,8 +29,6 @@ export type ParsedTrip = {
 
 const PHONE_RE = /(\+?\d[\d\s().\-]{5,}\d)/;
 
-// Strip decorative glyphs: emojis, arrows (⬅️ ➡️ ← → ↔), ascii arrows,
-// bullets, and repeated punctuation from name-ish strings.
 function stripDecor(s: string): string {
   return s
     .replace(/[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F]/gu, "")
@@ -44,8 +39,6 @@ function stripDecor(s: string): string {
     .trim();
 }
 
-// A pax name is meaningful only if, after stripping decor and any embedded
-// phone, it still contains at least 2 unicode letters.
 export function isMeaningfulName(s: string): boolean {
   const bare = stripDecor((s ?? "").toString());
   const letters = bare.match(/\p{L}/gu);
@@ -72,8 +65,8 @@ export function extractPhoneFromName(name: string): { cleanName: string; phone: 
   return { cleanName: cleaned, phone };
 }
 
-
 const FLIGHT_CODE_RE = /(?:^|\s|#|✈|\bflight\b|\bflt\b)\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})(?=$|\s|[,.;])/i;
+
 export function extractFlightCode(text: string): { code: string | null; rest: string } {
   const raw = (text ?? "").trim();
   if (!raw) return { code: null, rest: "" };
@@ -96,7 +89,7 @@ const MONTHS: Record<string, string> = {
 const FLIGHT_RE = /\b([A-Z]{2,3})\s?(\d{1,4}[A-Z]?)\b/;
 const DATE_RE_LONG = /(\d{1,2})\s*([A-Za-z]{3,9})\s*(\d{2,4})/;
 const DATE_RE_ISO = /\b(\d{4})-(\d{2})-(\d{2})\b/;
-const DATE_RE_SLASH = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})\b/;
+const DATE_RE_SLASH = /\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/;
 const TIME_RE = /\b(\d{1,2}):(\d{2})\b/;
 
 function stripLeadingBullets(s: string): string {
@@ -157,7 +150,6 @@ function looksLikeName(line: string): boolean {
   if (/\d/.test(s)) return false;
   const words = s.split(/\s+/);
   if (words.length < 2 || words.length > 6) return false;
-  // Mostly alphabetic, mostly uppercase or title case
   const letters = s.replace(/[^A-Za-z]/g, "");
   if (letters.length < 4) return false;
   const upper = letters.replace(/[^A-Z]/g, "").length;
@@ -173,6 +165,7 @@ function splitBlocks(raw: string): string[][] {
     if (current.some((l) => l.trim())) blocks.push(current);
     current = [];
   };
+
   for (const line of lines) {
     const isBoundary = hasCalendarEmoji
       ? line.includes("📅")
@@ -182,13 +175,17 @@ function splitBlocks(raw: string): string[][] {
         push();
         current = [line];
       } else {
-        if (line.trim() === "") { push(); }
-        else { push(); current = [line]; }
+        if (line.trim() === "") push();
+        else {
+          push();
+          current = [line];
+        }
       }
     } else {
       current.push(line);
     }
   }
+
   push();
   return blocks;
 }
@@ -199,10 +196,17 @@ export function parseTrips(raw: string): ParsedTrip[] {
 
   for (const block of blocks) {
     const trip: ParsedTrip = {
-      date: "", time: "", from_location: "", to_location: "",
-      clientcompanyname: "", flightorship: "",
-      from_flight: "", to_flight: "",
-      pax: [], contact_phone: "", errors: [],
+      date: "",
+      time: "",
+      from_location: "",
+      to_location: "",
+      clientcompanyname: "",
+      flightorship: "",
+      from_flight: "",
+      to_flight: "",
+      pax: [],
+      contact_phone: "",
+      errors: [],
     };
     let inNames = false;
     let lastSide: "from" | "to" | null = null;
@@ -211,60 +215,79 @@ export function parseTrips(raw: string): ParsedTrip[] {
       const line = rawLine.trim();
       if (!line) continue;
 
-      // Date / time on any line
       const maybeDate = parseDate(line);
       if (maybeDate && !trip.date) trip.date = maybeDate;
       const maybeTime = parseTime(line);
       if (maybeTime && !trip.time) trip.time = maybeTime;
 
-      {
-        const noE = stripEmoji(line).trim();
-        const namesHeader = /^(names?|passengers?|pax|guests?|customers?)\s*[:\-]\s*(.*)$/i.exec(noE);
-        if (line.includes("👤") || namesHeader) {
-          const rest = namesHeader ? namesHeader[2].trim() : "";
-          if (rest) {
-            // Inline: "Passengers: John Smith, Maria Rossi & Ali / +35699…"
-            for (const part of rest.split(/\s*(?:,|;|\/| & | \+ | and )\s*/i)) {
-              const rawName = cleanName(stripLeadingBullets(part));
-              if (!rawName) continue;
-              const { cleanName: cn, phone } = extractPhoneFromName(rawName);
-              if (phone && !trip.contact_phone) trip.contact_phone = phone;
-              if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
-            }
-            inNames = false;
-          } else {
-            inNames = true;
+      const plain = stripEmoji(line).trim();
+      const namesHeader = /^(names?|passengers?|pax|guests?|customers?)\s*[:\-]\s*(.*)$/i.exec(plain);
+      if (line.includes("👤") || namesHeader) {
+        const rest = namesHeader ? namesHeader[2].trim() : "";
+        if (rest) {
+          for (const part of rest.split(/\s*(?:,|;|\/| & | \+ | and )\s*/i)) {
+            const rawName = cleanName(stripLeadingBullets(part));
+            if (!rawName) continue;
+            const { cleanName: cn, phone } = extractPhoneFromName(rawName);
+            if (phone && !trip.contact_phone) trip.contact_phone = phone;
+            if (cn && isMeaningfulName(cn)) trip.pax.push(cn);
           }
+          inNames = false;
+        } else {
+          inNames = true;
+        }
+        continue;
+      }
+
+      const operationHeader = /^(operation|job)\s*[:\-]\s*(.*)$/i.exec(plain);
+      if (operationHeader) {
+        trip.operation_name = cleanName(operationHeader[2]);
+        inNames = false;
+        continue;
+      }
+
+      if (line.includes("🏢") || /^(client|company)\s*[:\-]/i.test(plain)) {
+        trip.clientcompanyname = cleanName(plain.replace(/🏢/g, "").replace(/^(client|company)\s*[:\-]/i, ""));
+        inNames = false;
+        continue;
+      }
+
+      const fromMatch = /^from\b\s*[:\-]?\s*(.*)$/i.exec(plain);
+      const toMatch = /^to\b\s*[:\-]?\s*(.*)$/i.exec(plain);
+      if (line.includes("📍") || fromMatch || toMatch) {
+        const rest = plain.replace(/^📍?/, "").trim();
+        const fm = /^from\b\s*[:\-]?\s*(.*)$/i.exec(rest);
+        const tm = /^to\b\s*[:\-]?\s*(.*)$/i.exec(rest);
+        if (fm) {
+          trip.from_location = fm[1].trim();
+          lastSide = "from";
+          inNames = false;
+          continue;
+        }
+        if (tm) {
+          trip.to_location = tm[1].trim();
+          lastSide = "to";
+          inNames = false;
           continue;
         }
       }
-      if (line.includes("🏢") || /^(client|company)\s*[:\-]/i.test(stripEmoji(line).trim())) {
-        trip.clientcompanyname = cleanName(line.replace(/🏢/g, "").replace(/^(client|company)\s*[:\-]/i, ""));
-        inNames = false; continue;
-      }
 
-      const noEmoji = stripEmoji(line).trim();
-      const fromMatch = /^from\b\s*[:\-]?\s*(.*)$/i.exec(noEmoji);
-      const toMatch = /^to\b\s*[:\-]?\s*(.*)$/i.exec(noEmoji);
-      if (line.includes("📍") || fromMatch || toMatch) {
-        const rest = noEmoji.replace(/^📍?/, "").trim();
-        const fm = /^from\b\s*[:\-]?\s*(.*)$/i.exec(rest);
-        const tm = /^to\b\s*[:\-]?\s*(.*)$/i.exec(rest);
-        if (fm) { trip.from_location = fm[1].trim(); lastSide = "from"; inNames = false; continue; }
-        if (tm) { trip.to_location = tm[1].trim(); lastSide = "to"; inNames = false; continue; }
-      }
-
-      if (line.includes("✈") || /^flight\b/i.test(noEmoji)) {
+      if (line.includes("✈") || /^flight\b/i.test(plain)) {
         const code = extractFlight(line) || cleanName(line.replace(/flight[:\s]*/i, ""));
-        if (lastSide === "to") trip.to_flight = code; else trip.from_flight = code;
+        if (lastSide === "to") trip.to_flight = code;
+        else trip.from_flight = code;
         trip.flightorship = code;
-        inNames = false; continue;
+        inNames = false;
+        continue;
       }
-      if (line.includes("🛳") || /^ship\b/i.test(noEmoji)) {
+
+      if (line.includes("🛳") || /^ship\b/i.test(plain)) {
         const val = cleanName(line.replace(/ship[:\s]*/i, ""));
-        if (lastSide === "to") trip.to_flight = val; else trip.from_flight = val;
+        if (lastSide === "to") trip.to_flight = val;
+        else trip.from_flight = val;
         trip.flightorship = val;
-        inNames = false; continue;
+        inNames = false;
+        continue;
       }
 
       if (inNames) {
@@ -277,7 +300,6 @@ export function parseTrips(raw: string): ParsedTrip[] {
         continue;
       }
 
-      // Heuristic: standalone flight code line
       const stray = extractFlight(line);
       if (stray && !trip.from_flight && !trip.to_flight && !maybeDate && !maybeTime) {
         trip.from_flight = stray;
@@ -285,7 +307,6 @@ export function parseTrips(raw: string): ParsedTrip[] {
         continue;
       }
 
-      // Heuristic: line that looks like a person's name (no emoji markers used)
       if (looksLikeName(line)) {
         const rawName = cleanName(stripLeadingBullets(line));
         const { cleanName: cn, phone } = extractPhoneFromName(rawName);
@@ -303,5 +324,6 @@ export function parseTrips(raw: string): ParsedTrip[] {
     if (!trip.to_location) trip.errors.push("Missing To");
     trips.push(trip);
   }
+
   return trips;
 }

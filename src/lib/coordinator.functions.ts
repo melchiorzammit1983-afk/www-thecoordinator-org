@@ -243,12 +243,46 @@ export const getMyCompany = createServerFn({ method: "GET" })
     const { data, error } = await supabaseAdmin
       .from("companies")
       .select(
-        "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code",
+        "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code, operations_phone",
       )
       .eq("owner_user_id", context.userId)
       .maybeSingle();
     if (error) return null;
     return data ?? null;
+  });
+
+const operationsPhoneInput = z
+  .string()
+  .trim()
+  .max(40)
+  .refine(
+    (value) =>
+      value === ""
+      || (/^[+\d().\s-]+$/.test(value) && value.replace(/\D/g, "").length >= 4),
+    "Enter a valid phone number",
+  );
+
+/** Update the live on-duty number shown on every client-facing trip link. */
+export const updateMyOperationsPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ phone: operationsPhoneInput.nullable() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const company = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const phone = data.phone?.trim() || null;
+    const { data: updated, error } = await supabaseAdmin
+      .from("companies")
+      .update({ operations_phone: phone })
+      .eq("id", company.id)
+      .select("operations_phone")
+      .single();
+    if (error) throw new Error(error.message);
+    if ((updated?.operations_phone ?? null) !== phone) {
+      throw new Error("The 24/7 operations number could not be verified after saving.");
+    }
+    return { ok: true as const, operations_phone: updated.operations_phone };
   });
 
 export const updateMyBranding = createServerFn({ method: "POST" })
@@ -565,6 +599,14 @@ export const listJobs = createServerFn({ method: "GET" })
     return combined;
   });
 
+const passengerInput = z.object({
+  name: z.string().trim().min(1).max(200),
+  phone: z.string().trim().max(40).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable(),
+});
+
+type PassengerInput = z.infer<typeof passengerInput>;
+
 const jobInput = z.object({
   from_location: z.string().trim().min(1).max(255),
   to_location: z.string().trim().min(1).max(255),
@@ -579,6 +621,7 @@ const jobInput = z.object({
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
+  operation_name: z.string().trim().max(200).optional().or(z.literal("")),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
   // From Google Places pick — persisted so we can render the hotel/business
   // name instead of the raw address, and re-lookup ETAs without re-charging.
@@ -587,10 +630,15 @@ const jobInput = z.object({
   pickup_display_name: z.string().trim().max(200).optional().nullable(),
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
   tracking_kind: z.enum(["flight", "vessel"]).optional(),
+  // Legacy name-only payload retained for bulk imports and older clients.
   pax: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
   // OTG-only: coordinator can reassign the trip to a connected coordinator
   // company while the trip is still `created_by_driver && needs_review`.
   company_id: z.string().uuid().optional(),
+});
+
+const createJobInput = jobInput.extend({
+  passengers: z.array(passengerInput).max(200).optional(),
 });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
@@ -612,16 +660,42 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
   }
 }
 
-async function syncJobPax(jobId: string, names: string[] | undefined) {
-  if (names === undefined) return;
+function passengerNamesOnly(names: string[] | undefined): PassengerInput[] | undefined {
+  return names?.map((name) => ({ name }));
+}
+
+function deriveOperationNameSeed(
+  fallback: { clientcompanyname?: string | null; from_location?: string; to_location?: string },
+  explicit?: string | null,
+): string {
+  const direct = explicit?.trim();
+  if (direct) return direct.slice(0, 200);
+  const client = fallback.clientcompanyname?.trim();
+  if (client) return client.slice(0, 200);
+  const route = `${fallback.from_location?.trim() ?? ""} to ${fallback.to_location?.trim() ?? ""}`.trim();
+  if (route) return route.slice(0, 200);
+  return "Transport operation";
+}
+
+async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefined) {
+  if (passengers === undefined) return;
   const supabaseAdmin = await getAdminClient();
-  const clean = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean))).slice(0, 200);
+  // Preserve duplicate names: two different passengers may legitimately share
+  // the same name, and their phone/note details must remain attached to them.
+  const clean = passengers
+    .map((passenger) => ({
+      name: passenger.name.trim(),
+      phone: passenger.phone?.trim() || null,
+      note: passenger.note?.trim() || null,
+    }))
+    .filter((passenger) => passenger.name)
+    .slice(0, 200);
   const { error: deleteErr } = await supabaseAdmin.from("pax").delete().eq("job_id", jobId);
   if (deleteErr) throw new Error(deleteErr.message);
   if (!clean.length) return;
   const { error: insertErr } = await supabaseAdmin
     .from("pax")
-    .insert(clean.map((name) => ({ job_id: jobId, name })));
+    .insert(clean.map((passenger) => ({ job_id: jobId, ...passenger })));
   if (insertErr) throw new Error(insertErr.message);
   // Verify: re-read the row count so a silent RLS/constraint drop is caught.
   const { count, error: countErr } = await supabaseAdmin
@@ -636,7 +710,7 @@ async function syncJobPax(jobId: string, names: string[] | undefined) {
 
 export const createJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => jobInput.parse(i))
+  .inputValidator((i: unknown) => createJobInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
@@ -668,13 +742,24 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
+    const operationName = data.operation_name?.trim();
+    if (operationName && row?.operation_id) {
+      const { error: opErr } = await supabaseAdmin
+        .from("operations")
+        .update({
+          name: operationName,
+          company: data.clientcompanyname || null,
+        })
+        .eq("id", row.operation_id);
+      if (opErr) throw new Error(opErr.message);
+    }
     // If the caller didn't send explicit passenger names, try to auto-fill
     // from the client/company field (e.g. "MV Ocean Pioneer (John, Jane)").
-    let paxToSync = data.pax;
+    let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
     if (!paxToSync || paxToSync.length === 0) {
       const { extractPaxNames } = await import("./pax-extract");
       const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
-      if (auto.length) paxToSync = auto;
+      if (auto.length) paxToSync = passengerNamesOnly(auto);
     }
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
@@ -688,13 +773,18 @@ export const createJob = createServerFn({ method: "POST" })
 
 export const updateJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => jobInput.extend({ id: z.string().uuid() }).parse(i))
+  .inputValidator((i: unknown) => {
+    if (typeof i === "object" && i !== null && "passengers" in i) {
+      throw new Error("Edit passengers with the dedicated passenger actions so their links and status are preserved.");
+    }
+    return jobInput.extend({ id: z.string().uuid() }).parse(i);
+  })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
+      .select("id, company_id, operation_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
@@ -734,7 +824,7 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       // Labels-only edits fall through to syncJobLabels below (allowed).
       if (Object.keys(diff).length === 0) {
-        await syncJobPax(data.id, data.pax);
+        await syncJobPax(data.id, passengerNamesOnly(data.pax));
         await syncJobLabels(context, c.id, data.id, data.label_ids);
         return { ok: true };
       }
@@ -747,7 +837,7 @@ export const updateJob = createServerFn({ method: "POST" })
         driverId: lockable.driver_id,
       });
       // Labels can still be updated immediately (coordinator-only metadata).
-      await syncJobPax(data.id, data.pax);
+      await syncJobPax(data.id, passengerNamesOnly(data.pax));
       await syncJobLabels(context, c.id, data.id, data.label_ids);
       return { ok: true, ...res };
     }
@@ -828,14 +918,25 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     // Auto-fill from client/company parentheses only when caller passed
     // no explicit pax array AND the trip has no existing passenger rows.
-    let paxToSync = data.pax;
+    const operationName = data.operation_name?.trim();
+    if (operationName && (existing as any).operation_id) {
+      const { error: opErr } = await supabaseAdmin
+        .from("operations")
+        .update({
+          name: operationName,
+          company: data.clientcompanyname || null,
+        })
+        .eq("id", (existing as any).operation_id);
+      if (opErr) throw new Error(opErr.message);
+    }
+    let paxToSync = passengerNamesOnly(data.pax);
     if (!paxToSync || paxToSync.length === 0) {
       const { count: existingCount } = await supabaseAdmin
         .from("pax").select("id", { count: "exact", head: true }).eq("job_id", data.id);
       if ((existingCount ?? 0) === 0) {
         const { extractPaxNames } = await import("./pax-extract");
         const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
-        if (auto.length) paxToSync = auto;
+        if (auto.length) paxToSync = passengerNamesOnly(auto);
       }
     }
     await syncJobPax(data.id, paxToSync);
@@ -1036,17 +1137,26 @@ export const getPaxPersonalToken = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: row } = await supabaseAdmin
-      .from("pax").select("id, job_id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+      .from("pax").select("id, job_id, phone, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
     if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
+    const phoneDigits = String((row as any).phone ?? "").replace(/\D/g, "");
+    const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : null;
     let { data: tok } = await supabaseAdmin
-      .from("pax_tracking_tokens").select("token")
+      .from("pax_tracking_tokens").select("id, token, phone_last4")
       .eq("pax_id", data.pax_id).is("revoked_at", null).maybeSingle();
     if (!tok) {
       const ins = await supabaseAdmin
         .from("pax_tracking_tokens")
-        .insert({ pax_id: data.pax_id, job_id: (row as any).job_id } as never)
-        .select("token").single();
+        .insert({ pax_id: data.pax_id, job_id: (row as any).job_id, phone_last4: phoneLast4 } as never)
+        .select("id, token, phone_last4").single();
+      if (ins.error || !ins.data) throw new Error(ins.error?.message ?? "Could not create the personal link");
       tok = ins.data as any;
+    } else if ((tok as any).phone_last4 !== phoneLast4) {
+      const { error: tokenUpdateError } = await supabaseAdmin
+        .from("pax_tracking_tokens")
+        .update({ phone_last4: phoneLast4 })
+        .eq("id", (tok as any).id);
+      if (tokenUpdateError) throw new Error(tokenUpdateError.message);
     }
     return { token: (tok as any)?.token as string };
   });
@@ -1330,7 +1440,7 @@ async function copyJobPax(
 ): Promise<{ expected: number; inserted: number }> {
   const { data: pax, error: readErr } = await sb
     .from("pax")
-    .select("name")
+    .select("name, phone, note")
     .eq("job_id", srcJobId);
   if (readErr) throw new Error(`pax_read_failed: ${readErr.message}`);
   const expected = pax?.length ?? 0;
@@ -1338,7 +1448,13 @@ async function copyJobPax(
   const { data: ins, error: insErr } = await sb
     .from("pax")
     .insert(
-      pax.map((p: any) => ({ job_id: newJobId, name: p.name, status: "pending" })),
+      pax.map((p: any) => ({
+        job_id: newJobId,
+        name: p.name,
+        phone: p.phone ?? null,
+        note: p.note ?? null,
+        status: "pending",
+      })),
     )
     .select("id");
   if (insErr) throw new Error(`pax_copy_failed: ${insErr.message}`);
@@ -2109,6 +2225,7 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
 // ---------- BULK CREATE + PAX SPLIT ----------
 
 const bulkTripInput = z.object({
+  operation_name: z.string().trim().max(200).optional().or(z.literal("")),
   trips: z
     .array(
       z.object({
@@ -2168,6 +2285,21 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       halfCostOverride = Math.round(baseCost * 0.5 * 100) / 100;
     }
 
+    const firstTrip = data.trips[0];
+    const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
+    const { data: operation, error: opErr } = await supabaseAdmin
+      .from("operations")
+      .insert({
+        company_id: c.id,
+        name: operationName,
+        company: firstTrip.clientcompanyname || null,
+        status: "planning",
+        source: "bulk_import",
+      })
+      .select("id, name")
+      .single();
+    if (opErr || !operation) throw new Error(opErr?.message || "Could not create operation");
+
     const created: string[] = [];
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
@@ -2176,6 +2308,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         .from("jobs")
         .insert({
           company_id: c.id,
+          operation_id: operation.id,
           from_location: t.from_location,
           to_location: t.to_location,
           date: t.date,
@@ -2226,6 +2359,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     }
     return {
       created,
+      operation_id: operation.id,
+      operation_name: operation.name,
       billing: { is_half_price: isHalfPrice, accuracy_score: data.billing_flags?.accuracy_score ?? null },
     };
   });
@@ -4669,24 +4804,6 @@ export const normalizeJobData = createServerFn({ method: "POST" })
     }
 
     return { ok: true, changed, removed, phoneMoved: !!jobPatch.contact_phone };
-  });
-
-// Lightweight setter used when a coordinator adds a passenger with a phone
-// number embedded — sets contact_phone only if currently empty.
-export const setJobContactPhoneIfEmpty = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({ job_id: z.string().uuid(), phone: z.string().trim().min(3).max(40) }).parse(i),
-  )
-  .handler(async ({ data, context }) => {
-    await assertJobInCompany(context, data.job_id);
-    const supabaseAdmin = await getAdminClient();
-    const { data: job } = await supabaseAdmin.from("jobs").select("contact_phone").eq("id", data.job_id).maybeSingle();
-    if (!job) throw new Error("Job not found");
-    if (job.contact_phone) return { ok: true, set: false };
-    const { error } = await supabaseAdmin.from("jobs").update({ contact_phone: data.phone }).eq("id", data.job_id);
-    if (error) throw new Error(error.message);
-    return { ok: true, set: true };
   });
 
 // ---------- AI TRIP EXTRACTION (Gemini direct, chat-style) ----------
@@ -7356,16 +7473,74 @@ export const mergeTrips = createServerFn({ method: "POST" })
       if ((r as any).company_id !== (c as any).id) throw new Error("forbidden");
     }
 
-    // Copy pax rows from dropped → kept, dedup by lower(name).
-    const { data: keepPax } = await supabaseAdmin.from("pax").select("name").eq("job_id", data.keep_job_id);
-    const have = new Set<string>((keepPax ?? []).map((p: any) => normalizeName(p.name)));
-    const { data: dropPax } = await supabaseAdmin.from("pax").select("name").in("job_id", data.drop_job_ids);
-    const toAdd = (dropPax ?? [])
-      .filter((p: any) => p.name && !have.has(normalizeName(p.name)))
-      .filter(
-        (p: any, i: number, arr: any[]) => arr.findIndex((q) => normalizeName(q.name) === normalizeName(p.name)) === i,
-      )
-      .map((p: any) => ({ job_id: data.keep_job_id, name: p.name }));
+    // Merge passenger rows as a multiset. Taking the greatest occurrence count
+    // seen on any duplicate trip avoids doubling an identical manifest while
+    // still preserving legitimate same-name passengers (e.g. two John Smiths).
+    const { data: keepPax } = await supabaseAdmin
+      .from("pax")
+      .select("id, name, phone, note")
+      .eq("job_id", data.keep_job_id);
+    const { data: dropPax } = await supabaseAdmin
+      .from("pax")
+      .select("job_id, name, phone, note")
+      .in("job_id", data.drop_job_ids);
+
+    const keepByName = new Map<string, any[]>();
+    for (const passenger of keepPax ?? []) {
+      const key = normalizeName((passenger as any).name);
+      if (!key) continue;
+      const list = keepByName.get(key) ?? [];
+      list.push(passenger);
+      keepByName.set(key, list);
+    }
+
+    const rowsByJobAndName = new Map<string, Map<string, any[]>>();
+    for (const passenger of dropPax ?? []) {
+      const key = normalizeName((passenger as any).name);
+      if (!key) continue;
+      const jobMap = rowsByJobAndName.get((passenger as any).job_id) ?? new Map<string, any[]>();
+      const list = jobMap.get(key) ?? [];
+      list.push(passenger);
+      jobMap.set(key, list);
+      rowsByJobAndName.set((passenger as any).job_id, jobMap);
+    }
+
+    const bestDroppedByName = new Map<string, any[]>();
+    for (const jobMap of rowsByJobAndName.values()) {
+      for (const [key, rowsForName] of jobMap) {
+        if (rowsForName.length > (bestDroppedByName.get(key)?.length ?? 0)) {
+          bestDroppedByName.set(key, rowsForName);
+        }
+      }
+    }
+
+    const toAdd: Array<{ job_id: string; name: string; phone: string | null; note: string | null }> = [];
+    for (const [key, sourceRows] of bestDroppedByName) {
+      const existingRows = keepByName.get(key) ?? [];
+      // Retain details that only existed on the duplicate copy.
+      for (let index = 0; index < Math.min(existingRows.length, sourceRows.length); index += 1) {
+        const existingPassenger = existingRows[index];
+        const sourcePassenger = sourceRows[index];
+        const passengerPatch: { phone?: string; note?: string } = {};
+        if (!existingPassenger.phone && sourcePassenger.phone) passengerPatch.phone = sourcePassenger.phone;
+        if (!existingPassenger.note && sourcePassenger.note) passengerPatch.note = sourcePassenger.note;
+        if (Object.keys(passengerPatch).length > 0) {
+          const { error: enrichErr } = await supabaseAdmin
+            .from("pax")
+            .update(passengerPatch)
+            .eq("id", existingPassenger.id);
+          if (enrichErr) throw new Error(enrichErr.message);
+        }
+      }
+      for (const sourcePassenger of sourceRows.slice(existingRows.length)) {
+        toAdd.push({
+          job_id: data.keep_job_id,
+          name: sourcePassenger.name,
+          phone: sourcePassenger.phone ?? null,
+          note: sourcePassenger.note ?? null,
+        });
+      }
+    }
     if (toAdd.length > 0) {
       const { error: pErr } = await supabaseAdmin.from("pax").insert(toAdd);
       if (pErr) throw new Error(pErr.message);

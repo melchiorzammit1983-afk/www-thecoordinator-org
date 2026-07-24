@@ -12,17 +12,18 @@ export const SHEET_HEADERS = [
   "Contact Number",
   "Transport Type",
   "Quantity",
+  "Operation Name",
 ] as const;
 
 const SAMPLE_ROWS: string[][] = [
-  ["2026-07-10", "08:30", "Hotel Cerviola, Marsaskala", "Malta International Airport", "John Smith", "+35699123456", "Airport Transfer", "2"],
-  ["2026-07-10", "14:00", "Valletta Cruise Port", "Radisson Golden Sands", "Maria Rossi", "+393331234567", "Shuttle", "4"],
+  ["2026-07-10", "08:30", "Hotel Cerviola, Marsaskala", "Malta International Airport", "John Smith", "+35699123456", "Airport Transfer", "2", "Everest Crew Change"],
+  ["2026-07-10", "14:00", "Valletta Cruise Port", "Radisson Golden Sands", "Maria Rossi", "+393331234567", "Shuttle", "4", "Everest Crew Change"],
 ];
 
 const INSTRUCTIONS: string[][] = [
   ["How to use this template"],
   [""],
-  ["1. Fill one row per trip. Do NOT rename or reorder the header columns."],
+  ["1. Fill one row per trip. Use Operation Name to group rows into the same operation. Do NOT rename or reorder the header columns."],
   ["2. Pickup Date format: YYYY-MM-DD (e.g. 2026-07-10)."],
   ["3. Pickup Time format: 24h HH:MM (e.g. 08:30)."],
   ["4. Contact Number: include country code with + (e.g. +35699123456)."],
@@ -136,6 +137,11 @@ const HEADER_ALIASES: Record<string, string> = {
   "quantity": "qty",
   "qty": "qty",
   "pax": "qty",
+  "operation name": "operation_name",
+  "operation": "operation_name",
+  "job": "operation_name",
+  "job name": "operation_name",
+  "job title": "operation_name",
 };
 
 function splitRow(line: string): string[] {
@@ -239,6 +245,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
   } else {
     // Assume canonical order.
     ["date", "time", "from", "to", "name", "phone", "type", "qty"].forEach((k, i) => { cols[k] = i; });
+    if (lines.length > 0) cols.operation_name = 8;
   }
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const trips: ParsedTrip[] = [];
@@ -255,6 +262,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const type = get("type");
     const qtyRaw = get("qty");
     const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
+    const operation_name = get("operation_name").trim();
 
     const pax: string[] = [];
     // Support multiple names in one cell: "John Smith, Maria Rossi & Ali"
@@ -272,6 +280,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       from_location: from,
       to_location: to,
       clientcompanyname: "",
+      operation_name,
       flightorship: type || "",
       from_flight: "",
       to_flight: "",
