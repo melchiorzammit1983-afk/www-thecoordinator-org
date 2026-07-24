@@ -310,11 +310,16 @@ export const getMyCompany = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const supabaseAdmin = await getAdminClient();
-    return await lookupCompanyForUser(
+    const data = await lookupCompanyForUser(
       supabaseAdmin,
       context.userId,
-      "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code, operations_phone",
+      "id, name, status, access_end, require_client_company, custom_link, logo_url, advert_url, advert_link, advert_caption, advert_enabled, referral_code, phone, coordinator_phone",
     );
+    if (!data) return null;
+    return {
+      ...data,
+      operations_phone: (data as any).operations_phone ?? (data as any).coordinator_phone ?? (data as any).phone ?? null,
+    };
   });
 
 const operationsPhoneInput = z
@@ -340,15 +345,15 @@ export const updateMyOperationsPhone = createServerFn({ method: "POST" })
     const phone = data.phone?.trim() || null;
     const { data: updated, error } = await supabaseAdmin
       .from("companies")
-      .update({ operations_phone: phone })
+      .update({ coordinator_phone: phone })
       .eq("id", company.id)
-      .select("operations_phone")
+      .select("coordinator_phone")
       .single();
     if (error) throw new Error(error.message);
-    if ((updated?.operations_phone ?? null) !== phone) {
+    if ((updated?.coordinator_phone ?? null) !== phone) {
       throw new Error("The 24/7 operations number could not be verified after saving.");
     }
-    return { ok: true as const, operations_phone: updated.operations_phone };
+    return { ok: true as const, operations_phone: updated.coordinator_phone };
   });
 
 export const updateMyBranding = createServerFn({ method: "POST" })
