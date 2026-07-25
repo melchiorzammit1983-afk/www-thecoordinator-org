@@ -577,7 +577,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     for (const list of hopsByJob.values()) for (const h of list) allCompanyIds.add(h.to_company_id);
     allCompanyIds.delete(c.id);
-    const nameMap: Record<string, string> = { [c.id]: c.name };
+    const nameMap: Record<string, string> = { [c.id]: c.name ?? "" };
     if (allCompanyIds.size) {
       const { data: comps } = await supabaseAdmin
         .from("companies")
