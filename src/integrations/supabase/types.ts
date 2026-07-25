@@ -1575,7 +1575,6 @@ export type Database = {
           logo_url: string | null
           minimum_fare: number
           name: string
-          operations_phone: string | null
           owner_user_id: string | null
           phone: string | null
           points_balance: number
@@ -1626,7 +1625,6 @@ export type Database = {
           logo_url?: string | null
           minimum_fare?: number
           name: string
-          operations_phone?: string | null
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
@@ -1677,7 +1675,6 @@ export type Database = {
           logo_url?: string | null
           minimum_fare?: number
           name?: string
-          operations_phone?: string | null
           owner_user_id?: string | null
           phone?: string | null
           points_balance?: number
