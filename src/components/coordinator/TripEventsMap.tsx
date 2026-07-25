@@ -46,6 +46,7 @@ const EVENT_META: Record<string, EventMeta> = {
   coord_status_override: { label: "Coord. override",      color: "#f97316", icon: "🛠️", category: "movement" },
 
   pax_boarded:         { label: "Passenger boarded",      color: "#16a34a", icon: "🧍", category: "boarding" },
+    pax_added:        { label: "Passenger added",   color: "#0d9488", icon: "➕", category: "boarding" },
   boarding_requested:  { label: "Boarding approval req.", color: "#a855f7", icon: "🙋", category: "boarding" },
   boarding_approved:   { label: "Boarding approved",      color: "#22c55e", icon: "✅", category: "boarding" },
   boarding_rejected:   { label: "Boarding rejected",      color: "#dc2626", icon: "⛔", category: "boarding" },
@@ -237,19 +238,6 @@ export function TripEventsMap({
       bounds.extend(m.getPosition());
     }
 
-    // Breadcrumb polyline
-    const crumb = (q.data.breadcrumb ?? []).filter((p: any) => p.lat != null && p.lng != null);
-    if (crumb.length > 1) {
-      const line = new gmaps.Polyline({
-        map,
-        path: crumb.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng) })),
-        strokeColor: "#2563eb",
-        strokeOpacity: 0.55,
-        strokeWeight: 4,
-      });
-      overlaysRef.current.push(line);
-      for (const p of crumb) bounds.extend({ lat: Number(p.lat), lng: Number(p.lng) });
-    }
 
     // Visible events (filter by hidden categories, drop no-coords).
     const visible = sequencedEvents.filter((ev) => {
