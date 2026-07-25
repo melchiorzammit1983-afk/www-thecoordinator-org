@@ -809,7 +809,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, operation_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
+      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
