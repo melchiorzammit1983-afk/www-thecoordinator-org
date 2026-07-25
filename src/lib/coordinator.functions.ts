@@ -2314,7 +2314,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
-    const { data: operation, error: opErr } = await supabaseAdmin
+    const { data: operationData, error: opErr } = await (supabaseAdmin as any)
       .from("operations")
       .insert({
         company_id: c.id,
@@ -2325,7 +2325,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       })
       .select("id, name")
       .single();
-    if (opErr || !operation) throw new Error(opErr?.message || "Could not create operation");
+    if (opErr || !operationData) throw new Error(opErr?.message || "Could not create operation");
+    const operation = operationData as { id: string; name: string };
 
     const created: string[] = [];
     for (const t of data.trips) {
