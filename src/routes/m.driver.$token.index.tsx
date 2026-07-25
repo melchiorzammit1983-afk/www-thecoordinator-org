@@ -3486,14 +3486,16 @@ function TripExecutionDialog({
             })}
           </div>
 
-          {job?.status === "arrived" && (
+          
             <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
-              <Button onClick={handleStartTrip} disabled={startTripMut.isPending}>
+              {job?.status === "arrived" && (
+      <Button onClick={handleStartTrip} disabled={startTripMut.isPending}>
                 {startTripMut.isPending ? "Starting…" : "Passengers on board — en route"}
               </Button>
+      )}
             </DialogFooter>
-          )}
+          
         </DialogContent>
       </Dialog>
 
