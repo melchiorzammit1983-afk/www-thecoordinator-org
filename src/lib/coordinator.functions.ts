@@ -2332,7 +2332,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
       const pickup_at = makePickupIso(t.date, time);
-      const { data: job, error } = await supabaseAdmin
+      const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")
         .insert({
           company_id: c.id,
@@ -2356,7 +2356,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         .select("id")
         .single();
       if (error) throw new Error(error.message);
-      created.push(job.id);
+      created.push((job as { id: string }).id);
       if (t.pax.length) {
         const rows = t.pax.map((name) => ({ job_id: job.id, name }));
         const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
