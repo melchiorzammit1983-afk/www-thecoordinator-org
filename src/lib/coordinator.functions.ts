@@ -577,7 +577,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     for (const list of hopsByJob.values()) for (const h of list) allCompanyIds.add(h.to_company_id);
     allCompanyIds.delete(c.id);
-    const nameMap: Record<string, string> = { [c.id]: c.name };
+    const nameMap: Record<string, string> = { [c.id]: c.name ?? "" };
     if (allCompanyIds.size) {
       const { data: comps } = await supabaseAdmin
         .from("companies")
@@ -767,14 +767,15 @@ export const createJob = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const operationName = data.operation_name?.trim();
-    if (operationName && row?.operation_id) {
-      const { error: opErr } = await supabaseAdmin
+    const rowAny = row as any;
+    if (operationName && rowAny?.operation_id) {
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
           company: data.clientcompanyname || null,
         })
-        .eq("id", row.operation_id);
+        .eq("id", rowAny.operation_id);
       if (opErr) throw new Error(opErr.message);
     }
     // If the caller didn't send explicit passenger names, try to auto-fill
@@ -944,7 +945,7 @@ export const updateJob = createServerFn({ method: "POST" })
     // no explicit pax array AND the trip has no existing passenger rows.
     const operationName = data.operation_name?.trim();
     if (operationName && (existing as any).operation_id) {
-      const { error: opErr } = await supabaseAdmin
+      const { error: opErr } = await (supabaseAdmin as any)
         .from("operations")
         .update({
           name: operationName,
@@ -2313,7 +2314,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
-    const { data: operation, error: opErr } = await supabaseAdmin
+    const { data: operationData, error: opErr } = await (supabaseAdmin as any)
       .from("operations")
       .insert({
         company_id: c.id,
@@ -2324,13 +2325,14 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       })
       .select("id, name")
       .single();
-    if (opErr || !operation) throw new Error(opErr?.message || "Could not create operation");
+    if (opErr || !operationData) throw new Error(opErr?.message || "Could not create operation");
+    const operation = operationData as { id: string; name: string };
 
     const created: string[] = [];
     for (const t of data.trips) {
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
       const pickup_at = makePickupIso(t.date, time);
-      const { data: job, error } = await supabaseAdmin
+      const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")
         .insert({
           company_id: c.id,
@@ -2354,7 +2356,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         .select("id")
         .single();
       if (error) throw new Error(error.message);
-      created.push(job.id);
+      created.push((job as { id: string }).id);
       if (t.pax.length) {
         const rows = t.pax.map((name) => ({ job_id: job.id, name }));
         const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
