@@ -165,10 +165,13 @@ function ClientTripPortal() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const paxParam = params.get("pax");
-    if (!paxParam) return;
-    const match = (data.pax ?? []).find((p: any) => p?.id === paxParam);
+    const paxList = data.pax ?? [];
+    // Single-passenger trips are unambiguous — auto-claim even without a ?pax= link
+    // so private driver<->client chat can resolve this device to the one passenger.
+    let match = paxParam ? paxList.find((p: any) => p?.id === paxParam) : null;
+    if (!match && paxList.length === 1) match = paxList[0];
     if (!match) return;
-    autoClaimedRef.current = true;
+autoClaimedRef.current = true;
     chooseFn({ data: { token, device_id: deviceId, pax_id: match.id, pax_name: match.name } })
       .then(() => qc.invalidateQueries({ queryKey: ["client-portal"] }))
       .catch(() => { autoClaimedRef.current = false; });
@@ -817,7 +820,7 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
   const qc = useQueryClient();
   const key = ["client-chat", token, thread, deviceId];
 
-  const { data: messages } = useQuery({
+  const { data: messages, isLoading: messagesLoading } = useQuery({
     queryKey: key,
     queryFn: () => listFn({ data: { token, device_id: deviceId, thread_kind: thread } }) as Promise<any[]>,
     refetchInterval: 6_000,
@@ -891,9 +894,13 @@ function ChatPanel({ token, deviceId, driverAssigned, isGroup, hasIdentity, onCh
 
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
-              {(messages ?? []).length === 0 && (
+              {messagesLoading && (
+                <p className="text-center text-xs text-muted-foreground py-8">Loading…</p>
+              )}
+              {!messagesLoading && (messages ?? []).length === 0 && (
                 <p className="text-center text-xs text-muted-foreground py-8">No messages yet. Say hello!</p>
               )}
+)}
               {(messages ?? []).map((m: any) => {
                 const mine = m.sender_kind === "client";
                 return (
