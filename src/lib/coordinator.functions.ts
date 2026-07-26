@@ -720,9 +720,10 @@ async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefine
   const { error: deleteErr } = await supabaseAdmin.from("pax").delete().eq("job_id", jobId);
   if (deleteErr) throw new Error(deleteErr.message);
   if (!clean.length) return;
-  const { error: insertErr } = await supabaseAdmin
+  const { error: insertErr } = await (supabaseAdmin as any)
     .from("pax")
     .insert(clean.map((passenger) => ({ job_id: jobId, operation_id: operationId, ...passenger })));
+
   if (insertErr) throw new Error(insertErr.message);
   // Verify: re-read the row count so a silent RLS/constraint drop is caught.
   const { count, error: countErr } = await supabaseAdmin
