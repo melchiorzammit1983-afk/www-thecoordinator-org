@@ -8,7 +8,7 @@ import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 /**
  * Normalize an ISO-ish datetime returned by Gemini. Gemini frequently emits
  * naive strings like "2026-07-18T08:15:00" (no timezone), which JS parses as
- * UTC — wrong for Malta (UTC+2 in summer). If no explicit Z / ±HH:MM offset
+ * UTC — wrong for Maltga (UTC+2 in summer). If no explicit Z / ±HH:MM offset
  * is present, interpret the wall-clock as Europe/Malta local time and convert
  * to a real UTC ISO.
  */
@@ -288,18 +288,14 @@ const operationsPhoneInput = z
   .trim()
   .max(40)
   .refine(
-    (value) =>
-      value === ""
-      || (/^[+\d().\s-]+$/.test(value) && value.replace(/\D/g, "").length >= 4),
+    (value) => value === "" || (/^[+\d().\s-]+$/.test(value) && value.replace(/\D/g, "").length >= 4),
     "Enter a valid phone number",
   );
 
 /** Update the live on-duty number shown on every client-facing trip link. */
 export const updateMyOperationsPhone = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ phone: operationsPhoneInput.nullable() }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ phone: operationsPhoneInput.nullable() }).parse(input))
   .handler(async ({ data, context }) => {
     const company = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
@@ -425,14 +421,20 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const sb = await getAdminClient();
     const [pendingRes, unassignedRes] = await Promise.all([
-      sb.from("client_bookings")
-        .select("id, from_location, to_location, date, time, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at)")
+      sb
+        .from("client_bookings")
+        .select(
+          "id, from_location, to_location, date, time, status, created_at, jobs!job_id(pickup_display_name, dropoff_display_name, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at)",
+        )
         .eq("company_id", c.id)
         .in("status", ["pending", "modification_pending"])
         .order("created_at", { ascending: false })
         .limit(5),
-      sb.from("jobs")
-        .select("id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at")
+      sb
+        .from("jobs")
+        .select(
+          "id, from_location, to_location, pickup_display_name, dropoff_display_name, date, time, pickup_at, status, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, traffic_delay_minutes, traffic_severity, leave_by_at, driver_id, from_flight, to_flight, flight_status, flight_status_note, flight_scheduled_at, flight_estimated_at",
+        )
         .eq("company_id", c.id)
         .is("driver_id", null)
         .not("status", "in", "(completed,cancelled)")
@@ -465,7 +467,6 @@ export const getDashboardActivity = createServerFn({ method: "GET" })
       unassigned: unassignedRes.data ?? [],
     };
   });
-
 
 // ---------- JOBS ----------
 
@@ -704,6 +705,8 @@ function deriveOperationNameSeed(
 async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefined) {
   if (passengers === undefined) return;
   const supabaseAdmin = await getAdminClient();
+  const { data: jobRow } = await supabaseAdmin.from("jobs").select("operation_id").eq("id", jobId).maybeSingle();
+  const operationId = (jobRow as any)?.operation_id ?? null;
   // Preserve duplicate names: two different passengers may legitimately share
   // the same name, and their phone/note details must remain attached to them.
   const clean = passengers
@@ -719,7 +722,7 @@ async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefine
   if (!clean.length) return;
   const { error: insertErr } = await supabaseAdmin
     .from("pax")
-    .insert(clean.map((passenger) => ({ job_id: jobId, ...passenger })));
+    .insert(clean.map((passenger) => ({ job_id: jobId, operation_id: operationId, ...passenger })));
   if (insertErr) throw new Error(insertErr.message);
   // Verify: re-read the row count so a silent RLS/constraint drop is caught.
   const { count, error: countErr } = await supabaseAdmin
@@ -809,7 +812,9 @@ export const updateJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review")
+      .select(
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, operation_id",
+      )
       .eq("id", data.id)
       .eq("company_id", c.id)
       .single();
@@ -916,14 +921,21 @@ export const updateJob = createServerFn({ method: "POST" })
       const driverId = (existing as any).driver_id as string | null;
       let homeId: string = c.id;
       if (driverId) {
-        const { data: drv } = await supabaseAdmin.from("drivers")
-          .select("linked_company_id, company_id").eq("id", driverId).maybeSingle();
+        const { data: drv } = await supabaseAdmin
+          .from("drivers")
+          .select("linked_company_id, company_id")
+          .eq("id", driverId)
+          .maybeSingle();
         homeId = ((drv as any)?.linked_company_id ?? (drv as any)?.company_id ?? c.id) as string;
       }
       if (data.company_id !== homeId && data.company_id !== c.id) {
-        const { data: conn } = await supabaseAdmin.from("coordinator_connections")
-          .select("id").eq("status", "active")
-          .or(`and(owner_company_id.eq.${homeId},partner_company_id.eq.${data.company_id}),and(owner_company_id.eq.${data.company_id},partner_company_id.eq.${homeId})`)
+        const { data: conn } = await supabaseAdmin
+          .from("coordinator_connections")
+          .select("id")
+          .eq("status", "active")
+          .or(
+            `and(owner_company_id.eq.${homeId},partner_company_id.eq.${data.company_id}),and(owner_company_id.eq.${data.company_id},partner_company_id.eq.${homeId})`,
+          )
           .maybeSingle();
         if (!conn) throw new Error("coordinator_not_permitted");
       }
@@ -957,7 +969,9 @@ export const updateJob = createServerFn({ method: "POST" })
     let paxToSync = passengerNamesOnly(data.pax);
     if (!paxToSync || paxToSync.length === 0) {
       const { count: existingCount } = await supabaseAdmin
-        .from("pax").select("id", { count: "exact", head: true }).eq("job_id", data.id);
+        .from("pax")
+        .select("id", { count: "exact", head: true })
+        .eq("job_id", data.id);
       if ((existingCount ?? 0) === 0) {
         const { extractPaxNames } = await import("./pax-extract");
         const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
@@ -1041,7 +1055,8 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
     if (!iso) throw new Error("No flight time available yet");
 
     // Meter first — refuse the shift if the company is out of points.
-    const { assertUserFeatureEnabled: _gateShift, friendlyGateError: _gerrShift } = await import("@/lib/user-feature-prefs.server");
+    const { assertUserFeatureEnabled: _gateShift, friendlyGateError: _gerrShift } =
+      await import("@/lib/user-feature-prefs.server");
     try {
       await _gateShift(supabaseAdmin, c.id, "auto_shift_early_flight");
     } catch (e) {
@@ -1096,25 +1111,28 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
 export const addJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      name: z.string().trim().min(1).max(200),
-      phone: z.string().trim().max(40).optional().nullable(),
-      note: z.string().trim().max(500).optional().nullable(),
-    }).parse(i),
+    z
+      .object({
+        job_id: z.string().uuid(),
+        name: z.string().trim().min(1).max(200),
+        phone: z.string().trim().max(40).optional().nullable(),
+        note: z.string().trim().max(500).optional().nullable(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: je } = await supabaseAdmin
       .from("jobs")
-      .select("id")
+      .select("id, operation_id")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (je || !job) throw new Error("Job not found");
     const { error } = await supabaseAdmin.from("pax").insert({
       job_id: data.job_id,
+      operation_id: (job as any).operation_id,
       name: data.name,
       phone: data.phone || null,
       note: data.note || null,
@@ -1127,25 +1145,33 @@ export const addJobPax = createServerFn({ method: "POST" })
 export const updateJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      pax_id: z.string().uuid(),
-      name: z.string().trim().min(1).max(200).optional(),
-      phone: z.string().trim().max(40).optional().nullable(),
-      note: z.string().trim().max(500).optional().nullable(),
-    }).parse(i),
+    z
+      .object({
+        pax_id: z.string().uuid(),
+        name: z.string().trim().min(1).max(200).optional(),
+        phone: z.string().trim().max(40).optional().nullable(),
+        note: z.string().trim().max(500).optional().nullable(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: row } = await supabaseAdmin
-      .from("pax").select("id, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+      .from("pax")
+      .select("id, jobs!inner(company_id)")
+      .eq("id", data.pax_id)
+      .maybeSingle();
     if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.phone !== undefined) patch.phone = data.phone || null;
     if (data.note !== undefined) patch.note = data.note || null;
     if (Object.keys(patch).length === 0) return { ok: true };
-    const { error } = await supabaseAdmin.from("pax").update(patch as never).eq("id", data.pax_id);
+    const { error } = await supabaseAdmin
+      .from("pax")
+      .update(patch as never)
+      .eq("id", data.pax_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -1162,18 +1188,25 @@ export const getPaxPersonalToken = createServerFn({ method: "GET" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     const { data: row } = await supabaseAdmin
-      .from("pax").select("id, job_id, phone, jobs!inner(company_id)").eq("id", data.pax_id).maybeSingle();
+      .from("pax")
+      .select("id, job_id, phone, jobs!inner(company_id)")
+      .eq("id", data.pax_id)
+      .maybeSingle();
     if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
     const phoneDigits = String((row as any).phone ?? "").replace(/\D/g, "");
     const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : null;
     let { data: tok } = await supabaseAdmin
-      .from("pax_tracking_tokens").select("id, token, phone_last4")
-      .eq("pax_id", data.pax_id).is("revoked_at", null).maybeSingle();
+      .from("pax_tracking_tokens")
+      .select("id, token, phone_last4")
+      .eq("pax_id", data.pax_id)
+      .is("revoked_at", null)
+      .maybeSingle();
     if (!tok) {
       const ins = await supabaseAdmin
         .from("pax_tracking_tokens")
         .insert({ pax_id: data.pax_id, job_id: (row as any).job_id, phone_last4: phoneLast4 } as never)
-        .select("id, token, phone_last4").single();
+        .select("id, token, phone_last4")
+        .single();
       if (ins.error || !ins.data) throw new Error(ins.error?.message ?? "Could not create the personal link");
       tok = ins.data as any;
     } else if ((tok as any).phone_last4 !== phoneLast4) {
@@ -1185,7 +1218,6 @@ export const getPaxPersonalToken = createServerFn({ method: "GET" })
     }
     return { token: (tok as any)?.token as string };
   });
-
 
 export const removeJobPax = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1443,10 +1475,7 @@ async function copyJobLabels(
   srcJobId: string,
   newJobId: string,
 ): Promise<{ expected: number; inserted: number }> {
-  const { data: labels, error: readErr } = await sb
-    .from("job_labels")
-    .select("label_id")
-    .eq("job_id", srcJobId);
+  const { data: labels, error: readErr } = await sb.from("job_labels").select("label_id").eq("job_id", srcJobId);
   if (readErr) throw new Error(`labels_read_failed: ${readErr.message}`);
   const expected = labels?.length ?? 0;
   if (!expected) return { expected: 0, inserted: 0 };
@@ -1463,10 +1492,7 @@ async function copyJobPax(
   srcJobId: string,
   newJobId: string,
 ): Promise<{ expected: number; inserted: number }> {
-  const { data: pax, error: readErr } = await sb
-    .from("pax")
-    .select("name, phone, note")
-    .eq("job_id", srcJobId);
+  const { data: pax, error: readErr } = await sb.from("pax").select("name, phone, note").eq("job_id", srcJobId);
   if (readErr) throw new Error(`pax_read_failed: ${readErr.message}`);
   const expected = pax?.length ?? 0;
   if (!expected) return { expected: 0, inserted: 0 };
@@ -1510,14 +1536,10 @@ async function verifyClonedJob(
   const newId = opts.newRow.id as string;
 
   if (opts.labels.expected !== opts.labels.inserted) {
-    throw new Error(
-      `clone_verification_failed: labels ${opts.labels.inserted}/${opts.labels.expected} copied`,
-    );
+    throw new Error(`clone_verification_failed: labels ${opts.labels.inserted}/${opts.labels.expected} copied`);
   }
   if (opts.pax && opts.pax.expected !== opts.pax.inserted) {
-    throw new Error(
-      `clone_verification_failed: pax ${opts.pax.inserted}/${opts.pax.expected} copied`,
-    );
+    throw new Error(`clone_verification_failed: pax ${opts.pax.inserted}/${opts.pax.expected} copied`);
   }
 
   // Re-read canonical child counts from the database — this catches races
@@ -1551,8 +1573,7 @@ async function verifyClonedJob(
       `clone_verification_failed: group linkage mismatch (expected ${opts.expect.group_id ?? "none"}, got ${fresh?.group_id ?? "none"})`,
     );
   }
-  if (opts.expect.parent_job_id !== undefined
-      && (fresh?.parent_job_id ?? null) !== opts.expect.parent_job_id) {
+  if (opts.expect.parent_job_id !== undefined && (fresh?.parent_job_id ?? null) !== opts.expect.parent_job_id) {
     throw new Error(
       `clone_verification_failed: parent_job_id mismatch (expected ${opts.expect.parent_job_id ?? "none"}, got ${fresh?.parent_job_id ?? "none"})`,
     );
@@ -1682,10 +1703,6 @@ export const splitJob = createServerFn({ method: "POST" })
     return rows;
   });
 
-
-
-
-
 export const deleteJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
@@ -1704,16 +1721,15 @@ export const deleteJob = createServerFn({ method: "POST" })
     // can edit them freely but cannot delete. The driver deletes their own
     // OTG trip from the driver app while it's still "needs review".
     if ((job as any).created_by_driver) {
-      throw new Error("This trip was created by the driver on the go — you can edit it, but only the driver can delete it.");
+      throw new Error(
+        "This trip was created by the driver on the go — you can edit it, but only the driver can delete it.",
+      );
     }
     // Hard delete — the coordinator-approve / change-request flow has been retired.
     const { error: dErr } = await supabaseAdmin.from("jobs").delete().eq("id", data.job_id).eq("company_id", c.id);
     if (dErr) throw new Error(dErr.message);
     return { deleted: true, pending: false };
   });
-
-
-
 
 export const cancelDeletionRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -2358,7 +2374,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       created.push((job as { id: string }).id);
       if (t.pax.length) {
-        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
+        const rows = t.pax.map((name) => ({ job_id: job.id, operation_id: operation.id, name }));
         const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
@@ -2537,7 +2553,11 @@ function mapAeroStatus(s: string | undefined): string {
 }
 function fmtHm(iso: string | null): string {
   if (!iso) return "";
-  try { return formatMaltaTime(iso); } catch { return new Date(iso).toISOString().slice(11, 16); }
+  try {
+    return formatMaltaTime(iso);
+  } catch {
+    return new Date(iso).toISOString().slice(11, 16);
+  }
 }
 
 // Dispatcher: Lovable AI (Gemini web-grounded) for both flights and vessels.
@@ -2572,7 +2592,9 @@ async function fetchLiveStatus(
           return { ...retry, note: retry.note ? `${retry.note} · matched ${alt}` : `Matched as ${alt}` };
         }
       }
-    } catch { /* auto-fix best-effort */ }
+    } catch {
+      /* auto-fix best-effort */
+    }
   }
   // Also try side-agnostic when side was specified but no scheduled time.
   if (r.ok && r.confidence === "low" && side) {
@@ -2580,7 +2602,6 @@ async function fetchLiveStatus(
   }
   return r;
 }
-
 
 function isoToDayKey(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
@@ -2618,7 +2639,6 @@ async function fetchLiveStatusViaGemini(
   const cacheKey = `v4:${kind}:${canonical}:${isoToDayKey(pickupIso)}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
-
 
   const pickupLine = pickupIso
     ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
@@ -2675,7 +2695,6 @@ async function fetchLiveStatusViaGemini(
   } catch (e) {
     return { ok: false, reason: "exception" };
   }
-
 
   // ---- Step 2: JSON extraction ----
   const extractPrompt = `From the text below (a search-grounded status report about a ${kind === "flight" ? "flight" : "vessel"}), extract a strict JSON object with this exact shape:\n{\n  "status": string,                // ${kind === "flight" ? "one of: on_time, delayed, landed, departed, cancelled, diverted, boarding, unknown" : "one of: underway, arrived, delayed, anchored, departed, cancelled, unknown"}\n  "scheduled": string | null,       // FULL ISO8601 WITH TIMEZONE (e.g. "2026-07-18T08:15:00+02:00" for Malta summer, or "...Z" for UTC). If only a local wall-clock time is stated without a timezone, assume Europe/Malta and emit "+02:00" in summer / "+01:00" in winter. Null if not stated.\n  "estimated": string | null,       // Same rules as scheduled.\n  "delay_minutes": number | null,   // positive = late, negative = early, null if unknown\n  "note": string,                   // <=15 words, human summary (gate/terminal/port/etc.)\n  "confidence": "high" | "low"      // "low" if the text was vague, contradictory, didn't clearly identify ${kind === "flight" ? `flight ${id}` : `vessel ${id}`}, or seemed outdated\n}\nReturn ONLY the JSON object, no prose. Never emit a naive datetime without a timezone offset.\n\nTEXT:\n${groundedText}`;
@@ -2736,7 +2755,6 @@ async function fetchLiveStatusViaGemini(
   liveStatusCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
-
 
 // Persist the live status onto a job row. Applies the 45-min "time_mismatch"
 // override identically for flights and vessels. When the first grounded call
@@ -2812,14 +2830,8 @@ export async function applyLiveStatusToJob(
   let note = result.note ?? "";
   // Derive "early" from actual-vs-scheduled drift when the provider didn't
   // explicitly say so. 10+ min ahead counts as early.
-  if (
-    result.scheduled &&
-    result.estimated &&
-    (status === "on_time" || status === "unknown")
-  ) {
-    const drift = Math.round(
-      (new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000,
-    );
+  if (result.scheduled && result.estimated && (status === "on_time" || status === "unknown")) {
+    const drift = Math.round((new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000);
     if (drift <= -10) status = "early";
   }
   if (result.scheduled && job.pickup_at) {
@@ -2848,7 +2860,6 @@ export async function applyLiveStatusToJob(
   return { ...result, status, note };
 }
 
-
 // Lightweight "fix this flight code" endpoint — used by the calendar's flight
 // chip when Gemini couldn't resolve a code. Applies a minimal patch to the
 // flight fields (no full job re-validation) and immediately retries the
@@ -2876,10 +2887,8 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
 
     const patch: Record<string, unknown> = {};
-    if (data.from_flight !== undefined)
-      patch.from_flight = (data.from_flight || "").toUpperCase().trim() || null;
-    if (data.to_flight !== undefined)
-      patch.to_flight = (data.to_flight || "").toUpperCase().trim() || null;
+    if (data.from_flight !== undefined) patch.from_flight = (data.from_flight || "").toUpperCase().trim() || null;
+    if (data.to_flight !== undefined) patch.to_flight = (data.to_flight || "").toUpperCase().trim() || null;
     if (data.move_to === "vessel") patch.tracking_kind = "vessel";
     if (data.move_to === "flight") patch.tracking_kind = "flight";
     // Reset stale status so the chip doesn't keep showing the wrong value
@@ -2915,9 +2924,6 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
     return { ok: true, retried: true as const, result };
   });
 
-
-
-
 export const checkFlightStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -2928,7 +2934,9 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const toIso = new Date(Date.now() + 48 * 3600_000).toISOString();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
+      .select(
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+      )
       .eq("company_id", c.id)
       .or("from_flight.not.is.null,to_flight.not.is.null")
       .not("status", "in", "(completed,cancelled)")
@@ -2939,8 +2947,11 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
     {
       const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
-      try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
-      catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+      try {
+        await _g(supabaseAdmin, c.id, "flight_vessel_tracking");
+      } catch (err) {
+        throw new Error(_e(err) ?? (err as Error).message);
+      }
     }
     const freshCutoffMs = Date.now() - FLIGHT_REFRESH_FREE_MS;
     let updated = 0;
@@ -2994,7 +3005,9 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status")
+      .select(
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+      )
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -3010,8 +3023,11 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     await assertFeatureEnabled(c.id, "flight_vessel_tracking");
     {
       const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
-      try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
-      catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+      try {
+        await _g(supabaseAdmin, c.id, "flight_vessel_tracking");
+      } catch (err) {
+        throw new Error(_e(err) ?? (err as Error).message);
+      }
     }
     // Skip charging when the cached AI answer is still fresh — the caller
     // gets the same result and we don't burn refresh points.
@@ -3029,7 +3045,8 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
       if (spendErr) {
         const msg = spendErr.message || "";
         if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-        if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+        if (msg.includes("feature_disabled"))
+          throw new Error("Flight/vessel tracking has been disabled by the administrator.");
         if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
         throw new Error(msg);
       }
@@ -3131,8 +3148,7 @@ async function _computeTripLiveStatus(data: {
       try {
         const nowMs = Date.now();
         const pickupMs = pickupIso ? new Date(pickupIso).getTime() : nowMs;
-        const departureTime =
-          pickupMs > nowMs + 60_000 ? new Date(pickupMs).toISOString() : undefined;
+        const departureTime = pickupMs > nowMs + 60_000 ? new Date(pickupMs).toISOString() : undefined;
         const body: Record<string, unknown> = {
           origins: [{ waypoint: { address: data.from_location } }],
           destinations: [{ waypoint: { address: data.to_location } }],
@@ -3215,7 +3231,6 @@ async function _computeTripLiveStatus(data: {
         traffic = { ok: false, reason: "routes_failed" };
       }
     }
-
   }
 
   return { pickup_at: pickupIso, flight, traffic };
@@ -3257,7 +3272,9 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind, status, flight_status_updated_at")
+      .select(
+        "id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind, status, flight_status_updated_at",
+      )
       .eq("id", data.job_id)
       .maybeSingle();
     if (error || !job) throw new Error("Trip not found");
@@ -3278,8 +3295,11 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
         const { assertUserFeatureEnabled: _g, friendlyGateError: _e } = await import("@/lib/user-feature-prefs.server");
-        try { await _g(supabaseAdmin, c.id, "flight_vessel_tracking"); }
-        catch (err) { throw new Error(_e(err) ?? (err as Error).message); }
+        try {
+          await _g(supabaseAdmin, c.id, "flight_vessel_tracking");
+        } catch (err) {
+          throw new Error(_e(err) ?? (err as Error).message);
+        }
       }
       const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
         _company_id: c.id,
@@ -3291,7 +3311,8 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
       if (spendErr) {
         const msg = spendErr.message || "";
         if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-        if (msg.includes("feature_disabled")) throw new Error("Flight/vessel tracking has been disabled by the administrator.");
+        if (msg.includes("feature_disabled"))
+          throw new Error("Flight/vessel tracking has been disabled by the administrator.");
         if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
         throw new Error(msg);
       }
@@ -3304,8 +3325,8 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         to_location: (job as any).to_location ?? undefined,
         date: (job as any).date ?? undefined,
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
-        from_flight: finished ? undefined : (job as any).from_flight ?? undefined,
-        to_flight: finished ? undefined : (job as any).to_flight ?? undefined,
+        from_flight: finished ? undefined : ((job as any).from_flight ?? undefined),
+        to_flight: finished ? undefined : ((job as any).to_flight ?? undefined),
         tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
       });
     } catch (e) {
@@ -4178,10 +4199,7 @@ export const buildStatement = createServerFn({ method: "POST" })
 
     if (data.flight_contains) {
       const fc = data.flight_contains.replace(/[%,()]/g, "");
-      if (fc)
-        q = q.or(
-          `from_flight.ilike.%${fc}%,to_flight.ilike.%${fc}%,flightorship.ilike.%${fc}%`,
-        );
+      if (fc) q = q.or(`from_flight.ilike.%${fc}%,to_flight.ilike.%${fc}%,flightorship.ilike.%${fc}%`);
     }
 
     if (data.from_contains) q = q.ilike("from_location", `%${data.from_contains}%`);
@@ -4361,7 +4379,9 @@ async function jobCompanyScope(jobId: string) {
   const sb = await getAdminClient();
   const { data } = await sb
     .from("jobs")
-    .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id")
+    .select(
+      "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id",
+    )
     .eq("id", jobId)
     .maybeSingle();
   return data as any;
@@ -4412,7 +4432,10 @@ export const markJobPayment = createServerFn({ method: "POST" })
             paid_by_role: c.isAdmin ? "admin" : "coordinator",
           };
 
-    const { error } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    const { error } = await sb
+      .from("jobs")
+      .update(patch as never)
+      .eq("id", data.job_id);
     if (error) throw new Error(error.message);
 
     // Log a map event so the audit trail reflects the payment mark.
@@ -4424,7 +4447,9 @@ export const markJobPayment = createServerFn({ method: "POST" })
         event_type: data.side === "driver" ? "driver_payout_marked" : "payment_marked",
         meta: { amount: amt, method, reference: ref, marked_by: context.userId },
       } as never);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
     return { ok: true, amount: amt, side: data.side };
   });
@@ -4458,7 +4483,10 @@ export const unmarkJobPayment = createServerFn({ method: "POST" })
             paid_by_user_id: null,
             paid_by_role: null,
           };
-    const { error } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    const { error } = await sb
+      .from("jobs")
+      .update(patch as never)
+      .eq("id", data.job_id);
     if (error) throw new Error(error.message);
     try {
       await sb.from("trip_map_events").insert({
@@ -4468,26 +4496,32 @@ export const unmarkJobPayment = createServerFn({ method: "POST" })
         event_type: data.side === "driver" ? "driver_payout_cleared" : "payment_cleared",
         meta: { by: context.userId },
       } as never);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     return { ok: true };
   });
 
 export const bulkMarkPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_ids: z.array(z.string().uuid()).min(1).max(500),
-      side: z.enum(["client", "driver"]).default("client"),
-      method: z.enum(PAY_METHODS).optional(),
-      paid_at: z.string().datetime().optional(),
-    }).parse(i),
+    z
+      .object({
+        job_ids: z.array(z.string().uuid()).min(1).max(500),
+        side: z.enum(["client", "driver"]).default("client"),
+        method: z.enum(PAY_METHODS).optional(),
+        paid_at: z.string().datetime().optional(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const sb = await getAdminClient();
     const { data: jobs, error } = await sb
       .from("jobs")
-      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id")
+      .select(
+        "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, price_amount, driver_id",
+      )
       .in("id", data.job_ids);
     if (error) throw new Error(error.message);
     const paidAt = data.paid_at ?? new Date().toISOString();
@@ -4496,7 +4530,9 @@ export const bulkMarkPayment = createServerFn({ method: "POST" })
     for (const job of jobs ?? []) {
       try {
         assertCompanyMayEdit(job as any, c.id, c.isAdmin);
-      } catch { continue; }
+      } catch {
+        continue;
+      }
       const amt = Number((job as any).price_amount ?? 0);
       const patch =
         data.side === "driver"
@@ -4513,13 +4549,14 @@ export const bulkMarkPayment = createServerFn({ method: "POST" })
               paid_by_user_id: context.userId,
               paid_by_role: c.isAdmin ? "admin" : "coordinator",
             };
-      const { error: uerr } = await sb.from("jobs").update(patch as never).eq("id", (job as any).id);
+      const { error: uerr } = await sb
+        .from("jobs")
+        .update(patch as never)
+        .eq("id", (job as any).id);
       if (!uerr) ok += 1;
     }
     return { ok: true, updated: ok, total: (jobs ?? []).length };
   });
-
-
 
 export const listActiveDriverLocations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -4655,7 +4692,9 @@ export const listJobAdjustments = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const { data: waits } = await supabaseAdmin
       .from("job_wait_sessions" as any)
-      .select("id, started_at, ended_at, calculated_amount, agreed_amount, source, driver_note, free_ends_at, auto_started")
+      .select(
+        "id, started_at, ended_at, calculated_amount, agreed_amount, source, driver_note, free_ends_at, auto_started",
+      )
       .eq("job_id", data.job_id)
       .order("started_at", { ascending: true });
     return { adjustments: (rows ?? []) as any[], wait_sessions: (waits ?? []) as any[] };
@@ -4666,12 +4705,14 @@ export const listJobAdjustments = createServerFn({ method: "GET" })
 export const proposeWaitAdjustment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      session_id: z.string().uuid().optional(),
-      proposed_amount: z.number().min(0).max(100000),
-      note: z.string().trim().max(500).optional(),
-    }).parse(i),
+    z
+      .object({
+        job_id: z.string().uuid(),
+        session_id: z.string().uuid().optional(),
+        proposed_amount: z.number().min(0).max(100000),
+        note: z.string().trim().max(500).optional(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const { company } = await assertJobInCompany(context, data.job_id);
@@ -4723,9 +4764,7 @@ export const listWaitProposals = createServerFn({ method: "GET" })
 
 export const cancelWaitProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({ job_id: z.string().uuid(), proposal_id: z.string().uuid() }).parse(i),
-  )
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid(), proposal_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     await assertJobInCompany(context, data.job_id);
     const supabaseAdmin = await getAdminClient();
@@ -5046,8 +5085,9 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     // to inspecting payload shape when `type` is missing/wrong.
     const rawPayload = parsed?.payload;
     const isQuestions = parsed?.type === "questions" && Array.isArray(rawPayload);
-    const isQuestion = !isQuestions && (parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data"));
-    const isData = parsed?.type === "data" || Array.isArray(rawPayload) && !isQuestions;
+    const isQuestion =
+      !isQuestions && (parsed?.type === "question" || (typeof rawPayload === "string" && parsed?.type !== "data"));
+    const isData = parsed?.type === "data" || (Array.isArray(rawPayload) && !isQuestions);
     if (isData && Array.isArray(rawPayload)) {
       const rows = rawPayload.map(normalizeTripRow);
       // Server-side confidence: trust the model's flag, but also flip to true
@@ -5898,9 +5938,7 @@ export async function dispatchJobToPartnerInternal(
 ): Promise<void> {
   const { data: job } = await sb
     .from("jobs")
-    .select(
-      "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status",
-    )
+    .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, dispatch_status")
     .eq("id", jobId)
     .maybeSingle();
   if (!job) throw new Error("trip not found");
@@ -5941,7 +5979,10 @@ export async function dispatchJobToPartnerInternal(
 
 export async function runAutoCoordinate(
   companyId: string,
-  opts: { directive?: string | null; resolved_target?: { type: "driver" | "partner"; id: string; name: string } | null } = {},
+  opts: {
+    directive?: string | null;
+    resolved_target?: { type: "driver" | "partner"; id: string; name: string } | null;
+  } = {},
 ) {
   const sb = await getAdminClient();
   const { data: cfg } = await sb
@@ -5995,10 +6036,16 @@ export async function runAutoCoordinate(
   // Phase 2 (driver On-The-Go) and Phase 4 (public booking portal) queues
   // instead of silently ignoring them. Not part of proposals — informational only.
   const [{ count: reviewCount }, portalIdsRes] = await Promise.all([
-    sb.from("jobs").select("id", { count: "exact", head: true })
-      .eq("company_id", companyId).eq("needs_review", true)
+    sb
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("needs_review", true)
       .not("status", "in", "(completed,cancelled)"),
-    sb.from("public_booking_portals" as any).select("id").eq("coordinator_company_id", companyId),
+    sb
+      .from("public_booking_portals" as any)
+      .select("id")
+      .eq("coordinator_company_id", companyId),
   ]);
   const portalIds = (portalIdsRes.data ?? []).map((p: any) => p.id);
   let pendingRequestsCount = 0;
@@ -6017,7 +6064,6 @@ export async function runAutoCoordinate(
 
   const list = jobs ?? [];
   const drv = drivers ?? [];
-
 
   const { data: costRow } = await sb
     .from("ai_feature_costs")
@@ -6064,7 +6110,12 @@ export async function runAutoCoordinate(
     return !Number.isNaN(pickup.getTime()) && maltaDate(pickup) === today;
   };
   const eligibleList = wantsTodayOnly ? list.filter(isTodayTrip) : list;
-  const normalizeTargetName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  const normalizeTargetName = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   const compactTargetName = (s: string) => normalizeTargetName(s).replace(/\s+/g, "");
   const editDistance = (a: string, b: string) => {
     const dp = Array.from({ length: a.length + 1 }, (_, i) => Array(b.length + 1).fill(0));
@@ -6072,11 +6123,7 @@ export async function runAutoCoordinate(
     for (let j = 0; j <= b.length; j++) dp[0][j] = j;
     for (let i = 1; i <= a.length; i++) {
       for (let j = 1; j <= b.length; j++) {
-        dp[i][j] = Math.min(
-          dp[i - 1][j] + 1,
-          dp[i][j - 1] + 1,
-          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-        );
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
       }
     }
     return dp[a.length][b.length];
@@ -6097,20 +6144,25 @@ export async function runAutoCoordinate(
       return n && (normalizedDirective.includes(n) || closeNameMatch(c, compactDirective));
     });
     if (exact) return exact;
-    return rows.find((r) => {
-      const n = normalizeTargetName(r.name ?? "");
-      return n && n.split(" ").some((part) => part.length >= 4 && closeNameMatch(part, compactDirective));
-    }) ?? null;
+    return (
+      rows.find((r) => {
+        const n = normalizeTargetName(r.name ?? "");
+        return n && n.split(" ").some((part) => part.length >= 4 && closeNameMatch(part, compactDirective));
+      }) ?? null
+    );
   };
   const wantsPartner = /\b(partner|dispatch|forward|collaborate|send to partner)\b/.test(directiveText);
   const wantsDriver = /\b(driver|assign|move|give|put|send to driver)\b/.test(directiveText);
   const inferredDriver = !opts.resolved_target && (wantsDriver || !wantsPartner) ? matchNameInDirective(drv) : null;
-  const inferredPartner = !opts.resolved_target && !inferredDriver && (wantsPartner || !wantsDriver) ? matchNameInDirective(partners) : null;
-  const resolved = opts.resolved_target ?? (inferredDriver
-    ? { type: "driver" as const, id: inferredDriver.id, name: inferredDriver.name ?? "driver" }
-    : inferredPartner
-      ? { type: "partner" as const, id: inferredPartner.id, name: inferredPartner.name ?? "partner" }
-      : null);
+  const inferredPartner =
+    !opts.resolved_target && !inferredDriver && (wantsPartner || !wantsDriver) ? matchNameInDirective(partners) : null;
+  const resolved =
+    opts.resolved_target ??
+    (inferredDriver
+      ? { type: "driver" as const, id: inferredDriver.id, name: inferredDriver.name ?? "driver" }
+      : inferredPartner
+        ? { type: "partner" as const, id: inferredPartner.id, name: inferredPartner.name ?? "partner" }
+        : null);
 
   const makeChunks = (ids: string[], size = 50) => {
     const chunks: string[][] = [];
@@ -6122,8 +6174,7 @@ export async function runAutoCoordinate(
   // Buffer = company boarding_buffer_min (unified with the coordinator's manual
   // conflict checks) with a small safety floor so back-to-back turns still
   // include hop-off + boarding time.
-  const { data: coBuf } = await sb
-    .from("companies").select("boarding_buffer_min").eq("id", companyId).maybeSingle();
+  const { data: coBuf } = await sb.from("companies").select("boarding_buffer_min").eq("id", companyId).maybeSingle();
   const companyBuf = Number((coBuf as any)?.boarding_buffer_min);
   const BUFFER_MIN = Number.isFinite(companyBuf) && companyBuf >= 0 ? Math.max(15, companyBuf + 15) : 30;
   const DEFAULT_TRIP_MIN = 45;
@@ -6171,7 +6222,12 @@ export async function runAutoCoordinate(
     const leftover: string[] = [];
     const nameOf = (id: string) => drv.find((d: any) => d.id === id)?.name ?? "driver";
     const partnerNameOf = (id: string) => partners.find((p) => p.id === id)?.name ?? "partner";
-    const push = (map: Map<string, { trip_ids: string[]; reasons: string[] }>, key: string, tripId: string, reason: string) => {
+    const push = (
+      map: Map<string, { trip_ids: string[]; reasons: string[] }>,
+      key: string,
+      tripId: string,
+      reason: string,
+    ) => {
       const b = map.get(key) ?? { trip_ids: [], reasons: [] };
       b.trip_ids.push(tripId);
       if (b.reasons.length < 3) b.reasons.push(reason);
@@ -6210,7 +6266,11 @@ export async function runAutoCoordinate(
           kind: "assign",
           trip_ids,
           driver_id,
-          reason: `${nameOf(driver_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(0, 300),
+          reason:
+            `${nameOf(driver_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(
+              0,
+              300,
+            ),
         });
       }
     }
@@ -6220,7 +6280,11 @@ export async function runAutoCoordinate(
           kind: "dispatch",
           trip_ids,
           partner_company_id,
-          reason: `${partnerNameOf(partner_company_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(0, 300),
+          reason:
+            `${partnerNameOf(partner_company_id)} → ${trip_ids.length} trip${trip_ids.length === 1 ? "" : "s"}. ${b.reasons.join(" ")}`.slice(
+              0,
+              300,
+            ),
         });
       }
     }
@@ -6255,7 +6319,8 @@ export async function runAutoCoordinate(
   // No target named. If directive is a simple assign/dispatch or empty, use
   // deterministic availability planner. Otherwise fall through to the LLM
   // for genuinely ambiguous plans (grouping, optimization).
-  const simpleAssignIntent = !directive || /\b(assign|dispatch|distribute|hand out|give out|clear|share)\b/.test(directiveText);
+  const simpleAssignIntent =
+    !directive || /\b(assign|dispatch|distribute|hand out|give out|clear|share)\b/.test(directiveText);
   if (simpleAssignIntent) {
     const r = planAvailability(planningList, null);
     await chargePlanIfNeeded(r.proposals);
@@ -6264,7 +6329,12 @@ export async function runAutoCoordinate(
 
   const tripLines = planningList
     .map((j: any) => {
-      const paxNames = Array.isArray(j.pax) ? j.pax.map((p: any) => p?.name).filter(Boolean).join(", ") : "";
+      const paxNames = Array.isArray(j.pax)
+        ? j.pax
+            .map((p: any) => p?.name)
+            .filter(Boolean)
+            .join(", ")
+        : "";
       const when = j.pickup_at ?? `${j.date ?? ""} ${j.time ?? "??"}`.trim();
       const from = j.pickup_display_name || j.from_location || "";
       const to = j.dropoff_display_name || j.to_location || "";
@@ -6452,7 +6522,6 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
-
 
 // ---------- AI: Daily plan ----------
 export const aiPlanDriverDay = createServerFn({ method: "POST" })
@@ -7089,15 +7158,19 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           } else if (a.thread === "client") {
             thread_kind = "private";
           }
-          const { data: inserted, error } = await sb.from("trip_messages").insert({
-            job_id: a.job_id,
-            company_id: c.id,
-            sender_kind: "coordinator",
-            sender_label: label,
-            body,
-            thread_kind,
-            ...extra,
-          } as any).select("id").single();
+          const { data: inserted, error } = await sb
+            .from("trip_messages")
+            .insert({
+              job_id: a.job_id,
+              company_id: c.id,
+              sender_kind: "coordinator",
+              sender_label: label,
+              body,
+              thread_kind,
+              ...extra,
+            } as any)
+            .select("id")
+            .single();
           if (error) throw error;
           const messageId = (inserted as { id: string } | null)?.id ?? null;
           if (messageId) {
@@ -7124,7 +7197,6 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           await dispatchJobToPartnerInternal(sb, c.id, a.job_id, a.partner_company_id, "via AI agent");
           affected++;
           results.push({ index: idx, ok: true, message: "dispatched to partner" });
-
         } else if (a.type === "note") {
           results.push({ index: idx, ok: true, message: `note: ${String(a.note ?? "").slice(0, 120)}` });
         } else {
@@ -7207,7 +7279,6 @@ export const autoAssignJob = createServerFn({ method: "POST" })
     return { ok: true, driver_id: row.driver_id, reason: row.reason, score: Number(row.score ?? 0) };
   });
 
-
 // ---------- REFERRALS ----------
 
 export const listMyReferrals = createServerFn({ method: "GET" })
@@ -7217,8 +7288,9 @@ export const listMyReferrals = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     let code = (c as any).referral_code as string | null;
     if (!code) {
-      const { data: gen, error: genErr } = await supabaseAdmin
-        .rpc("ensure_referral_code", { _company_id: c.id } as never);
+      const { data: gen, error: genErr } = await supabaseAdmin.rpc("ensure_referral_code", {
+        _company_id: c.id,
+      } as never);
       if (genErr) throw new Error(genErr.message);
       code = (gen as unknown as string) ?? null;
     }
@@ -7246,10 +7318,7 @@ export const listMyReferrals = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(100);
 
-    const total_credited = (kickbacks ?? []).reduce(
-      (sum, k: any) => sum + Math.abs(Number(k.points_deducted ?? 0)),
-      0,
-    );
+    const total_credited = (kickbacks ?? []).reduce((sum, k: any) => sum + Math.abs(Number(k.points_deducted ?? 0)), 0);
 
     const base = {
       percent: Number((c as any).referral_percent ?? 5),
@@ -7489,13 +7558,14 @@ export const mergeTrips = createServerFn({ method: "POST" })
     const allIds = [data.keep_job_id, ...data.drop_job_ids];
     const { data: rows, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_note")
+      .select("id, company_id, driver_note, operation_id")
       .in("id", allIds);
     if (error) throw new Error(error.message);
     if (!rows || rows.length !== allIds.length) throw new Error("not_found");
     for (const r of rows) {
       if ((r as any).company_id !== (c as any).id) throw new Error("forbidden");
     }
+    const keepOperationId = (rows.find((r) => (r as any).id === data.keep_job_id) as any)?.operation_id ?? null;
 
     // Merge passenger rows as a multiset. Taking the greatest occurrence count
     // seen on any duplicate trip avoids doubling an identical manifest while
@@ -7538,7 +7608,13 @@ export const mergeTrips = createServerFn({ method: "POST" })
       }
     }
 
-    const toAdd: Array<{ job_id: string; name: string; phone: string | null; note: string | null }> = [];
+    const toAdd: Array<{
+      job_id: string;
+      operation_id: string | null;
+      name: string;
+      phone: string | null;
+      note: string | null;
+    }> = [];
     for (const [key, sourceRows] of bestDroppedByName) {
       const existingRows = keepByName.get(key) ?? [];
       // Retain details that only existed on the duplicate copy.
@@ -7559,6 +7635,7 @@ export const mergeTrips = createServerFn({ method: "POST" })
       for (const sourcePassenger of sourceRows.slice(existingRows.length)) {
         toAdd.push({
           job_id: data.keep_job_id,
+          operation_id: keepOperationId,
           name: sourcePassenger.name,
           phone: sourcePassenger.phone ?? null,
           note: sourcePassenger.note ?? null,
@@ -7589,9 +7666,7 @@ export const mergeTrips = createServerFn({ method: "POST" })
 
 export const listPendingBoardingApprovals = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({ job_ids: z.array(z.string().uuid()).max(800) }).parse(i),
-  )
+  .inputValidator((i: unknown) => z.object({ job_ids: z.array(z.string().uuid()).max(800) }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context as Ctx);
     const supabaseAdmin = await getAdminClient();
@@ -7600,7 +7675,9 @@ export const listPendingBoardingApprovals = createServerFn({ method: "POST" })
 
     const { data: jobs, error: jobsError } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, status, pax(id,name,status,boarded_at)")
+      .select(
+        "id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, status, pax(id,name,status,boarded_at)",
+      )
       .in("id", jobIds);
     if (jobsError) throw new Error(jobsError.message);
 
@@ -7608,10 +7685,10 @@ export const listPendingBoardingApprovals = createServerFn({ method: "POST" })
       (jobs ?? [])
         .filter(
           (j: any) =>
-            j.company_id === c.id
-            || j.executor_company_id === c.id
-            || j.origin_company_id === c.id
-            || (j.dispatch_chain_company_ids ?? []).includes(c.id),
+            j.company_id === c.id ||
+            j.executor_company_id === c.id ||
+            j.origin_company_id === c.id ||
+            (j.dispatch_chain_company_ids ?? []).includes(c.id),
         )
         .map((j: any) => j.id),
     );
@@ -7636,11 +7713,13 @@ export const listPendingBoardingApprovals = createServerFn({ method: "POST" })
 export const respondBoardingApproval = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      approval_id: z.string().uuid(),
-      action: z.enum(["approve", "reject"]),
-      coordinator_note: z.string().trim().max(500).optional(),
-    }).parse(i),
+    z
+      .object({
+        approval_id: z.string().uuid(),
+        action: z.enum(["approve", "reject"]),
+        coordinator_note: z.string().trim().max(500).optional(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context as Ctx);
@@ -7672,9 +7751,10 @@ export const respondBoardingApproval = createServerFn({ method: "POST" })
     if (upErr) throw new Error(upErr.message);
 
     // Send a message back to the driver.
-    const messageBody = data.action === "approve"
-      ? `✅ Boarding approved by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""}`
-      : `⛔ Boarding rejected by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""} Please resolve pending passengers.`;
+    const messageBody =
+      data.action === "approve"
+        ? `✅ Boarding approved by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""}`
+        : `⛔ Boarding rejected by coordinator.${data.coordinator_note ? ` Note: ${data.coordinator_note}` : ""} Please resolve pending passengers.`;
     await supabaseAdmin.from("trip_messages").insert({
       job_id: (approval as any).job_id,
       company_id: (approval as any).company_id,
@@ -7701,9 +7781,7 @@ export const respondBoardingApproval = createServerFn({ method: "POST" })
 
 export const getBoardingApprovalStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({ job_id: z.string().uuid() }).parse(i),
-  )
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context as Ctx);
     const supabaseAdmin = await getAdminClient();
@@ -7723,10 +7801,12 @@ export const getBoardingApprovalStatus = createServerFn({ method: "GET" })
 export const clearJobSafetyFlags = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      clear: z.array(z.enum(["safety", "breakdown"])).min(1),
-    }).parse(i),
+    z
+      .object({
+        job_id: z.string().uuid(),
+        clear: z.array(z.enum(["safety", "breakdown"])).min(1),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
@@ -7753,7 +7833,9 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
     const sb = await getAdminClient();
     const { data: rows, error } = await sb
       .from("job_coord_change_requests")
-      .select("id, kind, requested_changes, note, status, created_at, decided_at, decided_note, drivers:decided_by_driver_id(name)")
+      .select(
+        "id, kind, requested_changes, note, status, created_at, decided_at, decided_note, drivers:decided_by_driver_id(name)",
+      )
       .eq("job_id", data.job_id)
       .eq("company_id", c.id)
       .order("created_at", { ascending: false });
@@ -7777,7 +7859,11 @@ export const cancelJobChangeRequest = createServerFn({ method: "POST" })
     if ((row as any).status !== "pending") throw new Error("Only pending requests can be cancelled");
     const { error } = await sb
       .from("job_coord_change_requests")
-      .update({ status: "cancelled", decided_at: new Date().toISOString(), decided_note: "cancelled by coordinator" } as never)
+      .update({
+        status: "cancelled",
+        decided_at: new Date().toISOString(),
+        decided_note: "cancelled by coordinator",
+      } as never)
       .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -7795,9 +7881,7 @@ export const getMyGpsSettings = createServerFn({ method: "GET" })
 
 export const updateMyGpsSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) =>
-    z.object({ arrival_radius_m: z.number().int().min(25).max(2000) }).parse(i),
-  )
+  .inputValidator((i: unknown) => z.object({ arrival_radius_m: z.number().int().min(25).max(2000) }).parse(i))
   .handler(async ({ data, context }) => {
     const sb = await getAdminClient();
     const co = await lookupCompanyForUser(sb, context.userId, "id");
@@ -7819,7 +7903,9 @@ export const listPendingDriverCancels = createServerFn({ method: "GET" })
     const sb = await getAdminClient();
     const { data, error } = await sb
       .from("jobs")
-      .select("id, date, time, pickup_at, from_location, to_location, pickup_display_name, dropoff_display_name, status, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, driver_cancel_requested_by, drivers(name)")
+      .select(
+        "id, date, time, pickup_at, from_location, to_location, pickup_display_name, dropoff_display_name, status, driver_cancel_requested_at, driver_cancel_reason, driver_cancel_note, driver_cancel_requested_by, drivers(name)",
+      )
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .not("driver_cancel_requested_at", "is", null)
       .order("driver_cancel_requested_at", { ascending: false });
@@ -7830,18 +7916,22 @@ export const listPendingDriverCancels = createServerFn({ method: "GET" })
 export const decideDriverCancelRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      decision: z.enum(["approve", "reject"]),
-      note: z.string().trim().max(500).optional().nullable(),
-    }).parse(i),
+    z
+      .object({
+        job_id: z.string().uuid(),
+        decision: z.enum(["approve", "reject"]),
+        note: z.string().trim().max(500).optional().nullable(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const sb = await getAdminClient();
     const { data: job, error: jerr } = await sb
       .from("jobs")
-      .select("id, company_id, executor_company_id, driver_id, status, driver_cancel_requested_at, driver_cancel_reason")
+      .select(
+        "id, company_id, executor_company_id, driver_id, status, driver_cancel_requested_at, driver_cancel_reason",
+      )
       .eq("id", data.job_id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .maybeSingle();
@@ -7861,7 +7951,9 @@ export const decideDriverCancelRequest = createServerFn({ method: "POST" })
       // Close any open wait session server-side (best effort — matches other status transitions).
       try {
         await sb.rpc("close_open_wait_session" as never, { _job_id: data.job_id } as never);
-      } catch { /* ignore if no such RPC in this env */ }
+      } catch {
+        /* ignore if no such RPC in this env */
+      }
       const { error } = await sb
         .from("jobs")
         .update({ ...clearPatch, status: "cancelled" } as never)
@@ -7876,15 +7968,18 @@ export const decideDriverCancelRequest = createServerFn({ method: "POST" })
         thread_kind: "driver_coord",
         driver_id: (job as any).driver_id ?? null,
       } as never);
-      await sb.rpc("record_trip_audit" as never, {
-        _job_id: data.job_id,
-        _event_type: "driver_cancel_approved",
-        _new: { reason: (job as any).driver_cancel_reason },
-        _notes: noteText || null,
-        _approval_status: "approved",
-        _driver_id: (job as any).driver_id ?? null,
-        _actor_label: "coordinator",
-      } as never);
+      await sb.rpc(
+        "record_trip_audit" as never,
+        {
+          _job_id: data.job_id,
+          _event_type: "driver_cancel_approved",
+          _new: { reason: (job as any).driver_cancel_reason },
+          _notes: noteText || null,
+          _approval_status: "approved",
+          _driver_id: (job as any).driver_id ?? null,
+          _actor_label: "coordinator",
+        } as never,
+      );
     } else {
       const { error } = await sb
         .from("jobs")
@@ -7900,15 +7995,18 @@ export const decideDriverCancelRequest = createServerFn({ method: "POST" })
         thread_kind: "driver_coord",
         driver_id: (job as any).driver_id ?? null,
       } as never);
-      await sb.rpc("record_trip_audit" as never, {
-        _job_id: data.job_id,
-        _event_type: "driver_cancel_rejected",
-        _new: { reason: (job as any).driver_cancel_reason },
-        _notes: noteText || null,
-        _approval_status: "rejected",
-        _driver_id: (job as any).driver_id ?? null,
-        _actor_label: "coordinator",
-      } as never);
+      await sb.rpc(
+        "record_trip_audit" as never,
+        {
+          _job_id: data.job_id,
+          _event_type: "driver_cancel_rejected",
+          _new: { reason: (job as any).driver_cancel_reason },
+          _notes: noteText || null,
+          _approval_status: "rejected",
+          _driver_id: (job as any).driver_id ?? null,
+          _actor_label: "coordinator",
+        } as never,
+      );
     }
     return { ok: true };
   });
@@ -7927,11 +8025,13 @@ export const decideDriverCancelRequest = createServerFn({ method: "POST" })
 export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({
-      job_id: z.string().uuid(),
-      status: z.enum(["pending", "en_route", "arrived", "in_progress", "completed", "cancelled"]),
-      reason: z.string().trim().max(500).optional(),
-    }).parse(i),
+    z
+      .object({
+        job_id: z.string().uuid(),
+        status: z.enum(["pending", "en_route", "arrived", "in_progress", "completed", "cancelled"]),
+        reason: z.string().trim().max(500).optional(),
+      })
+      .parse(i),
   )
   .handler(async ({ data, context }) => {
     const sb = await getAdminClient();
@@ -7953,11 +8053,9 @@ export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
       const co = await lookupCompanyForUser(sb, context.userId, "id");
       const myCompanyId = co?.id as string | undefined;
       const allowedCompanyIds = new Set(
-        [
-          (job as any).company_id,
-          (job as any).executor_company_id,
-          (job as any).origin_company_id,
-        ].filter(Boolean) as string[],
+        [(job as any).company_id, (job as any).executor_company_id, (job as any).origin_company_id].filter(
+          Boolean,
+        ) as string[],
       );
       if (!myCompanyId || !allowedCompanyIds.has(myCompanyId)) {
         throw new Error("not_authorized");
@@ -7985,7 +8083,10 @@ export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
       // timestamps so the audit trail stays intact.
     }
 
-    const { error: uerr } = await sb.from("jobs").update(patch as never).eq("id", data.job_id);
+    const { error: uerr } = await sb
+      .from("jobs")
+      .update(patch as never)
+      .eq("id", data.job_id);
     if (uerr) throw new Error(uerr.message);
 
     // Resolve actor email for the audit pin, best-effort.
@@ -7993,15 +8094,15 @@ export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
     try {
       const { data: u } = await sb.auth.admin.getUserById(context.userId);
       actorEmail = u.user?.email ?? null;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // Log the override as a distinct map pin. The BEFORE-INSERT trigger
     // `apply_trip_event_impact` has no rule for `coord_status_override`, so
     // it contributes zero payout / zero trust — coordinator fixes must
     // never penalise the driver.
-    const companyId =
-      ((job as any).executor_company_id as string | null) ??
-      ((job as any).company_id as string);
+    const companyId = ((job as any).executor_company_id as string | null) ?? ((job as any).company_id as string);
     try {
       const { insertTripMapEvent } = await import("@/lib/trip-map.server");
       await insertTripMapEvent(sb, {
@@ -8020,21 +8121,28 @@ export const coordinatorOverrideJobStatus = createServerFn({ method: "POST" })
           reason: data.reason ?? null,
         },
       });
-    } catch { /* map log failures never block the status change */ }
+    } catch {
+      /* map log failures never block the status change */
+    }
 
     // Also write to the tamper-evident trip audit chain so the coordinator's
     // action shows in the audit timeline next to driver actions.
     try {
-      await sb.rpc("record_trip_audit" as never, {
-        _job_id: (job as any).id,
-        _event_type: "coord_status_override",
-        _previous: { status: prevStatus },
-        _new: { status: data.status },
-        _notes: data.reason ?? null,
-        _driver_id: ((job as any).driver_id as string | null) ?? null,
-        _actor_label: isAdmin ? "admin" : "coordinator",
-      } as never);
-    } catch { /* audit failures never block the primary action */ }
+      await sb.rpc(
+        "record_trip_audit" as never,
+        {
+          _job_id: (job as any).id,
+          _event_type: "coord_status_override",
+          _previous: { status: prevStatus },
+          _new: { status: data.status },
+          _notes: data.reason ?? null,
+          _driver_id: ((job as any).driver_id as string | null) ?? null,
+          _actor_label: isAdmin ? "admin" : "coordinator",
+        } as never,
+      );
+    } catch {
+      /* audit failures never block the primary action */
+    }
 
     return {
       ok: true,
