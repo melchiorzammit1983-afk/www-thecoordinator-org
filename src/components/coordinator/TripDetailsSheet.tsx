@@ -845,6 +845,7 @@ export function TripDetailsSheet({
         threadKind={paxChat ? "private" : "group"}
         paxName={paxChat?.name ?? null}
         title="Passenger chat"
+        paxList={pax.map((p) => ({ id: p.id, name: p.name }))}
       />
       <TripChatDialog
         open={driverChatOpen}
