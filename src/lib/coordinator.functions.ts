@@ -720,9 +720,10 @@ async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefine
   const { error: deleteErr } = await supabaseAdmin.from("pax").delete().eq("job_id", jobId);
   if (deleteErr) throw new Error(deleteErr.message);
   if (!clean.length) return;
-  const { error: insertErr } = await supabaseAdmin
+  const { error: insertErr } = await (supabaseAdmin as any)
     .from("pax")
     .insert(clean.map((passenger) => ({ job_id: jobId, operation_id: operationId, ...passenger })));
+
   if (insertErr) throw new Error(insertErr.message);
   // Verify: re-read the row count so a silent RLS/constraint drop is caught.
   const { count, error: countErr } = await supabaseAdmin
@@ -2375,7 +2376,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       created.push((job as { id: string }).id);
       if (t.pax.length) {
         const rows = t.pax.map((name) => ({ job_id: job.id, operation_id: operation.id, name }));
-        const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
+        const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
@@ -7643,7 +7644,7 @@ export const mergeTrips = createServerFn({ method: "POST" })
       }
     }
     if (toAdd.length > 0) {
-      const { error: pErr } = await supabaseAdmin.from("pax").insert(toAdd);
+      const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(toAdd);
       if (pErr) throw new Error(pErr.message);
     }
 
