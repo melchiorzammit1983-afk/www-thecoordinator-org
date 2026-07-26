@@ -3757,8 +3757,9 @@ export const postTripMessageCoord = createServerFn({ method: "POST" })
     await assertFeatureEnabled(company.id, "chat");
     const supabaseAdmin = await getAdminClient();
     const { data: userRow } = await supabaseAdmin.auth.admin.getUserById(context.userId);
-    const label = userRow?.user?.email ?? "Coordinator";
-
+    const meta = (userRow?.user?.user_metadata ?? {}) as { full_name?: string; name?: string };
+        const label = meta.full_name || meta.name || "Coordinator";
+    
     if (data.thread_kind === "driver") {
       // Tag with the current driver so a later reassignment doesn't leak this
       // private thread to whichever driver takes over next.
