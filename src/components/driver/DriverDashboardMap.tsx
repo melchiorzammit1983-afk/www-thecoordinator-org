@@ -52,10 +52,12 @@ export function DriverDashboardMap({
   activeJob,
   routeEncodedPolyline = null,
   onDriverPosition,
+  onDriverPositionError,
 }: {
   activeJob: DriverMapJob | null;
   routeEncodedPolyline?: string | null;
   onDriverPosition?: (pos: { lat: number; lng: number }) => void;
+  onDriverPositionError?: (code: "permission_denied" | "unavailable" | "timeout") => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -93,15 +95,18 @@ export function DriverDashboardMap({
     return () => { cancelled = true; };
   }, []);
 
-  // Follow user location
+  // Follow user location — decoupled from map-load success so live routing
+  // (which only needs raw GPS coordinates) keeps working even if the
+  // Google Maps script fails to load. Marker rendering still needs `ready`.
   useEffect(() => {
-    if (!ready || typeof navigator === "undefined" || !navigator.geolocation) return;
-    const gmaps = (window as any).google?.maps;
-    if (!gmaps) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         onDriverPosition?.(p);
+        if (!ready) return;
+        const gmaps = (window as any).google?.maps;
+        if (!gmaps || !mapRef.current) return;
         if (!meMarkerRef.current) {
           meMarkerRef.current = new gmaps.Marker({
             map: mapRef.current,
@@ -123,7 +128,7 @@ export function DriverDashboardMap({
           meMarkerRef.current.setPosition(p);
         }
       },
-      () => { /* ignore permission errors */ },
+      (err) => { onDriverPositionError?.(err.code === 1 ? "permission_denied" : err.code === 3 ? "timeout" : "unavailable"); },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
