@@ -2376,7 +2376,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       created.push((job as { id: string }).id);
       if (t.pax.length) {
         const rows = t.pax.map((name) => ({ job_id: job.id, operation_id: operation.id, name }));
-        const { error: pErr } = await supabaseAdmin.from("pax").insert(rows);
+        const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
