@@ -7644,7 +7644,7 @@ export const mergeTrips = createServerFn({ method: "POST" })
       }
     }
     if (toAdd.length > 0) {
-      const { error: pErr } = await supabaseAdmin.from("pax").insert(toAdd);
+      const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(toAdd);
       if (pErr) throw new Error(pErr.message);
     }
 
