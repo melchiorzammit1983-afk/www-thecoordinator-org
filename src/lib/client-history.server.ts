@@ -20,22 +20,19 @@ export type PastTripRow = {
   plate: string | null;
 };
 
-export async function loadPastTripsForJob(
-  admin: AnyAdmin,
-  currentJobId: string,
-): Promise<PastTripRow[]> {
+export async function loadPastTripsForJob(admin: AnyAdmin, currentJobId: string): Promise<PastTripRow[]> {
   // Look up current job's company + phone hints.
-  const { data: curJob } = await admin.from("jobs")
+  const { data: curJob } = await admin
+    .from("jobs")
     .select("id, company_id, contact_phone, clientcompanyname")
-    .eq("id", currentJobId).maybeSingle();
+    .eq("id", currentJobId)
+    .maybeSingle();
   if (!curJob) return [];
 
   const companyId = (curJob as any).company_id;
   const rawPhone = String((curJob as any).contact_phone ?? "").replace(/\D/g, "");
   const last4 = rawPhone.slice(-4);
-  const clientName = (curJob as any).clientcompanyname
-    ? String((curJob as any).clientcompanyname).trim()
-    : "";
+  const clientName = (curJob as any).clientcompanyname ? String((curJob as any).clientcompanyname).trim() : "";
 
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
   const orParts: string[] = [];
@@ -49,8 +46,11 @@ export async function loadPastTripsForJob(
   }
   if (orParts.length === 0) return [];
 
-  const { data: rows } = await admin.from("jobs")
-    .select("id, pickup_at, date, time, from_location, to_location, status, drivers(name, car_make_model, plate), completed_at")
+  const { data: rows } = await admin
+    .from("jobs")
+    .select(
+      "id, pickup_at, date, time, from_location, to_location, status, drivers(name, car_make_model, plate), driver_completed_at",
+    )
     .eq("company_id", companyId)
     .neq("id", currentJobId)
     .in("status", ["completed", "in_progress"])
@@ -61,7 +61,7 @@ export async function loadPastTripsForJob(
 
   return (rows ?? []).map((r: any) => ({
     id: r.id,
-    when: r.completed_at ?? r.pickup_at ?? (r.date && r.time ? `${r.date}T${r.time}:00` : null),
+    when: r.driver_completed_at ?? r.pickup_at ?? (r.date && r.time ? `${r.date}T${r.time}:00` : null),
     from: r.from_location ?? null,
     to: r.to_location ?? null,
     status: r.status ?? "completed",
