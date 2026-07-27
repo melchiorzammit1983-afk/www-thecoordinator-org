@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
+import { CrewManagementPanel } from "@/components/portal/CrewManagementPanel";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -29,7 +30,7 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "manage" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "trips" | "crew" | "chat" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
@@ -69,6 +70,7 @@ function PortalPage() {
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="bookings">Bookings</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
+            <TabsTrigger value="crew">Crew</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
             {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
             <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -81,6 +83,10 @@ function PortalPage() {
 
           <TabsContent value="trips" className="mt-4">
             <TripsList bookings={boot.bookings} jobs={boot.jobs} />
+          </TabsContent>
+
+          <TabsContent value="crew" className="mt-4">
+            <CrewManagementPanel token={token} />
           </TabsContent>
 
           <TabsContent value="chat" className="mt-4">
