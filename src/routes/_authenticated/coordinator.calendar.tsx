@@ -1202,6 +1202,9 @@ function CalendarPage() {
         jobId={chatJob?.id ?? null}
         title={chatJob ? `${chatJob.from_location} → ${chatJob.to_location}` : ""}
         role="coordinator"
+        paxList={(chatJob?.pax ?? [])
+          .filter((p: any) => (p?.name ?? "").trim().length > 0)
+          .map((p: any) => ({ id: p.id, name: p.name }))}
       />
       <DetailsSheetHost
         job={detailsJob}
