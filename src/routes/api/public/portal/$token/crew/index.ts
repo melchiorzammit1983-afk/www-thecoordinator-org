@@ -117,7 +117,17 @@ export const Route = createFileRoute("/api/public/portal/$token/crew/")({
               continue;
             }
 
-            const legs = crewRowToLegs(row).filter((l) => l.from_location || l.to_location || l.flight_number);
+            const legs = crewRowToLegs({
+              date: row.date ?? "",
+              from: row.from ?? "",
+              to: row.to ?? "",
+              flight1: row.flight1 ?? "",
+              flight2: row.flight2 ?? "",
+              flight3: row.flight3 ?? "",
+              flight_from1: row.flight_from1 ?? "",
+              flight_from2: row.flight_from2 ?? "",
+              flight_from3: row.flight_from3 ?? "",
+            }).filter((l) => l.from_location || l.to_location || l.flight_number);
             if (legs.length) {
               await admin.from("crew_itineraries" as any).insert(
                 legs.map((l) => ({ ...l, crew_member_id: (crewRow as any).id })) as any,
