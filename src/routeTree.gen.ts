@@ -103,7 +103,9 @@ import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/publ
 import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
 import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
 import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/api/public/portal/guest/$session/index'
+import { Route as ApiPublicPortalTokenCrewIndexRouteImport } from './routes/api/public/portal/$token/crew/index'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
+import { Route as ApiPublicPortalTokenCrewCrewIdRouteImport } from './routes/api/public/portal/$token/crew/$crewId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -632,10 +634,22 @@ const ApiPublicPortalGuestSessionIndexRoute =
     path: '/api/public/portal/guest/$session/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalTokenCrewIndexRoute =
+  ApiPublicPortalTokenCrewIndexRouteImport.update({
+    id: '/api/public/portal/$token/crew/',
+    path: '/api/public/portal/$token/crew/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalGuestRoomQrRoute =
   ApiPublicPortalGuestRoomQrRouteImport.update({
     id: '/api/public/portal/guest/room/$qr',
     path: '/api/public/portal/guest/room/$qr',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenCrewCrewIdRoute =
+  ApiPublicPortalTokenCrewCrewIdRouteImport.update({
+    id: '/api/public/portal/$token/crew/$crewId',
+    path: '/api/public/portal/$token/crew/$crewId',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -732,7 +746,9 @@ export interface FileRoutesByFullPath {
   '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
+  '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
+  '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
   '/api/public/portal/guest/$session/': typeof ApiPublicPortalGuestSessionIndexRoute
 }
 export interface FileRoutesByTo {
@@ -823,7 +839,9 @@ export interface FileRoutesByTo {
   '/api/public/b/$token': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
+  '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
+  '/api/public/portal/$token/crew': typeof ApiPublicPortalTokenCrewIndexRoute
   '/api/public/portal/guest/$session': typeof ApiPublicPortalGuestSessionIndexRoute
 }
 export interface FileRoutesById {
@@ -921,7 +939,9 @@ export interface FileRoutesById {
   '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
+  '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
+  '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
   '/api/public/portal/guest/$session/': typeof ApiPublicPortalGuestSessionIndexRoute
 }
 export interface FileRouteTypes {
@@ -1019,7 +1039,9 @@ export interface FileRouteTypes {
     | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
+    | '/api/public/portal/$token/crew/$crewId'
     | '/api/public/portal/guest/room/$qr'
+    | '/api/public/portal/$token/crew/'
     | '/api/public/portal/guest/$session/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -1110,7 +1132,9 @@ export interface FileRouteTypes {
     | '/api/public/b/$token'
     | '/api/public/portal/$token'
     | '/api/public/track/$token'
+    | '/api/public/portal/$token/crew/$crewId'
     | '/api/public/portal/guest/room/$qr'
+    | '/api/public/portal/$token/crew'
     | '/api/public/portal/guest/$session'
   id:
     | '__root__'
@@ -1207,7 +1231,9 @@ export interface FileRouteTypes {
     | '/api/public/b/$token/'
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
+    | '/api/public/portal/$token/crew/$crewId'
     | '/api/public/portal/guest/room/$qr'
+    | '/api/public/portal/$token/crew/'
     | '/api/public/portal/guest/$session/'
   fileRoutesById: FileRoutesById
 }
@@ -1257,7 +1283,9 @@ export interface RootRouteChildren {
   ApiPublicBTokenIndexRoute: typeof ApiPublicBTokenIndexRoute
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
   ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
+  ApiPublicPortalTokenCrewCrewIdRoute: typeof ApiPublicPortalTokenCrewCrewIdRoute
   ApiPublicPortalGuestRoomQrRoute: typeof ApiPublicPortalGuestRoomQrRoute
+  ApiPublicPortalTokenCrewIndexRoute: typeof ApiPublicPortalTokenCrewIndexRoute
   ApiPublicPortalGuestSessionIndexRoute: typeof ApiPublicPortalGuestSessionIndexRoute
 }
 
@@ -1921,11 +1949,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalGuestSessionIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/$token/crew/': {
+      id: '/api/public/portal/$token/crew/'
+      path: '/api/public/portal/$token/crew'
+      fullPath: '/api/public/portal/$token/crew/'
+      preLoaderRoute: typeof ApiPublicPortalTokenCrewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/guest/room/$qr': {
       id: '/api/public/portal/guest/room/$qr'
       path: '/api/public/portal/guest/room/$qr'
       fullPath: '/api/public/portal/guest/room/$qr'
       preLoaderRoute: typeof ApiPublicPortalGuestRoomQrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/crew/$crewId': {
+      id: '/api/public/portal/$token/crew/$crewId'
+      path: '/api/public/portal/$token/crew/$crewId'
+      fullPath: '/api/public/portal/$token/crew/$crewId'
+      preLoaderRoute: typeof ApiPublicPortalTokenCrewCrewIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -2160,7 +2202,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicBTokenIndexRoute: ApiPublicBTokenIndexRoute,
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
   ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
+  ApiPublicPortalTokenCrewCrewIdRoute: ApiPublicPortalTokenCrewCrewIdRoute,
   ApiPublicPortalGuestRoomQrRoute: ApiPublicPortalGuestRoomQrRoute,
+  ApiPublicPortalTokenCrewIndexRoute: ApiPublicPortalTokenCrewIndexRoute,
   ApiPublicPortalGuestSessionIndexRoute: ApiPublicPortalGuestSessionIndexRoute,
 }
 export const routeTree = rootRouteImport
