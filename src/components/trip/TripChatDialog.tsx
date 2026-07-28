@@ -123,7 +123,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     });
 
     const clientTabNeedsPax = role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId;
-    const coordClientTabNeedsPax = role === "coordinator" && coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId;
+    const coordClientTabNeedsPax = role === "coordinator" && coordShowTabs && coordTab === "coord_client" && !coordPaxId;
 
     function submit() {
         const body = text.trim();
