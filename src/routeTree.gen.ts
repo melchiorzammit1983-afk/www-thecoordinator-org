@@ -15,6 +15,7 @@ import { Route as McpRouteImport } from './routes/mcp'
 import { Route as InstallRouteImport } from './routes/install'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as DemoRouteImport } from './routes/demo'
+import { Route as CrewPortalRouteImport } from './routes/crew-portal'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminAuthRouteImport } from './routes/admin-auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
@@ -26,6 +27,7 @@ import { Route as PortalTokenRouteImport } from './routes/portal.$token'
 import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as GSessionRouteImport } from './routes/g.$session'
+import { Route as CrewPortalDashboardRouteImport } from './routes/crew-portal.dashboard'
 import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as BTokenRouteImport } from './routes/b.$token'
 import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
@@ -40,6 +42,10 @@ import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
+import { Route as ApiCrewPortalVerifyCodeRouteImport } from './routes/api/crew-portal/verify-code'
+import { Route as ApiCrewPortalStatusRouteImport } from './routes/api/crew-portal/status'
+import { Route as ApiCrewPortalLoginRouteImport } from './routes/api/crew-portal/login'
+import { Route as ApiCrewPortalDashboardRouteImport } from './routes/api/crew-portal/dashboard'
 import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes/_authenticated/coordinator.statements'
 import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
 import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
@@ -137,6 +143,11 @@ const DemoRoute = DemoRouteImport.update({
   path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CrewPortalRoute = CrewPortalRouteImport.update({
+  id: '/crew-portal',
+  path: '/crew-portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -190,6 +201,11 @@ const GSessionRoute = GSessionRouteImport.update({
   id: '/g/$session',
   path: '/g/$session',
   getParentRoute: () => rootRouteImport,
+} as any)
+const CrewPortalDashboardRoute = CrewPortalDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => CrewPortalRoute,
 } as any)
 const CTokenRoute = CTokenRouteImport.update({
   id: '/c/$token',
@@ -263,6 +279,26 @@ const MDriverTokenRoute = MDriverTokenRouteImport.update({
 const MClientTokenRoute = MClientTokenRouteImport.update({
   id: '/m/client/$token',
   path: '/m/client/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalVerifyCodeRoute = ApiCrewPortalVerifyCodeRouteImport.update({
+  id: '/api/crew-portal/verify-code',
+  path: '/api/crew-portal/verify-code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalStatusRoute = ApiCrewPortalStatusRouteImport.update({
+  id: '/api/crew-portal/status',
+  path: '/api/crew-portal/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalLoginRoute = ApiCrewPortalLoginRouteImport.update({
+  id: '/api/crew-portal/login',
+  path: '/api/crew-portal/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalDashboardRoute = ApiCrewPortalDashboardRouteImport.update({
+  id: '/api/crew-portal/dashboard',
+  path: '/api/crew-portal/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedCoordinatorStatementsRoute =
@@ -657,6 +693,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/crew-portal': typeof CrewPortalRouteWithChildren
   '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
@@ -672,6 +709,7 @@ export interface FileRoutesByFullPath {
   '/api/help-chat': typeof ApiHelpChatRoute
   '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
+  '/crew-portal/dashboard': typeof CrewPortalDashboardRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
@@ -715,6 +753,10 @@ export interface FileRoutesByFullPath {
   '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
+  '/api/crew-portal/dashboard': typeof ApiCrewPortalDashboardRoute
+  '/api/crew-portal/login': typeof ApiCrewPortalLoginRoute
+  '/api/crew-portal/status': typeof ApiCrewPortalStatusRoute
+  '/api/crew-portal/verify-code': typeof ApiCrewPortalVerifyCodeRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -755,6 +797,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/crew-portal': typeof CrewPortalRouteWithChildren
   '/demo': typeof DemoRoute
   '/install': typeof InstallRoute
   '/mcp': typeof McpRoute
@@ -767,6 +810,7 @@ export interface FileRoutesByTo {
   '/api/help-chat': typeof ApiHelpChatRoute
   '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
+  '/crew-portal/dashboard': typeof CrewPortalDashboardRoute
   '/g/$session': typeof GSessionRoute
   '/help/$topic': typeof HelpTopicRoute
   '/portal/$token': typeof PortalTokenRoute
@@ -809,6 +853,10 @@ export interface FileRoutesByTo {
   '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
+  '/api/crew-portal/dashboard': typeof ApiCrewPortalDashboardRoute
+  '/api/crew-portal/login': typeof ApiCrewPortalLoginRoute
+  '/api/crew-portal/status': typeof ApiCrewPortalStatusRoute
+  '/api/crew-portal/verify-code': typeof ApiCrewPortalVerifyCodeRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
@@ -850,6 +898,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin-auth': typeof AdminAuthRoute
   '/auth': typeof AuthRoute
+  '/crew-portal': typeof CrewPortalRouteWithChildren
   '/demo': typeof DemoRoute
   '/help': typeof HelpRouteWithChildren
   '/install': typeof InstallRoute
@@ -865,6 +914,7 @@ export interface FileRoutesById {
   '/api/help-chat': typeof ApiHelpChatRoute
   '/b/$token': typeof BTokenRoute
   '/c/$token': typeof CTokenRoute
+  '/crew-portal/dashboard': typeof CrewPortalDashboardRoute
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
@@ -908,6 +958,10 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/_authenticated/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/_authenticated/coordinator/statements': typeof AuthenticatedCoordinatorStatementsRoute
+  '/api/crew-portal/dashboard': typeof ApiCrewPortalDashboardRoute
+  '/api/crew-portal/login': typeof ApiCrewPortalLoginRoute
+  '/api/crew-portal/status': typeof ApiCrewPortalStatusRoute
+  '/api/crew-portal/verify-code': typeof ApiCrewPortalVerifyCodeRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -950,6 +1004,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/crew-portal'
     | '/demo'
     | '/help'
     | '/install'
@@ -965,6 +1020,7 @@ export interface FileRouteTypes {
     | '/api/help-chat'
     | '/b/$token'
     | '/c/$token'
+    | '/crew-portal/dashboard'
     | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
@@ -1008,6 +1064,10 @@ export interface FileRouteTypes {
     | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/statements'
+    | '/api/crew-portal/dashboard'
+    | '/api/crew-portal/login'
+    | '/api/crew-portal/status'
+    | '/api/crew-portal/verify-code'
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/admin/'
@@ -1048,6 +1108,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin-auth'
     | '/auth'
+    | '/crew-portal'
     | '/demo'
     | '/install'
     | '/mcp'
@@ -1060,6 +1121,7 @@ export interface FileRouteTypes {
     | '/api/help-chat'
     | '/b/$token'
     | '/c/$token'
+    | '/crew-portal/dashboard'
     | '/g/$session'
     | '/help/$topic'
     | '/portal/$token'
@@ -1102,6 +1164,10 @@ export interface FileRouteTypes {
     | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/statements'
+    | '/api/crew-portal/dashboard'
+    | '/api/crew-portal/login'
+    | '/api/crew-portal/status'
+    | '/api/crew-portal/verify-code'
     | '/m/client/$token'
     | '/admin'
     | '/coordinator'
@@ -1142,6 +1208,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/admin-auth'
     | '/auth'
+    | '/crew-portal'
     | '/demo'
     | '/help'
     | '/install'
@@ -1157,6 +1224,7 @@ export interface FileRouteTypes {
     | '/api/help-chat'
     | '/b/$token'
     | '/c/$token'
+    | '/crew-portal/dashboard'
     | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
@@ -1200,6 +1268,10 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/pricing'
     | '/_authenticated/coordinator/refer'
     | '/_authenticated/coordinator/statements'
+    | '/api/crew-portal/dashboard'
+    | '/api/crew-portal/login'
+    | '/api/crew-portal/status'
+    | '/api/crew-portal/verify-code'
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/_authenticated/admin/'
@@ -1242,6 +1314,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminAuthRoute: typeof AdminAuthRoute
   AuthRoute: typeof AuthRoute
+  CrewPortalRoute: typeof CrewPortalRouteWithChildren
   DemoRoute: typeof DemoRoute
   HelpRoute: typeof HelpRouteWithChildren
   InstallRoute: typeof InstallRoute
@@ -1260,6 +1333,10 @@ export interface RootRouteChildren {
   TrackTokenRoute: typeof TrackTokenRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiCrewPortalDashboardRoute: typeof ApiCrewPortalDashboardRoute
+  ApiCrewPortalLoginRoute: typeof ApiCrewPortalLoginRoute
+  ApiCrewPortalStatusRoute: typeof ApiCrewPortalStatusRoute
+  ApiCrewPortalVerifyCodeRoute: typeof ApiCrewPortalVerifyCodeRoute
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
@@ -1331,6 +1408,13 @@ declare module '@tanstack/react-router' {
       path: '/demo'
       fullPath: '/demo'
       preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crew-portal': {
+      id: '/crew-portal'
+      path: '/crew-portal'
+      fullPath: '/crew-portal'
+      preLoaderRoute: typeof CrewPortalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1409,6 +1493,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/g/$session'
       preLoaderRoute: typeof GSessionRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/crew-portal/dashboard': {
+      id: '/crew-portal/dashboard'
+      path: '/dashboard'
+      fullPath: '/crew-portal/dashboard'
+      preLoaderRoute: typeof CrewPortalDashboardRouteImport
+      parentRoute: typeof CrewPortalRoute
     }
     '/c/$token': {
       id: '/c/$token'
@@ -1506,6 +1597,34 @@ declare module '@tanstack/react-router' {
       path: '/m/client/$token'
       fullPath: '/m/client/$token'
       preLoaderRoute: typeof MClientTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/verify-code': {
+      id: '/api/crew-portal/verify-code'
+      path: '/api/crew-portal/verify-code'
+      fullPath: '/api/crew-portal/verify-code'
+      preLoaderRoute: typeof ApiCrewPortalVerifyCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/status': {
+      id: '/api/crew-portal/status'
+      path: '/api/crew-portal/status'
+      fullPath: '/api/crew-portal/status'
+      preLoaderRoute: typeof ApiCrewPortalStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/login': {
+      id: '/api/crew-portal/login'
+      path: '/api/crew-portal/login'
+      fullPath: '/api/crew-portal/login'
+      preLoaderRoute: typeof ApiCrewPortalLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/dashboard': {
+      id: '/api/crew-portal/dashboard'
+      path: '/api/crew-portal/dashboard'
+      fullPath: '/api/crew-portal/dashboard'
+      preLoaderRoute: typeof ApiCrewPortalDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/coordinator/statements': {
@@ -2113,6 +2232,18 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface CrewPortalRouteChildren {
+  CrewPortalDashboardRoute: typeof CrewPortalDashboardRoute
+}
+
+const CrewPortalRouteChildren: CrewPortalRouteChildren = {
+  CrewPortalDashboardRoute: CrewPortalDashboardRoute,
+}
+
+const CrewPortalRouteWithChildren = CrewPortalRoute._addFileChildren(
+  CrewPortalRouteChildren,
+)
+
 interface HelpRouteChildren {
   HelpTopicRoute: typeof HelpTopicRoute
   HelpIndexRoute: typeof HelpIndexRoute
@@ -2158,6 +2289,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminAuthRoute: AdminAuthRoute,
   AuthRoute: AuthRoute,
+  CrewPortalRoute: CrewPortalRouteWithChildren,
   DemoRoute: DemoRoute,
   HelpRoute: HelpRouteWithChildren,
   InstallRoute: InstallRoute,
@@ -2177,6 +2309,10 @@ const rootRouteChildren: RootRouteChildren = {
   TrackTokenRoute: TrackTokenRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiCrewPortalDashboardRoute: ApiCrewPortalDashboardRoute,
+  ApiCrewPortalLoginRoute: ApiCrewPortalLoginRoute,
+  ApiCrewPortalStatusRoute: ApiCrewPortalStatusRoute,
+  ApiCrewPortalVerifyCodeRoute: ApiCrewPortalVerifyCodeRoute,
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
