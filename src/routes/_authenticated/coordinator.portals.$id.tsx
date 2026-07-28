@@ -17,6 +17,15 @@ import {
 } from "@/lib/portal.functions";
 import { supabase } from "@/integrations/supabase/client";
 
+const PORTAL_KIND_LABELS: Record<string, string> = {
+  hotel: "Hotel",
+  agent: "Agent",
+  company_agent: "Company/Agent Portal",
+};
+function portalKindLabel(kind: string): string {
+  return PORTAL_KIND_LABELS[kind] ?? kind;
+}
+
 export const Route = createFileRoute("/_authenticated/coordinator/portals/$id")({
   head: () => ({ meta: [{ title: "Portal — Manage" }] }),
   component: PortalDetail,
@@ -32,7 +41,7 @@ function PortalDetail() {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <h1 className="text-2xl font-semibold">{portal.name}</h1>
-      <p className="text-sm text-muted-foreground capitalize">{portal.kind}</p>
+      <p className="text-sm text-muted-foreground">{portalKindLabel(portal.kind)}</p>
 
       <Tabs defaultValue="bookings" className="mt-6">
         <TabsList>

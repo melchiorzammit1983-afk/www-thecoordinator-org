@@ -5,6 +5,12 @@ import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-tok
 const BookingInput = z.object({
   from_location: z.string().min(1).max(200),
   to_location: z.string().min(1).max(200),
+  from_place_id: z.string().max(200).nullable().optional(),
+  from_lat: z.number().nullable().optional(),
+  from_lng: z.number().nullable().optional(),
+  to_place_id: z.string().max(200).nullable().optional(),
+  to_lat: z.number().nullable().optional(),
+  to_lng: z.number().nullable().optional(),
   pickup_at: z.string().datetime().nullable().optional(),
   date: z.string().nullable().optional(),
   time: z.string().nullable().optional(),

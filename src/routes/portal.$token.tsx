@@ -10,6 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { CrewManagementPanel } from "@/components/portal/CrewManagementPanel";
+import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
+import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
+import { flightFormatWarning } from "@/lib/flight-code";
+import { AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -19,6 +23,15 @@ export const Route = createFileRoute("/portal/$token")({
   ] }),
   component: PortalPage,
 });
+
+const PORTAL_KIND_LABELS: Record<string, string> = {
+  hotel: "Hotel",
+  agent: "Agent",
+  company_agent: "Company/Agent",
+};
+function portalKindLabel(kind: string): string {
+  return PORTAL_KIND_LABELS[kind] ?? kind;
+}
 
 type Boot = {
   portal: { id: string; name: string; kind: string; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string; link_expires_at: string | null };
@@ -60,7 +73,7 @@ function PortalPage() {
           )}
           <div>
             <div className="font-semibold">{boot.portal.name}</div>
-            <div className="text-xs text-muted-foreground capitalize">{boot.portal.kind} portal</div>
+            <div className="text-xs text-muted-foreground">{portalKindLabel(boot.portal.kind)} portal</div>
           </div>
         </div>
       </header>
@@ -77,7 +90,7 @@ function PortalPage() {
           </TabsList>
 
           <TabsContent value="bookings" className="mt-4 space-y-4">
-            <NewBookingForm token={token} onCreated={reload} />
+            <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />
             <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} />
           </TabsContent>
 
@@ -124,17 +137,52 @@ function OfflineCard({ reason }: { reason: string }) {
   );
 }
 
+function BookingEntry({ token, kind, onCreated }: { token: string; kind: string; onCreated: () => void }) {
+  const [view, setView] = useState<"grid" | "single">("grid");
+  if (kind !== "company_agent") return <NewBookingForm token={token} onCreated={onCreated} />;
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-end">
+        <Button variant="ghost" size="sm" onClick={() => setView(view === "grid" ? "single" : "grid")}>
+          {view === "grid" ? "Switch to single-entry form" : "Switch to bulk grid"}
+        </Button>
+      </div>
+      {view === "grid"
+        ? <BulkBookingGrid token={token} onCreated={onCreated} />
+        : <NewBookingForm token={token} onCreated={onCreated} />}
+    </div>
+  );
+}
+
 function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => void }) {
   const [f, setF] = useState({
     name: "", surname: "", client_phone: "", client_email: "",
-    from_location: "", to_location: "", pickup_at: "", room_number: "",
+    pickup_at: "", room_number: "",
     flight_number: "", pax_count: "1", notes: "",
   });
+  const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
+  const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [busy, setBusy] = useState(false);
+  const flightWarning = flightFormatWarning(f.flight_number);
+
   async function submit() {
     setBusy(true);
     const body = {
-      ...f,
+      name: f.name.trim() || null,
+      surname: f.surname.trim() || null,
+      client_phone: f.client_phone.trim() || null,
+      client_email: f.client_email.trim() || null,
+      room_number: f.room_number.trim() || null,
+      flight_number: f.flight_number.trim() || null,
+      notes: f.notes.trim() || null,
+      from_location: fromPick.address,
+      from_place_id: fromPick.place_id,
+      from_lat: fromPick.lat,
+      from_lng: fromPick.lng,
+      to_location: toPick.address,
+      to_place_id: toPick.place_id,
+      to_lat: toPick.lat,
+      to_lng: toPick.lng,
       pax_count: Number(f.pax_count) || 1,
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -144,7 +192,9 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
     setBusy(false);
     if (!r.ok) { toast.error("Failed to submit"); return; }
     toast.success("Booking submitted — awaiting coordinator approval");
-    setF({ name: "", surname: "", client_phone: "", client_email: "", from_location: "", to_location: "", pickup_at: "", room_number: "", flight_number: "", pax_count: "1", notes: "" });
+    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", pax_count: "1", notes: "" });
+    setFromPick({ address: "", place_id: null, lat: null, lng: null });
+    setToPick({ address: "", place_id: null, lat: null, lng: null });
     onCreated();
   }
   return (
@@ -155,15 +205,28 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
         <Field label="Guest last name"><Input value={f.surname} onChange={(e) => setF({ ...f, surname: e.target.value })} /></Field>
         <Field label="Guest phone"><Input value={f.client_phone} onChange={(e) => setF({ ...f, client_phone: e.target.value })} /></Field>
         <Field label="Guest email"><Input type="email" value={f.client_email} onChange={(e) => setF({ ...f, client_email: e.target.value })} /></Field>
-        <Field label="From"><Input value={f.from_location} onChange={(e) => setF({ ...f, from_location: e.target.value })} /></Field>
-        <Field label="To"><Input value={f.to_location} onChange={(e) => setF({ ...f, to_location: e.target.value })} /></Field>
+        <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+        <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
         <Field label="Pickup date & time"><Input type="datetime-local" value={f.pickup_at} onChange={(e) => setF({ ...f, pickup_at: e.target.value })} /></Field>
         <Field label="Room"><Input value={f.room_number} onChange={(e) => setF({ ...f, room_number: e.target.value })} /></Field>
-        <Field label="Flight"><Input value={f.flight_number} onChange={(e) => setF({ ...f, flight_number: e.target.value })} /></Field>
+        <Field label="Flight">
+          <div className="relative">
+            <Input
+              value={f.flight_number}
+              onChange={(e) => setF({ ...f, flight_number: e.target.value })}
+              className={flightWarning ? "border-red-500 focus-visible:ring-red-500 pr-8" : ""}
+              placeholder="e.g. FR1234"
+            />
+            {flightWarning && (
+              <AlertTriangle className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-red-500" aria-label={flightWarning} />
+            )}
+          </div>
+          {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
+        </Field>
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <div className="md:col-span-2"><Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field></div>
         <div className="md:col-span-2 flex justify-end">
-          <Button onClick={submit} disabled={busy || !f.from_location || !f.to_location}>Submit for approval</Button>
+          <Button onClick={submit} disabled={busy || !fromPick.address || !toPick.address}>Submit for approval</Button>
         </div>
       </CardContent>
     </Card>

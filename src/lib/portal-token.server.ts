@@ -19,7 +19,7 @@ export type PortalCompany = {
   id: string;
   coordinator_company_id: string;
   name: string;
-  kind: "hotel" | "agent" | "corporate";
+  kind: "hotel" | "agent" | "company_agent";
   logo_url: string | null;
   brand_color: string | null;
   display_name_for_passenger: string | null;

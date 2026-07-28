@@ -70,7 +70,7 @@ export const createPortal = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     name: z.string().min(1).max(120),
     slug: z.string().regex(SLUG_RE).optional(),
-    kind: z.enum(["hotel", "agent", "corporate"]).default("hotel"),
+    kind: z.enum(["hotel", "agent", "company_agent"]).default("hotel"),
     contact_email: z.string().email().optional().nullable(),
     contact_phone: z.string().max(40).optional().nullable(),
     points_per_booking: z.number().min(0).max(100).optional(),
