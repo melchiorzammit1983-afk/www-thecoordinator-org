@@ -28,6 +28,39 @@ const credsSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+function clearLocalAuthState() {
+  if (typeof window === "undefined") return;
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith("sb-") && key.includes("auth-token")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
+async function clearStaleSession() {
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // If the refresh token is already invalid, still clear the local session.
+  }
+  clearLocalAuthState();
+}
+
+async function getSafeSession() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      await clearStaleSession();
+      return null;
+    }
+    return data.session;
+  } catch {
+    await clearStaleSession();
+    return null;
+  }
+}
+
 function AdminAuthPage() {
   const navigate = useNavigate();
   const whoAmIFn = useServerFn(whoAmI);
@@ -35,8 +68,8 @@ function AdminAuthPage() {
   useEffect(() => {
     let cancelled = false;
     async function redirectSignedInUser() {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session || cancelled) return;
+      const session = await getSafeSession();
+      if (!session || cancelled) return;
       try {
         const identity = await whoAmIFn();
         if (!cancelled) navigate({ to: identity?.isAdmin ? "/admin" : "/coordinator", replace: true });
@@ -91,6 +124,7 @@ function AdminSignInForm() {
       return;
     }
     setLoading(true);
+    await clearStaleSession();
     const { error } = await supabase.auth.signInWithPassword(parsed.data);
     if (error) {
       setLoading(false);
@@ -106,7 +140,7 @@ function AdminSignInForm() {
         return;
       }
       toast.success("Signed in");
-      window.location.assign("/admin");
+      navigate({ to: "/admin", replace: true });
     } catch {
       await supabase.auth.signOut();
       setLoading(false);

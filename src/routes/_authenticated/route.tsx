@@ -2,14 +2,37 @@ import { createFileRoute, Outlet, redirect, useNavigate } from "@tanstack/react-
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
+function clearLocalAuthState() {
+  if (typeof window === "undefined") return;
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith("sb-") && key.includes("auth-token")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
+async function getSafeSession() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      clearLocalAuthState();
+      return null;
+    }
+    return data.session;
+  } catch {
+    clearLocalAuthState();
+    return null;
+  }
+}
+
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
     // Session-first: cache hit avoids a network call to /auth/v1/user on every navigation.
     // Only revalidate with getUser() when no session is present, or when the token is close
     // to expiry (Supabase auto-refreshes but we still want to catch a truly stale token).
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
+    const session = await getSafeSession();
     if (session && session.user) {
       const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
       if (expiresAt - Date.now() > 60_000) {
@@ -17,7 +40,10 @@ export const Route = createFileRoute("/_authenticated")({
       }
     }
     const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
+    if (error || !data.user) {
+      clearLocalAuthState();
+      throw redirect({ to: "/auth" });
+    }
     return { user: data.user };
   },
   errorComponent: ({ error }) => {

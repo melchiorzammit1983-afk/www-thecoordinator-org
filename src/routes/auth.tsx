@@ -34,6 +34,39 @@ const credsSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+function clearLocalAuthState() {
+  if (typeof window === "undefined") return;
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith("sb-") && key.includes("auth-token")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
+async function clearStaleSession() {
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // If the refresh token is already invalid, still clear the local session.
+  }
+  clearLocalAuthState();
+}
+
+async function getSafeSession() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      await clearStaleSession();
+      return null;
+    }
+    return data.session;
+  } catch {
+    await clearStaleSession();
+    return null;
+  }
+}
+
 const HERO_LINES = [
   "Let's make it a better day for every crew on the road.",
   "Every trip on time. Every driver in the loop.",
@@ -56,8 +89,8 @@ function AuthPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session || cancelled) return;
+      const session = await getSafeSession();
+      if (!session || cancelled) return;
       try {
         const identity = await whoAmIFn();
         if (!cancelled) navigate({ to: identity?.isAdmin ? "/admin" : "/coordinator", replace: true });
@@ -270,6 +303,7 @@ function TroubleSheet() {
 }
 
 function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginLabel: string }) {
+  const navigate = useNavigate();
   const [phone, setPhone] = useState("+");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -289,6 +323,7 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
     const parsed = credsSchema.safeParse({ phone: phone.trim(), password });
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
     setLoading(true);
+    await clearStaleSession();
     const digits = parsed.data.phone.replace(/[^\d]/g, "");
     const email = `p${digits}@phone.thecoordinator.local`;
     let { error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
@@ -309,9 +344,9 @@ function SignInForm({ loadingLabel, loginLabel }: { loadingLabel: string; loginL
     }
     try {
       const identity = await whoAmIFn();
-      window.location.assign(identity?.isAdmin ? "/admin" : "/coordinator");
+      navigate({ to: identity?.isAdmin ? "/admin" : "/coordinator", replace: true });
     } catch {
-      window.location.assign("/coordinator");
+      navigate({ to: "/coordinator", replace: true });
     }
   }
 
