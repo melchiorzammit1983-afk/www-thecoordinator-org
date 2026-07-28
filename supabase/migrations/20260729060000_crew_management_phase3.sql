@@ -13,7 +13,7 @@ CREATE INDEX IF NOT EXISTS jobs_auto_created_from_crew_idx
 
 -- Audit trail of the crew-trip lifecycle: created (auto) -> assigned (driver set)
 -- -> pickup_complete (coordinator confirms). One row per transition.
-CREATE TABLE public.crew_trip_confirmations (
+CREATE TABLE IF NOT EXISTS public.crew_trip_confirmations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
   stage TEXT NOT NULL CHECK (stage IN ('created', 'assigned', 'pickup_complete')),
@@ -24,11 +24,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.crew_trip_confirmations TO authen
 GRANT ALL ON public.crew_trip_confirmations TO service_role;
 ALTER TABLE public.crew_trip_confirmations ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_crew_trip_confirmations_job ON public.crew_trip_confirmations(job_id, confirmed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crew_trip_confirmations_job ON public.crew_trip_confirmations(job_id, confirmed_at DESC);
 
-CREATE POLICY "coordinator can manage own crew trip confirmations"
-  ON public.crew_trip_confirmations FOR ALL TO authenticated
-  USING (EXISTS (SELECT 1 FROM public.jobs j WHERE j.id = crew_trip_confirmations.job_id
-    AND (private.company_of(auth.uid()) = j.company_id OR private.is_admin(auth.uid()))))
-  WITH CHECK (EXISTS (SELECT 1 FROM public.jobs j WHERE j.id = crew_trip_confirmations.job_id
-    AND (private.company_of(auth.uid()) = j.company_id OR private.is_admin(auth.uid()))));
+DO $$ BEGIN
+  CREATE POLICY "coordinator can manage own crew trip confirmations"
+    ON public.crew_trip_confirmations FOR ALL TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.jobs j WHERE j.id = crew_trip_confirmations.job_id
+      AND (private.company_of(auth.uid()) = j.company_id OR private.is_admin(auth.uid()))))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.jobs j WHERE j.id = crew_trip_confirmations.job_id
+      AND (private.company_of(auth.uid()) = j.company_id OR private.is_admin(auth.uid()))));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

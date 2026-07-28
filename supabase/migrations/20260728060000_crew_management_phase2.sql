@@ -1,13 +1,15 @@
 -- Crew Management System — Phase 2: crew login + status tracking
 
-ALTER TABLE public.crew_members
-  ADD COLUMN preferred_language TEXT NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en', 'fil'));
+DO $$ BEGIN
+  ALTER TABLE public.crew_members
+    ADD COLUMN preferred_language TEXT NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en', 'fil'));
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 -- One-time login codes, emailed to the crew member's registered address.
 -- Service-role only: crew never talk to Supabase directly, only through the
 -- /api/crew-portal/* routes (which use the admin client), so no anon/authenticated
 -- policies are needed here — mirrors password_reset_requests / hr_signup_codes.
-CREATE TABLE public.crew_login_codes (
+CREATE TABLE IF NOT EXISTS public.crew_login_codes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   crew_member_id UUID NOT NULL REFERENCES public.crew_members(id) ON DELETE CASCADE,
   code TEXT NOT NULL,
@@ -18,10 +20,10 @@ CREATE TABLE public.crew_login_codes (
 GRANT ALL ON public.crew_login_codes TO service_role;
 ALTER TABLE public.crew_login_codes ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_crew_login_codes_lookup ON public.crew_login_codes(crew_member_id, code);
+CREATE INDEX IF NOT EXISTS idx_crew_login_codes_lookup ON public.crew_login_codes(crew_member_id, code);
 
 -- Status updates crew post as they travel (per itinerary leg).
-CREATE TABLE public.crew_status_log (
+CREATE TABLE IF NOT EXISTS public.crew_status_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   crew_member_id UUID NOT NULL REFERENCES public.crew_members(id) ON DELETE CASCADE,
   leg_number SMALLINT CHECK (leg_number BETWEEN 1 AND 3),
@@ -36,13 +38,15 @@ GRANT SELECT, INSERT ON public.crew_status_log TO authenticated;
 GRANT ALL ON public.crew_status_log TO service_role;
 ALTER TABLE public.crew_status_log ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_crew_status_log_crew_member ON public.crew_status_log(crew_member_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crew_status_log_crew_member ON public.crew_status_log(crew_member_id, created_at DESC);
 
-CREATE POLICY "coordinator can read own crew status log"
-  ON public.crew_status_log FOR SELECT TO authenticated
-  USING (EXISTS (
-    SELECT 1 FROM public.crew_members cm
-    JOIN public.portal_companies pc ON pc.id = cm.portal_company_id
-    WHERE cm.id = crew_status_log.crew_member_id
-      AND (private.company_of(auth.uid()) = pc.coordinator_company_id OR private.is_admin(auth.uid()))
-  ));
+DO $$ BEGIN
+  CREATE POLICY "coordinator can read own crew status log"
+    ON public.crew_status_log FOR SELECT TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM public.crew_members cm
+      JOIN public.portal_companies pc ON pc.id = cm.portal_company_id
+      WHERE cm.id = crew_status_log.crew_member_id
+        AND (private.company_of(auth.uid()) = pc.coordinator_company_id OR private.is_admin(auth.uid()))
+    ));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
