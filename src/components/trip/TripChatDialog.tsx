@@ -89,7 +89,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
         queryKey,
         enabled: !!open && !!jobId
             && !(role === "driver" && driverTab === "driver_client" && !driverPaxId)
-            && !(role === "coordinator" && coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId),
+            && !(role === "coordinator" && coordShowTabs && coordTab === "coord_client" && !coordPaxId),
         refetchInterval: open ? 10_000 : false,
         queryFn: () => role === "driver"
             ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } }) as Promise<Msg[]>
