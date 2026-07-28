@@ -81,6 +81,7 @@ import {
   listJobs,
   listDrivers,
   assignDriver,
+  confirmCrewPickup,
   cloneJob,
   splitJob,
   deleteJob,
@@ -252,6 +253,8 @@ type Job = {
   route_distance_m?: number | null;
   created_by_driver?: boolean | null;
   needs_review?: boolean | null;
+  auto_created_from_crew_itinerary?: boolean | null;
+  crew_trip_stage?: "created" | "assigned" | "pickup_complete" | null;
 };
 
 type Driver = { id: string; name: string; vehicle: string | null };
@@ -456,6 +459,16 @@ function CalendarPage() {
     mutationFn: (v: { job_id: string; driver_id: string | null }) => assignFn({ data: v }),
     onSuccess: () => {
       toast.success("Assigned");
+      refetch();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const confirmCrewPickupFn = useServerFn(confirmCrewPickup);
+  const confirmCrewPickupMut = useMutation({
+    mutationFn: (v: { job_id: string }) => confirmCrewPickupFn({ data: v }),
+    onSuccess: () => {
+      toast.success("Pickup confirmed — HR and crew notified");
       refetch();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -793,6 +806,7 @@ function CalendarPage() {
       setDetailsJob(j);
     },
     onAssign: (job, driverId) => assignMut.mutate({ job_id: job.id, driver_id: driverId }),
+    onConfirmCrewPickup: (job) => confirmCrewPickupMut.mutate({ job_id: job.id }),
     drivers: drivers ?? [],
     unread: unreadByJob ?? {},
     highlightId: justAcceptedId,
@@ -1276,6 +1290,7 @@ type CardCtx = {
   onChat: (j: Job) => void;
   onOpenDetails: (j: Job) => void;
   onAssign: (j: Job, driverId: string | null) => void;
+  onConfirmCrewPickup?: (j: Job) => void;
   drivers: Driver[];
   unread: Record<string, { driver: number; client: number; total: number }>;
   highlightId?: string | null;
@@ -2748,7 +2763,32 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               )}
               {job.needs_review && (
                 <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/15">
-                  {job.created_by_driver ? "Driver trip · needs review" : "Needs review"}
+                  {job.auto_created_from_crew_itinerary
+                    ? "Auto-created from crew · needs review"
+                    : job.created_by_driver
+                      ? "Driver trip · needs review"
+                      : "Needs review"}
+                </Badge>
+              )}
+              {job.auto_created_from_crew_itinerary && (
+                <Badge variant="outline" className="text-[10px] gap-1">
+                  <Users className="h-3 w-3" /> {paxCount} crew · {job.crew_trip_stage === "pickup_complete"
+                    ? "Pickup complete"
+                    : job.crew_trip_stage === "assigned"
+                      ? "Driver assigned"
+                      : "Awaiting driver"}
+                </Badge>
+              )}
+              {job.auto_created_from_crew_itinerary && job.crew_trip_stage === "assigned" && (
+                <Badge
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    ctx.onConfirmCrewPickup?.(job);
+                  }}
+                  className="text-[10px] cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  Confirm pickup
                 </Badge>
               )}
 

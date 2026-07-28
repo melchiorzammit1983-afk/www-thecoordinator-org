@@ -489,7 +489,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -619,6 +619,24 @@ export const listJobs = createServerFn({ method: "GET" })
         }
       }
       combined.push(...extras);
+    }
+
+    // Phase 3: attach each crew-auto-created trip's latest confirmation stage
+    // ('created' | 'assigned' | 'pickup_complete') so the board can show it.
+    const crewJobIds = combined.filter((r) => r.auto_created_from_crew_itinerary).map((r) => r.id);
+    if (crewJobIds.length) {
+      const { data: stages } = await supabaseAdmin
+        .from("crew_trip_confirmations" as any)
+        .select("job_id, stage, confirmed_at")
+        .in("job_id", crewJobIds)
+        .order("confirmed_at", { ascending: false });
+      const latestByJob: Record<string, string> = {};
+      for (const row of (stages ?? []) as any[]) {
+        if (!latestByJob[row.job_id]) latestByJob[row.job_id] = row.stage;
+      }
+      for (const r of combined) {
+        if (r.auto_created_from_crew_itinerary) r.crew_trip_stage = latestByJob[r.id] ?? "created";
+      }
     }
 
     return combined;
@@ -1248,7 +1266,7 @@ export const assignDriver = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, group_id, driver_id, driver_accepted_at, status" as any)
+      .select("id, company_id, group_id, driver_id, driver_accepted_at, status, auto_created_from_crew_itinerary" as any)
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
@@ -1318,9 +1336,72 @@ export const assignDriver = createServerFn({ method: "POST" })
           }) as never,
       );
       await supabaseAdmin.from("trip_messages").insert(rows);
+
+      // Phase 3: auto-created crew trips notify HR + crew once a driver is set.
+      if ((job as any).auto_created_from_crew_itinerary) {
+        try {
+          const { data: driverRow2 } = await supabaseAdmin
+            .from("drivers")
+            .select("name, car_make_model, plate")
+            .eq("id", data.driver_id)
+            .maybeSingle();
+          const { data: already } = await supabaseAdmin
+            .from("crew_trip_confirmations" as any)
+            .select("id")
+            .eq("job_id", data.job_id)
+            .eq("stage", "assigned")
+            .maybeSingle();
+          if (!already) {
+            await supabaseAdmin
+              .from("crew_trip_confirmations" as any)
+              .insert({ job_id: data.job_id, stage: "assigned", confirmed_by: context.userId } as any);
+          }
+          if (driverRow2) {
+            const { notifyCrewTripAssigned } = await import("@/lib/crew-trip-auto-create");
+            await notifyCrewTripAssigned(supabaseAdmin, data.job_id, driverRow2 as any);
+          }
+        } catch (e) {
+          console.error("crew trip assigned notification failed", e);
+        }
+      }
     }
     return { ok: true, group_id: gid };
   });
+
+export const confirmCrewPickup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ job_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select("id, company_id, auto_created_from_crew_itinerary" as any)
+      .eq("id", data.job_id)
+      .eq("company_id", c.id)
+      .maybeSingle();
+    if (!job) throw new Error("Job not found");
+    if (!(job as any).auto_created_from_crew_itinerary) throw new Error("Not a crew trip");
+
+    const { data: already } = await supabaseAdmin
+      .from("crew_trip_confirmations" as any)
+      .select("id")
+      .eq("job_id", data.job_id)
+      .eq("stage", "pickup_complete")
+      .maybeSingle();
+    if (!already) {
+      const { error } = await supabaseAdmin
+        .from("crew_trip_confirmations" as any)
+        .insert({ job_id: data.job_id, stage: "pickup_complete", confirmed_by: context.userId } as any);
+      if (error) throw new Error(error.message);
+      const { notifyCrewTripPickupComplete } = await import("@/lib/crew-trip-auto-create");
+      await notifyCrewTripPickupComplete(supabaseAdmin, data.job_id).catch((e) =>
+        console.error("crew trip pickup-complete notification failed", e),
+      );
+    }
+    return { ok: true };
+  });
+
 export const updateJobStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>

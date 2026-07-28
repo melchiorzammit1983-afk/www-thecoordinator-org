@@ -25,6 +25,7 @@ const EMPTY_ROW: ParsedCrewRow = {
   date: "", name: "", surname: "", phone: "", email: "", from: "",
   flight1: "", flight2: "", flight3: "", to: "",
   flight_from1: "", flight_from2: "", flight_from3: "", nationality: "", ship: "",
+  arrival_date: "", arrival_time: "",
 };
 
 function crewPortalUrl(token: string) {
@@ -158,6 +159,17 @@ export function CrewManagementPanel({ token }: { token: string }) {
                 <Field label="Leg 3 from"><Input value={form.flight_from3} onChange={(e) => setForm({ ...form, flight_from3: e.target.value })} /></Field>
                 <Field label="Flight 3"><Input value={form.flight3} onChange={(e) => setForm({ ...form, flight3: e.target.value })} /></Field>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <Field label="Malta arrival date">
+                  <Input type="date" value={form.arrival_date} onChange={(e) => setForm({ ...form, arrival_date: e.target.value })} />
+                </Field>
+                <Field label="Malta arrival time">
+                  <Input type="time" value={form.arrival_time} onChange={(e) => setForm({ ...form, arrival_time: e.target.value })} />
+                </Field>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Fill in the Malta arrival date &amp; time on whichever leg lands here — a pickup trip is created automatically for the coordinator.
+              </p>
               <div className="flex justify-end">
                 <Button size="sm" onClick={addFormRow}>Add to list</Button>
               </div>
@@ -168,7 +180,7 @@ export function CrewManagementPanel({ token }: { token: string }) {
             <Label className="text-xs">Bulk paste</Label>
             <Textarea
               rows={4}
-              placeholder={"date, name, surname, phone, email, from, flight1, flight2, flight3, to, flight_from1, flight_from2, flight_from3, nationality, ship"}
+              placeholder={"date, name, surname, phone, email, from, flight1, flight2, flight3, to, flight_from1, flight_from2, flight_from3, nationality, ship, arrival_date, arrival_time"}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
@@ -203,7 +215,14 @@ export function CrewManagementPanel({ token }: { token: string }) {
                   <TableRow key={i}>
                     <TableCell>{row.name} {row.surname}</TableCell>
                     <TableCell className="text-xs">{row.email}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{row.from || "—"} → {row.to || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {row.from || "—"} → {row.to || "—"}
+                      {row.arrival_date && row.arrival_time && (
+                        <span className="block text-[10px] text-emerald-600">
+                          Malta arrival {row.arrival_date} {row.arrival_time}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button size="icon" variant="ghost" onClick={() => removePending(i)}>
                         <Trash2 className="h-3.5 w-3.5" />
