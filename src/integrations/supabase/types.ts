@@ -2128,6 +2128,179 @@ export type Database = {
           },
         ]
       }
+      crew_itineraries: {
+        Row: {
+          arrival_date: string | null
+          created_at: string
+          crew_member_id: string
+          departure_date: string | null
+          flight_number: string | null
+          from_location: string
+          id: string
+          leg_number: number
+          to_location: string
+        }
+        Insert: {
+          arrival_date?: string | null
+          created_at?: string
+          crew_member_id: string
+          departure_date?: string | null
+          flight_number?: string | null
+          from_location: string
+          id?: string
+          leg_number: number
+          to_location: string
+        }
+        Update: {
+          arrival_date?: string | null
+          created_at?: string
+          crew_member_id?: string
+          departure_date?: string | null
+          flight_number?: string | null
+          from_location?: string
+          id?: string
+          leg_number?: number
+          to_location?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crew_itineraries_crew_member_id_fkey"
+            columns: ["crew_member_id"]
+            isOneToOne: false
+            referencedRelation: "crew_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crew_login_codes: {
+        Row: {
+          code: string
+          consumed_at: string | null
+          created_at: string
+          crew_member_id: string
+          expires_at: string
+          id: string
+        }
+        Insert: {
+          code: string
+          consumed_at?: string | null
+          created_at?: string
+          crew_member_id: string
+          expires_at: string
+          id?: string
+        }
+        Update: {
+          code?: string
+          consumed_at?: string | null
+          created_at?: string
+          crew_member_id?: string
+          expires_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crew_login_codes_crew_member_id_fkey"
+            columns: ["crew_member_id"]
+            isOneToOne: false
+            referencedRelation: "crew_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crew_members: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          email: string
+          id: string
+          link_token: string
+          name: string
+          nationality: string | null
+          phone: string | null
+          portal_company_id: string
+          preferred_language: string
+          ship_name: string | null
+          surname: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email: string
+          id?: string
+          link_token?: string
+          name: string
+          nationality?: string | null
+          phone?: string | null
+          portal_company_id: string
+          preferred_language?: string
+          ship_name?: string | null
+          surname: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string
+          id?: string
+          link_token?: string
+          name?: string
+          nationality?: string | null
+          phone?: string | null
+          portal_company_id?: string
+          preferred_language?: string
+          ship_name?: string | null
+          surname?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crew_members_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: false
+            referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crew_status_log: {
+        Row: {
+          created_at: string
+          crew_member_id: string
+          id: string
+          leg_number: number | null
+          status: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          crew_member_id: string
+          id?: string
+          leg_number?: number | null
+          status: string
+          updated_by?: string
+        }
+        Update: {
+          created_at?: string
+          crew_member_id?: string
+          id?: string
+          leg_number?: number | null
+          status?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crew_status_log_crew_member_id_fkey"
+            columns: ["crew_member_id"]
+            isOneToOne: false
+            referencedRelation: "crew_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispatch_default_rules: {
         Row: {
           company_id: string
