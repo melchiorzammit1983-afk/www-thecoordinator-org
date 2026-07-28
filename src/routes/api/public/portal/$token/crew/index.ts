@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
 import { crewRowToLegs } from "@/lib/parse-crew";
+import { autoCreateOrGroupCrewTrip, pickMaltaLeg } from "@/lib/crew-trip-auto-create";
 
-const CrewInput = z.object({
+export const CrewInput = z.object({
   name: z.string().trim().min(1).max(80),
   surname: z.string().trim().min(1).max(80),
   phone: z.string().trim().max(40).optional().or(z.literal("")),
@@ -19,6 +20,8 @@ const CrewInput = z.object({
   flight_from1: z.string().trim().max(200).optional().or(z.literal("")),
   flight_from2: z.string().trim().max(200).optional().or(z.literal("")),
   flight_from3: z.string().trim().max(200).optional().or(z.literal("")),
+  arrival_date: z.string().trim().max(20).optional().or(z.literal("")),
+  arrival_time: z.string().trim().max(10).optional().or(z.literal("")),
 });
 
 /**
@@ -127,11 +130,30 @@ export const Route = createFileRoute("/api/public/portal/$token/crew/")({
               flight_from1: row.flight_from1 ?? "",
               flight_from2: row.flight_from2 ?? "",
               flight_from3: row.flight_from3 ?? "",
+              arrival_date: row.arrival_date ?? "",
+              arrival_time: row.arrival_time ?? "",
             }).filter((l) => l.from_location || l.to_location || l.flight_number);
             if (legs.length) {
-              await admin.from("crew_itineraries" as any).insert(
-                legs.map((l) => ({ ...l, crew_member_id: (crewRow as any).id })) as any,
-              );
+              const { data: insertedLegs } = await admin
+                .from("crew_itineraries" as any)
+                .insert(legs.map((l) => ({ ...l, crew_member_id: (crewRow as any).id })) as any)
+                .select("*");
+
+              // Best-effort: a leg landing in Malta with a known arrival date/time
+              // auto-creates (or joins) a trip for the coordinator to review.
+              const maltaLeg = pickMaltaLeg((insertedLegs ?? []) as any[]);
+              if (maltaLeg) {
+                try {
+                  await autoCreateOrGroupCrewTrip(admin, {
+                    portalCompanyId: r.portal.id,
+                    crewMemberId: (crewRow as any).id,
+                    crewFullName: `${row.name} ${row.surname}`.trim(),
+                    leg: maltaLeg,
+                  });
+                } catch (e) {
+                  console.error("auto-create crew trip failed", e);
+                }
+              }
             }
             results[index] = { index, ok: true, crew: crewRow };
           }

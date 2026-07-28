@@ -2,15 +2,21 @@
  * Parser for HR's bulk crew paste (tab- or comma-separated, one crew member per line).
  * Column order: date | name | surname | phone | email | from | flight1 | flight2 | flight3
  *             | to | flight_from1 | flight_from2 | flight_from3 | nationality | ship
+ *             | arrival_date | arrival_time
  *
  * `from`/`to` are the overall journey endpoints; flight_fromN is where legN departs from
  * (the destination of legN is flight_from(N+1), or `to` for the last leg).
+ *
+ * `arrival_date`/`arrival_time` (trailing, optional, appended after the original Phase 1
+ * columns to stay backward-compatible with already-pasted lists) describe when the
+ * Malta-landing leg touches down — this is what triggers Phase 3's auto trip creation.
  */
 
 export type ParsedCrewLeg = {
   leg_number: 1 | 2 | 3;
   departure_date: string | null;
   arrival_date: string | null;
+  arrival_time: string | null;
   from_location: string;
   to_location: string;
   flight_number: string | null;
@@ -32,6 +38,8 @@ export type ParsedCrewRow = {
   flight_from3: string;
   nationality: string;
   ship: string;
+  arrival_date: string;
+  arrival_time: string;
 };
 
 export type ParseCrewError = { line: number; raw: string; message: string };
@@ -40,7 +48,15 @@ const COLUMNS: (keyof ParsedCrewRow)[] = [
   "date", "name", "surname", "phone", "email", "from",
   "flight1", "flight2", "flight3", "to",
   "flight_from1", "flight_from2", "flight_from3", "nationality", "ship",
+  "arrival_date", "arrival_time",
 ];
+
+/** Malta is this app's home base — the leg landing here is what triggers trip auto-creation. */
+export function isMaltaLocation(loc: string | null | undefined): boolean {
+  const s = (loc ?? "").trim().toLowerCase();
+  if (!s) return false;
+  return s.includes("malta") || /\bmla\b/.test(s);
+}
 
 const HEADER_ALIASES = new Set(COLUMNS.map((c) => c.toLowerCase()));
 
@@ -102,7 +118,7 @@ export function parseBulkCrewPaste(text: string): { rows: ParsedCrewRow[]; error
 }
 
 /** Explode a flat crew row into up to 3 itinerary legs for saving. */
-export function crewRowToLegs(row: Pick<ParsedCrewRow, "date" | "from" | "to" | "flight1" | "flight2" | "flight3" | "flight_from1" | "flight_from2" | "flight_from3">): ParsedCrewLeg[] {
+export function crewRowToLegs(row: Pick<ParsedCrewRow, "date" | "from" | "to" | "flight1" | "flight2" | "flight3" | "flight_from1" | "flight_from2" | "flight_from3" | "arrival_date" | "arrival_time">): ParsedCrewLeg[] {
   const legs: ParsedCrewLeg[] = [];
   const hasLeg2 = !!(row.flight2 || row.flight_from2);
   const hasLeg3 = !!(row.flight3 || row.flight_from3);
@@ -112,6 +128,7 @@ export function crewRowToLegs(row: Pick<ParsedCrewRow, "date" | "from" | "to" | 
     leg_number: 1,
     departure_date: row.date || null,
     arrival_date: null,
+    arrival_time: null,
     from_location: row.from,
     to_location: leg1To || row.to,
     flight_number: row.flight1 || null,
@@ -123,6 +140,7 @@ export function crewRowToLegs(row: Pick<ParsedCrewRow, "date" | "from" | "to" | 
       leg_number: 2,
       departure_date: null,
       arrival_date: null,
+      arrival_time: null,
       from_location: row.flight_from2 || "",
       to_location: leg2To || row.to,
       flight_number: row.flight2 || null,
@@ -134,10 +152,21 @@ export function crewRowToLegs(row: Pick<ParsedCrewRow, "date" | "from" | "to" | 
       leg_number: 3,
       departure_date: null,
       arrival_date: null,
+      arrival_time: null,
       from_location: row.flight_from3 || "",
       to_location: row.to,
       flight_number: row.flight3 || null,
     });
+  }
+
+  // Attach the Malta arrival date/time to whichever leg actually lands there —
+  // this is what src/lib/crew-trip-auto-create.ts keys trip creation off of.
+  if (row.arrival_date || row.arrival_time) {
+    const maltaLeg = [...legs].reverse().find((l) => isMaltaLocation(l.to_location)) ?? legs[legs.length - 1];
+    if (maltaLeg) {
+      maltaLeg.arrival_date = row.arrival_date || null;
+      maltaLeg.arrival_time = row.arrival_time || null;
+    }
   }
 
   return legs;
