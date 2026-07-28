@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, Car } from "lucide-react";
 import { crewT, type CrewLang } from "@/lib/crew-i18n";
-import { readCrewSession, storeCrewSession, clearCrewSession } from "@/lib/crew-session";
+import { readCrewSession, storeCrewSession, clearCrewSession, peekCrewLinkToken } from "@/lib/crew-session";
 import { CREW_STATUS_ACTIONS } from "@/lib/crew-status";
 
 export const Route = createFileRoute("/crew-portal/dashboard")({
