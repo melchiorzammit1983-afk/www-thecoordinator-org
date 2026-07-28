@@ -245,9 +245,11 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
                         </Select>
                     </div>
                 )}
-                {coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId && (
+                {coordShowTabs && coordTab === "coord_client" && !coordPaxId && (
                     <div className="px-3 py-6 text-center text-xs text-muted-foreground bg-muted/30">
-                        Pick a passenger above to see their private thread.
+                        {coordPaxList.length === 0
+                            ? "No passengers on this trip yet — add a passenger to start a private client thread."
+                            : "Pick a passenger above to see their private thread."}
                     </div>
                 )}
 
