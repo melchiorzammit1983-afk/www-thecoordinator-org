@@ -32,6 +32,15 @@ import {
   Image as ImageIcon, ExternalLink,
 } from "lucide-react";
 
+const PORTAL_KIND_LABELS: Record<string, string> = {
+  hotel: "Hotel",
+  agent: "Agent",
+  company_agent: "Company/Agent Portal",
+};
+function portalKindLabel(kind: string): string {
+  return PORTAL_KIND_LABELS[kind] ?? kind;
+}
+
 export const Route = createFileRoute("/_authenticated/coordinator/portal-links")({
   head: () => ({ meta: [{ title: "Portal Links — Coordinator" }] }),
   component: PortalLinksPage,
@@ -42,7 +51,7 @@ function PortalLinksPage() {
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <h1 className="text-2xl font-semibold">Portal links</h1>
       <p className="text-sm text-muted-foreground mt-1">
-        Passwordless links that let drivers see their manifest, clients see their bookings, and hotels/agents/corporates run their own bookings dashboard.
+        Passwordless links that let drivers see their manifest, clients see their bookings, and hotels/agents/companies run their own bookings dashboard.
       </p>
       <Tabs defaultValue="companies" className="mt-6">
         <TabsList>
@@ -317,7 +326,7 @@ function CompaniesPanel() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [kind, setKind] = useState<"hotel" | "agent" | "corporate">("hotel");
+  const [kind, setKind] = useState<"hotel" | "agent" | "company_agent">("hotel");
   const [points, setPoints] = useState("3");
   const [expiryPreset, setExpiryPreset] = useState<string>("never");
   const [slugState, setSlugState] = useState<"idle" | "ok" | "taken" | "invalid" | "reserved" | "checking">("idle");
@@ -396,7 +405,7 @@ function CompaniesPanel() {
               <SelectContent>
                 <SelectItem value="hotel">Hotel</SelectItem>
                 <SelectItem value="agent">Agent</SelectItem>
-                <SelectItem value="corporate">Corporate</SelectItem>
+                <SelectItem value="company_agent">Company/Agent Portal</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -543,7 +552,7 @@ function CompanyRow({ portal }: { portal: any }) {
           )}
           <div className="min-w-0">
             <div className="font-medium truncate">{portal.name}</div>
-            <div className="text-[11px] text-muted-foreground capitalize">{portal.kind} · {Number(portal.points_per_booking ?? 3)} pts/booking</div>
+            <div className="text-[11px] text-muted-foreground">{portalKindLabel(portal.kind)} · {Number(portal.points_per_booking ?? 3)} pts/booking</div>
           </div>
         </div>
       </TableCell>

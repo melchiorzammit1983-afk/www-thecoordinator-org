@@ -181,3 +181,25 @@ export function describeFlight(parsed: ParsedFlight): string {
   if (parsed.airline) return `${parsed.airline} flight ${parsed.number}${parsed.suffix ?? ""}`;
   return `flight ${parsed.iata}${parsed.number}${parsed.suffix ?? ""}`;
 }
+
+/**
+ * Short inline warning for a flight-number field, or null when it looks fine.
+ *
+ * This is a FORMAT check only (does it look like a real IATA flight code) —
+ * there is no live flight-schedule provider wired up in this app right now
+ * (see `liveStatusProviderEnabled()` in coordinator.functions.ts, which is
+ * hardcoded off pending a dedicated transport-data API key), so this cannot
+ * confirm the flight actually exists/operates on the given date. Never
+ * blocks submission — callers just show this text next to the field.
+ */
+export function flightFormatWarning(input: string | null | undefined): string | null {
+  const s = (input ?? "").toString().trim();
+  if (!s) return null;
+  if (looksLikeVessel(s)) return "Looks like a vessel name, not a flight number";
+  const parsed = parseFlightCode(s);
+  if (!parsed.ok) {
+    const fix = suggestCorrections(s)[0];
+    return fix ? `Doesn't look like a valid flight code — did you mean ${fix}?` : "Doesn't look like a valid flight code (e.g. FR1234)";
+  }
+  return null;
+}

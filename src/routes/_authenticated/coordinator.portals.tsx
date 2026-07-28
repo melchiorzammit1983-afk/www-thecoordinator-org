@@ -13,6 +13,15 @@ import {
   listPortals, createPortal, updatePortal, rotatePortalToken, deletePortal,
 } from "@/lib/portal.functions";
 
+const PORTAL_KIND_LABELS: Record<string, string> = {
+  hotel: "Hotel",
+  agent: "Agent",
+  company_agent: "Company/Agent Portal",
+};
+function portalKindLabel(kind: string): string {
+  return PORTAL_KIND_LABELS[kind] ?? kind;
+}
+
 export const Route = createFileRoute("/_authenticated/coordinator/portals")({
   head: () => ({ meta: [{ title: "Company Portals — Coordinator" }] }),
   component: PortalsPage,
@@ -25,7 +34,7 @@ function PortalsPage() {
   const { data: portals } = useQuery({ queryKey: ["portals"], queryFn: () => listFn() as Promise<any[]> });
 
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<"hotel" | "agent" | "corporate">("hotel");
+  const [kind, setKind] = useState<"hotel" | "agent" | "company_agent">("hotel");
   const [points, setPoints] = useState("3");
 
   const mut = useMutation({
@@ -37,7 +46,7 @@ function PortalsPage() {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <h1 className="text-2xl font-semibold">Company Portals</h1>
-      <p className="text-sm text-muted-foreground mt-1">Give hotels, agents, and corporate clients a private link so they can book, track, and chat — you stay in control of dispatch.</p>
+      <p className="text-sm text-muted-foreground mt-1">Give hotels, agents, and companies a private link so they can book, track, and chat — you stay in control of dispatch.</p>
 
       <Card className="mt-6">
         <CardHeader><CardTitle className="text-base">New portal</CardTitle></CardHeader>
@@ -47,7 +56,7 @@ function PortalsPage() {
             <select className="w-full h-10 border rounded px-2 bg-background" value={kind} onChange={(e) => setKind(e.target.value as any)}>
               <option value="hotel">Hotel</option>
               <option value="agent">Agent</option>
-              <option value="corporate">Corporate</option>
+              <option value="company_agent">Company/Agent Portal</option>
             </select>
           </div>
           <div><Label>Points per booking</Label><Input type="number" min={0} value={points} onChange={(e) => setPoints(e.target.value)} /></div>
@@ -78,7 +87,7 @@ function PortalRow({ portal, onChange }: { portal: any; onChange: () => void }) 
     <Card>
       <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <div className="font-medium">{portal.name} <span className="text-xs text-muted-foreground capitalize">· {portal.kind}</span></div>
+          <div className="font-medium">{portal.name} <span className="text-xs text-muted-foreground">· {portalKindLabel(portal.kind)}</span></div>
           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
             <Badge variant={portal.link_enabled ? "default" : "secondary"}>{portal.link_enabled ? "Link ON" : "Link OFF"}</Badge>
             {portal.link_expires_at && <span>Expires {new Date(portal.link_expires_at).toLocaleString()}</span>}
