@@ -89,7 +89,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
         queryKey,
         enabled: !!open && !!jobId
             && !(role === "driver" && driverTab === "driver_client" && !driverPaxId)
-            && !(role === "coordinator" && coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId),
+            && !(role === "coordinator" && coordShowTabs && coordTab === "coord_client" && !coordPaxId),
         refetchInterval: open ? 10_000 : false,
         queryFn: () => role === "driver"
             ? listDrv({ data: { token: token!, job_id: jobId!, thread_kind: driverTab, pax_id: driverTab === "driver_client" ? (driverPaxId || null) : null } }) as Promise<Msg[]>
@@ -123,7 +123,7 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
     });
 
     const clientTabNeedsPax = role === "driver" && driverTab === "driver_client" && driverPaxList.length > 1 && !driverPaxId;
-    const coordClientTabNeedsPax = role === "coordinator" && coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId;
+    const coordClientTabNeedsPax = role === "coordinator" && coordShowTabs && coordTab === "coord_client" && !coordPaxId;
 
     function submit() {
         const body = text.trim();
@@ -245,9 +245,11 @@ export function TripChatDialog({ open, onOpenChange, jobId, title, role, token, 
                         </Select>
                     </div>
                 )}
-                {coordShowTabs && coordTab === "coord_client" && coordPaxList.length > 1 && !coordPaxId && (
+                {coordShowTabs && coordTab === "coord_client" && !coordPaxId && (
                     <div className="px-3 py-6 text-center text-xs text-muted-foreground bg-muted/30">
-                        Pick a passenger above to see their private thread.
+                        {coordPaxList.length === 0
+                            ? "No passengers on this trip yet — add a passenger to start a private client thread."
+                            : "Pick a passenger above to see their private thread."}
                     </div>
                 )}
 

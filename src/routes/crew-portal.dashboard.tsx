@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, Car } from "lucide-react";
 import { crewT, type CrewLang } from "@/lib/crew-i18n";
-import { readCrewSession, storeCrewSession, clearCrewSession } from "@/lib/crew-session";
+import { readCrewSession, storeCrewSession, clearCrewSession, peekCrewLinkToken } from "@/lib/crew-session";
 import { CREW_STATUS_ACTIONS } from "@/lib/crew-status";
 
 export const Route = createFileRoute("/crew-portal/dashboard")({
@@ -51,10 +51,16 @@ function CrewDashboardPage() {
   const [selectedLeg, setSelectedLeg] = useState<number | null>(null);
   const [posting, setPosting] = useState(false);
 
+  function bounceToLogin() {
+    const token = peekCrewLinkToken();
+    clearCrewSession();
+    navigate({ to: "/crew-portal", search: token ? { token } : {} } as any);
+  }
+
   async function load() {
     const session = readCrewSession();
     if (!session) {
-      navigate({ to: "/crew-portal" });
+      bounceToLogin();
       return;
     }
     try {
@@ -63,8 +69,7 @@ function CrewDashboardPage() {
       });
       if (!r.ok) {
         if (r.status === 401) {
-          clearCrewSession();
-          navigate({ to: "/crew-portal" });
+          bounceToLogin();
           return;
         }
         setErr("dashboard_load_failed");
@@ -87,7 +92,7 @@ function CrewDashboardPage() {
 
   async function postStatus(status: string) {
     const session = readCrewSession();
-    if (!session) { navigate({ to: "/crew-portal" }); return; }
+    if (!session) { bounceToLogin(); return; }
     setPosting(true);
     try {
       const r = await fetch("/api/crew-portal/status", {
@@ -95,7 +100,10 @@ function CrewDashboardPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.jwt}` },
         body: JSON.stringify({ leg_number: selectedLeg, status }),
       });
-      if (!r.ok) { toast.error("Could not update status"); return; }
+      if (!r.ok) {
+        if (r.status === 401) { bounceToLogin(); return; }
+        toast.error("Could not update status"); return;
+      }
       const j = await r.json();
       storeCrewSession({ jwt: j.session_token, expiresAt: Date.now() + j.expires_in * 1000, linkToken: session.linkToken });
       toast.success(t("status_updated"));
@@ -106,8 +114,7 @@ function CrewDashboardPage() {
   }
 
   function signOut() {
-    clearCrewSession();
-    navigate({ to: "/crew-portal" });
+    bounceToLogin();
   }
 
   if (err) {

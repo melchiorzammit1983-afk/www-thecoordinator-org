@@ -23,3 +23,16 @@ export function storeCrewSession(session: CrewSession) {
 export function clearCrewSession() {
   sessionStorage.removeItem(CREW_SESSION_KEY);
 }
+
+/** Returns the link token even if the session JWT has expired, so we can bounce
+ * an expired user back to the login form with their ?token= preserved. */
+export function peekCrewLinkToken(): string | null {
+  try {
+    const raw = sessionStorage.getItem(CREW_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CrewSession>;
+    return typeof parsed?.linkToken === "string" && parsed.linkToken.length > 0 ? parsed.linkToken : null;
+  } catch {
+    return null;
+  }
+}
