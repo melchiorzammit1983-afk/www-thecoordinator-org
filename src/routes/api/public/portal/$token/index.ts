@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
         const admin = await getAdmin();
         const { data: bookings } = await admin
           .from("portal_bookings" as any)
-          .select("id, status, payload, agreed_price, currency, created_at, accepted_at, job_id")
+          .select("id, status, payload, agreed_price, currency, created_at, accepted_at, job_id, batch_id")
           .eq("portal_company_id", r.portal.id)
           .order("created_at", { ascending: false })
           .limit(200);

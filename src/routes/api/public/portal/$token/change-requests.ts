@@ -13,17 +13,22 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
         const body = await request.json().catch(() => ({}));
         const parsed = z.object({
           booking_id: z.string().uuid(),
-          kind: z.enum(["edit", "reschedule"]),
+          kind: z.enum(["edit", "cancel", "reschedule"]),
           requested_changes: z.record(z.string(), z.any()).optional(),
         }).safeParse(body);
         if (!parsed.success) return Response.json({ error: "bad_input" }, { status: 400 });
 
         const admin = await getAdmin();
-        // verify the booking belongs to this portal
+        // verify the booking belongs to this portal, and isn't already
+        // mid-review or in a final state (can't request a change on a
+        // booking that's already rejected/cancelled, or has another change
+        // request pending).
         const { data: b } = await admin.from("portal_bookings" as any)
-          .select("id, job_id, portal_company_id").eq("id", parsed.data.booking_id).maybeSingle();
+          .select("id, job_id, portal_company_id, status").eq("id", parsed.data.booking_id).maybeSingle();
         if (!b || (b as any).portal_company_id !== r.portal.id)
           return Response.json({ error: "not_found" }, { status: 404 });
+        if (!["pending", "accepted"].includes((b as any).status))
+          return Response.json({ error: "not_editable" }, { status: 409 });
 
         const { error } = await admin.from("portal_change_requests" as any).insert({
           portal_booking_id: parsed.data.booking_id,
