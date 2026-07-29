@@ -43,7 +43,7 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "crew" | "chat" | "manage" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "trips" | "crew" | "chat" | "statement" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
@@ -85,6 +85,7 @@ function PortalPage() {
             <TabsTrigger value="trips">Trips</TabsTrigger>
             <TabsTrigger value="crew">Crew</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
+            <TabsTrigger value="statement">Statement</TabsTrigger>
             {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
@@ -104,6 +105,10 @@ function PortalPage() {
 
           <TabsContent value="chat" className="mt-4">
             <ChatPanel token={token} bookings={boot.bookings} />
+          </TabsContent>
+
+          <TabsContent value="statement" className="mt-4">
+            <PortalStatementPanel token={token} />
           </TabsContent>
 
           {boot.portal.kind === "hotel" && (
@@ -250,6 +255,9 @@ function BookingsList({ bookings, jobs, token }: { bookings: any[]; jobs: any[];
                 <div className="font-medium">{b.payload?.name} {b.payload?.surname} <span className="text-xs text-muted-foreground">· {b.payload?.pax_count ?? 1} pax</span></div>
                 <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
                 <div className="text-xs mt-1">{b.payload?.pickup_at ? new Date(b.payload.pickup_at).toLocaleString() : "—"}</div>
+                {b.status === "accepted" && b.agreed_price != null && (
+                  <div className="text-xs mt-1 font-medium">{b.currency ?? "EUR"} {Number(b.agreed_price).toFixed(2)}</div>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={b.status} />
@@ -375,6 +383,61 @@ function ChatPanel({ token, bookings }: { token: string; bookings: any[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function PortalStatementPanel({ token }: { token: string }) {
+  const [start, setStart] = useState(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [stmt, setStmt] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const periodStart = new Date(start).toISOString();
+      const periodEnd = new Date(`${end}T23:59:59`).toISOString();
+      const r = await fetch(`/api/public/portal/${token}/statement?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}`);
+      if (!r.ok) { toast.error("Failed to generate statement"); return; }
+      setStmt(await r.json());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function downloadCsv() {
+    if (!stmt?.rows) return;
+    const header = "date,guest,from,to,status,agreed_price\n";
+    const rows = stmt.rows.map((row: any) => [
+      new Date(row.created_at).toISOString(), `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
+      row.payload?.from_location, row.payload?.to_location, row.status, row.agreed_price ?? "",
+    ].map((v: any) => `"${String(v ?? "").replace(/"/g, "''")}"`).join(",")).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `statement_${start}_${end}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Statement</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2 items-end">
+          <div><Label className="text-xs">From</Label><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+          <div><Label className="text-xs">To</Label><Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+          <Button onClick={generate} disabled={busy}>Generate</Button>
+          {stmt && <Button variant="outline" onClick={downloadCsv}>Download CSV</Button>}
+        </div>
+        {stmt && (
+          <div className="text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>Bookings<div className="font-semibold text-base">{stmt.statement.totals.bookings_count}</div></div>
+            <div>Accepted<div className="font-semibold text-base">{stmt.statement.totals.accepted}</div></div>
+            <div>Cancelled<div className="font-semibold text-base">{stmt.statement.totals.cancelled}</div></div>
+            <div>Revenue<div className="font-semibold text-base">€{Number(stmt.statement.totals.revenue).toFixed(2)}</div></div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

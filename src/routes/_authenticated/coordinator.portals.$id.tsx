@@ -64,11 +64,19 @@ function BookingsInbox({ portalId }: { portalId: string }) {
   const acceptFn = useServerFn(acceptPortalBooking);
   const rejectFn = useServerFn(rejectPortalBooking);
   const qc = useQueryClient();
+  const [prices, setPrices] = useState<Record<string, string>>({});
   const { data } = useQuery({ queryKey: ["portal-bookings", portalId], queryFn: () => listFn({ data: { portal_id: portalId } }) as Promise<any[]> });
 
   const acc = useMutation({
-    mutationFn: (id: string) => acceptFn({ data: { booking_id: id } }),
-    onSuccess: () => { toast.success("Accepted — job created & points spent"); qc.invalidateQueries({ queryKey: ["portal-bookings", portalId] }); },
+    mutationFn: ({ id, price }: { id: string; price: string }) => {
+      const agreed_price = price.trim() ? Number(price) : undefined;
+      return acceptFn({ data: { booking_id: id, ...(agreed_price != null && !isNaN(agreed_price) ? { agreed_price } : {}) } });
+    },
+    onSuccess: (_r, { id }) => {
+      toast.success("Accepted — job created & points spent");
+      setPrices((p) => { const next = { ...p }; delete next[id]; return next; });
+      qc.invalidateQueries({ queryKey: ["portal-bookings", portalId] });
+    },
     onError: (e: any) => toast.error(e?.message ?? "Failed"),
   });
   const rej = useMutation({
@@ -91,8 +99,14 @@ function BookingsInbox({ portalId }: { portalId: string }) {
               <Badge className="mt-2" variant="secondary">{b.status.replace("_", " ")}</Badge>
             </div>
             {b.status === "pending" && (
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => acc.mutate(b.id)} disabled={acc.isPending}>Accept</Button>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="number" min={0} step="0.01" placeholder="€ price"
+                  className="h-9 w-28"
+                  value={prices[b.id] ?? ""}
+                  onChange={(e) => setPrices((p) => ({ ...p, [b.id]: e.target.value }))}
+                />
+                <Button size="sm" onClick={() => acc.mutate({ id: b.id, price: prices[b.id] ?? "" })} disabled={acc.isPending}>Accept</Button>
                 <Button size="sm" variant="outline" onClick={() => rej.mutate(b.id)} disabled={rej.isPending}>Reject</Button>
               </div>
             )}

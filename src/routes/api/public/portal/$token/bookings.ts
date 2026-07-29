@@ -70,6 +70,27 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
         const admin = await getAdmin();
         const { data, error } = await admin.from("portal_bookings" as any).insert(rows as any).select("id");
         if (error) return Response.json({ error: error.message }, { status: 500 });
+
+        // Best-effort push to the coordinator so a new booking doesn't sit
+        // unnoticed until the dispatch board's next 20s poll — never blocks
+        // the response on delivery.
+        try {
+          const { data: company } = await admin.from("companies").select("owner_user_id")
+            .eq("id", r.portal.coordinator_company_id).maybeSingle();
+          if ((company as any)?.owner_user_id) {
+            const { sendPushToUserImpl } = await import("@/lib/push.functions");
+            const count = rows.length;
+            await sendPushToUserImpl((company as any).owner_user_id, {
+              title: count > 1 ? `${count} new bookings — ${r.portal.name}` : `New booking — ${r.portal.name}`,
+              body: "Awaiting your approval",
+              category: "new_job",
+              url: "/coordinator/calendar",
+            });
+          }
+        } catch (e) {
+          console.error("[portal bookings] coordinator push failed", e);
+        }
+
         return Response.json({ ok: true, ids: (data ?? []).map((r: any) => r.id) });
       },
     },

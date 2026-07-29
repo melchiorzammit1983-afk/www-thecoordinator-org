@@ -23,6 +23,28 @@ async function myCompanyId(userId: string) {
   return (c?.id ?? null) as string | null;
 }
 
+// Mirrors the crew-notification email pattern (crew-trip-auto-create.ts):
+// same enqueue_email/transactional_emails shape, just a different label so
+// it's distinguishable in the queue. Best-effort — callers should swallow
+// failures rather than let a notification blip fail the booking action.
+async function enqueuePortalNotificationEmail(adminClient: any, to: string, subject: string, text: string, label: string) {
+  await adminClient.rpc("enqueue_email", {
+    queue_name: "transactional_emails",
+    payload: {
+      to,
+      from: "The Coordinator <noreply@thecoordinator.org>",
+      sender_domain: "thecoordinator.org",
+      subject,
+      text,
+      html: `<p>${text.replace(/\n/g, "<br/>")}</p>`,
+      purpose: "transactional",
+      label,
+      idempotency_key: `${label}-${to}-${Date.now()}`,
+      message_id: crypto.randomUUID(),
+    },
+  });
+}
+
 // ---------- Portal companies (hotels) ----------
 
 export const listPortals = createServerFn({ method: "GET" })
@@ -193,13 +215,21 @@ export const listPortalBookings = createServerFn({ method: "GET" })
 
 export const acceptPortalBooking = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ booking_id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({
+    booking_id: z.string().uuid(),
+    // What the portal/company is billed for this booking — set by the
+    // coordinator at approval time (guests never propose their own price).
+    // Feeds the statement's revenue total; optional so approving without a
+    // price still works exactly as before.
+    agreed_price: z.number().min(0).max(100_000).optional(),
+    currency: z.string().max(6).optional(),
+  }).parse(d))
   .handler(async ({ data, context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
     const a = await admin();
     const { data: b } = await a.from("portal_bookings" as any)
-      .select("*, portal_companies!inner(coordinator_company_id,points_per_booking)")
+      .select("*, portal_companies!inner(coordinator_company_id,points_per_booking,notification_email,contact_email)")
       .eq("id", data.booking_id).maybeSingle();
     if (!b) throw new Error("not_found");
     if ((b as any).portal_companies.coordinator_company_id !== cid) throw new Error("forbidden");
@@ -242,9 +272,28 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       throw new Error(e?.message ?? "spend_failed");
     }
 
-    await a.from("portal_bookings" as any).update({
+    const bookingPatch: Record<string, unknown> = {
       status: "accepted", job_id: (job as any).id, accepted_at: new Date().toISOString(),
-    } as any).eq("id", data.booking_id);
+    };
+    if (data.agreed_price != null) bookingPatch.agreed_price = data.agreed_price;
+    if (data.currency) bookingPatch.currency = data.currency;
+    await a.from("portal_bookings" as any).update(bookingPatch as any).eq("id", data.booking_id);
+
+    try {
+      const notifyEmail = (b as any).portal_companies.notification_email || (b as any).portal_companies.contact_email;
+      if (notifyEmail) {
+        const priceLine = data.agreed_price != null
+          ? ` Agreed price: ${data.currency ?? "EUR"} ${data.agreed_price.toFixed(2)}.`
+          : "";
+        await enqueuePortalNotificationEmail(
+          a, notifyEmail, "Booking approved",
+          `Your booking for ${fullName || "your guest"} (${payload.from_location} → ${payload.to_location}) has been approved.${priceLine}`,
+          "portal_booking_accepted",
+        );
+      }
+    } catch (e) {
+      console.error("acceptPortalBooking: notification email failed", e);
+    }
 
     // Seed pax rows so the driver has verifiable slots. Combine supplied
     // pax_names + names parsed from the client field / notes, then pad
@@ -289,6 +338,26 @@ export const rejectPortalBooking = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.from("portal_bookings" as any).update({ status: "rejected" } as any).eq("id", data.booking_id);
     if (error) throw new Error(error.message);
+
+    try {
+      const a = await admin();
+      const { data: b } = await a.from("portal_bookings" as any)
+        .select("payload, portal_companies!inner(notification_email,contact_email)")
+        .eq("id", data.booking_id).maybeSingle();
+      const notifyEmail = (b as any)?.portal_companies?.notification_email || (b as any)?.portal_companies?.contact_email;
+      if (notifyEmail) {
+        const payload = (b as any)?.payload ?? {};
+        const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim() || "your guest";
+        const reasonLine = data.reason ? ` Reason: ${data.reason}` : "";
+        await enqueuePortalNotificationEmail(
+          a, notifyEmail, "Booking rejected",
+          `Your booking for ${fullName} (${payload.from_location ?? ""} → ${payload.to_location ?? ""}) was rejected.${reasonLine}`,
+          "portal_booking_rejected",
+        );
+      }
+    } catch (e) {
+      console.error("rejectPortalBooking: notification email failed", e);
+    }
     return { ok: true };
   });
 
