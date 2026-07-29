@@ -105,7 +105,7 @@ function PortalPage() {
           </TabsContent>
 
           <TabsContent value="trips" className="mt-4">
-            <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} />
+            <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} onChanged={reload} />
           </TabsContent>
 
           <TabsContent value="crew" className="mt-4">
@@ -493,7 +493,7 @@ function PaxLinkButton({ bookingId, token }: { bookingId: string; token: string 
   );
 }
 
-function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; jobs: any[] }) {
+function TripsList({ token, bookings, jobs, onChanged }: { token: string; bookings: any[]; jobs: any[]; onChanged: () => void }) {
   const accepted = bookings.filter((b) => b.status === "accepted" && b.job_id);
   const [openId, setOpenId] = useState<string | null>(null);
   const openBooking = accepted.find((b) => b.id === openId) ?? null;
@@ -548,11 +548,59 @@ function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; 
                 )}
                 {openBooking.payload?.notes && <div className="italic text-muted-foreground">"{openBooking.payload.notes}"</div>}
               </div>
+              <AddPassengerForm token={token} booking={openBooking} onAdded={onChanged} />
               <TripLiveMap token={token} jobId={openBooking.job_id} />
             </>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Add one more named passenger to an already-accepted trip, right from the
+// map detail view. Goes through the same portal_change_requests →
+// decideChangeRequest pipeline as "Request change" on the Bookings tab
+// (accepted-booking pax_names/pax_count path) — the coordinator still
+// approves it before the extra pax row is seeded on the job.
+function AddPassengerForm({ token, booking, onAdded }: { token: string; booking: any; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const existingNames: string[] = Array.isArray(booking.payload?.pax_names) && booking.payload.pax_names.length
+    ? booking.payload.pax_names
+    : [`${booking.payload?.name ?? ""} ${booking.payload?.surname ?? ""}`.trim()].filter(Boolean);
+
+  if (booking.status !== "accepted") return null;
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    try {
+      const paxNames = [...existingNames, trimmed];
+      const r = await fetch(`/api/public/portal/${token}/change-requests`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking_id: booking.id, kind: "reschedule",
+          requested_changes: { pax_names: paxNames, pax_count: paxNames.length },
+        }),
+      });
+      if (!r.ok) { toast.error("Failed to request adding this passenger"); return; }
+      toast.success("Requested — awaiting coordinator approval");
+      setName("");
+      onAdded();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-2 border rounded p-2">
+      <div className="flex-1">
+        <Label className="text-xs">Add a passenger to this trip</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" onKeyDown={(e) => e.key === "Enter" && submit()} />
+      </div>
+      <Button size="sm" onClick={submit} disabled={busy || !name.trim()}>Request</Button>
     </div>
   );
 }
