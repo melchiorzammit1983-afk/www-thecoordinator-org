@@ -635,7 +635,10 @@ function StatementDialogButton({ portalId, portalName }: { portalId: string; por
     if (!stmt?.rows) return;
     const header = "date,guest,from,to,status,agreed_price\n";
     const rows = stmt.rows.map((row: any) => [
-      new Date(row.created_at).toISOString(), `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
+      new Date(row.created_at).toISOString(),
+      Array.isArray(row.payload?.pax_names) && row.payload.pax_names.length
+        ? row.payload.pax_names.join(", ")
+        : `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
       row.payload?.from_location, row.payload?.to_location, row.status, row.agreed_price ?? "",
     ].map((v: any) => `"${String(v ?? "").replace(/"/g, "''")}"`).join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });

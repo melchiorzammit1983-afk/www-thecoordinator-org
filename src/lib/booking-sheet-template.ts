@@ -5,24 +5,25 @@
 import * as XLSX from "xlsx";
 
 export const BOOKING_SHEET_HEADERS = [
-  "Name", "Phone", "Email", "From", "To",
+  "Passenger(s)", "Phone", "Email", "From", "To",
   "Pickup Date", "Pickup Time", "Room", "Flight", "Pax", "Notes",
 ] as const;
 
 const SAMPLE_ROWS: string[][] = [
-  ["John Smith", "+35699123456", "john@example.com", "Malta International Airport", "Hilton Malta", "2026-08-10", "14:30", "402", "FR1234", "2", "Late arrival, needs wheelchair"],
-  ["Maria Rossi", "", "", "Valletta Cruise Port", "Corinthia Palace", "2026-08-11", "09:00", "", "", "1", ""],
+  ["John Smith, Maria Rossi", "+35699123456", "john@example.com", "Malta International Airport", "Hilton Malta", "2026-08-10", "14:30", "402", "FR1234", "2", "Late arrival, needs wheelchair"],
+  ["Ali Hassan", "", "", "Valletta Cruise Port", "Corinthia Palace", "2026-08-11", "09:00", "", "", "1", ""],
 ];
 
 const INSTRUCTIONS: string[][] = [
   ["How to use this template"],
   [""],
-  ["1. Fill one row per passenger/booking. Do NOT rename or reorder the header columns."],
-  ["2. Pickup Date format: YYYY-MM-DD (e.g. 2026-08-10)."],
-  ["3. Pickup Time format: 24h HH:MM (e.g. 14:30)."],
-  ["4. Phone: include country code with + (e.g. +35699123456)."],
-  ["5. Pax: number of passengers for this booking."],
-  ["6. Leave a cell blank if it doesn't apply (e.g. no flight, no room number)."],
+  ["1. Fill one row per booking (which may carry more than one passenger). Do NOT rename or reorder the header columns."],
+  ["2. Passenger(s): one name, or several separated by commas (e.g. \"John Smith, Maria Rossi\")."],
+  ["3. Pickup Date format: YYYY-MM-DD (e.g. 2026-08-10)."],
+  ["4. Pickup Time format: 24h HH:MM (e.g. 14:30)."],
+  ["5. Phone: include country code with + (e.g. +35699123456)."],
+  ["6. Pax: total passenger count for this booking — leave it at or above the number of names you listed; extra seats beyond the named passengers show as \"Guest 2\", \"Guest 3\", etc."],
+  ["7. Leave a cell blank if it doesn't apply (e.g. no flight, no room number)."],
   [""],
   ["When done, save the file and use the Upload button on the Bookings tab,"],
   ["or select your filled rows (including the header) and paste them directly into the grid."],
@@ -83,6 +84,7 @@ export function downloadBookingCsvTemplate() {
 
 const HEADER_ALIASES: Record<string, string> = {
   name: "name", "guest name": "name", passenger: "name", "passenger name": "name",
+  "passenger(s)": "name", passengers: "name", guests: "name", "guest names": "name",
   phone: "phone", "contact number": "phone", contact: "phone",
   email: "email", "guest email": "email",
   from: "from", "pickup address": "from", pickup: "from",
@@ -205,15 +207,19 @@ export function parseBookingSheet(raw: string): ParsedBookingRow[] {
 // including the live job status/driver once the coordinator has accepted it.
 
 const STATUS_HEADERS = [
-  "Batch", "Name", "From", "To", "Pickup", "Status", "Price", "Job status", "Driver", "Vehicle",
+  "Batch", "Passenger(s)", "Pax", "From", "To", "Pickup", "Status", "Price", "Job status", "Driver", "Vehicle",
 ] as const;
 
 function statusRow(b: any, jobsById: Map<string, any>): (string | number)[] {
   const job = b.job_id ? jobsById.get(b.job_id) : null;
   const payload = b.payload ?? {};
+  const names = Array.isArray(payload.pax_names) && payload.pax_names.length
+    ? payload.pax_names.join(", ")
+    : `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
   return [
     b.batch_id ? String(b.batch_id).slice(0, 8) : "",
-    `${payload.name ?? ""} ${payload.surname ?? ""}`.trim(),
+    names,
+    payload.pax_count ?? 1,
     payload.from_location ?? "",
     payload.to_location ?? "",
     payload.pickup_at ? new Date(payload.pickup_at).toLocaleString() : "",

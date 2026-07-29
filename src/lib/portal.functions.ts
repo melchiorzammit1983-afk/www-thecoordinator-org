@@ -391,7 +391,58 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
         if (hasJob) await a.from("jobs").update({ status: "cancelled" } as any).eq("id", (cr as any).job_id);
         await a.from("portal_bookings" as any).update({ status: "cancelled" } as any).eq("id", bookingId);
       } else if (hasJob) {
-        await a.from("jobs").update(changes as any).eq("id", (cr as any).job_id);
+        // Only from/to/pickup_at are real `jobs` columns — notes and
+        // passenger counts/names live on portal_bookings.payload and the
+        // `pax` table respectively (jobs has no notes or pax_count column;
+        // real passenger count is however many `pax` rows exist).
+        const { from_location, to_location, pickup_at, notes, pax_names, pax_count } = changes as {
+          from_location?: string; to_location?: string; pickup_at?: string | null;
+          notes?: string | null; pax_names?: string[] | null; pax_count?: number | null;
+        };
+        const jobPatch: Record<string, unknown> = {};
+        if (from_location != null) jobPatch.from_location = from_location;
+        if (to_location != null) jobPatch.to_location = to_location;
+        if (pickup_at !== undefined) jobPatch.pickup_at = pickup_at;
+        if (Object.keys(jobPatch).length) {
+          await a.from("jobs").update(jobPatch as any).eq("id", (cr as any).job_id);
+        }
+
+        const { data: booking } = await a.from("portal_bookings" as any).select("payload").eq("id", bookingId).maybeSingle();
+        const payloadPatch: Record<string, unknown> = {};
+        if (notes !== undefined) payloadPatch.notes = notes;
+        if (pax_names !== undefined) payloadPatch.pax_names = pax_names;
+        if (pax_count !== undefined) payloadPatch.pax_count = pax_count;
+        if (Object.keys(payloadPatch).length) {
+          const mergedPayload = { ...((booking as any)?.payload ?? {}), ...payloadPatch };
+          await a.from("portal_bookings" as any).update({ payload: mergedPayload } as any).eq("id", bookingId);
+        }
+
+        // Add any newly-named passengers to the job's pax rows. Additive
+        // only, never delete-and-reinsert: pax_tracking_tokens has an
+        // ON DELETE CASCADE on pax_id, so removing an existing pax row would
+        // silently invalidate a tracking link already sent to that
+        // passenger. Worst case here is a harmless extra placeholder row,
+        // not a broken link someone's actively using.
+        if (pax_names !== undefined || pax_count !== undefined) {
+          const { extractPaxNames, padWithGuests } = await import("./pax-extract");
+          const finalPayload = { ...((booking as any)?.payload ?? {}), ...payloadPatch };
+          const supplied: string[] = Array.isArray(finalPayload.pax_names)
+            ? finalPayload.pax_names.map((n: any) => String(n || "").trim()).filter(Boolean)
+            : [];
+          const fullName = `${finalPayload.name ?? ""} ${finalPayload.surname ?? ""}`.trim();
+          const extracted = extractPaxNames({ clientcompanyname: fullName, notes: finalPayload.notes ?? null, portalPaxNames: supplied });
+          const seed = extracted.length ? extracted : [fullName || "Guest"];
+          const count = Math.max(1, Math.min(20, Number(finalPayload.pax_count) || seed.length));
+          const targetNames = padWithGuests(seed, count);
+
+          const { data: existingPax } = await a.from("pax").select("name").eq("job_id", (cr as any).job_id);
+          const existingKeys = new Set(((existingPax ?? []) as any[]).map((p) => String(p.name).trim().toLowerCase()));
+          const toAdd = targetNames.filter((name) => !existingKeys.has(name.trim().toLowerCase()));
+          if (toAdd.length) {
+            await a.from("pax").insert(toAdd.map((name) => ({ job_id: (cr as any).job_id, name })) as any);
+          }
+        }
+
         await a.from("portal_bookings" as any).update({ status: "accepted" } as any).eq("id", bookingId);
       } else {
         // The booking never became a job yet (still pending when the edit
