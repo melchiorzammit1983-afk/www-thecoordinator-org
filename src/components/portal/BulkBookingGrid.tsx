@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Trash2, AlertTriangle, Download, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
@@ -29,6 +30,10 @@ type GridRow = {
   flight: string;
   pax: string;
   notes: string;
+  // Checked rows are merged into a single trip on submit (one shared job,
+  // every checked row's passenger names combined) instead of each becoming
+  // its own booking — see submitAll().
+  selected: boolean;
 };
 
 function emptyRow(): GridRow {
@@ -36,9 +41,14 @@ function emptyRow(): GridRow {
     name: "", phone: "", email: "",
     from: "", fromPlaceId: null, fromLat: null, fromLng: null,
     to: "", toPlaceId: null, toLat: null, toLng: null,
-    pickupAt: "", room: "", flight: "", pax: "1", notes: "",
+    pickupAt: "", room: "", flight: "", pax: "1", notes: "", selected: false,
   };
 }
+
+// Small tolerance for treating checked rows' pickup times as "the same
+// pickup" — a minute or two of typo/rounding difference shouldn't block an
+// otherwise-obvious group.
+const GROUP_PICKUP_TOLERANCE_MS = 5 * 60_000;
 
 // Order matters — this is the column order a paste from Excel/Sheets is
 // assumed to follow, and what tab-separated/comma-separated clipboard text
@@ -185,14 +195,30 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       toast.error(`${missing.length} row${missing.length === 1 ? "" : "s"} missing From/To — fill those in before submitting`);
       return;
     }
+    const checkedRows = fillable.filter((r) => r.selected);
+    if (checkedRows.length >= 2) {
+      const first = checkedRows[0];
+      const mismatched = checkedRows.slice(1).filter((r) =>
+        r.from.trim() !== first.from.trim()
+        || r.to.trim() !== first.to.trim()
+        || Math.abs(
+          (r.pickupAt ? new Date(r.pickupAt).getTime() : 0) - (first.pickupAt ? new Date(first.pickupAt).getTime() : 0),
+        ) > GROUP_PICKUP_TOLERANCE_MS,
+      );
+      if (mismatched.length > 0) {
+        toast.error("Checked rows must share the same From, To, and pickup time to be combined into one trip — fix the mismatched row(s) or uncheck them.");
+        return;
+      }
+    }
+
     setBusy(true);
     try {
-      const bookings = fillable.map((r) => {
+      function toPayload(r: GridRow, paxNamesOverride?: string[]) {
         // "Passenger(s)" accepts one name or several (comma/semicolon/"&"/
         // "and"-separated) — the first is used for name/surname display
         // fields, the full list is carried separately so every guest gets a
         // real name instead of "Guest 2"/"Guest 3" placeholders.
-        const paxNames = splitPaxNames(r.name);
+        const paxNames = paxNamesOverride ?? splitPaxNames(r.name);
         const [first, ...rest] = (paxNames[0] ?? "").split(/\s+/).filter(Boolean);
         return {
           name: first || null,
@@ -214,7 +240,26 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           pax_count: Math.max(Number(r.pax) || 1, paxNames.length || 1),
           notes: r.notes.trim() || null,
         };
-      });
+      }
+
+      const soloRows = fillable.filter((r) => !r.selected);
+      const bookings = soloRows.map((r) => toPayload(r));
+
+      if (checkedRows.length >= 2) {
+        const combinedNames = checkedRows.flatMap((r) => splitPaxNames(r.name));
+        const combinedPaxCount = Math.max(
+          combinedNames.length,
+          checkedRows.reduce((sum, r) => sum + (Number(r.pax) || 1), 0),
+        );
+        const withPhone = checkedRows.find((r) => r.phone.trim());
+        const withEmail = checkedRows.find((r) => r.email.trim());
+        const combined = toPayload(checkedRows[0], combinedNames);
+        combined.pax_count = combinedPaxCount;
+        combined.client_phone = withPhone?.phone.trim() || null;
+        combined.client_email = withEmail?.email.trim() || null;
+        bookings.push(combined);
+      }
+
       const res = await fetch(`/api/public/portal/${token}/bookings`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookings, batch_id: batchId ?? undefined }),
@@ -239,7 +284,9 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           download a template, fill it offline, and upload it back
           (columns: {COLUMN_KEYS.map((k) => COLUMN_LABELS[k]).join(", ")}).
           For a group on one booking, list everyone in Passenger(s), e.g. "John Smith, Maria Rossi" — Pax
-          auto-adjusts to match, or bump it higher to add unnamed extra seats.
+          auto-adjusts to match, or bump it higher to add unnamed extra seats. To combine separate rows
+          (e.g. entered one guest per row) into a single shared trip instead, check the box on each of those
+          rows before submitting — their From/To/pickup time must match.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button variant="outline" size="sm" onClick={downloadBookingExcelTemplate}>
@@ -264,6 +311,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           <Table className="text-xs">
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" title="Check 2+ rows to combine them into one shared trip">Grp</TableHead>
                 {COLUMN_KEYS.map((key) => (
                   <TableHead key={key} className="whitespace-nowrap px-2 py-2 min-w-[120px]">{COLUMN_LABELS[key]}</TableHead>
                 ))}
@@ -275,6 +323,13 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                 const flightWarning = flightFormatWarning(row.flight);
                 return (
                   <TableRow key={ri}>
+                    <TableCell className="p-1 align-top">
+                      <Checkbox
+                        checked={row.selected}
+                        onCheckedChange={(v) => updateRow(ri, { selected: !!v })}
+                        aria-label="Group this row into one trip with other checked rows"
+                      />
+                    </TableCell>
                     {COLUMN_KEYS.map((key, ci) => (
                       <TableCell key={key} className="p-1 align-top" onPaste={(e) => handlePaste(e, ri, ci)}>
                         {key === "from" && (

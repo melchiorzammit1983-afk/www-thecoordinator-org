@@ -5,10 +5,21 @@ import { resolvePortalByToken, getAdmin } from "@/lib/portal-token.server";
  * GET /api/public/portal/$token/trip-location?job_id=...
  * Everything the HR-side Trips-tab map needs for one of this portal's own
  * accepted trips: pickup/dropoff pins, the driver's live position, their
- * breadcrumb track so far, and the latest ETA the driver's device pushed.
- * job_id is only ever trusted after confirming it belongs to a
- * portal_booking under this exact portal.
+ * breadcrumb track so far, event pins (movement/boarding milestones), and
+ * the latest ETA the driver's device pushed. job_id is only ever trusted
+ * after confirming it belongs to a portal_booking under this exact portal.
  */
+
+// Only movement/boarding events are appropriate for an external portal — no
+// waiting (billing-adjacent), driver-ops (GPS snaps, nav, calls), safety
+// (incident data), or internal correction events. This is the sole
+// enforcement point since the portal reads via the service-role client and
+// bypasses RLS.
+const PORTAL_VISIBLE_EVENT_TYPES = [
+  "en_route", "arrived_pickup", "in_progress", "completed", "actual_dropoff",
+  "pax_boarded", "boarding_approved", "boarding_rejected", "pax_no_show", "pax_cancelled",
+];
+
 export const Route = createFileRoute("/api/public/portal/$token/trip-location")({
   server: {
     handlers: {
@@ -38,7 +49,7 @@ export const Route = createFileRoute("/api/public/portal/$token/trip-location")(
           : null;
 
         if (!(job as any).driver_id) {
-          return Response.json({ driver: null, breadcrumb: [], pickup, dropoff, eta_sec: null, job_status: (job as any).status });
+          return Response.json({ driver: null, breadcrumb: [], pickup, dropoff, eta_sec: null, job_status: (job as any).status, events: [] });
         }
 
         const { data: crumbs } = await admin.from("driver_locations")
@@ -49,11 +60,18 @@ export const Route = createFileRoute("/api/public/portal/$token/trip-location")(
         const latest = crumbs && crumbs.length ? (crumbs as any)[crumbs.length - 1] : null;
         const driver = latest ? { latitude: latest.latitude, longitude: latest.longitude, captured_at: latest.captured_at } : null;
 
+        const { data: events } = await admin.from("trip_map_events" as any)
+          .select("id, event_type, lat, lng, occurred_at, notes")
+          .eq("job_id", jobId)
+          .in("event_type", PORTAL_VISIBLE_EVENT_TYPES)
+          .order("occurred_at", { ascending: true });
+
         return Response.json({
           driver, breadcrumb, pickup, dropoff,
           eta_sec: (job as any).live_eta_sec ?? null,
           eta_updated_at: (job as any).live_eta_updated_at ?? null,
           job_status: (job as any).status,
+          events: events ?? [],
         });
       },
     },
