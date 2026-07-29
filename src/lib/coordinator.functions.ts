@@ -5569,6 +5569,8 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
           sos_open: boolean;
           driver_status_new: boolean;
           rejected: boolean;
+          portal_name: string | null;
+          portal_logo_url: string | null;
         }
       >;
     }
@@ -5608,6 +5610,18 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
         if (jid) jobsWithClientChange.add(jid);
       }
     }
+    // 5) which HR/corporate portal (if any) this job's booking came from, so
+    // the coordinator can see at a glance which account it belongs to.
+    const { data: portalBookings } = await supabaseAdmin
+      .from("portal_bookings" as any)
+      .select("job_id, portal_companies(name, logo_url)")
+      .in("job_id", data.job_ids);
+    const portalByJob: Record<string, { name: string | null; logo_url: string | null }> = {};
+    for (const pb of (portalBookings ?? []) as any[]) {
+      if (pb.job_id && pb.portal_companies) {
+        portalByJob[pb.job_id] = { name: pb.portal_companies.name ?? null, logo_url: pb.portal_companies.logo_url ?? null };
+      }
+    }
 
     const out: Record<
       string,
@@ -5618,6 +5632,8 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
         sos_open: boolean;
         driver_status_new: boolean;
         rejected: boolean;
+        portal_name: string | null;
+        portal_logo_url: string | null;
       }
     > = {};
     for (const id of data.job_ids) {
@@ -5628,6 +5644,8 @@ export const getCardSignalsCoord = createServerFn({ method: "POST" })
         sos_open: false,
         driver_status_new: false,
         rejected: false,
+        portal_name: portalByJob[id]?.name ?? null,
+        portal_logo_url: portalByJob[id]?.logo_url ?? null,
       };
     }
     // driver-less jobs eligible for "rejected" flag

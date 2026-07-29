@@ -1225,7 +1225,6 @@ function DriverStatusPill({
 
 function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; arrivalRadiusM: number; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const acceptFn = useServerFn(driverAcceptJob);
   const rejectFn = useServerFn(driverRejectJob);
   const approveDelFn = useServerFn(driverApproveDeletion);
@@ -1872,14 +1871,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuItem
-                    className="min-h-11"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      navigate({ to: "/m/driver/$token/sign/$jobId", params: { token, jobId: job.id } });
-                    }}
-                  >
-                    <Megaphone className="h-4 w-4 mr-2" /> Open sign board
+                  <DropdownMenuItem asChild className="min-h-11">
+                    <Link to="/m/driver/$token/sign/$jobId" params={{ token, jobId: job.id }}>
+                      <Megaphone className="h-4 w-4 mr-2" /> Open sign board
+                    </Link>
                   </DropdownMenuItem>
 
                   {!isSafetyMode && (job.status === "in_progress" || job.status === "arrived") && !!driverPos && (

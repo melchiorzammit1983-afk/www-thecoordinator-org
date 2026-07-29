@@ -1315,6 +1315,8 @@ type CardCtx = {
       sos_open: boolean;
       driver_status_new: boolean;
       rejected?: boolean;
+      portal_name?: string | null;
+      portal_logo_url?: string | null;
     }
   >;
   tripFlags?: Record<string, TripFlagInfo>;
@@ -2761,7 +2763,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </div>
             )}
             {expanded && job.clientcompanyname && (
-              <div className="text-[11px] text-muted-foreground truncate">{job.clientcompanyname}</div>
+              <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
+                {sig?.portal_logo_url && (
+                  <img src={sig.portal_logo_url} alt="" className="h-3.5 w-3.5 rounded-sm object-contain bg-white shrink-0" />
+                )}
+                <span className="truncate">{job.clientcompanyname}</span>
+              </div>
             )}
             {shownDriver && (
               <div className="text-[11px] mt-0.5 truncate">

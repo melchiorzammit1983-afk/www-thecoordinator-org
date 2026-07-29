@@ -126,7 +126,8 @@ function PortalPage() {
             </TabsContent>
           )}
 
-          <TabsContent value="settings" className="mt-4">
+          <TabsContent value="settings" className="mt-4 space-y-4">
+            <LogoPanel token={token} portal={boot.portal} onSaved={reload} />
             <SettingsPanel token={token} portal={boot.portal} onSaved={reload} />
           </TabsContent>
         </Tabs>
@@ -838,6 +839,60 @@ function PortalStatementPanel({ token }: { token: string }) {
             <div>Revenue<div className="font-semibold text-base">€{Number(stmt.statement.totals.revenue).toFixed(2)}</div></div>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Lets the HR/corporate contact upload their own logo without needing the
+// coordinator to do it from the coordinator-side portal management page.
+// Once set, this logo shows on the passenger tracking page, the driver's
+// sign board, and as a small badge on the coordinator's trip cards.
+function LogoPanel({ token, portal, onSaved }: { token: string; portal: Boot["portal"]; onSaved: () => void }) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch(`/api/public/portal/${token}/logo`, { method: "POST", body: form });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        toast.error(j.error === "unsupported_type" ? "Use a PNG, JPG, WEBP, or SVG file" : j.error === "too_large" ? "Logo must be under 5MB" : "Upload failed");
+        return;
+      }
+      toast.success("Logo updated");
+      onSaved();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Your logo</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-3">
+          {portal.logo_url ? (
+            <img src={portal.logo_url} alt="" className="h-14 w-14 rounded object-contain bg-white border" />
+          ) : (
+            <div className="h-14 w-14 rounded border grid place-items-center text-xs text-muted-foreground">No logo</div>
+          )}
+          <div>
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+              {uploading ? "Uploading…" : portal.logo_url ? "Change logo" : "Upload logo"}
+            </Button>
+            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleUpload} />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Shown to passengers on their tracking page and to your driver on the pickup sign board.
+        </p>
       </CardContent>
     </Card>
   );
