@@ -298,6 +298,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     // Seed pax rows so the driver has verifiable slots. Combine supplied
     // pax_names + names parsed from the client field / notes, then pad
     // with "Guest N" up to pax_count.
+    let primaryPaxId: string | null = null;
     {
       const { extractPaxNames, padWithGuests } = await import("./pax-extract");
       const supplied: string[] = Array.isArray((payload as any).pax_names)
@@ -313,7 +314,13 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       const count = Math.max(1, Math.min(20, Number((payload as any).pax_count) || seed.length));
       const names = padWithGuests(seed, count);
       if (names.length) {
-        await a.from("pax").insert(names.map((name) => ({ job_id: (job as any).id, name })) as any);
+        const { data: paxRows } = await a.from("pax")
+          .insert(names.map((name) => ({ job_id: (job as any).id, name })) as any)
+          .select("id");
+        // The first pax row stands in for "the booking" when the tracking
+        // link's holder wants a private driver_client thread — one tracking
+        // link is shared by the whole booking, not per-individual-guest.
+        primaryPaxId = (paxRows as any)?.[0]?.id ?? null;
       }
     }
 
@@ -321,6 +328,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     await a.from("pax_tracking_tokens" as any).insert({
       job_id: (job as any).id,
       portal_booking_id: data.booking_id,
+      pax_id: primaryPaxId,
       phone_last4: payload.client_phone ? String(payload.client_phone).replace(/\D/g, "").slice(-4) : null,
       booking_ref: (job as any).id.slice(0, 8),
     } as any);
