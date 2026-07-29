@@ -64,6 +64,21 @@ export async function resolvePortalByToken(token: string): Promise<
   return { ok: true, portal: data as PortalCompany };
 }
 
+const CHANGE_LOCK_HOURS = 3;
+
+/**
+ * Once a driver is assigned, edit/reschedule/cancel requests (from either
+ * HR or the passenger) are locked starting `CHANGE_LOCK_HOURS` before
+ * pickup — too close to disrupt without risking the driver already being
+ * en route. Before a driver is assigned, there's nothing to disrupt yet, so
+ * requests stay open regardless of how soon pickup is.
+ */
+export function isChangeLocked(job: { driver_id: string | null; pickup_at: string | null } | null | undefined): boolean {
+  if (!job?.driver_id || !job.pickup_at) return false;
+  const hoursUntilPickup = (new Date(job.pickup_at).getTime() - Date.now()) / 3_600_000;
+  return hoursUntilPickup < CHANGE_LOCK_HOURS;
+}
+
 /** Simple per-token per-minute write cap. Returns false if over limit. */
 export async function checkRateLimit(token: string, limit = 60): Promise<boolean> {
   const admin = await getAdmin();

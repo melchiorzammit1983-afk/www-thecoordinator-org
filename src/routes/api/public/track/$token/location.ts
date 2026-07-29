@@ -9,6 +9,30 @@ import { getAdmin, checkRateLimit, verifyPaxJwt } from "@/lib/portal-token.serve
 export const Route = createFileRoute("/api/public/track/$token/location")({
   server: {
     handlers: {
+      // GET is polled by the map (when the passenger has opted in to see the
+      // driver) — only returns a point if show_driver_location is on for
+      // this token AND a driver is actually assigned.
+      GET: async ({ params, request }) => {
+        const auth = request.headers.get("authorization") ?? "";
+        const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+        const v = verifyPaxJwt(jwt);
+        if (!v || v.token !== params.token) return Response.json({ error: "unauthorized" }, { status: 401 });
+
+        const admin = await getAdmin();
+        const { data: tok } = await admin.from("pax_tracking_tokens" as any)
+          .select("job_id, show_driver_location").eq("token", params.token).maybeSingle();
+        if (!tok) return Response.json({ error: "not_found" }, { status: 404 });
+        if (!(tok as any).show_driver_location) return Response.json({ show_driver_location: false, driver: null });
+
+        const { data: job } = await admin.from("jobs").select("driver_id").eq("id", (tok as any).job_id).maybeSingle();
+        if (!(job as any)?.driver_id) return Response.json({ show_driver_location: true, driver: null });
+
+        const { data: point } = await admin.from("driver_locations")
+          .select("latitude, longitude, captured_at, heading, speed_mps")
+          .eq("job_id", (tok as any).job_id)
+          .order("captured_at", { ascending: false }).limit(1).maybeSingle();
+        return Response.json({ show_driver_location: true, driver: point ?? null });
+      },
       POST: async ({ params, request }) => {
         const auth = request.headers.get("authorization") ?? "";
         const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
