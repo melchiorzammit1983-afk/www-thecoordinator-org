@@ -229,7 +229,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if (!cid) throw new Error("no_company");
     const a = await admin();
     const { data: b } = await a.from("portal_bookings" as any)
-      .select("*, portal_companies!inner(coordinator_company_id,points_per_booking,notification_email,contact_email)")
+      .select("*, portal_companies!inner(name,coordinator_company_id,points_per_booking,notification_email,contact_email)")
       .eq("id", data.booking_id).maybeSingle();
     if (!b) throw new Error("not_found");
     if ((b as any).portal_companies.coordinator_company_id !== cid) throw new Error("forbidden");
@@ -254,7 +254,11 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       date: payload.date ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).date : new Date().toISOString().slice(0, 10)),
       time: payload.time ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).time : "12:00"),
 
-      clientcompanyname: fullName || null,
+      // The "Company" field on the trip card/sign board should identify who
+      // this trip is for (the HR/corporate account the coordinator set up),
+      // not the guest's own name — the guest already has their own name
+      // shown separately via the pax rows seeded below.
+      clientcompanyname: (b as any).portal_companies.name || null,
       from_flight: (payload.flight_number || "").toUpperCase() || null,
       flightorship: payload.flight_number || null,
       contact_phone: payload.client_phone ?? null,

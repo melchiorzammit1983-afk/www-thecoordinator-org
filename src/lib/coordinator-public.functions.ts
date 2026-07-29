@@ -2915,6 +2915,17 @@ export const getDriverSignBoard = createServerFn({ method: "GET" })
       logos.find((l) => !l.is_background) ||
       null;
 
+    // For a trip that came from an HR/corporate portal booking, prefer that
+    // account's own uploaded logo on the sign board over the coordinator's
+    // own company logo — the driver is greeting that company's guest, not
+    // the coordinator's.
+    const { data: pb } = await supabaseAdmin
+      .from("portal_bookings" as any)
+      .select("portal_companies(logo_url)")
+      .eq("job_id", data.job_id)
+      .maybeSingle();
+    const portalLogoUrl = (pb as any)?.portal_companies?.logo_url ?? null;
+
     return {
       job: {
         id: (job as any).id as string,
@@ -2925,7 +2936,7 @@ export const getDriverSignBoard = createServerFn({ method: "GET" })
       },
       board_config: (job as any).board_config ?? null,
       company_name: branding?.company_name ?? "",
-      anchor_logo_url: anchorLogo?.url ?? branding?.logo_url ?? null,
+      anchor_logo_url: portalLogoUrl ?? anchorLogo?.url ?? branding?.logo_url ?? null,
       logos,
     };
   });

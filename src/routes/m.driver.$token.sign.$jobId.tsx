@@ -93,7 +93,8 @@ function SignBoardPage() {
   const lightOverride =
     theme === "light" ? { background: "#ffffff", backgroundImage: "none" } : {};
 
-  // Landscape detection for logo-left layout (tablets held sideways)
+  // Physical device orientation (tablets held sideways get the logo-left
+  // layout "for free" without needing the CSS rotation trick below).
   const [landscape, setLandscape] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape) and (min-width: 640px)");
@@ -103,6 +104,18 @@ function SignBoardPage() {
     return () => mq.removeEventListener?.("change", apply);
   }, []);
 
+  // Force-landscape: a greeting sign is meant to be held up and read at a
+  // glance, so it defaults to landscape regardless of how the driver is
+  // holding the phone — most drivers won't think to physically rotate it.
+  // The Screen Orientation Lock API (Android Chrome, fullscreen only) does
+  // this natively when available; everywhere else (iOS Safari has no such
+  // API) we fall back to a CSS rotate-and-swap-dimensions trick that renders
+  // landscape content inside a portrait viewport without requiring the
+  // device to actually be turned.
+  const [forceLandscape, setForceLandscape] = useState(true);
+  const rotated = forceLandscape && !landscape;
+  const effectiveLandscape = landscape || rotated;
+
   // Fullscreen API on open (best-effort — iOS Safari ignores; that's fine)
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -110,7 +123,17 @@ function SignBoardPage() {
     if (!el) return;
     const req = (el as any).requestFullscreen?.bind(el) || (el as any).webkitRequestFullscreen?.bind(el);
     if (!req) return;
-    const tryEnter = () => { try { req().catch?.(() => {}); } catch { /* ignore */ } };
+    const tryEnter = () => {
+      try {
+        const p = req();
+        p?.then?.(() => {
+          // Best-effort native landscape lock — only works in fullscreen on
+          // browsers that support it (mainly Android Chrome). Failure here
+          // just means the CSS rotation fallback below keeps handling it.
+          (window.screen as any)?.orientation?.lock?.("landscape")?.catch(() => {});
+        }).catch?.(() => {});
+      } catch { /* ignore */ }
+    };
     tryEnter();
     // Retry on first user gesture (browsers require it)
     const retry = () => {
@@ -172,122 +195,160 @@ function SignBoardPage() {
         className="pointer-events-none absolute h-px w-px opacity-0"
       />
 
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 z-10">
-        <Button asChild size="sm" variant="ghost" className={iconBtnClass}>
-          <Link to="/m/driver/$token" params={{ token }}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Link>
-        </Button>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className={iconBtnClass}
-            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            aria-label="Toggle light/dark"
-          >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className={iconBtnClass}
-            onClick={() => {
-              const el = rootRef.current as any;
-              const req = el?.requestFullscreen?.bind(el) || el?.webkitRequestFullscreen?.bind(el);
-              try { req?.().catch?.(() => {}); } catch { /* ignore */ }
-            }}
-            aria-label="Fullscreen"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </Button>
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger asChild>
-              <Button size="sm" variant="ghost" className={iconBtnClass}>
-                <Settings2 className="h-4 w-4 mr-1" /> Choose
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl">
-              <SheetHeader>
-                <SheetTitle>Show on sign</SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 space-y-3">
-                <FieldRow
-                  label="Passenger name"
-                  value={job?.passenger_name}
-                  checked={selected.passenger}
-                  onChange={(v) => setSelected((s) => ({ ...s, passenger: v }))}
-                />
-                <FieldRow
-                  label="Flight number"
-                  value={job?.flight_number}
-                  checked={selected.flight}
-                  onChange={(v) => setSelected((s) => ({ ...s, flight: v }))}
-                />
-                <FieldRow
-                  label="Client company"
-                  value={job?.client_company_name}
-                  checked={selected.company}
-                  onChange={(v) => setSelected((s) => ({ ...s, company: v }))}
-                />
-                <p className="text-xs text-muted-foreground pt-2">
-                  Screen will stay awake while the sign board is open.
-                </p>
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
-      </div>
-
-      {/* Content area — portrait = logo top + text below; landscape = logo left + text right */}
+      {/*
+        When physically rotating the phone isn't an option, this inner layer
+        renders the whole UI rotated 90° inside a frame whose dimensions are
+        swapped (100vh × 100vw instead of 100vw × 100vh) — the standard
+        "force landscape in a portrait viewport" technique. The outer fixed
+        container above keeps its normal (unrotated) dimensions so fullscreen
+        and the background still fill the real screen correctly.
+      */}
       <div
-        className={`flex-1 z-10 min-h-0 px-[3vw] pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
-          landscape ? "grid grid-cols-[minmax(0,32%)_minmax(0,1fr)] items-center gap-[3vw]" : "flex flex-col"
-        }`}
-      >
-        {anchorLogo && (
-          <div
-            className={
-              landscape
-                ? "flex items-center justify-center h-full min-w-0"
-                : "flex justify-center pt-2 pb-1 shrink-0"
-            }
-          >
-            <img
-              src={anchorLogo}
-              alt={data.company_name || "Dispatcher"}
-              className={
-                landscape
-                  ? "max-h-[80vh] max-w-full w-auto object-contain drop-shadow-lg"
-                  : "h-[10vh] max-h-24 min-h-12 w-auto object-contain drop-shadow-lg"
+        className="flex flex-col overflow-hidden"
+        style={
+          rotated
+            ? {
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100vh",
+                height: "100vw",
+                transform: "rotate(90deg) translateY(-100%)",
+                transformOrigin: "top left",
               }
-            />
+            : { width: "100%", height: "100%" }
+        }
+      >
+        {/* Top bar */}
+        <div className="flex items-center justify-between px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 z-10">
+          <Button asChild size="sm" variant="ghost" className={iconBtnClass}>
+            <Link to="/m/driver/$token" params={{ token }}>
+              <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            </Link>
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className={iconBtnClass}
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label="Toggle light/dark"
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={iconBtnClass}
+              onClick={() => {
+                const el = rootRef.current as any;
+                const req = el?.requestFullscreen?.bind(el) || el?.webkitRequestFullscreen?.bind(el);
+                try { req?.().catch?.(() => {}); } catch { /* ignore */ }
+              }}
+              aria-label="Fullscreen"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+              <SheetTrigger asChild>
+                <Button size="sm" variant="ghost" className={iconBtnClass}>
+                  <Settings2 className="h-4 w-4 mr-1" /> Choose
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="rounded-t-2xl">
+                <SheetHeader>
+                  <SheetTitle>Show on sign</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 space-y-3">
+                  <FieldRow
+                    label="Passenger name"
+                    value={job?.passenger_name}
+                    checked={selected.passenger}
+                    onChange={(v) => setSelected((s) => ({ ...s, passenger: v }))}
+                  />
+                  <FieldRow
+                    label="Flight number"
+                    value={job?.flight_number}
+                    checked={selected.flight}
+                    onChange={(v) => setSelected((s) => ({ ...s, flight: v }))}
+                  />
+                  <FieldRow
+                    label="Client company"
+                    value={job?.client_company_name}
+                    checked={selected.company}
+                    onChange={(v) => setSelected((s) => ({ ...s, company: v }))}
+                  />
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/40">
+                    <Checkbox
+                      checked={forceLandscape}
+                      onCheckedChange={(v) => setForceLandscape(!!v)}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">Force landscape</div>
+                      <div className="text-sm text-muted-foreground">
+                        Keep the sign wide even if the phone is held upright.
+                      </div>
+                    </div>
+                  </label>
+                  <p className="text-xs text-muted-foreground pt-2">
+                    Screen will stay awake while the sign board is open.
+                  </p>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
-        )}
+        </div>
 
+        {/* Content area — portrait = logo top + text below; landscape = logo left + text right */}
         <div
-          className={`grid place-items-center min-w-0 ${landscape ? "h-full" : "flex-1"}`}
-          style={{ textShadow: `0 2px 8px ${themeStyle.textShadowColor}` }}
+          className={`flex-1 z-10 min-h-0 px-[3vw] pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
+            effectiveLandscape ? "grid grid-cols-[minmax(0,32%)_minmax(0,1fr)] items-center gap-[3vw]" : "flex flex-col"
+          }`}
         >
-          {lines.length === 0 ? (
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              className={`text-center ${subtleClass} text-[clamp(1rem,3vw,1.5rem)] leading-snug`}
-            >
-              Tap <span className="underline">Choose</span> to display trip info
-            </button>
-          ) : (
+          {anchorLogo && (
             <div
-              className="grid gap-[2vh] w-full text-center font-bold tracking-tight leading-[1.05]"
-              style={{ gridAutoRows: "1fr" }}
+              className={
+                effectiveLandscape
+                  ? "flex items-center justify-center h-full min-w-0"
+                  : "flex justify-center pt-2 pb-1 shrink-0"
+              }
             >
-              {lines.map((text, i) => (
-                <AutoScaleLine key={i} text={text} totalLines={lines.length} landscape={landscape} />
-              ))}
+              <img
+                src={anchorLogo}
+                alt={data.company_name || "Dispatcher"}
+                className={
+                  effectiveLandscape
+                    ? "max-h-[80vh] max-w-full w-auto object-contain drop-shadow-lg"
+                    : "h-[10vh] max-h-24 min-h-12 w-auto object-contain drop-shadow-lg"
+                }
+              />
             </div>
           )}
+
+          <div
+            className={`grid place-items-center min-w-0 ${effectiveLandscape ? "h-full" : "flex-1"}`}
+            style={{ textShadow: `0 2px 8px ${themeStyle.textShadowColor}` }}
+          >
+            {lines.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => setSheetOpen(true)}
+                className={`text-center ${subtleClass} text-[clamp(1rem,3vw,1.5rem)] leading-snug`}
+              >
+                Tap <span className="underline">Choose</span> to display trip info
+              </button>
+            ) : (
+              <div
+                className="grid gap-[2vh] w-full text-center font-bold tracking-tight leading-[1.05]"
+                style={{ gridAutoRows: "1fr" }}
+              >
+                {lines.map((text, i) => (
+                  <AutoScaleLine key={i} text={text} totalLines={lines.length} landscape={effectiveLandscape} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
