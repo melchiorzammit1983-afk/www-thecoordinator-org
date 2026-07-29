@@ -1688,15 +1688,20 @@ function PendingPortalBookings() {
   const acceptFn = useServerFn(acceptPortalBooking);
   const rejectFn = useServerFn(rejectPortalBooking);
   const qc = useQueryClient();
+  const [prices, setPrices] = useState<Record<string, string>>({});
   const { data } = useQuery({
     queryKey: ["portal-bookings", "pending"],
     queryFn: () => listFn({ data: { status: "pending" } }) as Promise<any[]>,
     refetchInterval: 20_000,
   });
   const acceptMut = useMutation({
-    mutationFn: (id: string) => acceptFn({ data: { booking_id: id } }),
-    onSuccess: () => {
+    mutationFn: ({ id, price }: { id: string; price: string }) => {
+      const agreed_price = price.trim() ? Number(price) : undefined;
+      return acceptFn({ data: { booking_id: id, ...(agreed_price != null && !isNaN(agreed_price) ? { agreed_price } : {}) } });
+    },
+    onSuccess: (_r, { id }) => {
       toast.success("Approved — moved to Unassigned");
+      setPrices((p) => { const next = { ...p }; delete next[id]; return next; });
       qc.invalidateQueries({ queryKey: ["portal-bookings"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
@@ -1772,12 +1777,23 @@ function PendingPortalBookings() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 mt-2">
+            <div className="flex items-center gap-1.5 mt-2">
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="€ price"
+                className="h-8 text-xs"
+                value={prices[b.id] ?? ""}
+                onChange={(e) => setPrices((p) => ({ ...p, [b.id]: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
               <Button
                 size="sm"
                 className="h-8 text-xs w-full"
                 disabled={acceptMut.isPending}
-                onClick={() => acceptMut.mutate(b.id)}
+                onClick={() => acceptMut.mutate({ id: b.id, price: prices[b.id] ?? "" })}
               >
                 Approve
               </Button>

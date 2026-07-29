@@ -10,7 +10,7 @@ import {
 } from "@/lib/coordinator.functions";
 import {
   listPortals, createPortal, updatePortal, rotatePortalToken, deletePortal,
-  checkSlugAvailable, slugify,
+  checkSlugAvailable, slugify, generatePortalStatement,
 } from "@/lib/portal.functions";
 import {
   listPublicPortals, createPublicPortal, updatePublicPortal,
@@ -28,8 +28,11 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Copy, Trash2, Link2, Clock, MessageCircle, Power, PowerOff, RotateCw,
-  Image as ImageIcon, ExternalLink,
+  Image as ImageIcon, ExternalLink, Receipt,
 } from "lucide-react";
 
 const PORTAL_KIND_LABELS: Record<string, string> = {
@@ -581,6 +584,7 @@ function CompanyRow({ portal }: { portal: any }) {
         <Button size="icon" variant="ghost" title="Share on WhatsApp" onClick={shareOnWhatsApp}>
           <MessageCircle className="h-3.5 w-3.5" />
         </Button>
+        <StatementDialogButton portalId={portal.id} portalName={portal.name} />
         <LogoUploadButton portalId={portal.id} onDone={invalidate} />
         <Button size="icon" variant="ghost" title="Set expiry" onClick={promptExpiry}>
           <Clock className="h-3.5 w-3.5" />
@@ -600,6 +604,73 @@ function CompanyRow({ portal }: { portal: any }) {
         </Button>
       </TableCell>
     </TableRow>
+  );
+}
+
+function StatementDialogButton({ portalId, portalName }: { portalId: string; portalName: string }) {
+  const genFn = useServerFn(generatePortalStatement);
+  const [open, setOpen] = useState(false);
+  const [start, setStart] = useState(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [stmt, setStmt] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const r = await genFn({ data: {
+        portal_id: portalId,
+        period_start: new Date(start).toISOString(),
+        period_end: new Date(`${end}T23:59:59`).toISOString(),
+      } });
+      setStmt(r);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to generate statement");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function downloadCsv() {
+    if (!stmt?.rows) return;
+    const header = "date,guest,from,to,status,agreed_price\n";
+    const rows = stmt.rows.map((row: any) => [
+      new Date(row.created_at).toISOString(), `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
+      row.payload?.from_location, row.payload?.to_location, row.status, row.agreed_price ?? "",
+    ].map((v: any) => `"${String(v ?? "").replace(/"/g, "''")}"`).join(",")).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `statement_${start}_${end}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setStmt(null); }}>
+      <DialogTrigger asChild>
+        <Button size="icon" variant="ghost" title="Statement">
+          <Receipt className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Statement — {portalName}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div><Label className="text-xs">From</Label><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+            <div><Label className="text-xs">To</Label><Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+            <Button onClick={generate} disabled={busy}>Generate</Button>
+            {stmt && <Button variant="outline" onClick={downloadCsv}>Download CSV</Button>}
+          </div>
+          {stmt && (
+            <div className="text-sm grid grid-cols-2 gap-3">
+              <div>Bookings<div className="font-semibold text-base">{stmt.statement.totals.bookings_count}</div></div>
+              <div>Accepted<div className="font-semibold text-base">{stmt.statement.totals.accepted}</div></div>
+              <div>Cancelled<div className="font-semibold text-base">{stmt.statement.totals.cancelled}</div></div>
+              <div>Revenue<div className="font-semibold text-base">€{Number(stmt.statement.totals.revenue).toFixed(2)}</div></div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
