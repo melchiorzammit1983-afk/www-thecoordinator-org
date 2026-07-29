@@ -38,6 +38,53 @@ function portalKindLabel(kind: string): string {
   return PORTAL_KIND_LABELS[kind] ?? kind;
 }
 
+// Trimmed local copy of the coordinator's event palette — portal only ever
+// sees the movement/boarding subset the trip-location endpoint returns
+// (server-side allowlist), and deliberately doesn't import the coordinator's
+// TripEventsMap metadata (that file pulls in pin-editing machinery that must
+// stay coordinator-only).
+const PORTAL_EVENT_META: Record<string, { label: string; color: string }> = {
+  en_route: { label: "On the way", color: "#0ea5e9" },
+  arrived_pickup: { label: "Arrived at pickup", color: "#22c55e" },
+  in_progress: { label: "Passenger on board", color: "#3b82f6" },
+  completed: { label: "Trip completed", color: "#8b5cf6" },
+  actual_dropoff: { label: "Actual drop-off", color: "#ef4444" },
+  pax_boarded: { label: "Passenger boarded", color: "#16a34a" },
+  boarding_approved: { label: "Boarding approved", color: "#22c55e" },
+  boarding_rejected: { label: "Boarding rejected", color: "#dc2626" },
+  pax_no_show: { label: "Passenger no-show", color: "#94a3b8" },
+  pax_cancelled: { label: "Passenger cancelled", color: "#94a3b8" },
+};
+
+function isFinishedJob(job: any): boolean {
+  return job?.status === "completed" || job?.status === "cancelled";
+}
+
+// Local duplicate of the stage list used on the passenger tracking page
+// (src/routes/track.$token.tsx) — trimmed to the stages a portal-accepted
+// trip (job already created) can actually be in.
+const TRIP_STAGES = ["active", "en_route", "arrived", "in_progress", "completed"] as const;
+const TRIP_STAGE_LABELS: Record<string, string> = {
+  active: "Confirmed", en_route: "En route", arrived: "Arrived", in_progress: "On trip", completed: "Completed",
+};
+
+function TripStatusTimeline({ current }: { current: string | undefined }) {
+  if (current === "cancelled") {
+    return <div className="text-xs font-medium text-muted-foreground">Trip cancelled</div>;
+  }
+  const idx = Math.max(0, TRIP_STAGES.findIndex((s) => s === current));
+  return (
+    <div className="space-y-1">
+      {TRIP_STAGES.map((s, i) => (
+        <div key={s} className="flex items-center gap-2 text-xs">
+          <div className={`h-2 w-2 rounded-full ${i <= idx ? "bg-primary" : "bg-muted"}`} />
+          <span className={i === idx ? "font-semibold" : i < idx ? "" : "text-muted-foreground"}>{TRIP_STAGE_LABELS[s]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type Boot = {
   portal: { id: string; name: string; kind: string; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string; link_expires_at: string | null };
   bookings: any[];
@@ -503,6 +550,9 @@ function TripsList({ token, bookings, jobs, onChanged }: { token: string; bookin
       {accepted.length === 0 && <p className="text-sm text-muted-foreground">No accepted trips yet.</p>}
       {accepted.map((b) => {
         const job = jobs.find((j) => j.id === b.job_id);
+        if (isFinishedJob(job)) {
+          return <CompletedTripStrip key={b.id} booking={b} job={job} onOpen={() => setOpenId(b.id)} />;
+        }
         const names = Array.isArray(b.payload?.pax_names) && b.payload.pax_names.length
           ? b.payload.pax_names.join(", ")
           : `${b.payload?.name ?? ""} ${b.payload?.surname ?? ""}`.trim();
@@ -547,6 +597,7 @@ function TripsList({ token, bookings, jobs, onChanged }: { token: string; bookin
                   <div>Driver: {openJob.drivers.name} · {openJob.drivers.car_make_model} · {openJob.drivers.plate}</div>
                 )}
                 {openBooking.payload?.notes && <div className="italic text-muted-foreground">"{openBooking.payload.notes}"</div>}
+                <TripStatusTimeline current={openJob?.status} />
               </div>
               <AddPassengerForm token={token} booking={openBooking} onAdded={onChanged} />
               <TripLiveMap token={token} jobId={openBooking.job_id} />
@@ -605,6 +656,36 @@ function AddPassengerForm({ token, booking, onAdded }: { token: string; booking:
   );
 }
 
+// Collapsed one-line row for a finished trip, mirroring the coordinator
+// dispatch board's CompletedStrip pattern — the detail Dialog itself keeps
+// everything (map switches to replay, per TripLiveMap), only the list row
+// collapses.
+function CompletedTripStrip({ booking: b, job, onOpen }: { booking: any; job: any; onOpen: () => void }) {
+  const cancelled = job?.status === "cancelled";
+  const paxCount = Number(b.payload?.pax_count) || (Array.isArray(b.payload?.pax_names) ? b.payload.pax_names.length : 1);
+  const driverFirst = job?.drivers?.name ? String(job.drivers.name).split(" ")[0] : null;
+  return (
+    <div
+      onClick={onOpen}
+      className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs cursor-pointer hover:bg-muted/40 ${
+        cancelled
+          ? "border-muted bg-muted/30 text-muted-foreground line-through"
+          : "border-emerald-500/30 bg-emerald-500/5 text-muted-foreground"
+      }`}
+    >
+      <span className="font-medium text-foreground shrink-0">
+        {job?.pickup_at ? new Date(job.pickup_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+      </span>
+      <span className="truncate flex-1">{b.payload?.from_location} → {b.payload?.to_location}</span>
+      {driverFirst && <span className="truncate shrink-0">· {driverFirst}</span>}
+      <span className="shrink-0">· {paxCount} pax</span>
+      <Badge variant="outline" className="text-[9px] py-0 px-1 shrink-0">{cancelled ? "Cancelled" : "Done"}</Badge>
+    </div>
+  );
+}
+
+type TripLocationEvent = { id: string; event_type: string; lat: number | null; lng: number | null; occurred_at: string; notes: string | null };
+
 type TripLocationData = {
   driver: { latitude: number; longitude: number; captured_at: string } | null;
   breadcrumb: Array<{ lat: number; lng: number; t: string }>;
@@ -613,6 +694,7 @@ type TripLocationData = {
   eta_sec: number | null;
   eta_updated_at: string | null;
   job_status: string | null;
+  events: TripLocationEvent[];
 };
 
 function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
@@ -622,20 +704,28 @@ function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
   const pickupMarkerRef = useRef<any>(null);
   const dropoffMarkerRef = useRef<any>(null);
   const trackLineRef = useRef<any>(null);
+  const eventMarkersRef = useRef<any[]>([]);
   const [data, setData] = useState<TripLocationData | null>(null);
+
+  const isLive = data?.job_status !== "completed" && data?.job_status !== "cancelled";
 
   useEffect(() => {
     let stopped = false;
+    let timer: number | undefined;
     async function poll() {
       try {
         const r = await fetch(`/api/public/portal/${token}/trip-location?job_id=${jobId}`);
         if (!r.ok || stopped) return;
-        setData(await r.json());
-      } catch { /* keep last known data */ }
+        const j: TripLocationData = await r.json();
+        setData(j);
+        const finished = j.job_status === "completed" || j.job_status === "cancelled";
+        if (!finished && !stopped) timer = window.setTimeout(poll, 15_000);
+      } catch { /* keep last known data, try again next tick */
+        if (!stopped) timer = window.setTimeout(poll, 15_000);
+      }
     }
     poll();
-    const t = window.setInterval(poll, 15_000);
-    return () => { stopped = true; window.clearInterval(t); };
+    return () => { stopped = true; if (timer) window.clearTimeout(timer); };
   }, [token, jobId]);
 
   const hasAnyPoint = !!(data?.driver || data?.pickup || data?.dropoff);
@@ -692,6 +782,31 @@ function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
         }
       }
 
+      for (const m of eventMarkersRef.current) {
+        try { m.setMap(null); } catch { /* noop */ }
+      }
+      eventMarkersRef.current = [];
+      for (const ev of data.events ?? []) {
+        if (ev.lat == null || ev.lng == null) continue;
+        const meta = PORTAL_EVENT_META[ev.event_type];
+        const pos = { lat: Number(ev.lat), lng: Number(ev.lng) };
+        const marker = new maps.Marker({
+          map,
+          position: pos,
+          icon: {
+            path: maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: meta?.color ?? "#64748b",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 1.5,
+          },
+          title: `${meta?.label ?? ev.event_type} · ${new Date(ev.occurred_at).toLocaleTimeString()}`,
+        });
+        eventMarkersRef.current.push(marker);
+        bounds.extend(pos);
+      }
+
       if (!bounds.isEmpty()) {
         if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
           map.setCenter(bounds.getCenter());
@@ -717,6 +832,7 @@ function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
   const eta = formatEta(data.eta_sec);
   return (
     <div className="mt-2">
+      <div className="text-[10px] text-muted-foreground mb-1">Trip map · {isLive ? "live" : "replay"}</div>
       <div ref={mapDivRef} className="h-56 w-full rounded border" />
       <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground flex-wrap">
         {eta && <span className="font-semibold text-foreground">ETA {eta}</span>}
