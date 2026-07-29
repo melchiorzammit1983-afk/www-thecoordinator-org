@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import { flightFormatWarning } from "@/lib/flight-code";
 import { AlertTriangle, Download } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
+import { loadGoogleMaps } from "@/lib/load-google-maps";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -58,7 +59,11 @@ function PortalPage() {
     setErr(null);
     setBoot(await r.json());
   }
-  useEffect(() => { reload(); }, [token]);
+  useEffect(() => {
+    reload();
+    const refresh = window.setInterval(reload, 20_000);
+    return () => window.clearInterval(refresh);
+  }, [token]);
 
   if (err) return <OfflineCard reason={err} />;
   if (!boot) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
@@ -99,7 +104,7 @@ function PortalPage() {
           </TabsContent>
 
           <TabsContent value="trips" className="mt-4">
-            <TripsList bookings={boot.bookings} jobs={boot.jobs} />
+            <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} />
           </TabsContent>
 
           <TabsContent value="crew" className="mt-4">
@@ -486,19 +491,33 @@ function PaxLinkButton({ bookingId, token }: { bookingId: string; token: string 
   );
 }
 
-function TripsList({ bookings, jobs }: { bookings: any[]; jobs: any[] }) {
+function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; jobs: any[] }) {
   const accepted = bookings.filter((b) => b.status === "accepted" && b.job_id);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openBooking = accepted.find((b) => b.id === openId) ?? null;
+  const openJob = openBooking ? jobs.find((j) => j.id === openBooking.job_id) : null;
   return (
     <div className="space-y-2">
       {accepted.length === 0 && <p className="text-sm text-muted-foreground">No accepted trips yet.</p>}
       {accepted.map((b) => {
         const job = jobs.find((j) => j.id === b.job_id);
+        const names = Array.isArray(b.payload?.pax_names) && b.payload.pax_names.length
+          ? b.payload.pax_names.join(", ")
+          : `${b.payload?.name ?? ""} ${b.payload?.surname ?? ""}`.trim();
         return (
-          <Card key={b.id}>
+          <Card key={b.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpenId(b.id)}>
             <CardContent className="p-4">
-              <div className="font-medium">{b.payload?.name} {b.payload?.surname}</div>
+              <div className="font-medium">
+                {names || "Guest"}
+                {Number(b.payload?.pax_count) > 1 && (
+                  <span className="text-xs text-muted-foreground font-normal"> · {b.payload.pax_count} pax</span>
+                )}
+              </div>
               <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
-              <div className="text-xs mt-1">Status: {job?.status ?? "—"} {job?.pickup_at && `· ${new Date(job.pickup_at).toLocaleString()}`}</div>
+              <div className="text-xs mt-1">
+                Status: {job?.status ?? "—"} {job?.pickup_at && `· ${new Date(job.pickup_at).toLocaleString()}`}
+                {job?.status === "arrived" && <span className="ml-1 font-semibold text-amber-700">· Driver waiting</span>}
+              </div>
               {job?.drivers && (
                 <div className="text-xs mt-1">Driver: {String(job.drivers.name || "").split(" ")[0]} · {job.drivers.car_make_model} · {job.drivers.plate}</div>
               )}
@@ -506,6 +525,89 @@ function TripsList({ bookings, jobs }: { bookings: any[]; jobs: any[] }) {
           </Card>
         );
       })}
+
+      <Dialog open={!!openBooking} onOpenChange={(v) => !v && setOpenId(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          {openBooking && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {Array.isArray(openBooking.payload?.pax_names) && openBooking.payload.pax_names.length
+                    ? openBooking.payload.pax_names.join(", ")
+                    : `${openBooking.payload?.name ?? ""} ${openBooking.payload?.surname ?? ""}`.trim() || "Trip"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2 text-sm">
+                <div className="text-muted-foreground">{openBooking.payload?.from_location} → {openBooking.payload?.to_location}</div>
+                <div>{openJob?.pickup_at ? new Date(openJob.pickup_at).toLocaleString() : "—"}</div>
+                <div>Status: {openJob?.status ?? "—"} {openJob?.status === "arrived" && <span className="font-semibold text-amber-700">· Driver waiting</span>}</div>
+                {openJob?.drivers && (
+                  <div>Driver: {openJob.drivers.name} · {openJob.drivers.car_make_model} · {openJob.drivers.plate}</div>
+                )}
+                {openBooking.payload?.notes && <div className="italic text-muted-foreground">"{openBooking.payload.notes}"</div>}
+              </div>
+              <TripLiveMap token={token} jobId={openBooking.job_id} />
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
+  const mapDivRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const [point, setPoint] = useState<any | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stopped = false;
+    async function poll() {
+      try {
+        const r = await fetch(`/api/public/portal/${token}/trip-location?job_id=${jobId}`);
+        if (!r.ok || stopped) return;
+        const j = await r.json();
+        setPoint(j.driver ?? null);
+        setStatus(j.job_status ?? null);
+      } catch { /* keep last known point */ }
+    }
+    poll();
+    const t = window.setInterval(poll, 15_000);
+    return () => { stopped = true; window.clearInterval(t); };
+  }, [token, jobId]);
+
+  useEffect(() => {
+    if (!point || !mapDivRef.current) return;
+    let cancelled = false;
+    loadGoogleMaps().then((maps) => {
+      if (cancelled || !mapDivRef.current) return;
+      const pos = { lat: point.latitude, lng: point.longitude };
+      if (!mapRef.current) {
+        mapRef.current = new maps.Map(mapDivRef.current, { center: pos, zoom: 14, disableDefaultUI: true, zoomControl: true });
+        markerRef.current = new maps.Marker({ position: pos, map: mapRef.current, title: "Driver" });
+      } else {
+        mapRef.current.panTo(pos);
+        markerRef.current.setPosition(pos);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [point]);
+
+  if (!point) {
+    return (
+      <div className="text-xs text-muted-foreground mt-2">
+        {status === "arrived" || status === "en_route" || status === "in_progress"
+          ? "Waiting for the driver's live position…"
+          : "Live map will appear once the driver is on the way."}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2">
+      <div ref={mapDivRef} className="h-56 w-full rounded border" />
+      <div className="text-[10px] text-muted-foreground mt-1">Updated {new Date(point.captured_at).toLocaleTimeString()}</div>
     </div>
   );
 }

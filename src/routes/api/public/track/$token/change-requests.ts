@@ -1,32 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { resolvePortalByToken, checkRateLimit, getAdmin, isChangeLocked } from "@/lib/portal-token.server";
+import { getAdmin, checkRateLimit, verifyPaxJwt, isChangeLocked } from "@/lib/portal-token.server";
 
-export const Route = createFileRoute("/api/public/portal/$token/change-requests")({
+/**
+ * Passenger-initiated edit/reschedule/cancel on their own portal booking.
+ * Reuses the exact same portal_change_requests → decideChangeRequest
+ * pipeline the HR side already uses (change-requests.ts under
+ * /api/public/portal/$token/) — every request still needs the
+ * coordinator's approval before anything actually changes. Locked once a
+ * driver is assigned and pickup is within the 3-hour cutoff.
+ */
+export const Route = createFileRoute("/api/public/track/$token/change-requests")({
   server: {
     handlers: {
       POST: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
-        if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
+        const auth = request.headers.get("authorization") ?? "";
+        const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+        const v = verifyPaxJwt(jwt);
+        if (!v || v.token !== params.token) return Response.json({ error: "unauthorized" }, { status: 401 });
         if (!(await checkRateLimit(params.token))) return Response.json({ error: "rate_limited" }, { status: 429 });
 
         const body = await request.json().catch(() => ({}));
         const parsed = z.object({
-          booking_id: z.string().uuid(),
           kind: z.enum(["edit", "cancel", "reschedule"]),
           requested_changes: z.record(z.string(), z.any()).optional(),
         }).safeParse(body);
         if (!parsed.success) return Response.json({ error: "bad_input" }, { status: 400 });
 
         const admin = await getAdmin();
-        // verify the booking belongs to this portal, and isn't already
-        // mid-review or in a final state (can't request a change on a
-        // booking that's already rejected/cancelled, or has another change
-        // request pending).
+        const { data: tok } = await admin.from("pax_tracking_tokens" as any)
+          .select("job_id, portal_booking_id").eq("token", params.token).maybeSingle();
+        if (!tok || !(tok as any).portal_booking_id) return Response.json({ error: "not_found" }, { status: 404 });
+
         const { data: b } = await admin.from("portal_bookings" as any)
-          .select("id, job_id, portal_company_id, status").eq("id", parsed.data.booking_id).maybeSingle();
-        if (!b || (b as any).portal_company_id !== r.portal.id)
-          return Response.json({ error: "not_found" }, { status: 404 });
+          .select("id, job_id, status").eq("id", (tok as any).portal_booking_id).maybeSingle();
+        if (!b) return Response.json({ error: "not_found" }, { status: 404 });
         if (!["pending", "accepted"].includes((b as any).status))
           return Response.json({ error: "not_editable" }, { status: 409 });
 
@@ -36,7 +44,7 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
         }
 
         const { error } = await admin.from("portal_change_requests" as any).insert({
-          portal_booking_id: parsed.data.booking_id,
+          portal_booking_id: (b as any).id,
           job_id: (b as any).job_id,
           kind: parsed.data.kind,
           requested_changes: parsed.data.requested_changes ?? {},
@@ -44,7 +52,7 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
         if (error) return Response.json({ error: error.message }, { status: 500 });
 
         await admin.from("portal_bookings" as any)
-          .update({ status: "change_requested" } as any).eq("id", parsed.data.booking_id);
+          .update({ status: "change_requested" } as any).eq("id", (b as any).id);
         return Response.json({ ok: true });
       },
     },

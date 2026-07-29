@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { getAdmin } from "@/lib/portal-token.server";
+import { getAdmin, isChangeLocked } from "@/lib/portal-token.server";
 
 /**
  * GET /api/public/track/$token — public read of the passenger tracking page.
@@ -57,6 +57,9 @@ export const Route = createFileRoute("/api/public/track/$token/")({
           from: (job as any).from_location,
           to: (job as any).to_location,
           driver,
+          waiting: (job as any).status === "arrived",
+          edits_locked: isChangeLocked(job as any),
+          has_portal_booking: !!(tok as any).portal_booking_id,
           support_phone: coordinatorCompany?.operations_phone ?? null,
           show_driver_location: (tok as any).show_driver_location === true,
           passenger: pax ? { name: (pax as any).name } : null,
