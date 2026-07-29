@@ -16,6 +16,7 @@ import { AddressAutocomplete, type AddressPick } from "@/components/address/Addr
 import { flightFormatWarning } from "@/lib/flight-code";
 import { AlertTriangle, Download } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
+import { splitPaxNames } from "@/lib/split-pax-names";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -165,7 +166,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
   const [f, setF] = useState({
     name: "", surname: "", client_phone: "", client_email: "",
     pickup_at: "", room_number: "",
-    flight_number: "", pax_count: "1", notes: "",
+    flight_number: "", pax_count: "1", notes: "", extra_pax: "",
   });
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
@@ -174,9 +175,12 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
 
   async function submit() {
     setBusy(true);
+    const primary = `${f.name.trim()} ${f.surname.trim()}`.trim();
+    const paxNames = [primary, ...splitPaxNames(f.extra_pax)].filter(Boolean);
     const body = {
       name: f.name.trim() || null,
       surname: f.surname.trim() || null,
+      pax_names: paxNames.length ? paxNames : null,
       client_phone: f.client_phone.trim() || null,
       client_email: f.client_email.trim() || null,
       room_number: f.room_number.trim() || null,
@@ -190,7 +194,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       to_place_id: toPick.place_id,
       to_lat: toPick.lat,
       to_lng: toPick.lng,
-      pax_count: Number(f.pax_count) || 1,
+      pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
     const r = await fetch(`/api/public/portal/${token}/bookings`, {
@@ -199,7 +203,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
     setBusy(false);
     if (!r.ok) { toast.error("Failed to submit"); return; }
     toast.success("Booking submitted — awaiting coordinator approval");
-    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", pax_count: "1", notes: "" });
+    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", pax_count: "1", notes: "", extra_pax: "" });
     setFromPick({ address: "", place_id: null, lat: null, lng: null });
     setToPick({ address: "", place_id: null, lat: null, lng: null });
     onCreated();
@@ -231,6 +235,11 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
           {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
         </Field>
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
+        <div className="md:col-span-2">
+          <Field label="Additional passengers (comma-separated, optional)">
+            <Input value={f.extra_pax} onChange={(e) => setF({ ...f, extra_pax: e.target.value })} placeholder="Maria Rossi, Ali Hassan" />
+          </Field>
+        </div>
         <div className="md:col-span-2"><Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field></div>
         <div className="md:col-span-2 flex justify-end">
           <Button onClick={submit} disabled={busy || !fromPick.address || !toPick.address}>Submit for approval</Button>
@@ -299,6 +308,9 @@ function BookingCard({ booking: b, job, token, onChanged }: { booking: any; job:
       <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="font-medium">{b.payload?.name} {b.payload?.surname} <span className="text-xs text-muted-foreground">· {b.payload?.pax_count ?? 1} pax</span></div>
+          {Array.isArray(b.payload?.pax_names) && b.payload.pax_names.length > 1 && (
+            <div className="text-xs text-muted-foreground">{b.payload.pax_names.join(", ")}</div>
+          )}
           <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
           <div className="text-xs mt-1">{b.payload?.pickup_at ? new Date(b.payload.pickup_at).toLocaleString() : "—"}</div>
           {b.status === "accepted" && b.agreed_price != null && (
@@ -332,6 +344,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
     client_phone: payload.client_phone ?? "", client_email: payload.client_email ?? "",
     room_number: payload.room_number ?? "", flight_number: payload.flight_number ?? "",
     pax_count: String(payload.pax_count ?? 1), notes: payload.notes ?? "",
+    extra_pax: Array.isArray(payload.pax_names) ? payload.pax_names.slice(1).join(", ") : "",
   });
   const [fromPick, setFromPick] = useState<AddressPick>({
     address: payload.from_location ?? "", place_id: payload.from_place_id ?? null,
@@ -352,6 +365,11 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
   async function submitChange() {
     setBusy(true);
     try {
+      const primaryName = isPending
+        ? `${form.name.trim()} ${form.surname.trim()}`.trim()
+        : `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
+      const paxNames = [primaryName, ...splitPaxNames(form.extra_pax)].filter(Boolean);
+      const paxCount = Math.max(Number(form.pax_count) || 1, paxNames.length || 1);
       const requestedChanges: Record<string, unknown> = isPending
         ? {
             name: form.name.trim() || null, surname: form.surname.trim() || null,
@@ -360,11 +378,14 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             to_location: toPick.address, to_place_id: toPick.place_id, to_lat: toPick.lat, to_lng: toPick.lng,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             room_number: form.room_number.trim() || null, flight_number: form.flight_number.trim() || null,
-            pax_count: Number(form.pax_count) || 1, notes: form.notes.trim() || null,
+            pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
+            notes: form.notes.trim() || null,
           }
         : {
             from_location: fromPick.address, to_location: toPick.address,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
+            pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
+            notes: form.notes.trim() || null,
           };
       const r = await fetch(`/api/public/portal/${token}/change-requests`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -414,10 +435,13 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
               <>
                 <Field label="Room"><Input value={form.room_number} onChange={(e) => setForm({ ...form, room_number: e.target.value })} /></Field>
                 <Field label="Flight"><Input value={form.flight_number} onChange={(e) => setForm({ ...form, flight_number: e.target.value })} /></Field>
-                <Field label="Pax"><Input type="number" min={1} value={form.pax_count} onChange={(e) => setForm({ ...form, pax_count: e.target.value })} /></Field>
-                <div className="md:col-span-2"><Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field></div>
               </>
             )}
+            <Field label="Pax"><Input type="number" min={1} value={form.pax_count} onChange={(e) => setForm({ ...form, pax_count: e.target.value })} /></Field>
+            <Field label="Additional passengers (comma-separated, optional)">
+              <Input value={form.extra_pax} onChange={(e) => setForm({ ...form, extra_pax: e.target.value })} placeholder="Maria Rossi, Ali Hassan" />
+            </Field>
+            <div className="md:col-span-2"><Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field></div>
           </div>
           <div className="flex justify-end mt-3">
             <Button onClick={submitChange} disabled={busy}>Submit for approval</Button>
@@ -567,7 +591,10 @@ function PortalStatementPanel({ token }: { token: string }) {
     if (!stmt?.rows) return;
     const header = "date,guest,from,to,status,agreed_price\n";
     const rows = stmt.rows.map((row: any) => [
-      new Date(row.created_at).toISOString(), `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
+      new Date(row.created_at).toISOString(),
+      Array.isArray(row.payload?.pax_names) && row.payload.pax_names.length
+        ? row.payload.pax_names.join(", ")
+        : `${row.payload?.name ?? ""} ${row.payload?.surname ?? ""}`,
       row.payload?.from_location, row.payload?.to_location, row.status, row.agreed_price ?? "",
     ].map((v: any) => `"${String(v ?? "").replace(/"/g, "''")}"`).join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });

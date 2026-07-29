@@ -92,6 +92,9 @@ function BookingsInbox({ portalId }: { portalId: string }) {
           <CardContent className="p-4 flex items-start justify-between gap-3 flex-wrap">
             <div>
               <div className="font-medium">{b.payload?.name} {b.payload?.surname} <span className="text-xs text-muted-foreground">· {b.payload?.pax_count ?? 1} pax</span></div>
+              {Array.isArray(b.payload?.pax_names) && b.payload.pax_names.length > 1 && (
+                <div className="text-xs text-muted-foreground">{b.payload.pax_names.join(", ")}</div>
+              )}
               <div className="text-sm">{b.payload?.from_location} → {b.payload?.to_location}</div>
               <div className="text-xs mt-1">{b.payload?.pickup_at ? new Date(b.payload.pickup_at).toLocaleString() : "—"} · {b.payload?.room_number ? `Room ${b.payload.room_number} · ` : ""}{b.payload?.flight_number ?? ""}</div>
               <div className="text-xs text-muted-foreground mt-1">Booked by: {b.created_by_name || b.created_by_email || "hotel staff"}</div>
@@ -158,7 +161,10 @@ function StatementPanel({ portalId }: { portalId: string }) {
     if (!stmt?.rows) return;
     const header = "date,guest,from,to,status,agreed_price\n";
     const rows = stmt.rows.map((r: any) => [
-      new Date(r.created_at).toISOString(), `${r.payload?.name ?? ""} ${r.payload?.surname ?? ""}`,
+      new Date(r.created_at).toISOString(),
+      Array.isArray(r.payload?.pax_names) && r.payload.pax_names.length
+        ? r.payload.pax_names.join(", ")
+        : `${r.payload?.name ?? ""} ${r.payload?.surname ?? ""}`,
       r.payload?.from_location, r.payload?.to_location, r.status, r.agreed_price ?? "",
     ].map((v: any) => `"${String(v ?? "").replace(/"/g, "''")}"`).join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });

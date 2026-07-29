@@ -10,6 +10,7 @@ import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
 import { fileToSheetTsv } from "@/lib/sheet-template";
 import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
+import { splitPaxNames } from "@/lib/split-pax-names";
 
 type GridRow = {
   name: string;
@@ -48,9 +49,15 @@ const COLUMN_KEYS = [
 type ColumnKey = (typeof COLUMN_KEYS)[number];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
-  name: "Name", phone: "Phone", email: "Email", from: "From", to: "To",
+  name: "Passenger(s)", phone: "Phone", email: "Email", from: "From", to: "To",
   pickupAt: "Pickup date & time", room: "Room", flight: "Flight", pax: "Pax", notes: "Notes",
 };
+
+// Free-text columns where a comma is ordinary punctuation (an address, a
+// list of passenger names, a notes sentence) rather than a spreadsheet
+// column separator — a single-cell paste into these must never get
+// shredded across cells just because it contains a comma.
+const FREE_TEXT_COLS = new Set<ColumnKey>(["from", "to", "name", "notes"]);
 
 function rowHasAnyData(r: GridRow): boolean {
   return !!(r.name || r.phone || r.email || r.from || r.to || r.pickupAt || r.room || r.flight || r.notes.trim());
@@ -133,14 +140,15 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
     if (!text) return;
     const hasTab = text.includes("\t");
     const hasNewline = /\r\n|\r|\n/.test(text.trim());
-    // A comma alone doesn't imply a multi-cell paste when the target is an
-    // address column — a single street address routinely contains commas
-    // ("123 Main St, Valletta, Malta") and must paste as one value, not get
+    // A comma alone doesn't imply a multi-cell paste when the target is a
+    // free-text column — an address ("123 Main St, Valletta, Malta"), a
+    // passenger list ("John Smith, Maria Rossi"), or a notes sentence
+    // routinely contains commas and must paste as one value, not get
     // shredded across cells. Tab and newline are unambiguous (Excel/Sheets
     // always uses them for column/row breaks), so those always win.
     const startCol = COLUMN_KEYS[colIndex];
-    const isAddressCol = startCol === "from" || startCol === "to";
-    const looksMultiCell = hasTab || hasNewline || (text.includes(",") && !isAddressCol);
+    const isFreeTextCol = FREE_TEXT_COLS.has(startCol);
+    const looksMultiCell = hasTab || hasNewline || (text.includes(",") && !isFreeTextCol);
     if (!looksMultiCell) return; // let the browser handle a plain single-cell paste
     e.preventDefault();
     e.stopPropagation();
@@ -148,9 +156,10 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
     setRows((prev) => {
       const next = [...prev];
       lines.forEach((line, li) => {
-        // Same address-column guard as above, applied per line: a multi-row
-        // paste of one address per line must not get comma-shredded either.
-        const cells = line.includes("\t") ? line.split("\t") : isAddressCol ? [line] : line.split(",");
+        // Same free-text-column guard as above, applied per line: a
+        // multi-row paste of one address/passenger-list per line must not
+        // get comma-shredded either.
+        const cells = line.includes("\t") ? line.split("\t") : isFreeTextCol ? [line] : line.split(",");
         const targetRow = rowIndex + li;
         while (next.length <= targetRow) next.push(emptyRow());
         let row = { ...next[targetRow] };
@@ -179,10 +188,16 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
     setBusy(true);
     try {
       const bookings = fillable.map((r) => {
-        const [first, ...rest] = r.name.trim().split(/\s+/).filter(Boolean);
+        // "Passenger(s)" accepts one name or several (comma/semicolon/"&"/
+        // "and"-separated) — the first is used for name/surname display
+        // fields, the full list is carried separately so every guest gets a
+        // real name instead of "Guest 2"/"Guest 3" placeholders.
+        const paxNames = splitPaxNames(r.name);
+        const [first, ...rest] = (paxNames[0] ?? "").split(/\s+/).filter(Boolean);
         return {
           name: first || null,
           surname: rest.join(" ") || null,
+          pax_names: paxNames.length ? paxNames : null,
           client_phone: r.phone.trim() || null,
           client_email: r.email.trim() || null,
           from_location: r.from.trim(),
@@ -196,7 +211,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           pickup_at: r.pickupAt ? new Date(r.pickupAt).toISOString() : null,
           room_number: r.room.trim() || null,
           flight_number: r.flight.trim() || null,
-          pax_count: Number(r.pax) || 1,
+          pax_count: Math.max(Number(r.pax) || 1, paxNames.length || 1),
           notes: r.notes.trim() || null,
         };
       });
@@ -223,6 +238,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           Fill in rows below, paste tab/comma-separated data copied straight from Excel or Google Sheets, or
           download a template, fill it offline, and upload it back
           (columns: {COLUMN_KEYS.map((k) => COLUMN_LABELS[k]).join(", ")}).
+          For a group on one booking, list everyone in Passenger(s), e.g. "John Smith, Maria Rossi" — Pax
+          auto-adjusts to match, or bump it higher to add unnamed extra seats.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button variant="outline" size="sm" onClick={downloadBookingExcelTemplate}>
@@ -301,6 +318,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                         )}
                         {(key === "name" || key === "phone" || key === "email" || key === "room" || key === "notes") && (
                           <Input className="h-8 text-xs" value={row[key]}
+                            placeholder={key === "name" ? "John Smith, Maria Rossi" : undefined}
                             onChange={(e) => updateRow(ri, { [key]: e.target.value } as Partial<GridRow>)} />
                         )}
                         {key === "flight" && flightWarning && (

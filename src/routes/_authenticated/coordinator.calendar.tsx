@@ -1757,7 +1757,17 @@ function PendingPortalBookings() {
                     Pending
                   </Badge>
                 </div>
-                <div className="font-medium text-sm mt-1 truncate">{fullName}</div>
+                <div className="font-medium text-sm mt-1 truncate">
+                  {fullName}
+                  {Number(payload.pax_count) > 1 && (
+                    <span className="text-xs text-muted-foreground font-normal"> · {payload.pax_count} pax</span>
+                  )}
+                </div>
+                {Array.isArray(payload.pax_names) && payload.pax_names.length > 1 && (
+                  <div className="text-[11px] text-muted-foreground truncate" title={payload.pax_names.join(", ")}>
+                    {payload.pax_names.join(", ")}
+                  </div>
+                )}
                 <div className="text-xs mt-0.5 truncate">
                   {payload.from_location} → {payload.to_location}
                 </div>
@@ -1775,8 +1785,17 @@ function PendingPortalBookings() {
                     </div>
                   );
                 })()}
-                {payload.flight_number && (
-                  <div className="text-[11px] text-muted-foreground truncate">✈ {payload.flight_number}</div>
+                {(payload.flight_number || payload.room_number) && (
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {payload.flight_number && <>✈ {payload.flight_number}</>}
+                    {payload.flight_number && payload.room_number && " · "}
+                    {payload.room_number && <>Room {payload.room_number}</>}
+                  </div>
+                )}
+                {payload.notes && (
+                  <div className="text-[11px] mt-1 italic text-muted-foreground truncate" title={payload.notes}>
+                    "{payload.notes}"
+                  </div>
                 )}
               </div>
             </div>

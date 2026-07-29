@@ -21,6 +21,10 @@ const BookingInput = z.object({
   room_number: z.string().max(40).nullable().optional(),
   flight_number: z.string().max(20).nullable().optional(),
   pax_count: z.number().int().min(1).max(200).nullable().optional(),
+  // Named passengers for this booking (Corporate/Agent/Hotel bookings often
+  // carry more than one guest). acceptPortalBooking already prioritises this
+  // over pax_count-only placeholders when seeding the job's `pax` rows.
+  pax_names: z.array(z.string().trim().min(1).max(120)).max(20).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   agreed_price: z.number().min(0).nullable().optional(),
   currency: z.string().max(6).nullable().optional(),
