@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Download, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
+import { fileToSheetTsv } from "@/lib/sheet-template";
+import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
 
 type GridRow = {
   name: string;
@@ -81,6 +83,38 @@ function applyCellValue(row: GridRow, key: ColumnKey, raw: string): GridRow {
 export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated: () => void }) {
   const [rows, setRows] = useState<GridRow[]>([emptyRow(), emptyRow(), emptyRow()]);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  // A batch groups everything submitted together (for display on the
+  // Bookings tab below) — kept in state so submitting the grid again before
+  // any of these rows are reviewed appends to the same batch instead of
+  // starting a new one. The server has the final say (it silently starts a
+  // fresh batch if this one's already been touched by the coordinator).
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const tsv = await fileToSheetTsv(file);
+      const parsed = parseBookingSheet(tsv);
+      if (!parsed.length) { toast.error("Couldn't find any rows in that file"); return; }
+      const newRows: GridRow[] = parsed.map((p) => ({
+        name: p.name, phone: p.phone, email: p.email,
+        from: p.from, fromPlaceId: null, fromLat: null, fromLng: null,
+        to: p.to, toPlaceId: null, toLat: null, toLng: null,
+        pickupAt: p.pickupAt, room: p.room, flight: p.flight, pax: p.pax, notes: p.notes,
+      }));
+      setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
+      toast.success(`Added ${newRows.length} row${newRows.length === 1 ? "" : "s"} from ${file.name}`);
+    } catch {
+      toast.error("Couldn't read that file — check it's a .xlsx, .xls, or .csv");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function updateRow(index: number, patch: Partial<GridRow>) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -168,9 +202,11 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       });
       const res = await fetch(`/api/public/portal/${token}/bookings`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookings }),
+        body: JSON.stringify({ bookings, batch_id: batchId ?? undefined }),
       });
       if (!res.ok) { toast.error("Failed to submit"); return; }
+      const result = await res.json();
+      setBatchId(result.batch_id ?? null);
       toast.success(`${bookings.length} booking${bookings.length === 1 ? "" : "s"} submitted — awaiting coordinator approval`);
       setRows([emptyRow(), emptyRow(), emptyRow()]);
       onCreated();
@@ -184,9 +220,27 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       <CardHeader>
         <CardTitle className="text-base">Bulk booking entry</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Fill in rows below, or paste tab/comma-separated data copied straight from Excel or Google Sheets
+          Fill in rows below, paste tab/comma-separated data copied straight from Excel or Google Sheets, or
+          download a template, fill it offline, and upload it back
           (columns: {COLUMN_KEYS.map((k) => COLUMN_LABELS[k]).join(", ")}).
         </p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button variant="outline" size="sm" onClick={downloadBookingExcelTemplate}>
+            <Download className="h-3.5 w-3.5 mr-1" /> Template (.xlsx)
+          </Button>
+          <Button variant="outline" size="sm" onClick={downloadBookingCsvTemplate}>
+            <Download className="h-3.5 w-3.5 mr-1" /> Template (.csv)
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            <Upload className="h-3.5 w-3.5 mr-1" /> {uploading ? "Reading…" : "Upload filled sheet"}
+          </Button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
+          {batchId && (
+            <Button variant="ghost" size="sm" onClick={() => setBatchId(null)} title="Next submit will start a fresh batch instead of adding to the last one">
+              Start new batch
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="overflow-x-auto rounded-md border">

@@ -382,14 +382,32 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
     const a = await admin();
     const { data: cr } = await a.from("portal_change_requests" as any).select("*").eq("id", data.id).maybeSingle();
     if (!cr) throw new Error("not_found");
-    if (data.decision === "approved" && (cr as any).job_id) {
+    const bookingId = (cr as any).portal_booking_id as string;
+    const hasJob = !!(cr as any).job_id;
+
+    if (data.decision === "approved") {
       const changes = (cr as any).requested_changes ?? {};
       if ((cr as any).kind === "cancel") {
-        await a.from("jobs").update({ status: "cancelled" } as any).eq("id", (cr as any).job_id);
-      } else {
+        if (hasJob) await a.from("jobs").update({ status: "cancelled" } as any).eq("id", (cr as any).job_id);
+        await a.from("portal_bookings" as any).update({ status: "cancelled" } as any).eq("id", bookingId);
+      } else if (hasJob) {
         await a.from("jobs").update(changes as any).eq("id", (cr as any).job_id);
+        await a.from("portal_bookings" as any).update({ status: "accepted" } as any).eq("id", bookingId);
+      } else {
+        // The booking never became a job yet (still pending when the edit
+        // was requested) — merge the edits into its payload and put it back
+        // in the coordinator's normal approval queue.
+        const { data: booking } = await a.from("portal_bookings" as any).select("payload").eq("id", bookingId).maybeSingle();
+        const mergedPayload = { ...((booking as any)?.payload ?? {}), ...changes };
+        await a.from("portal_bookings" as any).update({ payload: mergedPayload, status: "pending" } as any).eq("id", bookingId);
       }
+    } else {
+      // Rejected — put the booking back where it was before the change was
+      // requested. Only two prior states are possible here: accepted (had a
+      // job already) or still pending.
+      await a.from("portal_bookings" as any).update({ status: hasJob ? "accepted" : "pending" } as any).eq("id", bookingId);
     }
+
     await context.supabase.from("portal_change_requests" as any)
       .update({ status: data.decision, decided_by: context.userId, decided_at: new Date().toISOString() } as any)
       .eq("id", data.id);

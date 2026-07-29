@@ -63,6 +63,8 @@ import {
   acceptPortalBooking,
   rejectPortalBooking,
   getPortalSettings,
+  listChangeRequests,
+  decideChangeRequest,
 } from "@/lib/portal.functions";
 import {
   displayLocation,
@@ -1673,6 +1675,7 @@ function UnassignedColumn({ jobs, ctx }: { jobs: Job[]; ctx: CardCtx }) {
       <SelectAllInLane jobs={jobs} ctx={ctx} />
       <div className="space-y-2">
         <PendingPortalBookings />
+        <PendingChangeRequests />
         {jobs.length === 0 && (
           <div className="text-xs text-muted-foreground py-6 text-center">Everything is assigned</div>
         )}
@@ -1804,6 +1807,72 @@ function PendingPortalBookings() {
                 disabled={rejectMut.isPending}
                 onClick={() => rejectMut.mutate(b.id)}
               >
+                Reject
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Portal-submitted edit/cancel requests (BookingActions in portal.$token.tsx)
+// land here for approval — same live-board home as PendingPortalBookings, so
+// the coordinator has one place to check instead of the orphaned legacy
+// per-portal page this used to only be reachable from.
+function PendingChangeRequests() {
+  const listFn = useServerFn(listChangeRequests);
+  const decideFn = useServerFn(decideChangeRequest);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["portal-change-requests", "pending"],
+    queryFn: () => listFn() as Promise<any[]>,
+    refetchInterval: 20_000,
+  });
+  const decideMut = useMutation({
+    mutationFn: (v: { id: string; decision: "approved" | "rejected" }) => decideFn({ data: v }),
+    onSuccess: () => {
+      toast.success("Decision recorded");
+      qc.invalidateQueries({ queryKey: ["portal-change-requests"] });
+      qc.invalidateQueries({ queryKey: ["portal-bookings"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {rows.map((cr: any) => {
+        const payload = cr.portal_bookings?.payload ?? {};
+        const portalName = cr.portal_bookings?.portal_companies?.name ?? "Portal";
+        const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim() || "Guest";
+        const changes = cr.requested_changes ?? {};
+        return (
+          <div key={cr.id} className="rounded-md border bg-card p-2.5" style={{ boxShadow: "inset 4px 0 0 hsl(217 91% 60%)" }}>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-700">
+                {portalName}
+              </span>
+              <Badge variant="secondary" className="text-[10px] capitalize">{cr.kind} requested</Badge>
+            </div>
+            <div className="font-medium text-sm mt-1">{fullName}</div>
+            <div className="text-xs text-muted-foreground truncate">{payload.from_location} → {payload.to_location}</div>
+            {cr.kind !== "cancel" && Object.keys(changes).length > 0 && (
+              <div className="text-[11px] mt-1.5 bg-muted rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                {Object.entries(changes).map(([k, v]) => (
+                  <div key={k}><span className="text-muted-foreground">{k}:</span> {String(v ?? "—")}</div>
+                ))}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
+              <Button size="sm" className="h-8 text-xs w-full" disabled={decideMut.isPending}
+                onClick={() => decideMut.mutate({ id: cr.id, decision: "approved" })}>
+                Approve
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs w-full" disabled={decideMut.isPending}
+                onClick={() => decideMut.mutate({ id: cr.id, decision: "rejected" })}>
                 Reject
               </Button>
             </div>

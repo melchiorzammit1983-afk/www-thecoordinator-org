@@ -7,13 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { CrewManagementPanel } from "@/components/portal/CrewManagementPanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
+import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -92,7 +94,7 @@ function PortalPage() {
 
           <TabsContent value="bookings" className="mt-4 space-y-4">
             <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />
-            <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} />
+            <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />
           </TabsContent>
 
           <TabsContent value="trips" className="mt-4">
@@ -242,31 +244,187 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (<div><Label className="text-xs">{label}</Label>{children}</div>);
 }
 
-function BookingsList({ bookings, jobs, token }: { bookings: any[]; jobs: any[]; token: string }) {
+// Consecutive bookings sharing a batch_id (i.e. submitted together in one
+// grid/upload) are grouped for display; bookings with no batch_id (or where
+// the batch got interrupted by something else in the sort order) each get
+// their own singleton "group" and render exactly as before.
+function groupBookings(bookings: any[]): { batchId: string | null; items: any[] }[] {
+  const groups: { batchId: string | null; items: any[] }[] = [];
+  for (const b of bookings) {
+    const bid = b.batch_id ?? null;
+    const last = groups[groups.length - 1];
+    if (last && bid !== null && last.batchId === bid) last.items.push(b);
+    else groups.push({ batchId: bid, items: [b] });
+  }
+  return groups;
+}
+
+function BookingsList({ bookings, jobs, token, onChanged }: { bookings: any[]; jobs: any[]; token: string; onChanged: () => void }) {
+  const groups = groupBookings(bookings);
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Your bookings</h3>
+        {bookings.length > 0 && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => downloadBookingsStatusExcel(bookings, jobs)}>
+              <Download className="h-3.5 w-3.5 mr-1" /> Status (.xlsx)
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => downloadBookingsStatusCsv(bookings, jobs)}>
+              <Download className="h-3.5 w-3.5 mr-1" /> Status (.csv)
+            </Button>
+          </div>
+        )}
+      </div>
       {bookings.length === 0 && <p className="text-sm text-muted-foreground">No bookings yet.</p>}
-      {bookings.map((b) => {
-        const job = jobs.find((j) => j.id === b.job_id);
-        return (
-          <Card key={b.id}>
-            <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <div className="font-medium">{b.payload?.name} {b.payload?.surname} <span className="text-xs text-muted-foreground">· {b.payload?.pax_count ?? 1} pax</span></div>
-                <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
-                <div className="text-xs mt-1">{b.payload?.pickup_at ? new Date(b.payload.pickup_at).toLocaleString() : "—"}</div>
-                {b.status === "accepted" && b.agreed_price != null && (
-                  <div className="text-xs mt-1 font-medium">{b.currency ?? "EUR"} {Number(b.agreed_price).toFixed(2)}</div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={b.status} />
-                {job && b.status === "accepted" && <PaxLinkButton bookingId={b.id} token={token} />}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
+      {groups.map((g, gi) => (
+        g.items.length > 1 ? (
+          <div key={gi} className="rounded-lg border border-dashed p-2 space-y-2">
+            <div className="text-xs text-muted-foreground px-1">Batch of {g.items.length}</div>
+            {g.items.map((b) => (
+              <BookingCard key={b.id} booking={b} job={jobs.find((j) => j.id === b.job_id)} token={token} onChanged={onChanged} />
+            ))}
+          </div>
+        ) : (
+          <BookingCard key={g.items[0].id} booking={g.items[0]} job={jobs.find((j) => j.id === g.items[0].job_id)} token={token} onChanged={onChanged} />
+        )
+      ))}
+    </div>
+  );
+}
+
+function BookingCard({ booking: b, job, token, onChanged }: { booking: any; job: any; token: string; onChanged: () => void }) {
+  return (
+    <Card>
+      <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-medium">{b.payload?.name} {b.payload?.surname} <span className="text-xs text-muted-foreground">· {b.payload?.pax_count ?? 1} pax</span></div>
+          <div className="text-sm text-muted-foreground">{b.payload?.from_location} → {b.payload?.to_location}</div>
+          <div className="text-xs mt-1">{b.payload?.pickup_at ? new Date(b.payload.pickup_at).toLocaleString() : "—"}</div>
+          {b.status === "accepted" && b.agreed_price != null && (
+            <div className="text-xs mt-1 font-medium">{b.currency ?? "EUR"} {Number(b.agreed_price).toFixed(2)}</div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusBadge status={b.status} />
+          {job && b.status === "accepted" && <PaxLinkButton bookingId={b.id} token={token} />}
+          <BookingActions booking={b} token={token} onChanged={onChanged} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Edit/cancel a booking you submitted. Every change goes through the
+// coordinator's approval — this never edits the booking directly, it files
+// a portal_change_requests row (same mechanism the coordinator already uses
+// for accepted-booking edits, extended here to also cover still-pending
+// bookings, and given an actual UI for the first time).
+function BookingActions({ booking, token, onChanged }: { booking: any; token: string; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const payload = booking.payload ?? {};
+  const isPending = booking.status === "pending";
+  const isAccepted = booking.status === "accepted";
+
+  const [form, setForm] = useState({
+    name: payload.name ?? "", surname: payload.surname ?? "",
+    client_phone: payload.client_phone ?? "", client_email: payload.client_email ?? "",
+    room_number: payload.room_number ?? "", flight_number: payload.flight_number ?? "",
+    pax_count: String(payload.pax_count ?? 1), notes: payload.notes ?? "",
+  });
+  const [fromPick, setFromPick] = useState<AddressPick>({
+    address: payload.from_location ?? "", place_id: payload.from_place_id ?? null,
+    lat: payload.from_lat ?? null, lng: payload.from_lng ?? null,
+  });
+  const [toPick, setToPick] = useState<AddressPick>({
+    address: payload.to_location ?? "", place_id: payload.to_place_id ?? null,
+    lat: payload.to_lat ?? null, lng: payload.to_lng ?? null,
+  });
+  const [pickupAt, setPickupAt] = useState(payload.pickup_at ? new Date(payload.pickup_at).toISOString().slice(0, 16) : "");
+
+  if (!isPending && !isAccepted) {
+    return booking.status === "change_requested"
+      ? <span className="text-[11px] text-muted-foreground">Change requested — awaiting coordinator</span>
+      : null;
+  }
+
+  async function submitChange() {
+    setBusy(true);
+    try {
+      const requestedChanges: Record<string, unknown> = isPending
+        ? {
+            name: form.name.trim() || null, surname: form.surname.trim() || null,
+            client_phone: form.client_phone.trim() || null, client_email: form.client_email.trim() || null,
+            from_location: fromPick.address, from_place_id: fromPick.place_id, from_lat: fromPick.lat, from_lng: fromPick.lng,
+            to_location: toPick.address, to_place_id: toPick.place_id, to_lat: toPick.lat, to_lng: toPick.lng,
+            pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
+            room_number: form.room_number.trim() || null, flight_number: form.flight_number.trim() || null,
+            pax_count: Number(form.pax_count) || 1, notes: form.notes.trim() || null,
+          }
+        : {
+            from_location: fromPick.address, to_location: toPick.address,
+            pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
+          };
+      const r = await fetch(`/api/public/portal/${token}/change-requests`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ booking_id: booking.id, kind: isPending ? "edit" : "reschedule", requested_changes: requestedChanges }),
+      });
+      if (!r.ok) { toast.error("Failed to submit change request"); return; }
+      toast.success("Change requested — awaiting coordinator approval");
+      setOpen(false);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelBooking() {
+    if (!confirm("Request cancellation of this booking?")) return;
+    const r = await fetch(`/api/public/portal/${token}/change-requests`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ booking_id: booking.id, kind: "cancel" }),
+    });
+    if (!r.ok) { toast.error("Failed to request cancellation"); return; }
+    toast.success("Cancellation requested — awaiting coordinator approval");
+    onChanged();
+  }
+
+  return (
+    <div className="flex gap-1">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline">{isPending ? "Edit" : "Request change"}</Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{isPending ? "Edit booking" : "Request a change"}</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {isPending && (
+              <>
+                <Field label="Guest first name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+                <Field label="Guest last name"><Input value={form.surname} onChange={(e) => setForm({ ...form, surname: e.target.value })} /></Field>
+                <Field label="Guest phone"><Input value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} /></Field>
+                <Field label="Guest email"><Input value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
+              </>
+            )}
+            <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+            <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+            <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
+            {isPending && (
+              <>
+                <Field label="Room"><Input value={form.room_number} onChange={(e) => setForm({ ...form, room_number: e.target.value })} /></Field>
+                <Field label="Flight"><Input value={form.flight_number} onChange={(e) => setForm({ ...form, flight_number: e.target.value })} /></Field>
+                <Field label="Pax"><Input type="number" min={1} value={form.pax_count} onChange={(e) => setForm({ ...form, pax_count: e.target.value })} /></Field>
+                <div className="md:col-span-2"><Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field></div>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end mt-3">
+            <Button onClick={submitChange} disabled={busy}>Submit for approval</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Button size="sm" variant="ghost" className="text-destructive" onClick={cancelBooking}>Cancel</Button>
     </div>
   );
 }
