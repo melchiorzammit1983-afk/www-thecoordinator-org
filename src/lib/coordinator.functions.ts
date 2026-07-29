@@ -811,6 +811,9 @@ export const createJob = createServerFn({ method: "POST" })
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
     await spendSoft(c.id, "trip_created", "Trip created", row.id);
+    if (data.from_flight || data.to_flight) {
+      applyLiveStatusToJobBg(row.id as string);
+    }
     // Auto-estimate the fare from company pricing + service areas. Route
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
@@ -2461,6 +2464,9 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         if (pErr) throw new Error(pErr.message);
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
+      if (t.from_flight || t.to_flight) {
+        applyLiveStatusToJobBg(job.id as string);
+      }
       if (isHalfPrice) {
         // Bypass spendSoft (which uses default pricing) so we can apply the
         // 50% cost_override. Still never throws — metering must not break saves.
@@ -2517,7 +2523,7 @@ const LIVE_STATUS_TTL_MS = 20 * 60_000;
 // Keep the domain fields and deterministic status handling, but block all
 // provider calls until a dedicated transport-data provider is integrated.
 function liveStatusProviderEnabled(): boolean {
-  return false;
+  return true;
 }
 // Cache window for the manual-refresh meter: within this window the refresh
 // button is free (already-paid cached answer).
@@ -2940,6 +2946,49 @@ export async function applyLiveStatusToJob(
     .eq("id", job.id);
 
   return { ...result, status, note };
+}
+
+/**
+ * Fire-and-forget flight/vessel lookup for a freshly created trip. Never
+ * throws — trip creation must never fail because of this. Spends the same
+ * meter as a manual refresh, and refunds automatically if the lookup did
+ * not succeed (no charge for failures on our side).
+ */
+export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
+  try {
+    if (!liveStatusProviderEnabled()) return;
+    const supabaseAdmin = await getAdminClient();
+    const { data: job } = await supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, status",
+      )
+      .eq("id", jobId)
+      .maybeSingle();
+    if (!job) return;
+    const code = (job as any).from_flight || (job as any).to_flight;
+    if (!code) return;
+    if ((job as any).status === "completed" || (job as any).status === "cancelled") return;
+
+    const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
+    const companyId = (job as any).company_id as string;
+
+    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
+      _company_id: companyId,
+      _feature_key: meterKey,
+      _job_id: jobId,
+      _note: "flight/vessel lookup (on trip creation)",
+      _cost_override: undefined as unknown as number,
+    });
+    if (spendErr) return; // out of points / disabled — skip silently, never block trip creation
+
+    const result = await applyLiveStatusToJob(supabaseAdmin, job as any);
+    if (!result.ok) {
+      await refundPoints(companyId, meterKey, "creation lookup failed", jobId);
+    }
+  } catch {
+    // best-effort — never let a flight lookup break trip creation
+  }
 }
 
 // Lightweight "fix this flight code" endpoint — used by the calendar's flight
@@ -5843,7 +5892,7 @@ async function spendOrThrow(companyId: string, featureKey: string, note: string,
 
 // Best-effort refund when a paid AI call fails after metering. Uses spend_points
 // with a negative _cost_override; if the RPC rejects negatives, we swallow and log.
-async function refundPoints(companyId: string, featureKey: string, note: string, jobId?: string) {
+export async function refundPoints(companyId: string, featureKey: string, note: string, jobId?: string) {
   try {
     const sb = await getAdminClient();
     const { data: costRow } = await sb
