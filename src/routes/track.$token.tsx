@@ -283,7 +283,8 @@ function ClientChangeRequestForm({ token, jwt, boot, onDone }: { token: string; 
         body: JSON.stringify({
           kind: "reschedule",
           requested_changes: {
-            from_location: fromPick.address, to_location: toPick.address,
+            from_location: fromPick.address, from_lat: fromPick.lat, from_lng: fromPick.lng,
+            to_location: toPick.address, to_lat: toPick.lat, to_lng: toPick.lng,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
           },
         }),

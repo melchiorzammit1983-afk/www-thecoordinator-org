@@ -244,6 +244,12 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       executor_company_id: cid,
       from_location: payload.from_location,
       to_location: payload.to_location,
+      pickup_lat: payload.from_lat ?? null,
+      pickup_lng: payload.from_lng ?? null,
+      pickup_display_name: payload.from_location ?? null,
+      dropoff_lat: payload.to_lat ?? null,
+      dropoff_lng: payload.to_lng ?? null,
+      dropoff_display_name: payload.to_location ?? null,
       pickup_at: payload.pickup_at ?? null,
       date: payload.date ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).date : new Date().toISOString().slice(0, 10)),
       time: payload.time ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).time : "12:00"),
@@ -403,14 +409,25 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
         // passenger counts/names live on portal_bookings.payload and the
         // `pax` table respectively (jobs has no notes or pax_count column;
         // real passenger count is however many `pax` rows exist).
-        const { from_location, to_location, pickup_at, notes, pax_names, pax_count } = changes as {
+        const {
+          from_location, to_location, pickup_at, notes, pax_names, pax_count,
+          from_lat, from_lng, to_lat, to_lng,
+        } = changes as {
           from_location?: string; to_location?: string; pickup_at?: string | null;
           notes?: string | null; pax_names?: string[] | null; pax_count?: number | null;
+          from_lat?: number | null; from_lng?: number | null; to_lat?: number | null; to_lng?: number | null;
         };
         const jobPatch: Record<string, unknown> = {};
-        if (from_location != null) jobPatch.from_location = from_location;
-        if (to_location != null) jobPatch.to_location = to_location;
+        if (from_location != null) { jobPatch.from_location = from_location; jobPatch.pickup_display_name = from_location; }
+        if (to_location != null) { jobPatch.to_location = to_location; jobPatch.dropoff_display_name = to_location; }
         if (pickup_at !== undefined) jobPatch.pickup_at = pickup_at;
+        // Refresh the map pins whenever the address actually changed —
+        // otherwise a reschedule would silently leave stale pickup/dropoff
+        // pins pointing at the old address while the text label updates.
+        if (from_lat !== undefined) jobPatch.pickup_lat = from_lat;
+        if (from_lng !== undefined) jobPatch.pickup_lng = from_lng;
+        if (to_lat !== undefined) jobPatch.dropoff_lat = to_lat;
+        if (to_lng !== undefined) jobPatch.dropoff_lng = to_lng;
         if (Object.keys(jobPatch).length) {
           await a.from("jobs").update(jobPatch as any).eq("id", (cr as any).job_id);
         }

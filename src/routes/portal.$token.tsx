@@ -18,6 +18,7 @@ import { AlertTriangle, Download } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { loadGoogleMaps } from "@/lib/load-google-maps";
+import { formatEta } from "@/lib/trip-display";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -104,7 +105,7 @@ function PortalPage() {
           </TabsContent>
 
           <TabsContent value="trips" className="mt-4">
-            <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} />
+            <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} onChanged={reload} />
           </TabsContent>
 
           <TabsContent value="crew" className="mt-4">
@@ -387,7 +388,8 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             notes: form.notes.trim() || null,
           }
         : {
-            from_location: fromPick.address, to_location: toPick.address,
+            from_location: fromPick.address, from_lat: fromPick.lat, from_lng: fromPick.lng,
+            to_location: toPick.address, to_lat: toPick.lat, to_lng: toPick.lng,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
             notes: form.notes.trim() || null,
@@ -491,7 +493,7 @@ function PaxLinkButton({ bookingId, token }: { bookingId: string; token: string 
   );
 }
 
-function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; jobs: any[] }) {
+function TripsList({ token, bookings, jobs, onChanged }: { token: string; bookings: any[]; jobs: any[]; onChanged: () => void }) {
   const accepted = bookings.filter((b) => b.status === "accepted" && b.job_id);
   const [openId, setOpenId] = useState<string | null>(null);
   const openBooking = accepted.find((b) => b.id === openId) ?? null;
@@ -546,6 +548,7 @@ function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; 
                 )}
                 {openBooking.payload?.notes && <div className="italic text-muted-foreground">"{openBooking.payload.notes}"</div>}
               </div>
+              <AddPassengerForm token={token} booking={openBooking} onAdded={onChanged} />
               <TripLiveMap token={token} jobId={openBooking.job_id} />
             </>
           )}
@@ -555,12 +558,71 @@ function TripsList({ token, bookings, jobs }: { token: string; bookings: any[]; 
   );
 }
 
+// Add one more named passenger to an already-accepted trip, right from the
+// map detail view. Goes through the same portal_change_requests →
+// decideChangeRequest pipeline as "Request change" on the Bookings tab
+// (accepted-booking pax_names/pax_count path) — the coordinator still
+// approves it before the extra pax row is seeded on the job.
+function AddPassengerForm({ token, booking, onAdded }: { token: string; booking: any; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const existingNames: string[] = Array.isArray(booking.payload?.pax_names) && booking.payload.pax_names.length
+    ? booking.payload.pax_names
+    : [`${booking.payload?.name ?? ""} ${booking.payload?.surname ?? ""}`.trim()].filter(Boolean);
+
+  if (booking.status !== "accepted") return null;
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    try {
+      const paxNames = [...existingNames, trimmed];
+      const r = await fetch(`/api/public/portal/${token}/change-requests`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking_id: booking.id, kind: "reschedule",
+          requested_changes: { pax_names: paxNames, pax_count: paxNames.length },
+        }),
+      });
+      if (!r.ok) { toast.error("Failed to request adding this passenger"); return; }
+      toast.success("Requested — awaiting coordinator approval");
+      setName("");
+      onAdded();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-2 border rounded p-2">
+      <div className="flex-1">
+        <Label className="text-xs">Add a passenger to this trip</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" onKeyDown={(e) => e.key === "Enter" && submit()} />
+      </div>
+      <Button size="sm" onClick={submit} disabled={busy || !name.trim()}>Request</Button>
+    </div>
+  );
+}
+
+type TripLocationData = {
+  driver: { latitude: number; longitude: number; captured_at: string } | null;
+  breadcrumb: Array<{ lat: number; lng: number; t: string }>;
+  pickup: { lat: number; lng: number; label: string | null } | null;
+  dropoff: { lat: number; lng: number; label: string | null } | null;
+  eta_sec: number | null;
+  eta_updated_at: string | null;
+  job_status: string | null;
+};
+
 function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
-  const [point, setPoint] = useState<any | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const driverMarkerRef = useRef<any>(null);
+  const pickupMarkerRef = useRef<any>(null);
+  const dropoffMarkerRef = useRef<any>(null);
+  const trackLineRef = useRef<any>(null);
+  const [data, setData] = useState<TripLocationData | null>(null);
 
   useEffect(() => {
     let stopped = false;
@@ -568,46 +630,99 @@ function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
       try {
         const r = await fetch(`/api/public/portal/${token}/trip-location?job_id=${jobId}`);
         if (!r.ok || stopped) return;
-        const j = await r.json();
-        setPoint(j.driver ?? null);
-        setStatus(j.job_status ?? null);
-      } catch { /* keep last known point */ }
+        setData(await r.json());
+      } catch { /* keep last known data */ }
     }
     poll();
     const t = window.setInterval(poll, 15_000);
     return () => { stopped = true; window.clearInterval(t); };
   }, [token, jobId]);
 
+  const hasAnyPoint = !!(data?.driver || data?.pickup || data?.dropoff);
+
   useEffect(() => {
-    if (!point || !mapDivRef.current) return;
+    if (!data || !hasAnyPoint || !mapDivRef.current) return;
     let cancelled = false;
     loadGoogleMaps().then((maps) => {
       if (cancelled || !mapDivRef.current) return;
-      const pos = { lat: point.latitude, lng: point.longitude };
       if (!mapRef.current) {
-        mapRef.current = new maps.Map(mapDivRef.current, { center: pos, zoom: 14, disableDefaultUI: true, zoomControl: true });
-        markerRef.current = new maps.Marker({ position: pos, map: mapRef.current, title: "Driver" });
-      } else {
-        mapRef.current.panTo(pos);
-        markerRef.current.setPosition(pos);
+        mapRef.current = new maps.Map(mapDivRef.current, { zoom: 13, disableDefaultUI: true, zoomControl: true });
+      }
+      const map = mapRef.current;
+      const bounds = new maps.LatLngBounds();
+
+      if (data.pickup) {
+        const pos = { lat: data.pickup.lat, lng: data.pickup.lng };
+        bounds.extend(pos);
+        const icon = { path: maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#16a34a", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 };
+        if (!pickupMarkerRef.current) {
+          pickupMarkerRef.current = new maps.Marker({ position: pos, map, icon, title: `Pickup: ${data.pickup.label ?? ""}` });
+        } else {
+          pickupMarkerRef.current.setPosition(pos);
+        }
+      }
+      if (data.dropoff) {
+        const pos = { lat: data.dropoff.lat, lng: data.dropoff.lng };
+        bounds.extend(pos);
+        const icon = { path: maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#dc2626", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 };
+        if (!dropoffMarkerRef.current) {
+          dropoffMarkerRef.current = new maps.Marker({ position: pos, map, icon, title: `Drop-off: ${data.dropoff.label ?? ""}` });
+        } else {
+          dropoffMarkerRef.current.setPosition(pos);
+        }
+      }
+      if (data.breadcrumb.length > 1) {
+        const path = data.breadcrumb.map((p) => ({ lat: p.lat, lng: p.lng }));
+        if (!trackLineRef.current) {
+          trackLineRef.current = new maps.Polyline({
+            path, map, strokeColor: "#2563eb", strokeOpacity: 0.85, strokeWeight: 3,
+          });
+        } else {
+          trackLineRef.current.setPath(path);
+        }
+      }
+      if (data.driver) {
+        const pos = { lat: data.driver.latitude, lng: data.driver.longitude };
+        bounds.extend(pos);
+        const icon = { path: maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#2563eb", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 3 };
+        if (!driverMarkerRef.current) {
+          driverMarkerRef.current = new maps.Marker({ position: pos, map, icon, title: "Driver", zIndex: 999 });
+        } else {
+          driverMarkerRef.current.setPosition(pos);
+        }
+      }
+
+      if (!bounds.isEmpty()) {
+        if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+          map.setCenter(bounds.getCenter());
+          if ((map.getZoom() ?? 0) < 13) map.setZoom(14);
+        } else {
+          map.fitBounds(bounds, 40);
+        }
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [point]);
+  }, [data, hasAnyPoint]);
 
-  if (!point) {
+  if (!data) return null;
+  if (!hasAnyPoint) {
     return (
       <div className="text-xs text-muted-foreground mt-2">
-        {status === "arrived" || status === "en_route" || status === "in_progress"
+        {data.job_status === "arrived" || data.job_status === "en_route" || data.job_status === "in_progress"
           ? "Waiting for the driver's live position…"
           : "Live map will appear once the driver is on the way."}
       </div>
     );
   }
+  const eta = formatEta(data.eta_sec);
   return (
     <div className="mt-2">
       <div ref={mapDivRef} className="h-56 w-full rounded border" />
-      <div className="text-[10px] text-muted-foreground mt-1">Updated {new Date(point.captured_at).toLocaleTimeString()}</div>
+      <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground flex-wrap">
+        {eta && <span className="font-semibold text-foreground">ETA {eta}</span>}
+        {data.eta_updated_at && <span>as of {new Date(data.eta_updated_at).toLocaleTimeString()}</span>}
+        {data.driver && <span>· driver position updated {new Date(data.driver.captured_at).toLocaleTimeString()}</span>}
+      </div>
     </div>
   );
 }
