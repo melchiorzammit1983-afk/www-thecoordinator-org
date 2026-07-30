@@ -266,6 +266,8 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       from_flight: (payload.flight_number || "").toUpperCase() || null,
       flightorship: payload.flight_number || null,
       contact_phone: payload.client_phone ?? null,
+      vehicle: payload.vehicle || null,
+      notes: payload.notes || null,
       source: `portal:${(b as any).portal_company_id}`,
       status: "pending",
     } as any).select("id").single();
@@ -418,10 +420,9 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
         if (hasJob) await a.from("jobs").update({ status: "cancelled" } as any).eq("id", (cr as any).job_id);
         await a.from("portal_bookings" as any).update({ status: "cancelled" } as any).eq("id", bookingId);
       } else if (hasJob) {
-        // Only from/to/pickup_at are real `jobs` columns — notes and
-        // passenger counts/names live on portal_bookings.payload and the
-        // `pax` table respectively (jobs has no notes or pax_count column;
-        // real passenger count is however many `pax` rows exist).
+        // from/to/pickup_at/notes are real `jobs` columns — passenger
+        // counts/names live on portal_bookings.payload and the `pax` table
+        // instead (real passenger count is however many `pax` rows exist).
         const {
           from_location, to_location, pickup_at, notes, pax_names, pax_count,
           from_lat, from_lng, to_lat, to_lng, from_display_name, to_display_name,
@@ -435,6 +436,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
         if (from_location != null) { jobPatch.from_location = from_location; jobPatch.pickup_display_name = from_display_name || from_location; }
         if (to_location != null) { jobPatch.to_location = to_location; jobPatch.dropoff_display_name = to_display_name || to_location; }
         if (pickup_at !== undefined) jobPatch.pickup_at = pickup_at;
+        if (notes !== undefined) jobPatch.notes = notes;
         // Refresh the map pins whenever the address actually changed —
         // otherwise a reschedule would silently leave stale pickup/dropoff
         // pins pointing at the old address while the text label updates.

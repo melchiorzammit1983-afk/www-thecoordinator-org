@@ -8,16 +8,20 @@ export const SHEET_HEADERS = [
   "Pickup Time",
   "Pickup Address",
   "Delivery Address",
+  "Flight/Vessel (Pickup)",
+  "Flight/Vessel (Drop-off)",
   "Customer Name",
   "Contact Number",
+  "Vehicle",
   "Transport Type",
   "Quantity",
   "Operation Name",
+  "Notes",
 ] as const;
 
 const SAMPLE_ROWS: string[][] = [
-  ["2026-07-10", "08:30", "Hotel Cerviola, Marsaskala", "Malta International Airport", "John Smith", "+35699123456", "Airport Transfer", "2", "Everest Crew Change"],
-  ["2026-07-10", "14:00", "Valletta Cruise Port", "Radisson Golden Sands", "Maria Rossi", "+393331234567", "Shuttle", "4", "Everest Crew Change"],
+  ["2026-07-10", "08:30", "Hotel Cerviola, Marsaskala", "Malta International Airport", "", "KM101", "John Smith", "+35699123456", "Sedan", "Airport Transfer", "2", "Everest Crew Change", ""],
+  ["2026-07-10", "14:00", "Valletta Cruise Port", "Radisson Golden Sands", "Asso Venticinque", "", "Maria Rossi", "+393331234567", "Minivan", "Shuttle", "4", "Everest Crew Change", "Guest uses a wheelchair"],
 ];
 
 const INSTRUCTIONS: string[][] = [
@@ -26,10 +30,14 @@ const INSTRUCTIONS: string[][] = [
   ["1. Fill one row per trip. Use Operation Name to group rows into the same operation. Do NOT rename or reorder the header columns."],
   ["2. Pickup Date format: YYYY-MM-DD (e.g. 2026-07-10)."],
   ["3. Pickup Time format: 24h HH:MM (e.g. 08:30)."],
-  ["4. Contact Number: include country code with + (e.g. +35699123456)."],
-  ["5. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
-  ["6. Quantity: number of passengers."],
-  ["7. Keep the Contact Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
+  ["4. Flight/Vessel (Pickup) and (Drop-off): flight code (e.g. KM101) or vessel name (e.g. Asso Venticinque). Leave blank if not applicable."],
+  ["5. Contact Number: include country code with + (e.g. +35699123456)."],
+  ["6. Vehicle: e.g. Sedan, Minivan, Coach. Leave blank if not decided yet."],
+  ["7. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
+  ["8. Quantity: number of passengers."],
+  ["9. Notes: any other detail the driver/coordinator should know (optional)."],
+  ["10. Keep the Contact Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
+  ["11. Leave any box empty if you don't have that detail — don't guess."],
   [""],
   ["When done, select your filled rows (including the header) and copy them."],
   ["Paste into the coordinator app under Add trip → Paste bulk."],
@@ -124,6 +132,23 @@ const HEADER_ALIASES: Record<string, string> = {
   "dropoff": "to",
   "drop-off address": "to",
   "to": "to",
+  "flight/vessel (pickup)": "from_flight",
+  "flight (pickup)": "from_flight",
+  "flight pickup": "from_flight",
+  "vessel (pickup)": "from_flight",
+  "vessel pickup": "from_flight",
+  "pickup flight": "from_flight",
+  "pickup vessel": "from_flight",
+  "flight/vessel (drop-off)": "to_flight",
+  "flight (drop-off)": "to_flight",
+  "flight (dropoff)": "to_flight",
+  "flight dropoff": "to_flight",
+  "flight drop-off": "to_flight",
+  "vessel (drop-off)": "to_flight",
+  "vessel (dropoff)": "to_flight",
+  "vessel dropoff": "to_flight",
+  "dropoff flight": "to_flight",
+  "dropoff vessel": "to_flight",
   "customer name": "name",
   "passenger": "name",
   "passenger name": "name",
@@ -131,6 +156,7 @@ const HEADER_ALIASES: Record<string, string> = {
   "contact number": "phone",
   "phone": "phone",
   "contact": "phone",
+  "vehicle": "vehicle",
   "transport type": "type",
   "type": "type",
   "service": "type",
@@ -142,6 +168,10 @@ const HEADER_ALIASES: Record<string, string> = {
   "job": "operation_name",
   "job name": "operation_name",
   "job title": "operation_name",
+  "notes": "notes",
+  "note": "notes",
+  "comments": "notes",
+  "comment": "notes",
 };
 
 function splitRow(line: string): string[] {
@@ -243,9 +273,9 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       if (key && !(key in cols)) cols[key] = i;
     });
   } else {
-    // Assume canonical order.
-    ["date", "time", "from", "to", "name", "phone", "type", "qty"].forEach((k, i) => { cols[k] = i; });
-    if (lines.length > 0) cols.operation_name = 8;
+    // Assume canonical order (matches SHEET_HEADERS).
+    ["date", "time", "from", "to", "from_flight", "to_flight", "name", "phone", "vehicle", "type", "qty", "operation_name", "notes"]
+      .forEach((k, i) => { cols[k] = i; });
   }
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const trips: ParsedTrip[] = [];
@@ -263,6 +293,10 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const qtyRaw = get("qty");
     const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
     const operation_name = get("operation_name").trim();
+    const from_flight = get("from_flight").trim();
+    const to_flight = get("to_flight").trim();
+    const vehicle = get("vehicle").trim();
+    const notes = get("notes").trim();
 
     const pax: string[] = [];
     // Support multiple names in one cell: "John Smith, Maria Rossi & Ali"
@@ -281,9 +315,11 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       to_location: to,
       clientcompanyname: "",
       operation_name,
-      flightorship: type || "",
-      from_flight: "",
-      to_flight: "",
+      flightorship: type || from_flight || to_flight || "",
+      from_flight,
+      to_flight,
+      vehicle,
+      notes,
       pax,
       contact_phone: phone,
       errors: [],

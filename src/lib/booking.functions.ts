@@ -33,7 +33,11 @@ export const submitClientBooking = createServerFn({ method: "POST" })
         room_number: z.string().trim().max(40).optional().or(z.literal("")),
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM"),
+        from_flight: z.string().trim().max(40).optional().or(z.literal("")),
+        pax_count: z.number().int().min(1).max(200).optional(),
+        notes: z.string().trim().max(2000).optional().or(z.literal("")),
         promo_note: z.string().trim().max(200).optional().or(z.literal("")),
       })
       .parse(input),
@@ -65,7 +69,11 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       room_number: data.room_number || null,
       from_location: data.from_location,
       to_location: data.to_location,
+      date: data.date,
       time: data.time.length === 5 ? `${data.time}:00` : data.time,
+      from_flight: data.from_flight ? data.from_flight.trim().toUpperCase() : null,
+      pax_count: data.pax_count ?? 1,
+      notes: data.notes ? data.notes.trim() : null,
       promo_note: data.promo_note ? data.promo_note.trim() : null,
     } as any);
     if (error) throw new Error(error.message);

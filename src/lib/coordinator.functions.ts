@@ -494,7 +494,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -667,6 +667,7 @@ const jobInput = z.object({
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
   vehicle: z.string().trim().max(120).optional().or(z.literal("")),
+  notes: z.string().trim().max(2000).optional().or(z.literal("")),
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
   operation_name: z.string().trim().max(200).optional().or(z.literal("")),
@@ -793,6 +794,7 @@ export const createJob = createServerFn({ method: "POST" })
         qr_strict_mode: data.qr_strict_mode,
         tracking_enabled: data.tracking_enabled,
         vehicle: data.vehicle || null,
+        notes: data.notes || null,
         contact_phone: data.contact_phone || null,
         driver_id: data.driver_id || null,
         pickup_place_id: data.pickup_place_id || null,
@@ -843,7 +845,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
@@ -868,6 +870,7 @@ export const updateJob = createServerFn({ method: "POST" })
         date: data.date,
         time: data.time,
         vehicle: data.vehicle || null,
+        notes: data.notes || null,
         contact_phone: data.contact_phone || null,
         from_flight: (data.from_flight || "").toUpperCase() || null,
         to_flight: (data.to_flight || "").toUpperCase() || null,
@@ -920,6 +923,7 @@ export const updateJob = createServerFn({ method: "POST" })
       qr_strict_mode: data.qr_strict_mode,
       tracking_enabled: data.tracking_enabled,
       vehicle: data.vehicle || null,
+      notes: data.notes || null,
       contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
     };
@@ -2102,6 +2106,7 @@ export const approveBooking = createServerFn({ method: "POST" })
       .single();
     if (error || !b) throw new Error("Booking not found");
     const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
+    const fromFlight = ((b as any).from_flight || "").toUpperCase() || null;
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
@@ -2112,14 +2117,22 @@ export const approveBooking = createServerFn({ method: "POST" })
         time: b.time,
         pickup_at,
         clientcompanyname: `${b.name} ${b.surname}`.trim(),
+        from_flight: fromFlight,
+        flightorship: fromFlight,
+        notes: (b as any).notes ?? null,
         promo_note: (b as any).promo_note ?? null,
       } as any)
       .select()
       .single();
     if (jErr) throw new Error(jErr.message);
-    const paxName = `${b.name} ${b.surname}`.trim();
-    if (paxName) {
-      await supabaseAdmin.from("pax").insert({ job_id: job.id, name: paxName } as never);
+    const { padWithGuests } = await import("./pax-extract");
+    const paxName = `${b.name} ${b.surname}`.trim() || "Guest";
+    const paxNames = padWithGuests([paxName], (b as any).pax_count);
+    if (paxNames.length) {
+      await supabaseAdmin.from("pax").insert(paxNames.map((name) => ({ job_id: job.id, name })) as never);
+    }
+    if (fromFlight) {
+      applyLiveStatusToJobBg(job.id as string);
     }
     await supabaseAdmin.from("client_bookings").update({ status: "accepted", job_id: job.id }).eq("id", data.id);
     await spendSoft(c.id, "trip_created", "Trip from client booking", job.id);
@@ -2402,6 +2415,8 @@ const bulkTripInput = z.object({
         to_flight: z.string().trim().max(40).optional().default(""),
         clientcompanyname: z.string().trim().max(200).optional().default(""),
         contact_phone: z.string().trim().max(40).optional().default(""),
+        vehicle: z.string().trim().max(120).optional().default(""),
+        notes: z.string().trim().max(2000).optional().default(""),
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
       }),
@@ -2472,7 +2487,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           contact_phone: t.contact_phone || null,
           qr_strict_mode: false,
           tracking_enabled: false,
-          vehicle: null,
+          vehicle: t.vehicle || null,
+          notes: t.notes || null,
           driver_id: null,
           tracking_kind: t.tracking_kind ?? "flight",
         })

@@ -12,6 +12,8 @@ export type ParsedTrip = {
   flightorship: string;
   from_flight: string;
   to_flight: string;
+  vehicle: string;
+  notes: string;
   pax: string[];
   contact_phone: string;
   errors: string[];
@@ -204,6 +206,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
       flightorship: "",
       from_flight: "",
       to_flight: "",
+      vehicle: "",
+      notes: "",
       pax: [],
       contact_phone: "",
       errors: [],
