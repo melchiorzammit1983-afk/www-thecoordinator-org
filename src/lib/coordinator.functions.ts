@@ -847,7 +847,7 @@ export const updateJob = createServerFn({ method: "POST" })
         "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, operation_id, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
-      .eq("company_id", c.id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
     // Driver-accepted lock: coordinator changes must be approved by driver.
