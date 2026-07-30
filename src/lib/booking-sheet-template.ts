@@ -86,7 +86,7 @@ export function downloadBookingCsvTemplate() {
 const HEADER_ALIASES: Record<string, string> = {
   name: "name", "guest name": "name", passenger: "name", "passenger name": "name",
   "passenger(s)": "name", passengers: "name", guests: "name", "guest names": "name",
-  phone: "phone", "contact number": "phone", contact: "phone",
+  phone: "phone", "phone number": "phone", "contact number": "phone", contact: "phone",
   email: "email", "guest email": "email",
   from: "from", "pickup address": "from", pickup: "from",
   to: "to", "drop-off address": "to", dropoff: "to", destination: "to", "delivery address": "to",
@@ -94,8 +94,16 @@ const HEADER_ALIASES: Record<string, string> = {
   "pickup time": "time", time: "time",
   room: "room", "room number": "room",
   flight: "flight", "flight number": "flight",
+  // The coordinator's own bulk-trip template splits Flight/Vessel per side
+  // (From Flight / From Vessel / To Flight / To Vessel) instead of this
+  // template's single Flight column — recognise those too, since the two
+  // templates look similar enough that people upload the wrong one here.
+  "from flight": "from_flight",
+  "to flight": "to_flight",
+  "from vessel": "from_vessel",
+  "to vessel": "to_vessel",
   vehicle: "vehicle",
-  pax: "pax", quantity: "pax", qty: "pax",
+  pax: "pax", quantity: "pax", qty: "pax", "pax count": "pax",
   notes: "notes", note: "notes",
 };
 
@@ -186,20 +194,37 @@ export function parseBookingSheet(raw: string): ParsedBookingRow[] {
   }
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const rows: ParsedBookingRow[] = [];
+  // Mirrors the coordinator template's stacked-passenger convention: a row
+  // with none of its own date/time/from/to is another passenger for the
+  // booking started by the row above it, not a separate booking — so a
+  // crew-change file exported from that template collapses correctly here
+  // too, instead of turning into a pile of broken single-passenger bookings.
+  let current: ParsedBookingRow | null = null;
   for (const line of dataLines) {
     const cells = splitRow(line).map((c) => c.trim());
     if (!cells.some((c) => c.length > 0)) continue;
     const get = (k: string) => (cols[k] != null ? cells[cols[k]] ?? "" : "");
-    const date = normDate(get("date"));
-    const time = normTime(get("time"));
-    rows.push({
-      name: get("name"), phone: get("phone"), email: get("email"),
-      from: get("from"), to: get("to"),
+    const rawDate = get("date").trim();
+    const rawTime = get("time").trim();
+    const from = get("from").trim();
+    const to = get("to").trim();
+    const name = get("name").trim();
+    if (current && !rawDate && !rawTime && !from && !to) {
+      if (name) current.name = current.name ? `${current.name}, ${name}` : name;
+      continue;
+    }
+    const date = normDate(rawDate);
+    const time = normTime(rawTime);
+    const flight = get("flight") || get("from_flight") || get("to_flight") || get("from_vessel") || get("to_vessel");
+    current = {
+      name, phone: get("phone"), email: get("email"),
+      from, to,
       pickupAt: date && time ? `${date}T${time}` : "",
-      room: get("room"), flight: get("flight"), vehicle: get("vehicle"),
+      room: get("room"), flight, vehicle: get("vehicle"),
       pax: get("pax").replace(/[^0-9]/g, "") || "1",
       notes: get("notes"),
-    });
+    };
+    rows.push(current);
   }
   return rows;
 }
