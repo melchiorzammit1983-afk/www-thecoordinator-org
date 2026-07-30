@@ -6,12 +6,12 @@ import * as XLSX from "xlsx";
 
 export const BOOKING_SHEET_HEADERS = [
   "Passenger(s)", "Phone", "Email", "From", "To",
-  "Pickup Date", "Pickup Time", "Room", "Flight", "Pax", "Notes",
+  "Pickup Date", "Pickup Time", "Room", "Flight", "Vehicle", "Pax", "Notes",
 ] as const;
 
 const SAMPLE_ROWS: string[][] = [
-  ["John Smith, Maria Rossi", "+35699123456", "john@example.com", "Malta International Airport", "Hilton Malta", "2026-08-10", "14:30", "402", "FR1234", "2", "Late arrival, needs wheelchair"],
-  ["Ali Hassan", "", "", "Valletta Cruise Port", "Corinthia Palace", "2026-08-11", "09:00", "", "", "1", ""],
+  ["John Smith, Maria Rossi", "+35699123456", "john@example.com", "Malta International Airport", "Hilton Malta", "2026-08-10", "14:30", "402", "FR1234", "Minivan", "2", "Late arrival, needs wheelchair"],
+  ["Ali Hassan", "", "", "Valletta Cruise Port", "Corinthia Palace", "2026-08-11", "09:00", "", "", "", "1", ""],
 ];
 
 const INSTRUCTIONS: string[][] = [
@@ -22,8 +22,9 @@ const INSTRUCTIONS: string[][] = [
   ["3. Pickup Date format: YYYY-MM-DD (e.g. 2026-08-10)."],
   ["4. Pickup Time format: 24h HH:MM (e.g. 14:30)."],
   ["5. Phone: include country code with + (e.g. +35699123456)."],
-  ["6. Pax: total passenger count for this booking — leave it at or above the number of names you listed; extra seats beyond the named passengers show as \"Guest 2\", \"Guest 3\", etc."],
-  ["7. Leave a cell blank if it doesn't apply (e.g. no flight, no room number)."],
+  ["6. Vehicle: e.g. Sedan, Minivan, Coach. Leave blank if you don't have a preference."],
+  ["7. Pax: total passenger count for this booking — leave it at or above the number of names you listed; extra seats beyond the named passengers show as \"Guest 2\", \"Guest 3\", etc."],
+  ["8. Leave a cell blank if it doesn't apply (e.g. no flight, no room number)."],
   [""],
   ["When done, save the file and use the Upload button on the Bookings tab,"],
   ["or select your filled rows (including the header) and paste them directly into the grid."],
@@ -93,6 +94,7 @@ const HEADER_ALIASES: Record<string, string> = {
   "pickup time": "time", time: "time",
   room: "room", "room number": "room",
   flight: "flight", "flight number": "flight",
+  vehicle: "vehicle",
   pax: "pax", quantity: "pax", qty: "pax",
   notes: "notes", note: "notes",
 };
@@ -163,7 +165,7 @@ export type ParsedBookingRow = {
   name: string; phone: string; email: string;
   from: string; to: string;
   pickupAt: string; // "YYYY-MM-DDTHH:mm" (datetime-local value) or ""
-  room: string; flight: string; pax: string; notes: string;
+  room: string; flight: string; vehicle: string; pax: string; notes: string;
 };
 
 /** Parses TSV/CSV text (with or without a recognisable header row) into booking rows. */
@@ -179,7 +181,7 @@ export function parseBookingSheet(raw: string): ParsedBookingRow[] {
       if (key && !(key in cols)) cols[key] = i;
     });
   } else {
-    ["name", "phone", "email", "from", "to", "date", "time", "room", "flight", "pax", "notes"]
+    ["name", "phone", "email", "from", "to", "date", "time", "room", "flight", "vehicle", "pax", "notes"]
       .forEach((k, i) => { cols[k] = i; });
   }
   const dataLines = hasHeader ? lines.slice(1) : lines;
@@ -194,7 +196,7 @@ export function parseBookingSheet(raw: string): ParsedBookingRow[] {
       name: get("name"), phone: get("phone"), email: get("email"),
       from: get("from"), to: get("to"),
       pickupAt: date && time ? `${date}T${time}` : "",
-      room: get("room"), flight: get("flight"),
+      room: get("room"), flight: get("flight"), vehicle: get("vehicle"),
       pax: get("pax").replace(/[^0-9]/g, "") || "1",
       notes: get("notes"),
     });

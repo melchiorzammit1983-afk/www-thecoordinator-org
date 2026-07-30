@@ -28,6 +28,7 @@ type GridRow = {
   pickupAt: string; // datetime-local value
   room: string;
   flight: string;
+  vehicle: string;
   pax: string;
   notes: string;
   // Checked rows are merged into a single trip on submit (one shared job,
@@ -41,7 +42,7 @@ function emptyRow(): GridRow {
     name: "", phone: "", email: "",
     from: "", fromPlaceId: null, fromLat: null, fromLng: null,
     to: "", toPlaceId: null, toLat: null, toLng: null,
-    pickupAt: "", room: "", flight: "", pax: "1", notes: "", selected: false,
+    pickupAt: "", room: "", flight: "", vehicle: "", pax: "1", notes: "", selected: false,
   };
 }
 
@@ -54,13 +55,13 @@ const GROUP_PICKUP_TOLERANCE_MS = 5 * 60_000;
 // assumed to follow, and what tab-separated/comma-separated clipboard text
 // gets mapped onto.
 const COLUMN_KEYS = [
-  "name", "phone", "email", "from", "to", "pickupAt", "room", "flight", "pax", "notes",
+  "name", "phone", "email", "from", "to", "pickupAt", "room", "flight", "vehicle", "pax", "notes",
 ] as const;
 type ColumnKey = (typeof COLUMN_KEYS)[number];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   name: "Passenger(s)", phone: "Phone", email: "Email", from: "From", to: "To",
-  pickupAt: "Pickup date & time", room: "Room", flight: "Flight", pax: "Pax", notes: "Notes",
+  pickupAt: "Pickup date & time", room: "Room", flight: "Flight", vehicle: "Vehicle", pax: "Pax", notes: "Notes",
 };
 
 // Free-text columns where a comma is ordinary punctuation (an address, a
@@ -70,7 +71,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
 const FREE_TEXT_COLS = new Set<ColumnKey>(["from", "to", "name", "notes"]);
 
 function rowHasAnyData(r: GridRow): boolean {
-  return !!(r.name || r.phone || r.email || r.from || r.to || r.pickupAt || r.room || r.flight || r.notes.trim());
+  return !!(r.name || r.phone || r.email || r.from || r.to || r.pickupAt || r.room || r.flight || r.vehicle || r.notes.trim());
 }
 
 // Best-effort parse of a pasted date/time cell into the value a
@@ -122,7 +123,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         name: p.name, phone: p.phone, email: p.email,
         from: p.from, fromPlaceId: null, fromLat: null, fromLng: null,
         to: p.to, toPlaceId: null, toLat: null, toLng: null,
-        pickupAt: p.pickupAt, room: p.room, flight: p.flight, pax: p.pax, notes: p.notes,
+        pickupAt: p.pickupAt, room: p.room, flight: p.flight, vehicle: p.vehicle, pax: p.pax, notes: p.notes,
         selected: false,
       }));
       setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
@@ -238,6 +239,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           pickup_at: r.pickupAt ? new Date(r.pickupAt).toISOString() : null,
           room_number: r.room.trim() || null,
           flight_number: r.flight.trim() || null,
+          vehicle: r.vehicle.trim() || null,
           pax_count: Math.max(Number(r.pax) || 1, paxNames.length || 1),
           notes: r.notes.trim() || null,
         };
@@ -254,10 +256,12 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         );
         const withPhone = checkedRows.find((r) => r.phone.trim());
         const withEmail = checkedRows.find((r) => r.email.trim());
+        const withVehicle = checkedRows.find((r) => r.vehicle.trim());
         const combined = toPayload(checkedRows[0], combinedNames);
         combined.pax_count = combinedPaxCount;
         combined.client_phone = withPhone?.phone.trim() || null;
         combined.client_email = withEmail?.email.trim() || null;
+        combined.vehicle = withVehicle?.vehicle.trim() || null;
         bookings.push(combined);
       }
 
@@ -372,9 +376,9 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             )}
                           </div>
                         )}
-                        {(key === "name" || key === "phone" || key === "email" || key === "room" || key === "notes") && (
+                        {(key === "name" || key === "phone" || key === "email" || key === "room" || key === "vehicle" || key === "notes") && (
                           <Input className="h-8 text-xs" value={row[key]}
-                            placeholder={key === "name" ? "John Smith, Maria Rossi" : undefined}
+                            placeholder={key === "name" ? "John Smith, Maria Rossi" : key === "vehicle" ? "e.g. Minivan, Sedan" : undefined}
                             onChange={(e) => updateRow(ri, { [key]: e.target.value } as Partial<GridRow>)} />
                         )}
                         {key === "flight" && flightWarning && (
