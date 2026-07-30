@@ -98,11 +98,17 @@ import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/publ
 import { Route as ApiPublicBTokenIndexRouteImport } from './routes/api/public/b/$token/index'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
 import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
+import { Route as ApiPublicTrackTokenRebookRouteImport } from './routes/api/public/track/$token/rebook'
 import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
 import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
+import { Route as ApiPublicTrackTokenDriverMessagesRouteImport } from './routes/api/public/track/$token/driver-messages'
+import { Route as ApiPublicTrackTokenChangeRequestsRouteImport } from './routes/api/public/track/$token/change-requests'
 import { Route as ApiPublicPortalBySlugSlugRouteImport } from './routes/api/public/portal/by-slug/$slug'
+import { Route as ApiPublicPortalTokenTripLocationRouteImport } from './routes/api/public/portal/$token/trip-location'
+import { Route as ApiPublicPortalTokenStatementRouteImport } from './routes/api/public/portal/$token/statement'
 import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
 import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
+import { Route as ApiPublicPortalTokenLogoRouteImport } from './routes/api/public/portal/$token/logo'
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
 import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
 import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
@@ -606,6 +612,12 @@ const ApiPublicTrackTokenVerifyRoute =
     path: '/api/public/track/$token/verify',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicTrackTokenRebookRoute =
+  ApiPublicTrackTokenRebookRouteImport.update({
+    id: '/api/public/track/$token/rebook',
+    path: '/api/public/track/$token/rebook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicTrackTokenMessagesRoute =
   ApiPublicTrackTokenMessagesRouteImport.update({
     id: '/api/public/track/$token/messages',
@@ -618,10 +630,34 @@ const ApiPublicTrackTokenLocationRoute =
     path: '/api/public/track/$token/location',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicTrackTokenDriverMessagesRoute =
+  ApiPublicTrackTokenDriverMessagesRouteImport.update({
+    id: '/api/public/track/$token/driver-messages',
+    path: '/api/public/track/$token/driver-messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTrackTokenChangeRequestsRoute =
+  ApiPublicTrackTokenChangeRequestsRouteImport.update({
+    id: '/api/public/track/$token/change-requests',
+    path: '/api/public/track/$token/change-requests',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalBySlugSlugRoute =
   ApiPublicPortalBySlugSlugRouteImport.update({
     id: '/api/public/portal/by-slug/$slug',
     path: '/api/public/portal/by-slug/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenTripLocationRoute =
+  ApiPublicPortalTokenTripLocationRouteImport.update({
+    id: '/api/public/portal/$token/trip-location',
+    path: '/api/public/portal/$token/trip-location',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenStatementRoute =
+  ApiPublicPortalTokenStatementRouteImport.update({
+    id: '/api/public/portal/$token/statement',
+    path: '/api/public/portal/$token/statement',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicPortalTokenPaxLinkRoute =
@@ -634,6 +670,12 @@ const ApiPublicPortalTokenMessagesRoute =
   ApiPublicPortalTokenMessagesRouteImport.update({
     id: '/api/public/portal/$token/messages',
     path: '/api/public/portal/$token/messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenLogoRoute =
+  ApiPublicPortalTokenLogoRouteImport.update({
+    id: '/api/public/portal/$token/logo',
+    path: '/api/public/portal/$token/logo',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicPortalTokenChangeRequestsRoute =
@@ -778,11 +820,17 @@ export interface FileRoutesByFullPath {
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/$token/statement': typeof ApiPublicPortalTokenStatementRoute
+  '/api/public/portal/$token/trip-location': typeof ApiPublicPortalTokenTripLocationRoute
   '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
+  '/api/public/track/$token/change-requests': typeof ApiPublicTrackTokenChangeRequestsRoute
+  '/api/public/track/$token/driver-messages': typeof ApiPublicTrackTokenDriverMessagesRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/rebook': typeof ApiPublicTrackTokenRebookRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
   '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
@@ -877,11 +925,17 @@ export interface FileRoutesByTo {
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/$token/statement': typeof ApiPublicPortalTokenStatementRoute
+  '/api/public/portal/$token/trip-location': typeof ApiPublicPortalTokenTripLocationRoute
   '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
+  '/api/public/track/$token/change-requests': typeof ApiPublicTrackTokenChangeRequestsRoute
+  '/api/public/track/$token/driver-messages': typeof ApiPublicTrackTokenDriverMessagesRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/rebook': typeof ApiPublicTrackTokenRebookRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
   '/api/public/b/$token': typeof ApiPublicBTokenIndexRoute
@@ -983,11 +1037,17 @@ export interface FileRoutesById {
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
+  '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
   '/api/public/portal/$token/messages': typeof ApiPublicPortalTokenMessagesRoute
   '/api/public/portal/$token/pax-link': typeof ApiPublicPortalTokenPaxLinkRoute
+  '/api/public/portal/$token/statement': typeof ApiPublicPortalTokenStatementRoute
+  '/api/public/portal/$token/trip-location': typeof ApiPublicPortalTokenTripLocationRoute
   '/api/public/portal/by-slug/$slug': typeof ApiPublicPortalBySlugSlugRoute
+  '/api/public/track/$token/change-requests': typeof ApiPublicTrackTokenChangeRequestsRoute
+  '/api/public/track/$token/driver-messages': typeof ApiPublicTrackTokenDriverMessagesRoute
   '/api/public/track/$token/location': typeof ApiPublicTrackTokenLocationRoute
   '/api/public/track/$token/messages': typeof ApiPublicTrackTokenMessagesRoute
+  '/api/public/track/$token/rebook': typeof ApiPublicTrackTokenRebookRoute
   '/api/public/track/$token/verify': typeof ApiPublicTrackTokenVerifyRoute
   '/m/driver/$token/sign/$jobId': typeof MDriverTokenSignJobIdRoute
   '/api/public/b/$token/': typeof ApiPublicBTokenIndexRoute
@@ -1089,11 +1149,17 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/logo'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/$token/statement'
+    | '/api/public/portal/$token/trip-location'
     | '/api/public/portal/by-slug/$slug'
+    | '/api/public/track/$token/change-requests'
+    | '/api/public/track/$token/driver-messages'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/rebook'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
     | '/api/public/b/$token/'
@@ -1188,11 +1254,17 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/logo'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/$token/statement'
+    | '/api/public/portal/$token/trip-location'
     | '/api/public/portal/by-slug/$slug'
+    | '/api/public/track/$token/change-requests'
+    | '/api/public/track/$token/driver-messages'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/rebook'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
     | '/api/public/b/$token'
@@ -1293,11 +1365,17 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
+    | '/api/public/portal/$token/logo'
     | '/api/public/portal/$token/messages'
     | '/api/public/portal/$token/pax-link'
+    | '/api/public/portal/$token/statement'
+    | '/api/public/portal/$token/trip-location'
     | '/api/public/portal/by-slug/$slug'
+    | '/api/public/track/$token/change-requests'
+    | '/api/public/track/$token/driver-messages'
     | '/api/public/track/$token/location'
     | '/api/public/track/$token/messages'
+    | '/api/public/track/$token/rebook'
     | '/api/public/track/$token/verify'
     | '/m/driver/$token/sign/$jobId'
     | '/api/public/b/$token/'
@@ -1351,11 +1429,17 @@ export interface RootRouteChildren {
   ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
+  ApiPublicPortalTokenLogoRoute: typeof ApiPublicPortalTokenLogoRoute
   ApiPublicPortalTokenMessagesRoute: typeof ApiPublicPortalTokenMessagesRoute
   ApiPublicPortalTokenPaxLinkRoute: typeof ApiPublicPortalTokenPaxLinkRoute
+  ApiPublicPortalTokenStatementRoute: typeof ApiPublicPortalTokenStatementRoute
+  ApiPublicPortalTokenTripLocationRoute: typeof ApiPublicPortalTokenTripLocationRoute
   ApiPublicPortalBySlugSlugRoute: typeof ApiPublicPortalBySlugSlugRoute
+  ApiPublicTrackTokenChangeRequestsRoute: typeof ApiPublicTrackTokenChangeRequestsRoute
+  ApiPublicTrackTokenDriverMessagesRoute: typeof ApiPublicTrackTokenDriverMessagesRoute
   ApiPublicTrackTokenLocationRoute: typeof ApiPublicTrackTokenLocationRoute
   ApiPublicTrackTokenMessagesRoute: typeof ApiPublicTrackTokenMessagesRoute
+  ApiPublicTrackTokenRebookRoute: typeof ApiPublicTrackTokenRebookRoute
   ApiPublicTrackTokenVerifyRoute: typeof ApiPublicTrackTokenVerifyRoute
   ApiPublicBTokenIndexRoute: typeof ApiPublicBTokenIndexRoute
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
@@ -1991,6 +2075,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTrackTokenVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/track/$token/rebook': {
+      id: '/api/public/track/$token/rebook'
+      path: '/api/public/track/$token/rebook'
+      fullPath: '/api/public/track/$token/rebook'
+      preLoaderRoute: typeof ApiPublicTrackTokenRebookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/track/$token/messages': {
       id: '/api/public/track/$token/messages'
       path: '/api/public/track/$token/messages'
@@ -2005,11 +2096,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/track/$token/driver-messages': {
+      id: '/api/public/track/$token/driver-messages'
+      path: '/api/public/track/$token/driver-messages'
+      fullPath: '/api/public/track/$token/driver-messages'
+      preLoaderRoute: typeof ApiPublicTrackTokenDriverMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/change-requests': {
+      id: '/api/public/track/$token/change-requests'
+      path: '/api/public/track/$token/change-requests'
+      fullPath: '/api/public/track/$token/change-requests'
+      preLoaderRoute: typeof ApiPublicTrackTokenChangeRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/by-slug/$slug': {
       id: '/api/public/portal/by-slug/$slug'
       path: '/api/public/portal/by-slug/$slug'
       fullPath: '/api/public/portal/by-slug/$slug'
       preLoaderRoute: typeof ApiPublicPortalBySlugSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/trip-location': {
+      id: '/api/public/portal/$token/trip-location'
+      path: '/api/public/portal/$token/trip-location'
+      fullPath: '/api/public/portal/$token/trip-location'
+      preLoaderRoute: typeof ApiPublicPortalTokenTripLocationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/statement': {
+      id: '/api/public/portal/$token/statement'
+      path: '/api/public/portal/$token/statement'
+      fullPath: '/api/public/portal/$token/statement'
+      preLoaderRoute: typeof ApiPublicPortalTokenStatementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/portal/$token/pax-link': {
@@ -2024,6 +2143,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/portal/$token/messages'
       fullPath: '/api/public/portal/$token/messages'
       preLoaderRoute: typeof ApiPublicPortalTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/logo': {
+      id: '/api/public/portal/$token/logo'
+      path: '/api/public/portal/$token/logo'
+      fullPath: '/api/public/portal/$token/logo'
+      preLoaderRoute: typeof ApiPublicPortalTokenLogoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/portal/$token/change-requests': {
@@ -2329,11 +2455,19 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
   ApiPublicPortalTokenChangeRequestsRoute:
     ApiPublicPortalTokenChangeRequestsRoute,
+  ApiPublicPortalTokenLogoRoute: ApiPublicPortalTokenLogoRoute,
   ApiPublicPortalTokenMessagesRoute: ApiPublicPortalTokenMessagesRoute,
   ApiPublicPortalTokenPaxLinkRoute: ApiPublicPortalTokenPaxLinkRoute,
+  ApiPublicPortalTokenStatementRoute: ApiPublicPortalTokenStatementRoute,
+  ApiPublicPortalTokenTripLocationRoute: ApiPublicPortalTokenTripLocationRoute,
   ApiPublicPortalBySlugSlugRoute: ApiPublicPortalBySlugSlugRoute,
+  ApiPublicTrackTokenChangeRequestsRoute:
+    ApiPublicTrackTokenChangeRequestsRoute,
+  ApiPublicTrackTokenDriverMessagesRoute:
+    ApiPublicTrackTokenDriverMessagesRoute,
   ApiPublicTrackTokenLocationRoute: ApiPublicTrackTokenLocationRoute,
   ApiPublicTrackTokenMessagesRoute: ApiPublicTrackTokenMessagesRoute,
+  ApiPublicTrackTokenRebookRoute: ApiPublicTrackTokenRebookRoute,
   ApiPublicTrackTokenVerifyRoute: ApiPublicTrackTokenVerifyRoute,
   ApiPublicBTokenIndexRoute: ApiPublicBTokenIndexRoute,
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,

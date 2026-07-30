@@ -2131,6 +2131,7 @@ export type Database = {
       crew_itineraries: {
         Row: {
           arrival_date: string | null
+          arrival_time: string | null
           created_at: string
           crew_member_id: string
           departure_date: string | null
@@ -2142,6 +2143,7 @@ export type Database = {
         }
         Insert: {
           arrival_date?: string | null
+          arrival_time?: string | null
           created_at?: string
           crew_member_id: string
           departure_date?: string | null
@@ -2153,6 +2155,7 @@ export type Database = {
         }
         Update: {
           arrival_date?: string | null
+          arrival_time?: string | null
           created_at?: string
           crew_member_id?: string
           departure_date?: string | null
@@ -2297,6 +2300,38 @@ export type Database = {
             columns: ["crew_member_id"]
             isOneToOne: false
             referencedRelation: "crew_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crew_trip_confirmations: {
+        Row: {
+          confirmed_at: string
+          confirmed_by: string | null
+          id: string
+          job_id: string
+          stage: string
+        }
+        Insert: {
+          confirmed_at?: string
+          confirmed_by?: string | null
+          id?: string
+          job_id: string
+          stage: string
+        }
+        Update: {
+          confirmed_at?: string
+          confirmed_by?: string | null
+          id?: string
+          job_id?: string
+          stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crew_trip_confirmations_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -3990,6 +4025,7 @@ export type Database = {
           arrival_speed_mps: number | null
           arrival_street_address: string | null
           arrival_verified_at: string | null
+          auto_created_from_crew_itinerary: boolean
           board_config: Json | null
           breakdown_flag_at: string | null
           breakdown_flag_note: string | null
@@ -4003,6 +4039,7 @@ export type Database = {
           coordinator_last_viewed_at: string | null
           created_at: string
           created_by_driver: boolean
+          crew_itinerary_ids: string[]
           date: string
           deletion_requested_at: string | null
           deletion_requested_by: string | null
@@ -4123,6 +4160,7 @@ export type Database = {
           arrival_speed_mps?: number | null
           arrival_street_address?: string | null
           arrival_verified_at?: string | null
+          auto_created_from_crew_itinerary?: boolean
           board_config?: Json | null
           breakdown_flag_at?: string | null
           breakdown_flag_note?: string | null
@@ -4136,6 +4174,7 @@ export type Database = {
           coordinator_last_viewed_at?: string | null
           created_at?: string
           created_by_driver?: boolean
+          crew_itinerary_ids?: string[]
           date: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
@@ -4258,6 +4297,7 @@ export type Database = {
           arrival_speed_mps?: number | null
           arrival_street_address?: string | null
           arrival_verified_at?: string | null
+          auto_created_from_crew_itinerary?: boolean
           board_config?: Json | null
           breakdown_flag_at?: string | null
           breakdown_flag_note?: string | null
@@ -4271,6 +4311,7 @@ export type Database = {
           coordinator_last_viewed_at?: string | null
           created_at?: string
           created_by_driver?: boolean
+          crew_itinerary_ids?: string[]
           date?: string
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
@@ -4937,6 +4978,7 @@ export type Database = {
           accepted_at: string | null
           addon_selections: Json | null
           agreed_price: number | null
+          batch_id: string | null
           created_at: string
           created_by_email: string | null
           created_by_name: string | null
@@ -4958,6 +5000,7 @@ export type Database = {
           accepted_at?: string | null
           addon_selections?: Json | null
           agreed_price?: number | null
+          batch_id?: string | null
           created_at?: string
           created_by_email?: string | null
           created_by_name?: string | null
@@ -4979,6 +5022,7 @@ export type Database = {
           accepted_at?: string | null
           addon_selections?: Json | null
           agreed_price?: number | null
+          batch_id?: string | null
           created_at?: string
           created_by_email?: string | null
           created_by_name?: string | null
