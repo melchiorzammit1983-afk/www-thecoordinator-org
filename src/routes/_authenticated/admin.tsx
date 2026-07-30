@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Building2, LogOut, Inbox, Activity, KeyRound, LifeBuoy, CreditCard } from "lucide-react";
+import { Building2, LogOut, Inbox, Activity, KeyRound, LifeBuoy, CreditCard, Globe } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { whoAmI, countNewAccessRequests } from "@/lib/admin.functions";
@@ -19,6 +19,7 @@ const NAV = [
   { to: "/admin/requests", label: "Requests", icon: Inbox, match: (p: string) => p.startsWith("/admin/requests") },
   { to: "/admin/ai-insights", label: "Support", icon: LifeBuoy, match: (p: string) => p.startsWith("/admin/ai-insights") },
   { to: "/admin/topups", label: "Billing", icon: CreditCard, match: (p: string) => BILLING_PREFIXES.some((x) => p.startsWith(x)) },
+  { to: "/admin/portal-settings", label: "Portal Settings", icon: Globe, match: (p: string) => p.startsWith("/admin/portal-settings") },
   { to: "/admin/password-resets", label: "Password Resets", icon: KeyRound, match: (p: string) => p.startsWith("/admin/password-resets") },
   { to: "/admin/activity", label: "Activity log", icon: Activity, match: (p: string) => p === "/admin/activity" || p.startsWith("/admin/activity/") },
 ] as const;

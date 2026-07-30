@@ -42,8 +42,7 @@ function PricingAdmin() {
       <WalletsCard />
       <PlansCard />
       <PointPacksCard />
-      {/* Usage-based feature cost editing is hidden during the service cleanup. */}
-      {false ? <FeatureCostsCard /> : null}
+      <FeatureCostsCard />
     </div>
   );
 }
@@ -234,9 +233,13 @@ function PackRow({ pack, onSave, onDelete }: { pack: any; onSave: (r: any) => vo
 // ---------- Feature Costs ----------
 const CATEGORIES = [
   { key: "core", label: "Core" },
+  { key: "dispatch", label: "Dispatch" },
+  { key: "portal", label: "Portal" },
+  { key: "routing", label: "Routing" },
   { key: "ai", label: "AI" },
   { key: "comms", label: "Comms" },
   { key: "data", label: "Data" },
+  { key: "reporting", label: "Reporting" },
 ] as const;
 
 function FeatureCostsCard() {
