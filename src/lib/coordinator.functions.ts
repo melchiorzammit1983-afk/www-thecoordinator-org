@@ -851,15 +851,18 @@ export const updateJob = createServerFn({ method: "POST" })
       .single();
     if (e1 || !existing) {
       // TEMPORARY DIAGNOSTIC — remove once the "Job not found" on save is
-      // root-caused. Re-reads the row unscoped so we can see whether it's a
-      // missing row, a company mismatch, or something else.
+      // root-caused. Re-reads the row unscoped (no company filter) so the
+      // error message itself shows whether it's a missing row, a company
+      // mismatch, or something else — surfaces directly in the save toast
+      // since server console logs aren't reachable from this environment.
+      let diag = "no-diag";
       try {
         const { data: raw, error: rawErr } = await supabaseAdmin
           .from("jobs")
           .select("id, company_id, executor_company_id")
           .eq("id", data.id)
           .maybeSingle();
-        console.error("[updateJob diagnostic] guard failed", {
+        diag = JSON.stringify({
           requestedId: data.id,
           resolvedCompanyId: c.id,
           resolvedIsAdmin: c.isAdmin,
@@ -868,9 +871,9 @@ export const updateJob = createServerFn({ method: "POST" })
           rawRow: raw ?? null,
         });
       } catch (diagErr) {
-        console.error("[updateJob diagnostic] failed to run diagnostic re-read", diagErr);
+        diag = `diag-failed: ${(diagErr as Error)?.message ?? diagErr}`;
       }
-      throw new Error("Job not found");
+      throw new Error(`Job not found [DIAG ${diag}]`);
     }
     // Driver-accepted lock: coordinator changes must be approved by driver.
     const lockable: LockableJob = {
