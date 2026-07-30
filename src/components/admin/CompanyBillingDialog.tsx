@@ -141,7 +141,6 @@ const DEACTIVATED_PRICE_KEYS = new Set([
   "ai_char_overage",
   "ai_guide_chat",
   "sales_bot",
-  "flight_lookup_bundle",
   "flight_lookup_refresh",
   "flight_lookup_vessel",
   "flight_vessel_tracking",

@@ -1817,7 +1817,8 @@ export const splitJob = createServerFn({ method: "POST" })
         expect: { driver_id: null, group_id: null, parent_job_id: src.id as string },
       });
 
-      await spendSoft(c.id, "trip_created", "Trip split from parent", row.id as string);
+      // Splitting an existing trip into multiple cards stays free — the
+      // original trip already paid the creation charge.
       applyLiveStatusToJobBg(row.id as string);
       rows.push({ ...(row as any), _validation: report });
     }
@@ -2232,7 +2233,6 @@ export const generateMagicLink = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const feature = data.kind === "driver" ? "magic_link_driver" : "magic_link_client";
     const token = makeToken();
     const expires_at = new Date(Date.now() + data.ttl_hours * 3600_000).toISOString();
     const { data: row, error } = await supabaseAdmin
@@ -2444,6 +2444,10 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     await assertFeatureEnabled(c.id, "bulk_paste");
     const supabaseAdmin = await getAdminClient();
+
+    // Flat convenience fee for using bulk import, once per batch — on top of
+    // each row's own trip_created charge, not instead of it.
+    await spendSoft(c.id, "bulkupload", `Bulk import (${data.trips.length} trips)`);
 
     // Half-price applies to the per-trip processing fee when the AI's initial
     // accuracy was under 75%. Resolve the effective base cost once (company
@@ -2709,7 +2713,8 @@ function fmtHm(iso: string | null): string {
 }
 
 // Dispatcher: Lovable AI (Gemini web-grounded) for both flights and vessels.
-// AeroDataBox was removed on 2026-07 — see `flight_lookup_bundle` billing.
+// AeroDataBox was removed on 2026-07 — billed via flight_lookup_refresh /
+// flight_lookup_vessel (see applyLiveStatusToJobBg).
 async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
