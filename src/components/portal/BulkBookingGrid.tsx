@@ -123,6 +123,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         from: p.from, fromPlaceId: null, fromLat: null, fromLng: null,
         to: p.to, toPlaceId: null, toLat: null, toLng: null,
         pickupAt: p.pickupAt, room: p.room, flight: p.flight, pax: p.pax, notes: p.notes,
+        selected: false,
       }));
       setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
       toast.success(`Added ${newRows.length} row${newRows.length === 1 ? "" : "s"} from ${file.name}`);
