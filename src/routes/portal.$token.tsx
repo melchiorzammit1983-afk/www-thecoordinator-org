@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
-import { CrewManagementPanel } from "@/components/portal/CrewManagementPanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
@@ -95,7 +94,7 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "crew" | "chat" | "statement" | "manage" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
@@ -139,7 +138,6 @@ function PortalPage() {
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="bookings">Bookings</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
-            <TabsTrigger value="crew">Crew</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="statement">Statement</TabsTrigger>
             {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
@@ -153,10 +151,6 @@ function PortalPage() {
 
           <TabsContent value="trips" className="mt-4">
             <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} onChanged={reload} />
-          </TabsContent>
-
-          <TabsContent value="crew" className="mt-4">
-            <CrewManagementPanel token={token} />
           </TabsContent>
 
           <TabsContent value="chat" className="mt-4">
