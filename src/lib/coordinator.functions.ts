@@ -849,7 +849,29 @@ export const updateJob = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
-    if (e1 || !existing) throw new Error("Job not found");
+    if (e1 || !existing) {
+      // TEMPORARY DIAGNOSTIC — remove once the "Job not found" on save is
+      // root-caused. Re-reads the row unscoped so we can see whether it's a
+      // missing row, a company mismatch, or something else.
+      try {
+        const { data: raw, error: rawErr } = await supabaseAdmin
+          .from("jobs")
+          .select("id, company_id, executor_company_id")
+          .eq("id", data.id)
+          .maybeSingle();
+        console.error("[updateJob diagnostic] guard failed", {
+          requestedId: data.id,
+          resolvedCompanyId: c.id,
+          resolvedIsAdmin: c.isAdmin,
+          guardError: e1?.message ?? null,
+          rawLookupError: rawErr?.message ?? null,
+          rawRow: raw ?? null,
+        });
+      } catch (diagErr) {
+        console.error("[updateJob diagnostic] failed to run diagnostic re-read", diagErr);
+      }
+      throw new Error("Job not found");
+    }
     // Driver-accepted lock: coordinator changes must be approved by driver.
     const lockable: LockableJob = {
       id: (existing as any).id,
