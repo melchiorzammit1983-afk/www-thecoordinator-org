@@ -723,8 +723,6 @@ function deriveOperationNameSeed(
 async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefined) {
   if (passengers === undefined) return;
   const supabaseAdmin = await getAdminClient();
-  const { data: jobRow } = await supabaseAdmin.from("jobs").select("operation_id").eq("id", jobId).maybeSingle();
-  const operationId = (jobRow as any)?.operation_id ?? null;
   // Preserve duplicate names: two different passengers may legitimately share
   // the same name, and their phone/note details must remain attached to them.
   const clean = passengers
@@ -738,9 +736,15 @@ async function syncJobPax(jobId: string, passengers: PassengerInput[] | undefine
   const { error: deleteErr } = await supabaseAdmin.from("pax").delete().eq("job_id", jobId);
   if (deleteErr) throw new Error(deleteErr.message);
   if (!clean.length) return;
+  // NOTE: `pax` has no `operation_id` column — the mirror_pax_to_transport_core
+  // trigger resolves (and self-heals) the operation link from the parent job
+  // itself. Passing operation_id here previously threw "Could not find the
+  // 'operation_id' column of 'pax' in the schema cache" — after the job row
+  // (or update) had already committed, which is why the trip/edit appeared to
+  // "succeed" on screen (an error toast) while still going through.
   const { error: insertErr } = await (supabaseAdmin as any)
     .from("pax")
-    .insert(clean.map((passenger) => ({ job_id: jobId, operation_id: operationId, ...passenger })));
+    .insert(clean.map((passenger) => ({ job_id: jobId, ...passenger })));
 
   if (insertErr) throw new Error(insertErr.message);
   // Verify: re-read the row count so a silent RLS/constraint drop is caught.
@@ -1147,14 +1151,14 @@ export const addJobPax = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: je } = await supabaseAdmin
       .from("jobs")
-      .select("id, operation_id")
+      .select("id")
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
     if (je || !job) throw new Error("Job not found");
+    // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
     const { error } = await supabaseAdmin.from("pax").insert({
       job_id: data.job_id,
-      operation_id: (job as any).operation_id,
       name: data.name,
       phone: data.phone || null,
       note: data.note || null,
@@ -1267,11 +1271,16 @@ export const assignDriver = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    // A dispatched trip's owner (company_id) stays the creator even after a
+    // partner company accepts it — the partner becomes executor_company_id.
+    // Assigning a driver is the executor's job at that point (see
+    // respondToDispatch / trg_enforce_partner_accept_before_driver_assign),
+    // so both sides of a dispatch must be recognized here, matching listJobs.
     const { data: job } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, group_id, driver_id, driver_accepted_at, status, auto_created_from_crew_itinerary" as any)
+      .select("id, company_id, executor_company_id, group_id, driver_id, driver_accepted_at, status, auto_created_from_crew_itinerary" as any)
       .eq("id", data.job_id)
-      .eq("company_id", c.id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .maybeSingle();
     if (!job) throw new Error("Job not found");
     const gid = (job as any).group_id as string | null;
@@ -1298,7 +1307,7 @@ export const assignDriver = createServerFn({ method: "POST" })
     // Any driver change (assign, reassign, unassign) requires fresh consent from
     // the new driver, so we clear driver_accepted_at on every assignment write.
     const patch = { driver_id: data.driver_id, driver_accepted_at: null } as never;
-    let q = supabaseAdmin.from("jobs").update(patch).eq("company_id", c.id);
+    let q = supabaseAdmin.from("jobs").update(patch).or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
     q = gid ? q.eq("group_id" as any, gid) : q.eq("id", data.job_id);
     const { error } = await q;
     if (error) {
@@ -2459,7 +2468,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       created.push((job as { id: string }).id);
       if (t.pax.length) {
-        const rows = t.pax.map((name) => ({ job_id: job.id, operation_id: operation.id, name }));
+        // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
+        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
         const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
@@ -7714,7 +7724,6 @@ export const mergeTrips = createServerFn({ method: "POST" })
     for (const r of rows) {
       if ((r as any).company_id !== (c as any).id) throw new Error("forbidden");
     }
-    const keepOperationId = (rows.find((r) => (r as any).id === data.keep_job_id) as any)?.operation_id ?? null;
 
     // Merge passenger rows as a multiset. Taking the greatest occurrence count
     // seen on any duplicate trip avoids doubling an identical manifest while
@@ -7759,7 +7768,6 @@ export const mergeTrips = createServerFn({ method: "POST" })
 
     const toAdd: Array<{
       job_id: string;
-      operation_id: string | null;
       name: string;
       phone: string | null;
       note: string | null;
@@ -7781,10 +7789,10 @@ export const mergeTrips = createServerFn({ method: "POST" })
           if (enrichErr) throw new Error(enrichErr.message);
         }
       }
+      // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
       for (const sourcePassenger of sourceRows.slice(existingRows.length)) {
         toAdd.push({
           job_id: data.keep_job_id,
-          operation_id: keepOperationId,
           name: sourcePassenger.name,
           phone: sourcePassenger.phone ?? null,
           note: sourcePassenger.note ?? null,
