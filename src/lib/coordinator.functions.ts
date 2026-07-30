@@ -193,13 +193,16 @@ type LockableJob = {
   status: string | null;
   created_by_driver?: boolean | null;
   needs_review?: boolean | null;
+  auto_created_from_crew_itinerary?: boolean | null;
 };
 
 async function loadLockableJob(jobId: string, companyId: string): Promise<LockableJob | null> {
   const sb = await getAdminClient();
   const { data } = await sb
     .from("jobs")
-    .select("id, company_id, driver_id, driver_accepted_at, status, created_by_driver, needs_review")
+    .select(
+      "id, company_id, driver_id, driver_accepted_at, status, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+    )
     .eq("id", jobId)
     .eq("company_id", companyId)
     .maybeSingle();
@@ -211,7 +214,9 @@ function isJobLocked(job: LockableJob | null): boolean {
   // OTG trips awaiting coordinator review are the coordinator's to finalize:
   // driver_accepted_at / en_route are auto-set at OTG start, but the trip
   // has no real schedule yet — so treat it as unlocked until marked reviewed.
-  if (job.created_by_driver && job.needs_review) return false;
+  // Crew-auto-created trips share the same "unreviewed" window (needs_review
+  // set, created_by_driver never set) — extend the same exemption to them.
+  if ((job.created_by_driver || job.auto_created_from_crew_itinerary) && job.needs_review) return false;
   if (job.driver_accepted_at) return true;
   const s = (job.status ?? "").toLowerCase();
   return s !== "" && s !== "pending";
@@ -839,7 +844,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, operation_id",
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, operation_id, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .eq("company_id", c.id)
@@ -854,6 +859,7 @@ export const updateJob = createServerFn({ method: "POST" })
       status: (existing as any).status,
       created_by_driver: (existing as any).created_by_driver,
       needs_review: (existing as any).needs_review,
+      auto_created_from_crew_itinerary: (existing as any).auto_created_from_crew_itinerary,
     };
     if (!c.isAdmin && isJobLocked(lockable)) {
       // Compare and stage only actually changed fields.
@@ -1153,7 +1159,7 @@ export const addJobPax = createServerFn({ method: "POST" })
       .from("jobs")
       .select("id")
       .eq("id", data.job_id)
-      .eq("company_id", c.id)
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .maybeSingle();
     if (je || !job) throw new Error("Job not found");
     // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
@@ -1185,10 +1191,12 @@ export const updateJobPax = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: row } = await supabaseAdmin
       .from("pax")
-      .select("id, jobs!inner(company_id)")
+      .select("id, jobs!inner(company_id, executor_company_id)")
       .eq("id", data.pax_id)
       .maybeSingle();
-    if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
+    const rowJob = (row as any)?.jobs;
+    if (!row || (rowJob?.company_id !== c.id && rowJob?.executor_company_id !== c.id))
+      throw new Error("Passenger not found");
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.phone !== undefined) patch.phone = data.phone || null;
@@ -1215,10 +1223,12 @@ export const getPaxPersonalToken = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data: row } = await supabaseAdmin
       .from("pax")
-      .select("id, job_id, phone, jobs!inner(company_id)")
+      .select("id, job_id, phone, jobs!inner(company_id, executor_company_id)")
       .eq("id", data.pax_id)
       .maybeSingle();
-    if (!row || (row as any).jobs?.company_id !== c.id) throw new Error("Passenger not found");
+    const rowJob = (row as any)?.jobs;
+    if (!row || (rowJob?.company_id !== c.id && rowJob?.executor_company_id !== c.id))
+      throw new Error("Passenger not found");
     const phoneDigits = String((row as any).phone ?? "").replace(/\D/g, "");
     const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : null;
     let { data: tok } = await supabaseAdmin
@@ -1253,11 +1263,12 @@ export const removeJobPax = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: row, error: pe } = await supabaseAdmin
       .from("pax")
-      .select("id, job_id, jobs!inner(company_id)")
+      .select("id, job_id, jobs!inner(company_id, executor_company_id)")
       .eq("id", data.pax_id)
       .maybeSingle();
     if (pe || !row) throw new Error("Passenger not found");
-    if ((row as any).jobs?.company_id !== c.id) throw new Error("Forbidden");
+    const rowJob = (row as any).jobs;
+    if (rowJob?.company_id !== c.id && rowJob?.executor_company_id !== c.id) throw new Error("Forbidden");
     const { error } = await supabaseAdmin.from("pax").delete().eq("id", data.pax_id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1278,7 +1289,9 @@ export const assignDriver = createServerFn({ method: "POST" })
     // so both sides of a dispatch must be recognized here, matching listJobs.
     const { data: job } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, executor_company_id, group_id, driver_id, driver_accepted_at, status, auto_created_from_crew_itinerary" as any)
+      .select(
+        "id, company_id, executor_company_id, group_id, driver_id, driver_accepted_at, status, auto_created_from_crew_itinerary, created_by_driver, needs_review" as any,
+      )
       .eq("id", data.job_id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .maybeSingle();
@@ -1291,6 +1304,9 @@ export const assignDriver = createServerFn({ method: "POST" })
       driver_id: (job as any).driver_id,
       driver_accepted_at: (job as any).driver_accepted_at,
       status: (job as any).status,
+      created_by_driver: (job as any).created_by_driver,
+      needs_review: (job as any).needs_review,
+      auto_created_from_crew_itinerary: (job as any).auto_created_from_crew_itinerary,
     };
     if (!c.isAdmin && isJobLocked(lockable) && lockable.driver_id !== data.driver_id) {
       const res = await createChangeRequest({
@@ -1429,7 +1445,9 @@ export const updateJobStatus = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, status, driver_id, driver_accepted_at")
+      .select(
+        "id, company_id, status, driver_id, driver_accepted_at, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+      )
       .eq("id", data.job_id)
       .eq("company_id", c.id)
       .maybeSingle();
@@ -1442,6 +1460,9 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       driver_id: (job as any).driver_id,
       driver_accepted_at: (job as any).driver_accepted_at,
       status: (job as any).status,
+      created_by_driver: (job as any).created_by_driver,
+      needs_review: (job as any).needs_review,
+      auto_created_from_crew_itinerary: (job as any).auto_created_from_crew_itinerary,
     };
     if (!c.isAdmin && data.status === "cancelled" && isJobLocked(lockable)) {
       const res = await createChangeRequest({
@@ -1532,6 +1553,14 @@ const CLONE_STRIP_FIELDS = new Set<string>([
   "origin_company_id",
   "executor_company_id",
   "dispatch_chain_company_ids",
+  // flight/vessel tracking — stale on a new trip; re-resolved via
+  // applyLiveStatusToJobBg right after the clone/split is created.
+  "flight_status",
+  "flight_status_note",
+  "flight_status_confidence",
+  "flight_status_updated_at",
+  "flight_scheduled_at",
+  "flight_estimated_at",
 ]);
 
 function mintLinkToken() {
@@ -1731,6 +1760,7 @@ export const cloneJob = createServerFn({ method: "POST" })
     });
 
     await spendSoft(c.id, "trip_created", "Trip cloned", row.id as string);
+    applyLiveStatusToJobBg(row.id as string);
     return { ...(row as any), _validation: report };
   });
 
@@ -1792,6 +1822,7 @@ export const splitJob = createServerFn({ method: "POST" })
       });
 
       await spendSoft(c.id, "trip_created", "Trip split from parent", row.id as string);
+      applyLiveStatusToJobBg(row.id as string);
       rows.push({ ...(row as any), _validation: report });
     }
     return rows;
@@ -2094,6 +2125,10 @@ export const approveBooking = createServerFn({ method: "POST" })
       .select()
       .single();
     if (jErr) throw new Error(jErr.message);
+    const paxName = `${b.name} ${b.surname}`.trim();
+    if (paxName) {
+      await supabaseAdmin.from("pax").insert({ job_id: job.id, name: paxName } as never);
+    }
     await supabaseAdmin.from("client_bookings").update({ status: "accepted", job_id: job.id }).eq("id", data.id);
     await spendSoft(c.id, "trip_created", "Trip from client booking", job.id);
     return { ok: true, job };
@@ -3044,7 +3079,7 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
       .from("jobs")
       .update(patch as any)
       .eq("id", data.job_id)
-      .eq("company_id", c.id);
+      .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`);
     if (upErr) throw new Error(upErr.message);
 
     if (!data.retry || !liveStatusProviderEnabled()) {
