@@ -494,7 +494,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -677,6 +677,13 @@ const jobInput = z.object({
   dropoff_place_id: z.string().trim().max(200).optional().nullable(),
   pickup_display_name: z.string().trim().max(200).optional().nullable(),
   dropoff_display_name: z.string().trim().max(200).optional().nullable(),
+  // Coordinates from the address autocomplete pick — used for the pickup/
+  // dropoff pins on the trip map. Other creation paths (portal, OTG) already
+  // persist these; the manual create/edit dialog didn't until now.
+  pickup_lat: z.number().optional().nullable(),
+  pickup_lng: z.number().optional().nullable(),
+  dropoff_lat: z.number().optional().nullable(),
+  dropoff_lng: z.number().optional().nullable(),
   tracking_kind: z.enum(["flight", "vessel"]).optional(),
   // Legacy name-only payload retained for bulk imports and older clients.
   pax: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
@@ -792,6 +799,10 @@ export const createJob = createServerFn({ method: "POST" })
         dropoff_place_id: data.dropoff_place_id || null,
         pickup_display_name: data.pickup_display_name || null,
         dropoff_display_name: data.dropoff_display_name || null,
+        pickup_lat: data.pickup_lat ?? null,
+        pickup_lng: data.pickup_lng ?? null,
+        dropoff_lat: data.dropoff_lat ?? null,
+        dropoff_lng: data.dropoff_lng ?? null,
         tracking_kind: data.tracking_kind ?? "flight",
       } as any)
       .select()
@@ -917,6 +928,10 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
     if (data.tracking_kind !== undefined) patch.tracking_kind = data.tracking_kind;
+    if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
+    if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;
+    if (data.dropoff_lat !== undefined) patch.dropoff_lat = data.dropoff_lat;
+    if (data.dropoff_lng !== undefined) patch.dropoff_lng = data.dropoff_lng;
     if (fromChanged) {
       patch.pickup_display_name = data.pickup_display_name || null;
       patch.pickup_place_id = data.pickup_place_id || null;
@@ -3725,6 +3740,94 @@ async function assertJobInCompany(ctx: Ctx, jobId: string) {
   if (!data) throw new Error("Job not found");
   return { company: c };
 }
+
+// Live fare estimate for the New Trip dialog, before a job row exists.
+// Wraps the same pure fare calculator autoPriceJob uses on real jobs
+// (computeFareBreakdown/pickAreaFor) — no metering needed since it's just
+// arithmetic over already-fetched distance/duration + the company's own
+// pricing settings, no external API call.
+export const previewFare = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        distance_m: z.number().min(0),
+        duration_sec: z.number().min(0),
+        from_location: z.string().trim().max(300).optional(),
+        to_location: z.string().trim().max(300).optional(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const { computeFareBreakdown } = await import("./fare");
+    const { pickAreaFor } = await import("./auto-price.server");
+    const [{ data: co }, { data: areas }] = await Promise.all([
+      supabaseAdmin
+        .from("companies")
+        .select("currency, price_per_km, price_per_hour, minimum_fare, free_wait_minutes, waiting_rate_per_minute")
+        .eq("id", c.id)
+        .maybeSingle(),
+      supabaseAdmin.from("service_areas" as any).select("*").eq("company_id", c.id),
+    ]);
+    if (!co) return { ok: false as const, reason: "no_company_settings" };
+    const area = pickAreaFor(
+      data.from_location ?? null,
+      data.to_location ?? null,
+      null,
+      null,
+      (areas ?? []) as any,
+    );
+    const km = data.distance_m / 1000;
+    const mins = Math.round(data.duration_sec / 60);
+    const bd = computeFareBreakdown({ km, mins, waitMins: 0, settings: co as any, area });
+    return { ok: true as const, total: Math.round(bd.total * 100) / 100, currency: bd.currency, areaName: bd.areaName };
+  });
+
+// Non-blocking "does this look like a duplicate?" check for the New Trip
+// dialog — same company, same from/to text, pickup within a 15-minute
+// window of an existing non-cancelled/non-completed trip. Deliberately a
+// warning, not a hard block: two separate real bookings can legitimately
+// match (e.g. two guests on the same hotel shuttle run).
+export const checkDuplicateBooking = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        from_location: z.string().trim().min(1).max(300),
+        to_location: z.string().trim().min(1).max(300),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        time: z.string().regex(/^\d{2}:\d{2}$/),
+        exclude_job_id: z.string().uuid().optional(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    let pickup_at: string;
+    try {
+      pickup_at = maltaWallTimeToUtcIso(data.date, data.time);
+    } catch {
+      return { duplicate: false as const };
+    }
+    const windowMs = 15 * 60_000;
+    const fromIso = new Date(new Date(pickup_at).getTime() - windowMs).toISOString();
+    const toIso = new Date(new Date(pickup_at).getTime() + windowMs).toISOString();
+    let q = supabaseAdmin
+      .from("jobs")
+      .select("id")
+      .eq("company_id", c.id)
+      .eq("from_location", data.from_location)
+      .eq("to_location", data.to_location)
+      .gte("pickup_at", fromIso)
+      .lte("pickup_at", toIso)
+      .not("status", "in", "(cancelled,completed)");
+    if (data.exclude_job_id) q = q.neq("id", data.exclude_job_id);
+    const { data: rows } = await q.limit(1);
+    return { duplicate: !!(rows && rows.length) };
+  });
 
 // ---------- Trip pricing (coordinator only) ----------
 // Reads and writes the sensitive price/payment fields on jobs. Access is

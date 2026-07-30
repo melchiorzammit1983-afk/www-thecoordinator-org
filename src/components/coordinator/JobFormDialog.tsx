@@ -50,7 +50,7 @@ function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange:
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking } from "@/lib/coordinator.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
@@ -67,7 +67,6 @@ import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -83,7 +82,10 @@ import { formatEta } from "@/lib/trip-display";
 import { Clock, AlertTriangle } from "lucide-react";
 import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
 import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
+import { RoutePinsMap } from "@/components/coordinator/RoutePinsMap";
 import { useMyCompany } from "@/hooks/use-coordinator";
+import { useRecentRoutes } from "@/hooks/use-recent-routes";
+import { Star } from "lucide-react";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -105,6 +107,10 @@ type Job = {
   dropoff_place_id?: string | null;
   pickup_display_name?: string | null;
   dropoff_display_name?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
   route_duration_sec?: number | null;
   route_distance_m?: number | null;
   labels?: { id: string; name: string; color: string }[];
@@ -201,9 +207,13 @@ function ManualForm({
   const [from, setFrom] = useState(job?.from_location ?? prefill?.from_location ?? "");
   const [fromPlaceId, setFromPlaceId] = useState<string | null>(job?.pickup_place_id ?? null);
   const [fromDisplayName, setFromDisplayName] = useState<string | null>(job?.pickup_display_name ?? null);
+  const [fromLat, setFromLat] = useState<number | null>(job?.pickup_lat ?? null);
+  const [fromLng, setFromLng] = useState<number | null>(job?.pickup_lng ?? null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
   const [toPlaceId, setToPlaceId] = useState<string | null>(job?.dropoff_place_id ?? null);
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
+  const [toLat, setToLat] = useState<number | null>(job?.dropoff_lat ?? null);
+  const [toLng, setToLng] = useState<number | null>(job?.dropoff_lng ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [fromKind, setFromKind] = useState<EndpointKind>(() =>
@@ -216,6 +226,7 @@ function ManualForm({
     (fromKind === "seaport" && toKind !== "airport") || (toKind === "seaport" && fromKind !== "airport")
       ? "vessel"
       : "flight";
+  const { routes: recentRoutes, recordRoute, toggleFavorite } = useRecentRoutes();
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
@@ -225,7 +236,7 @@ function ManualForm({
   const isMobile = useIsMobile();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  const [track, setTrack] = useState(job?.tracking_enabled ?? false);
+  const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
   const [passengers, setPassengers] = useState<PassengerDraft[]>(() =>
     prefill?.passengers?.length
       ? prefill.passengers.map((name, index) => passengerDraft(`prefill-${index}`, name))
@@ -387,6 +398,24 @@ function ManualForm({
   });
   const preview = previewMut.data;
 
+  // Auto-run the live status preview on new trips (free — "Preview only, no
+  // points spent") as soon as there's enough to check, same debounce shape as
+  // the ETA badge below. Existing jobs still use the manual Refresh button
+  // since that path spends real points (refreshJobLiveStatus).
+  const previewKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (job?.id || !canPreview) return;
+    const key = `${from}||${to}||${date}||${time}||${fromFlight}||${toFlight}`;
+    if (previewKeyRef.current === key) return;
+    const timer = setTimeout(() => {
+      previewKeyRef.current = key;
+      previewMut.mutate();
+    }, 800);
+    return () => clearTimeout(timer);
+    // previewMut is stable across renders (useMutation); only the inputs matter here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, canPreview, from, to, date, time, fromFlight, toFlight]);
+
   // Schedule-conflict gate: DriverAssignmentConflictHint reports severity;
   // when it's "conflict" the coordinator must tick "Assign anyway" before
   // submit is allowed. Prevents accidental double-booking of a driver.
@@ -437,12 +466,19 @@ function ManualForm({
         // never write the operations number into it.
         contact_phone: job?.contact_phone ?? "",
         driver_id: driverId === "__none__" ? null : driverId,
-        qr_strict_mode: false, tracking_enabled: track,
+        // Tracking is always on — there's no meaningful reason for a
+        // coordinator to create a trip without it.
+        qr_strict_mode: false, tracking_enabled: true,
+        vehicle: vehicle.trim(),
         label_ids: labelIds,
         pickup_place_id: fromPlaceId,
         dropoff_place_id: toPlaceId,
         pickup_display_name: fromDisplayName,
         dropoff_display_name: toDisplayName,
+        pickup_lat: fromLat,
+        pickup_lng: fromLng,
+        dropoff_lat: toLat,
+        dropoff_lng: toLng,
       };
       if (job) {
         const editPayload: any = { id: job.id, ...payload };
@@ -459,6 +495,12 @@ function ManualForm({
       toast.success(job ? "Trip updated" : "Trip created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["driver-manifest"] });
+      if (res.isNew) {
+        recordRoute({
+          from, fromPlaceId, fromDisplayName, fromLat, fromLng,
+          to, toPlaceId, toDisplayName, toLat, toLng,
+        });
+      }
       if (res.isNew && res.jobId) {
         // Keep the dialog open for a quick passenger review and optional
         // intermediate stops. onSaved() closes it from Done / Skip.
@@ -531,6 +573,53 @@ function ManualForm({
     return () => clearTimeout(timer);
   }, [from, to, etaFn, job?.id]);
 
+  // Live fare estimate — piggybacks on the ETA lookup above (no extra
+  // metering, just arithmetic over the company's own pricing settings).
+  const fareFn = useServerFn(previewFare);
+  const [fareResult, setFareResult] = useState<{ total: number; currency: string; areaName: string | null } | null>(null);
+  useEffect(() => {
+    if (!etaResult || !("duration_sec" in etaResult)) {
+      setFareResult(null);
+      return;
+    }
+    let cancelled = false;
+    fareFn({
+      data: {
+        distance_m: etaResult.distance_m,
+        duration_sec: etaResult.duration_sec,
+        from_location: from,
+        to_location: to,
+      },
+    })
+      .then((r: any) => {
+        if (!cancelled && r.ok) setFareResult({ total: r.total, currency: r.currency, areaName: r.areaName });
+      })
+      .catch(() => { /* best-effort — never block trip creation on a fare quote */ });
+    return () => { cancelled = true; };
+  }, [etaResult, from, to, fareFn]);
+
+  // Non-blocking duplicate-booking warning — same from/to text within 15 min
+  // of an existing non-cancelled/completed trip. Debounced like the ETA check.
+  const dupFn = useServerFn(checkDuplicateBooking);
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  useEffect(() => {
+    if (from.trim().length < 3 || to.trim().length < 3 || !date || !time) {
+      setDuplicateWarning(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const r = await dupFn({
+          data: { from_location: from, to_location: to, date, time, exclude_job_id: job?.id },
+        });
+        setDuplicateWarning(!!r.duplicate);
+      } catch {
+        setDuplicateWarning(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [from, to, date, time, job?.id, dupFn]);
+
   if (createdJobId) {
     return (
       <div className="flex flex-col gap-3">
@@ -595,6 +684,10 @@ function ManualForm({
         <section data-step="1" className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label>Client / company</Label><Input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Hilton Malta" /></div>
+            <div className="space-y-1.5">
+              <Label>Vehicle</Label>
+              <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="e.g. Minivan, Sedan" />
+            </div>
             <div className="space-y-1.5">
               <Label>24/7 trip support number</Label>
               <Input
@@ -710,6 +803,38 @@ function ManualForm({
 
         {/* STEP 2 — WHERE */}
         <section data-step="2" className="space-y-3">
+          {!job && recentRoutes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {recentRoutes.map((r) => (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => {
+                    setFrom(r.from); setFromPlaceId(r.fromPlaceId); setFromDisplayName(r.fromDisplayName);
+                    setFromLat(r.fromLat); setFromLng(r.fromLng);
+                    setTo(r.to); setToPlaceId(r.toPlaceId); setToDisplayName(r.toDisplayName);
+                    setToLat(r.toLat); setToLng(r.toLng);
+                    setFromKind(inferEndpointKind(r.from, ""));
+                    setToKind(inferEndpointKind(r.to, ""));
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-[11px] hover:bg-accent"
+                  title={`${r.from} → ${r.to}`}
+                >
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(r.key); }}
+                    className="-ml-0.5"
+                  >
+                    <Star className={`h-3 w-3 ${r.favorite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                  </span>
+                  <span className="max-w-[220px] truncate">
+                    {(r.fromDisplayName || r.from).split(",")[0]} → {(r.toDisplayName || r.to).split(",")[0]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 min-w-0">
               <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
@@ -721,6 +846,8 @@ function ManualForm({
                   setFrom(v.address);
                   setFromPlaceId(v.place_id);
                   setFromDisplayName(v.display_name ?? null);
+                  setFromLat(v.lat);
+                  setFromLng(v.lng);
                 }}
                 onBlur={() => handleLocationBlur("from")}
                 placeholder={placeholderForKind(fromKind, fromFlight)}
@@ -748,6 +875,8 @@ function ManualForm({
                   setTo(v.address);
                   setToPlaceId(v.place_id);
                   setToDisplayName(v.display_name ?? null);
+                  setToLat(v.lat);
+                  setToLng(v.lng);
                 }}
                 onBlur={() => handleLocationBlur("to")}
                 placeholder={placeholderForKind(toKind, toFlight)}
@@ -766,6 +895,12 @@ function ManualForm({
               )}
             </div>
           </div>
+          {duplicateWarning && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              A trip with this same route and pickup time (within 15 min) already exists. Double check this isn't a duplicate entry.
+            </div>
+          )}
           {(from.trim().length >= 3 && to.trim().length >= 3) && (
             <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
               <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -787,6 +922,20 @@ function ManualForm({
                 <span className="text-muted-foreground">Estimated drive time will show here</span>
               )}
             </div>
+          )}
+          {fareResult && (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 flex items-center gap-2 text-xs">
+              <span className="font-semibold text-foreground">
+                ≈ {fareResult.currency} {fareResult.total.toFixed(2)}
+              </span>
+              <span className="text-muted-foreground">estimated fare{fareResult.areaName ? ` · ${fareResult.areaName}` : ""}</span>
+            </div>
+          )}
+          {(fromLat != null || toLat != null) && (
+            <RoutePinsMap
+              from={fromLat != null && fromLng != null ? { lat: fromLat, lng: fromLng } : null}
+              to={toLat != null && toLng != null ? { lat: toLat, lng: toLng } : null}
+            />
           )}
           {job && <StopsEditor jobId={job.id} />}
         </section>
@@ -881,10 +1030,6 @@ function ManualForm({
 
           </div>
           <LabelPicker value={labelIds} onChange={setLabelIds} />
-          <ToggleRow
-            label="Enable Live Tracking" hint="GPS updates from driver device"
-            checked={track} onChange={setTrack}
-          />
           <div className="rounded-md border bg-muted/40 p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-medium text-muted-foreground">Live status preview</div>
@@ -899,7 +1044,9 @@ function ManualForm({
             </div>
             {!preview && !previewMut.isPending && (
               <div className="text-[11px] text-muted-foreground">
-                Fill from/to and date/time (and optional flight) then check for real-time delays before saving. Preview only — no points spent.
+                {job
+                  ? "Fill from/to and date/time (and optional flight) then check for real-time delays before saving."
+                  : "Fills in automatically once from/to and date/time are set. Preview only — no points spent."}
               </div>
             )}
             {preview && (
@@ -1391,23 +1538,6 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
           {mut.isPending ? "Creating…" : `Create ${valid.length} trip${valid.length === 1 ? "" : "s"}`}
         </Button>
       </DialogFooter>
-    </div>
-  );
-}
-
-function ToggleRow({
-  label, hint, checked, onChange,
-}: {
-  label: string; hint: string;
-  checked: boolean; onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-md border p-3">
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-muted-foreground">{hint}</div>
-      </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
