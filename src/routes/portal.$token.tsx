@@ -721,7 +721,11 @@ function TripLiveMap({ token, jobId }: { token: string; jobId: string }) {
     async function poll() {
       try {
         const r = await fetch(`/api/public/portal/${token}/trip-location?job_id=${jobId}`);
-        if (!r.ok || stopped) return;
+        if (stopped) return;
+        if (!r.ok) {
+          timer = window.setTimeout(poll, 15_000);
+          return;
+        }
         const j: TripLocationData = await r.json();
         setData(j);
         const finished = j.job_status === "completed" || j.job_status === "cancelled";

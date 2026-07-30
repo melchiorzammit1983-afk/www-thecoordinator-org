@@ -245,10 +245,11 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         };
       }
 
-      const soloRows = fillable.filter((r) => !r.selected);
+      const merging = checkedRows.length >= 2;
+      const soloRows = merging ? fillable.filter((r) => !r.selected) : fillable;
       const bookings = soloRows.map((r) => toPayload(r));
 
-      if (checkedRows.length >= 2) {
+      if (merging) {
         const combinedNames = checkedRows.flatMap((r) => splitPaxNames(r.name));
         const combinedPaxCount = Math.max(
           combinedNames.length,
