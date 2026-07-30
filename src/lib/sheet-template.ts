@@ -6,38 +6,50 @@ import { normalizePhone, isMeaningfulName } from "@/lib/parse-trips";
 export const SHEET_HEADERS = [
   "Pickup Date",
   "Pickup Time",
+  "Passenger Name",
+  "Phone Number",
+  "Email",
   "Pickup Address",
+  "From Flight",
+  "From Vessel",
   "Delivery Address",
-  "Flight/Vessel (Pickup)",
-  "Flight/Vessel (Drop-off)",
-  "Customer Name",
-  "Contact Number",
-  "Vehicle",
-  "Transport Type",
-  "Quantity",
-  "Operation Name",
+  "To Flight",
+  "To Vessel",
+  "Pax Count",
   "Notes",
+  "Vehicle",
+  "Immigration Needed",
+  "Transport Type",
+  "Operation Name",
 ] as const;
 
 const SAMPLE_ROWS: string[][] = [
-  ["2026-07-10", "08:30", "Hotel Cerviola, Marsaskala", "Malta International Airport", "", "KM101", "John Smith", "+35699123456", "Sedan", "Airport Transfer", "2", "Everest Crew Change", ""],
-  ["2026-07-10", "14:00", "Valletta Cruise Port", "Radisson Golden Sands", "Asso Venticinque", "", "Maria Rossi", "+393331234567", "Minivan", "Shuttle", "4", "Everest Crew Change", "Guest uses a wheelchair"],
+  // Primary row for a 2-passenger trip — the second passenger is added via
+  // the stacked continuation row right below (name only, everything else blank).
+  ["2026-07-10", "08:30", "John Smith", "+35699123456", "john@example.com", "Hotel Cerviola, Marsaskala", "", "", "Malta International Airport", "KM101", "", "", "", "Sedan", "Yes", "Airport Transfer", "Everest Crew Change"],
+  ["", "", "Maria Rossi", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  // Vessel example + the Freeport exception: Immigration Needed is "Yes" but
+  // the pickup is the Freeport, so no immigration stop gets added.
+  ["2026-07-11", "14:00", "Ali Hassan", "+393331234567", "", "Malta Freeport", "", "Asso Venticinque", "Radisson Golden Sands", "", "", "1", "Guest uses a wheelchair", "Minivan", "Yes", "Shuttle", "Everest Crew Change"],
 ];
 
 const INSTRUCTIONS: string[][] = [
   ["How to use this template"],
   [""],
-  ["1. Fill one row per trip. Use Operation Name to group rows into the same operation. Do NOT rename or reorder the header columns."],
-  ["2. Pickup Date format: YYYY-MM-DD (e.g. 2026-07-10)."],
-  ["3. Pickup Time format: 24h HH:MM (e.g. 08:30)."],
-  ["4. Flight/Vessel (Pickup) and (Drop-off): flight code (e.g. KM101) or vessel name (e.g. Asso Venticinque). Leave blank if not applicable."],
-  ["5. Contact Number: include country code with + (e.g. +35699123456)."],
-  ["6. Vehicle: e.g. Sedan, Minivan, Coach. Leave blank if not decided yet."],
-  ["7. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
-  ["8. Quantity: number of passengers."],
-  ["9. Notes: any other detail the driver/coordinator should know (optional)."],
-  ["10. Keep the Contact Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
-  ["11. Leave any box empty if you don't have that detail — don't guess."],
+  ["1. Fill one row per trip. Do NOT rename or reorder the header columns."],
+  ["2. Multiple passengers on the same trip: put the first passenger's row with all the trip's details filled in, then add one row per extra passenger directly underneath with ONLY the Passenger Name filled in (everything else on that row left blank). Pax Count adjusts automatically."],
+  ["3. Pickup Date format: YYYY-MM-DD (e.g. 2026-07-10)."],
+  ["4. Pickup Time format: 24h HH:MM (e.g. 08:30)."],
+  ["5. Phone Number: include country code with + (e.g. +35699123456)."],
+  ["6. From Flight / To Flight: flight code (e.g. KM101). From Vessel / To Vessel: vessel name (e.g. Asso Venticinque). Use whichever applies per side and leave the rest blank."],
+  ["7. Pax Count: leave blank to auto-count from the passenger rows, or set a number to add unnamed extra seats."],
+  ["8. Vehicle: e.g. Sedan, Minivan, Coach. Leave blank if not decided yet."],
+  ["9. Immigration Needed: Yes or No. When Yes, an \"Immigration Office, Valletta\" stop is added to the trip automatically — unless Pickup Address is the Freeport, which never needs it."],
+  ["10. Transport Type: free text (Airport Transfer, Shuttle, Cruise, VIP, etc.)."],
+  ["11. Notes: any other detail the driver/coordinator should know (optional)."],
+  ["12. Operation Name (optional): group separate trips (separate primary rows) under the same operation label."],
+  ["13. Keep the Phone Number column formatted as Text (already preset) so long numbers don't turn into 3.9E+11 when copied."],
+  ["14. Leave any box empty if you don't have that detail — don't guess."],
   [""],
   ["When done, select your filled rows (including the header) and copy them."],
   ["Paste into the coordinator app under Add trip → Paste bulk."],
@@ -50,9 +62,9 @@ function buildWorkbook(): XLSX.WorkBook {
   const rows: (string | number)[][] = [SHEET_HEADERS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = SHEET_HEADERS.map((h) => ({ wch: Math.max(14, h.length + 2) }));
-  // Force Contact Number column (F) to Text so long phone numbers don't
+  // Force Phone Number column to Text so long phone numbers don't
   // become scientific notation ("3.93331E+11") when copied.
-  const phoneColIdx = SHEET_HEADERS.indexOf("Contact Number");
+  const phoneColIdx = SHEET_HEADERS.indexOf("Phone Number");
   if (phoneColIdx >= 0) {
     for (let r = 0; r <= SAMPLE_ROWS.length; r++) {
       const addr = XLSX.utils.encode_cell({ r, c: phoneColIdx });
@@ -124,54 +136,68 @@ const HEADER_ALIASES: Record<string, string> = {
   "date": "date",
   "pickup time": "time",
   "time": "time",
+  "customer name": "name",
+  "passenger": "name",
+  "passenger name": "name",
+  "passenger(s)": "name",
+  "name": "name",
+  "contact number": "phone",
+  "phone number": "phone",
+  "phone": "phone",
+  "contact": "phone",
+  "email": "email",
+  "email address": "email",
   "pickup address": "from",
   "pickup": "from",
   "from": "from",
+  // Flight and vessel are separate columns per side in the template, but
+  // both collapse into the same underlying from_flight/to_flight value —
+  // a trip only ever has one "from" tracking code either way.
+  "from flight": "from_flight",
+  "flight/vessel (pickup)": "from_flight",
+  "flight (pickup)": "from_flight",
+  "flight pickup": "from_flight",
+  "pickup flight": "from_flight",
+  "from vessel": "from_vessel",
+  "vessel (pickup)": "from_vessel",
+  "vessel pickup": "from_vessel",
+  "pickup vessel": "from_vessel",
   "delivery address": "to",
   "drop off": "to",
   "dropoff": "to",
   "drop-off address": "to",
   "to": "to",
-  "flight/vessel (pickup)": "from_flight",
-  "flight (pickup)": "from_flight",
-  "flight pickup": "from_flight",
-  "vessel (pickup)": "from_flight",
-  "vessel pickup": "from_flight",
-  "pickup flight": "from_flight",
-  "pickup vessel": "from_flight",
+  "to flight": "to_flight",
   "flight/vessel (drop-off)": "to_flight",
   "flight (drop-off)": "to_flight",
   "flight (dropoff)": "to_flight",
   "flight dropoff": "to_flight",
   "flight drop-off": "to_flight",
-  "vessel (drop-off)": "to_flight",
-  "vessel (dropoff)": "to_flight",
-  "vessel dropoff": "to_flight",
   "dropoff flight": "to_flight",
-  "dropoff vessel": "to_flight",
-  "customer name": "name",
-  "passenger": "name",
-  "passenger name": "name",
-  "name": "name",
-  "contact number": "phone",
-  "phone": "phone",
-  "contact": "phone",
-  "vehicle": "vehicle",
-  "transport type": "type",
-  "type": "type",
-  "service": "type",
+  "to vessel": "to_vessel",
+  "vessel (drop-off)": "to_vessel",
+  "vessel (dropoff)": "to_vessel",
+  "vessel dropoff": "to_vessel",
+  "dropoff vessel": "to_vessel",
+  "pax count": "qty",
   "quantity": "qty",
   "qty": "qty",
   "pax": "qty",
+  "notes": "notes",
+  "note": "notes",
+  "comments": "notes",
+  "comment": "notes",
+  "vehicle": "vehicle",
+  "immigration needed": "immigration",
+  "immigration": "immigration",
+  "transport type": "type",
+  "type": "type",
+  "service": "type",
   "operation name": "operation_name",
   "operation": "operation_name",
   "job": "operation_name",
   "job name": "operation_name",
   "job title": "operation_name",
-  "notes": "notes",
-  "note": "notes",
-  "comments": "notes",
-  "comment": "notes",
 };
 
 function splitRow(line: string): string[] {
@@ -274,42 +300,81 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     });
   } else {
     // Assume canonical order (matches SHEET_HEADERS).
-    ["date", "time", "from", "to", "from_flight", "to_flight", "name", "phone", "vehicle", "type", "qty", "operation_name", "notes"]
+    ["date", "time", "name", "phone", "email", "from", "from_flight", "from_vessel", "to", "to_flight", "to_vessel", "qty", "notes", "vehicle", "immigration", "type", "operation_name"]
       .forEach((k, i) => { cols[k] = i; });
   }
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const trips: ParsedTrip[] = [];
+
+  // A trip's Pax Count is only known for certain once every stacked
+  // continuation row underneath its primary row has been seen — so track
+  // the explicit count (0 = none given) alongside the trip being built and
+  // pad with "Guest N" only when the trip is finalized (a new primary row
+  // starts, or we reach the end of the data).
+  let current: ParsedTrip | null = null;
+  let currentExplicitQty = 0;
+  const finalize = () => {
+    if (!current) return;
+    const trip = current;
+    const qty = Math.max(currentExplicitQty, trip.pax.length, 1);
+    while (trip.pax.length < qty) {
+      trip.pax.push(trip.pax.length === 0 ? "Guest" : `Guest ${trip.pax.length + 1}`);
+    }
+    if (!trip.date) trip.errors.push("Missing date");
+    if (!trip.time) trip.errors.push("Missing time");
+    if (!trip.from_location) trip.errors.push("Missing From");
+    if (!trip.to_location) trip.errors.push("Missing To");
+    trips.push(trip);
+    current = null;
+    currentExplicitQty = 0;
+  };
+
   for (const line of dataLines) {
     const cells = splitRow(line).map((c) => c.trim());
     if (!cells.some((c) => c.length > 0)) continue;
     const get = (k: string) => (cols[k] != null ? cells[cols[k]] ?? "" : "");
-    const date = normDate(get("date"));
-    const time = normTime(get("time"));
-    const from = get("from");
-    const to = get("to");
     const name = get("name");
-    const phone = normalizePhone(expandScientific(get("phone")));
-    const type = get("type");
-    const qtyRaw = get("qty");
-    const qty = Math.max(1, Math.min(50, parseInt(qtyRaw, 10) || (name ? 1 : 1)));
-    const operation_name = get("operation_name").trim();
-    const from_flight = get("from_flight").trim();
-    const to_flight = get("to_flight").trim();
-    const vehicle = get("vehicle").trim();
-    const notes = get("notes").trim();
-
-    const pax: string[] = [];
-    // Support multiple names in one cell: "John Smith, Maria Rossi & Ali"
     const nameParts = name
       ? name.split(/\s*(?:,|;|\/| & | \+ | and )\s*/i).map((s) => s.trim()).filter(Boolean)
       : [];
+
+    const rawDate = get("date").trim();
+    const rawTime = get("time").trim();
+    const from = get("from").trim();
+    const to = get("to").trim();
+    // A row with none of its own date/time/from/to is another passenger for
+    // the trip started by the row above it, not a new trip.
+    if (current && !rawDate && !rawTime && !from && !to) {
+      for (const part of nameParts) {
+        if (isMeaningfulName(part)) current.pax.push(part);
+      }
+      continue;
+    }
+
+    finalize();
+
+    const date = normDate(rawDate);
+    const time = normTime(rawTime);
+    const phone = normalizePhone(expandScientific(get("phone")));
+    const email = get("email").trim();
+    const type = get("type").trim();
+    const qtyRaw = get("qty").trim();
+    currentExplicitQty = Math.max(0, Math.min(50, parseInt(qtyRaw, 10) || 0));
+    const operation_name = get("operation_name").trim();
+    // Flight and vessel are separate template columns per side but collapse
+    // into the same from_flight/to_flight value — flight wins if both filled.
+    const from_flight = get("from_flight").trim() || get("from_vessel").trim();
+    const to_flight = get("to_flight").trim() || get("to_vessel").trim();
+    const vehicle = get("vehicle").trim();
+    const notes = get("notes").trim();
+    const immigration_needed = /^y(es)?$/i.test(get("immigration").trim());
+
+    const pax: string[] = [];
     for (const part of nameParts) {
       if (isMeaningfulName(part)) pax.push(part);
     }
-    // If quantity > names supplied, pad with generic labels so seat counts match.
-    while (pax.length < qty) pax.push(pax.length === 0 ? "Guest" : `Guest ${pax.length + 1}`);
 
-    const trip: ParsedTrip = {
+    current = {
       date, time,
       from_location: from,
       to_location: to,
@@ -320,15 +385,13 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       to_flight,
       vehicle,
       notes,
+      email,
+      immigration_needed,
       pax,
       contact_phone: phone,
       errors: [],
     };
-    if (!trip.date) trip.errors.push("Missing date");
-    if (!trip.time) trip.errors.push("Missing time");
-    if (!trip.from_location) trip.errors.push("Missing From");
-    if (!trip.to_location) trip.errors.push("Missing To");
-    trips.push(trip);
   }
+  finalize();
   return trips;
 }

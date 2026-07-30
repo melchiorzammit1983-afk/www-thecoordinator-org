@@ -1291,8 +1291,10 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,
         contact_phone: t.contact_phone,
+        email: t.email,
         vehicle: t.vehicle,
         notes: t.notes,
+        immigration_needed: t.immigration_needed,
         pax: t.pax,
       })),
       label_ids: labelIds,
@@ -1516,6 +1518,12 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       onChange={(e) => patch({ contact_phone: e.target.value })} />
                   </label>
                   <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Email</span>
+                    <Input value={t.email} className="h-7 text-xs"
+                      placeholder="Booking contact email"
+                      onChange={(e) => patch({ email: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
                     <span className="text-[10px] text-muted-foreground">Flight (from)</span>
                     <Input value={t.from_flight} className="h-7 text-xs"
                       placeholder="e.g. KM101"
@@ -1533,11 +1541,33 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       placeholder="e.g. Minivan, Sedan"
                       onChange={(e) => patch({ vehicle: e.target.value })} />
                   </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Pax count</span>
+                    <Input type="number" min={1} max={50} value={t.pax.length} className="h-7 text-xs"
+                      onChange={(e) => {
+                        const count = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1));
+                        let pax = t.pax;
+                        if (pax.length < count) {
+                          pax = [...pax];
+                          while (pax.length < count) pax.push(pax.length === 0 ? "Guest" : `Guest ${pax.length + 1}`);
+                        } else if (pax.length > count) {
+                          pax = pax.slice(0, count);
+                        }
+                        patch({ pax });
+                      }} />
+                  </label>
                   <label className="space-y-1 col-span-2">
                     <span className="text-[10px] text-muted-foreground">Notes</span>
                     <Input value={t.notes} className="h-7 text-xs"
                       placeholder="Optional note for this trip"
                       onChange={(e) => patch({ notes: e.target.value })} />
+                  </label>
+                  <label className="space-y-1 col-span-2 flex flex-row items-center gap-2">
+                    <input type="checkbox" checked={t.immigration_needed}
+                      onChange={(e) => patch({ immigration_needed: e.target.checked })} />
+                    <span className="text-[10px] text-muted-foreground">
+                      Immigration needed — adds an "Immigration Office, Valletta" stop (skipped automatically if Pickup is the Freeport)
+                    </span>
                   </label>
                   <div className="space-y-1 col-span-2 rounded-md border bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
                     <div className="font-medium text-foreground">Passengers</div>

@@ -494,7 +494,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -2415,8 +2415,10 @@ const bulkTripInput = z.object({
         to_flight: z.string().trim().max(40).optional().default(""),
         clientcompanyname: z.string().trim().max(200).optional().default(""),
         contact_phone: z.string().trim().max(40).optional().default(""),
+        email: z.string().trim().max(255).optional().default(""),
         vehicle: z.string().trim().max(120).optional().default(""),
         notes: z.string().trim().max(2000).optional().default(""),
+        immigration_needed: z.boolean().optional().default(false),
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
       }),
@@ -2485,6 +2487,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           to_flight: (t.to_flight || "").toUpperCase() || null,
           clientcompanyname: t.clientcompanyname || null,
           contact_phone: t.contact_phone || null,
+          email: t.email || null,
           qr_strict_mode: false,
           tracking_enabled: false,
           vehicle: t.vehicle || null,
@@ -2501,6 +2504,25 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         const rows = t.pax.map((name) => ({ job_id: job.id, name }));
         const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
+      }
+      // Immigration Needed rule: skip when the pickup is the Freeport — it
+      // never requires the immigration-office stop, regardless of the flag.
+      if (t.immigration_needed && !/freeport/i.test(t.from_location)) {
+        const { data: group, error: gErr } = await supabaseAdmin
+          .from("groups")
+          .insert({ job_id: job.id, name: "Trip stops", status: "pending" } as any)
+          .select("id")
+          .single();
+        if (!gErr && group) {
+          await supabaseAdmin.from("group_stops").insert({
+            group_id: (group as any).id,
+            stop_index: 0,
+            address: "Immigration Office, Valletta",
+            lat: null,
+            lng: null,
+            place_id: null,
+          } as any);
+        }
       }
       await syncJobLabels(context, c.id, job.id, data.label_ids);
       if (t.from_flight || t.to_flight) {
