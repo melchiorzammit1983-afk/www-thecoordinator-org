@@ -213,6 +213,7 @@ type Job = {
   driver_id: string | null;
   vehicle: string | null;
   contact_phone: string | null;
+  email?: string | null;
   clientcompanyname: string | null;
   notes?: string | null;
   driver_accepted_at: string | null;
@@ -2968,6 +2969,18 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                     </a>
                   </div>
                 )}
+                {job.email && (
+                  <div className="truncate">
+                    <span className="opacity-70">Email:</span>{" "}
+                    <a
+                      href={`mailto:${job.email}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-foreground hover:underline"
+                    >
+                      {job.email}
+                    </a>
+                  </div>
+                )}
                 {job.vehicle && (
                   <div className="truncate">
                     <span className="opacity-70">Vehicle:</span>{" "}
@@ -2986,7 +2999,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                     <span className="text-foreground">{job.notes}</span>
                   </div>
                 )}
-                {!job.contact_phone && !job.vehicle && !job.group_note && !job.notes && !job.clientcompanyname && !hasFlightCode && (
+                {!job.contact_phone && !job.email && !job.vehicle && !job.group_note && !job.notes && !job.clientcompanyname && !hasFlightCode && (
                   <div className="italic opacity-70">No extra details</div>
                 )}
               </div>

@@ -14,6 +14,8 @@ export type ParsedTrip = {
   to_flight: string;
   vehicle: string;
   notes: string;
+  email: string;
+  immigration_needed: boolean;
   pax: string[];
   contact_phone: string;
   errors: string[];
@@ -208,6 +210,8 @@ export function parseTrips(raw: string): ParsedTrip[] {
       to_flight: "",
       vehicle: "",
       notes: "",
+      email: "",
+      immigration_needed: false,
       pax: [],
       contact_phone: "",
       errors: [],
