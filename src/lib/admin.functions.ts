@@ -638,7 +638,7 @@ export const adminUpsertPlan = createServerFn({ method: "POST" })
       price_monthly: z.number().min(0),
       included_points: z.number().int().min(0),
       feature_keys: z.array(z.string()).max(50),
-      sort_order: z.number().int().min(0).max(999).default(0),
+      sort_order: z.coerce.number().int().catch(0).transform((v) => Math.min(999, Math.max(0, v))).default(0),
       description: z.string().trim().max(500).optional().nullable(),
       driver_cap: z.number().int().min(0).max(10000).optional().nullable(),
       trial_days: z.number().int().min(0).max(365).optional(),
