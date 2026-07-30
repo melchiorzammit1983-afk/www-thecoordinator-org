@@ -4072,6 +4072,7 @@ export type Database = {
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_place_id: string | null
+          email: string | null
           event_payout_total_eur: number
           executor_company_id: string | null
           flight_baggage_belt: string | null
@@ -4105,6 +4106,7 @@ export type Database = {
           live_eta_sec: number | null
           live_eta_updated_at: string | null
           needs_review: boolean
+          notes: string | null
           origin_company_id: string | null
           paid_amount: number | null
           paid_at: string | null
@@ -4209,6 +4211,7 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_place_id?: string | null
+          email?: string | null
           event_payout_total_eur?: number
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
@@ -4242,6 +4245,7 @@ export type Database = {
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
           needs_review?: boolean
+          notes?: string | null
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
@@ -4346,6 +4350,7 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_place_id?: string | null
+          email?: string | null
           event_payout_total_eur?: number
           executor_company_id?: string | null
           flight_baggage_belt?: string | null
@@ -4379,6 +4384,7 @@ export type Database = {
           live_eta_sec?: number | null
           live_eta_updated_at?: string | null
           needs_review?: boolean
+          notes?: string | null
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
