@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { placesAutocomplete, placesDetails, resolveAddresses } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
+import { looksLikeCode } from "@/lib/trip-display";
 
 export type AddressPick = {
   address: string;
@@ -138,8 +139,11 @@ export function AddressAutocomplete({
       const det = await detailsFn({
         data: { place_id: s.place_id, session_token: sessionRef.current },
       });
+      // Google sometimes resolves an imprecise location to a Plus Code
+      // formatted address — never let that replace what the user picked.
+      const resolvedAddress = det.address && !looksLikeCode(det.address) ? det.address : s.text;
       onChange({
-        address: det.address || s.text,
+        address: resolvedAddress,
         place_id: det.place_id,
         lat: det.lat,
         lng: det.lng,
@@ -192,7 +196,9 @@ export function AddressAutocomplete({
           onBlur={async () => {
             // If the user typed free text (or a plus-code) and never picked
             // a suggestion, auto-resolve the top match so we still capture
-            // the business/hotel name for the trip cards.
+            // the business/hotel name for the trip cards. Never let a
+            // resolved Plus Code / bare coordinate replace what they typed —
+            // keep their original text as the address in that case.
             const q = value.trim();
             if (q.length >= 3 && !placeId) {
               try {
@@ -201,8 +207,9 @@ export function AddressAutocomplete({
                 });
                 const hit = res?.results?.q;
                 if (hit && hit.place_id) {
+                  const resolvedAddress = hit.address && !looksLikeCode(hit.address) ? hit.address : q;
                   onChange({
-                    address: hit.address || q,
+                    address: resolvedAddress,
                     place_id: hit.place_id,
                     lat: hit.lat ?? null,
                     lng: hit.lng ?? null,

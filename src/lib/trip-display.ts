@@ -4,6 +4,8 @@
 // strings when we have a hotel/business name for the location. Coordinates
 // remain stored on the row for routing.
 
+import { MALTA_TZ } from "./time";
+
 // Google plus-code like "VH79+7PC" or "8FVC9G8V+"
 const PLUS_CODE_RE = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWXcfghjmpqrvwx]{2,7}(?:[,\s].*)?$/;
 // Bare lat/lng pair, e.g. "35.937500, 14.375400"
@@ -42,6 +44,23 @@ export function displayLocation(
     return "Location pin";
   }
   return raw;
+}
+
+// Human-readable pickup date/time for compact cards, e.g. "Thu 30 Jul, 09:49".
+// Always rendered in Malta wall-clock time regardless of device timezone.
+export function formatFriendlyDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MALTA_TZ,
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  let hour = get("hour");
+  if (hour === "24") hour = "00";
+  return `${get("weekday")} ${get("day")} ${get("month")}, ${hour}:${get("minute")}`;
 }
 
 // Format ETA seconds → "≈ 28 min" / "≈ 1h 5m"
