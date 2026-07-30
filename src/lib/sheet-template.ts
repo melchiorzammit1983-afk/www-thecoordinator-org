@@ -363,8 +363,17 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
     const operation_name = get("operation_name").trim();
     // Flight and vessel are separate template columns per side but collapse
     // into the same from_flight/to_flight value — flight wins if both filled.
-    const from_flight = get("from_flight").trim() || get("from_vessel").trim();
-    const to_flight = get("to_flight").trim() || get("to_vessel").trim();
+    const fromFlightCell = get("from_flight").trim();
+    const fromVesselCell = get("from_vessel").trim();
+    const toFlightCell = get("to_flight").trim();
+    const toVesselCell = get("to_vessel").trim();
+    const from_flight = fromFlightCell || fromVesselCell;
+    const to_flight = toFlightCell || toVesselCell;
+    // Which column the code came from is a reliable, explicit signal for how
+    // to track it live — a flight code in a Vessel column (or vice versa)
+    // otherwise gets tracked against the wrong provider and never resolves.
+    const tracking_kind: "flight" | "vessel" =
+      fromFlightCell || toFlightCell ? "flight" : fromVesselCell || toVesselCell ? "vessel" : "flight";
     const vehicle = get("vehicle").trim();
     const notes = get("notes").trim();
     const immigration_needed = /^y(es)?$/i.test(get("immigration").trim());
@@ -383,6 +392,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       flightorship: type || from_flight || to_flight || "",
       from_flight,
       to_flight,
+      tracking_kind,
       vehicle,
       notes,
       email,
