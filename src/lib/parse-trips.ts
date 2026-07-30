@@ -12,6 +12,7 @@ export type ParsedTrip = {
   flightorship: string;
   from_flight: string;
   to_flight: string;
+  tracking_kind: "flight" | "vessel";
   vehicle: string;
   notes: string;
   email: string;
@@ -208,6 +209,7 @@ export function parseTrips(raw: string): ParsedTrip[] {
       flightorship: "",
       from_flight: "",
       to_flight: "",
+      tracking_kind: "flight",
       vehicle: "",
       notes: "",
       email: "",
@@ -285,6 +287,7 @@ export function parseTrips(raw: string): ParsedTrip[] {
         if (lastSide === "to") trip.to_flight = code;
         else trip.from_flight = code;
         trip.flightorship = code;
+        trip.tracking_kind = "flight";
         inNames = false;
         continue;
       }
@@ -294,6 +297,7 @@ export function parseTrips(raw: string): ParsedTrip[] {
         if (lastSide === "to") trip.to_flight = val;
         else trip.from_flight = val;
         trip.flightorship = val;
+        trip.tracking_kind = "vessel";
         inNames = false;
         continue;
       }

@@ -1290,6 +1290,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         date: t.date, time: t.time,
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,
+        tracking_kind: t.tracking_kind,
         contact_phone: t.contact_phone,
         email: t.email,
         vehicle: t.vehicle,
@@ -1524,16 +1525,31 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       onChange={(e) => patch({ email: e.target.value })} />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground">Flight (from)</span>
+                    <span className="text-[10px] text-muted-foreground">{t.tracking_kind === "vessel" ? "Vessel (from)" : "Flight (from)"}</span>
                     <Input value={t.from_flight} className="h-7 text-xs"
-                      placeholder="e.g. KM101"
+                      placeholder={t.tracking_kind === "vessel" ? "e.g. Asso Venticinque" : "e.g. KM101"}
                       onChange={(e) => patch({ from_flight: e.target.value })} />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground">Flight (to)</span>
+                    <span className="text-[10px] text-muted-foreground">{t.tracking_kind === "vessel" ? "Vessel (to)" : "Flight (to)"}</span>
                     <Input value={t.to_flight} className="h-7 text-xs"
-                      placeholder="e.g. KM102"
+                      placeholder={t.tracking_kind === "vessel" ? "e.g. Asso Venticinque" : "e.g. KM102"}
                       onChange={(e) => patch({ to_flight: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Track as</span>
+                    <div className="flex gap-1">
+                      <button type="button"
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] h-7 ${t.tracking_kind === "flight" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
+                        onClick={() => patch({ tracking_kind: "flight" })}>
+                        <Plane className="h-3 w-3" /> Flight
+                      </button>
+                      <button type="button"
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] h-7 ${t.tracking_kind === "vessel" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
+                        onClick={() => patch({ tracking_kind: "vessel" })}>
+                        <Ship className="h-3 w-3" /> Vessel
+                      </button>
+                    </div>
                   </label>
                   <label className="space-y-1">
                     <span className="text-[10px] text-muted-foreground">Vehicle</span>
