@@ -31,6 +31,8 @@ import { PastTripsCard } from "@/components/client/PastTripsCard";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { displayLocation } from "@/lib/trip-display";
 import { supabase } from "@/integrations/supabase/client";
+import { registerServiceWorker } from "@/lib/pwa/register-sw";
+
 
 
 export const Route = createFileRoute("/t/$token")({
@@ -71,11 +73,14 @@ function ClientTripPortal() {
   const qc = useQueryClient();
   const online = useOnline();
 
-  // Register service worker (offline + push)
+  // Register service worker (offline + push).
+  // Goes through the guarded wrapper so it never installs in dev, in the
+  // editor preview, or inside an iframe — an unguarded scope-"/" worker there
+  // intercepts every request and serves stale bundles.
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    registerServiceWorker();
   }, []);
+
 
   const portalFn = useServerFn(getClientTripPortal);
   const [cached, setCached] = useState<ReturnType<typeof readPortalCache>>(null);
