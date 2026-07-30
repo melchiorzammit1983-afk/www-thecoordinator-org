@@ -31,6 +31,8 @@ import { PastTripsCard } from "@/components/client/PastTripsCard";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { displayLocation } from "@/lib/trip-display";
 import { supabase } from "@/integrations/supabase/client";
+import { registerServiceWorker } from "@/lib/pwa/register-sw";
+
 
 
 export const Route = createFileRoute("/t/$token")({
