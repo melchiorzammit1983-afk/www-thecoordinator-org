@@ -8,9 +8,13 @@ const BookingInput = z.object({
   from_place_id: z.string().max(200).nullable().optional(),
   from_lat: z.number().nullable().optional(),
   from_lng: z.number().nullable().optional(),
+  // Resolved place/business name from Google Places, when available —
+  // preferred over the raw address text for card display (see displayLocation).
+  from_display_name: z.string().max(200).nullable().optional(),
   to_place_id: z.string().max(200).nullable().optional(),
   to_lat: z.number().nullable().optional(),
   to_lng: z.number().nullable().optional(),
+  to_display_name: z.string().max(200).nullable().optional(),
   pickup_at: z.string().datetime().nullable().optional(),
   date: z.string().nullable().optional(),
   time: z.string().nullable().optional(),

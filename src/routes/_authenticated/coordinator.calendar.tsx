@@ -70,6 +70,7 @@ import {
   displayLocation,
   formatEta,
   formatEtaMinutes,
+  formatFriendlyDateTime,
   urgencyTier,
   urgencyClasses,
   DEFAULT_URGENCY,
@@ -1730,6 +1731,16 @@ function PendingPortalBookings() {
         const brand = portal.brand_color || "hsl(38 92% 50%)";
         const payload = b.payload ?? {};
         const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim() || "New booking";
+        const companyName = portal.display_name_for_passenger || portal.name || "Portal";
+        const paxList: string[] = Array.isArray(payload.pax_names) && payload.pax_names.length
+          ? payload.pax_names
+          : [fullName];
+        const paxCount = Number(payload.pax_count) || paxList.length;
+        const dateTime = payload.pickup_at
+          ? formatFriendlyDateTime(String(payload.pickup_at))
+          : payload.date
+            ? `${payload.date}${payload.time ? ` · ${String(payload.time).slice(0, 5)}` : ""}`
+            : "—";
         return (
           <div key={b.id} className="rounded-md border bg-card p-2.5" style={{ boxShadow: `inset 4px 0 0 ${brand}` }}>
             <div className="flex items-start gap-2">
@@ -1759,34 +1770,19 @@ function PendingPortalBookings() {
                     Pending
                   </Badge>
                 </div>
-                <div className="font-medium text-sm mt-1 truncate">
-                  {fullName}
-                  {Number(payload.pax_count) > 1 && (
-                    <span className="text-xs text-muted-foreground font-normal"> · {payload.pax_count} pax</span>
-                  )}
+                <div className="text-xs font-semibold mt-1 truncate">{companyName}</div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  {paxCount} passenger{paxCount === 1 ? "" : "s"}
                 </div>
-                {Array.isArray(payload.pax_names) && payload.pax_names.length > 1 && (
-                  <div className="text-[11px] text-muted-foreground truncate" title={payload.pax_names.join(", ")}>
-                    {payload.pax_names.join(", ")}
-                  </div>
-                )}
-                <div className="text-xs mt-0.5 truncate">
-                  {payload.from_location} → {payload.to_location}
+                <div className="text-sm font-medium mt-0.5 space-y-0.5">
+                  {paxList.map((n, i) => (
+                    <div key={i} className="truncate">{n}</div>
+                  ))}
                 </div>
-                {(() => {
-                  const d = payload.date ?? (payload.pickup_at ? String(payload.pickup_at).slice(0, 10) : null);
-                  const t = payload.time
-                    ? String(payload.time).slice(0, 5)
-                    : payload.pickup_at
-                      ? formatMaltaTime(String(payload.pickup_at))
-                      : null;
-                  return (
-                    <div className="text-[11px] font-semibold text-foreground">
-                      {d ?? "—"}
-                      {t ? ` · ${t}` : ""}
-                    </div>
-                  );
-                })()}
+                <div className="text-xs mt-1 truncate">
+                  {displayLocation(payload.from_location, payload.from_display_name)} → {displayLocation(payload.to_location, payload.to_display_name)}
+                </div>
+                <div className="text-[11px] font-semibold text-foreground mt-0.5">{dateTime}</div>
                 {(payload.flight_number || payload.room_number) && (
                   <div className="text-[11px] text-muted-foreground truncate">
                     {payload.flight_number && <>✈ {payload.flight_number}</>}

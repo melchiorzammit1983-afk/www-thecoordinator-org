@@ -244,10 +244,12 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       from_place_id: fromPick.place_id,
       from_lat: fromPick.lat,
       from_lng: fromPick.lng,
+      from_display_name: fromPick.display_name ?? null,
       to_location: toPick.address,
       to_place_id: toPick.place_id,
       to_lat: toPick.lat,
       to_lng: toPick.lng,
+      to_display_name: toPick.display_name ?? null,
       pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -429,7 +431,9 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             name: form.name.trim() || null, surname: form.surname.trim() || null,
             client_phone: form.client_phone.trim() || null, client_email: form.client_email.trim() || null,
             from_location: fromPick.address, from_place_id: fromPick.place_id, from_lat: fromPick.lat, from_lng: fromPick.lng,
+            from_display_name: fromPick.display_name ?? null,
             to_location: toPick.address, to_place_id: toPick.place_id, to_lat: toPick.lat, to_lng: toPick.lng,
+            to_display_name: toPick.display_name ?? null,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             room_number: form.room_number.trim() || null, flight_number: form.flight_number.trim() || null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
@@ -437,7 +441,9 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
           }
         : {
             from_location: fromPick.address, from_lat: fromPick.lat, from_lng: fromPick.lng,
+            from_display_name: fromPick.display_name ?? null,
             to_location: toPick.address, to_lat: toPick.lat, to_lng: toPick.lng,
+            to_display_name: toPick.display_name ?? null,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
             notes: form.notes.trim() || null,
