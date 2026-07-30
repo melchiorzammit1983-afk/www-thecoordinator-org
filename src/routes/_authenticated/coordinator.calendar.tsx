@@ -214,6 +214,7 @@ type Job = {
   vehicle: string | null;
   contact_phone: string | null;
   clientcompanyname: string | null;
+  notes?: string | null;
   driver_accepted_at: string | null;
   deletion_requested_at: string | null;
   drivers?: {
@@ -2979,7 +2980,13 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                     <span className="text-foreground">{job.group_note}</span>
                   </div>
                 )}
-                {!job.contact_phone && !job.vehicle && !job.group_note && !job.clientcompanyname && !hasFlightCode && (
+                {job.notes && (
+                  <div className="whitespace-pre-wrap">
+                    <span className="opacity-70">Notes:</span>{" "}
+                    <span className="text-foreground">{job.notes}</span>
+                  </div>
+                )}
+                {!job.contact_phone && !job.vehicle && !job.group_note && !job.notes && !job.clientcompanyname && !hasFlightCode && (
                   <div className="italic opacity-70">No extra details</div>
                 )}
               </div>

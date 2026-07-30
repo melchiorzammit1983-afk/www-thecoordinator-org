@@ -24,6 +24,7 @@ const BookingInput = z.object({
   client_phone: z.string().max(40).nullable().optional(),
   room_number: z.string().max(40).nullable().optional(),
   flight_number: z.string().max(20).nullable().optional(),
+  vehicle: z.string().max(120).nullable().optional(),
   pax_count: z.number().int().min(1).max(200).nullable().optional(),
   // Named passengers for this booking (Corporate/Agent/Hotel bookings often
   // carry more than one guest). acceptPortalBooking already prioritises this

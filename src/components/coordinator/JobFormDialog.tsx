@@ -103,6 +103,7 @@ type Job = {
   contact_phone: string | null;
   driver_id: string | null;
   clientcompanyname: string | null;
+  notes?: string | null;
   pickup_place_id?: string | null;
   dropoff_place_id?: string | null;
   pickup_display_name?: string | null;
@@ -123,6 +124,8 @@ type Prefill = Partial<{
   date: string; time: string;
   from_flight: string; to_flight: string;
   clientcompanyname: string;
+  vehicle: string;
+  notes: string;
   passengers: string[];
 }>;
 
@@ -160,6 +163,8 @@ export function JobFormDialog({
       date: t.date, time: t.time,
       from_flight: t.from_flight, to_flight: t.to_flight,
       clientcompanyname: t.clientcompanyname,
+      vehicle: t.vehicle,
+      notes: t.notes,
       passengers: t.pax,
     });
     setTab("manual");
@@ -236,7 +241,8 @@ function ManualForm({
   const isMobile = useIsMobile();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  const [vehicle, setVehicle] = useState(job?.vehicle ?? "");
+  const [vehicle, setVehicle] = useState(job?.vehicle ?? prefill?.vehicle ?? "");
+  const [notes, setNotes] = useState(job?.notes ?? prefill?.notes ?? "");
   const [passengers, setPassengers] = useState<PassengerDraft[]>(() =>
     prefill?.passengers?.length
       ? prefill.passengers.map((name, index) => passengerDraft(`prefill-${index}`, name))
@@ -470,6 +476,7 @@ function ManualForm({
         // coordinator to create a trip without it.
         qr_strict_mode: false, tracking_enabled: true,
         vehicle: vehicle.trim(),
+        notes: notes.trim(),
         label_ids: labelIds,
         pickup_place_id: fromPlaceId,
         dropoff_place_id: toPlaceId,
@@ -687,6 +694,10 @@ function ManualForm({
             <div className="space-y-1.5">
               <Label>Vehicle</Label>
               <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="e.g. Minivan, Sedan" />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Notes</Label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any other detail for this trip (optional)" rows={2} />
             </div>
             <div className="space-y-1.5">
               <Label>24/7 trip support number</Label>
@@ -1280,6 +1291,8 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,
         contact_phone: t.contact_phone,
+        vehicle: t.vehicle,
+        notes: t.notes,
         pax: t.pax,
       })),
       label_ids: labelIds,
@@ -1513,6 +1526,18 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                     <Input value={t.to_flight} className="h-7 text-xs"
                       placeholder="e.g. KM102"
                       onChange={(e) => patch({ to_flight: e.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground">Vehicle</span>
+                    <Input value={t.vehicle} className="h-7 text-xs"
+                      placeholder="e.g. Minivan, Sedan"
+                      onChange={(e) => patch({ vehicle: e.target.value })} />
+                  </label>
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-[10px] text-muted-foreground">Notes</span>
+                    <Input value={t.notes} className="h-7 text-xs"
+                      placeholder="Optional note for this trip"
+                      onChange={(e) => patch({ notes: e.target.value })} />
                   </label>
                   <div className="space-y-1 col-span-2 rounded-md border bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
                     <div className="font-medium text-foreground">Passengers</div>

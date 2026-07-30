@@ -8,6 +8,7 @@ import { getCompanyByLink, submitClientBooking } from "@/lib/booking.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
@@ -64,13 +65,18 @@ function PublicBookingPage() {
 
   const [form, setForm] = useState({
     name: "", surname: "", client_email: "", room_number: "",
-    from_location: "", to_location: "", time: "",
+    from_location: "", to_location: "", date: "", time: "",
+    from_flight: "", pax_count: "1", notes: "",
   });
   const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
   const [toPlaceId, setToPlaceId] = useState<string | null>(null);
 
   const mut = useMutation({
-    mutationFn: () => submitFn({ data: { token: params.token, ...form, promo_note: promo || undefined } as any }),
+    mutationFn: () => submitFn({ data: {
+      token: params.token, ...form,
+      pax_count: Math.max(1, Math.min(200, Number(form.pax_count) || 1)),
+      promo_note: promo || undefined,
+    } as any }),
     onSuccess: () => { setDone(true); toast.success("Booking submitted"); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -115,7 +121,7 @@ function PublicBookingPage() {
               <div className="py-8 text-center">
                 <div className="text-emerald-600 font-medium">Submitted</div>
                 <p className="text-sm text-muted-foreground mt-2">We'll be in touch shortly.</p>
-                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", time:"" }); }}>
+                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", date:"", time:"", from_flight:"", pax_count:"1", notes:"" }); }}>
                   Submit another
                 </Button>
               </div>
@@ -161,9 +167,27 @@ function PublicBookingPage() {
                     placeholder="Airport, hotel, address…"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="b-date">Date</Label>
+                    <Input id="b-date" type="date" value={form.date} onChange={(e) => update("date", e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="b-time">Time (24h)</Label>
+                    <Input id="b-time" type="time" value={form.time} onChange={(e) => update("time", e.target.value)} required />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="b-time">Time (24h)</Label>
-                  <Input id="b-time" type="time" value={form.time} onChange={(e) => update("time", e.target.value)} required />
+                  <Label htmlFor="b-flight">Flight / vessel (optional)</Label>
+                  <Input id="b-flight" value={form.from_flight} onChange={(e) => update("from_flight", e.target.value)} maxLength={40} placeholder="e.g. FR1234 or vessel name" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="b-pax">Passengers</Label>
+                  <Input id="b-pax" type="number" min={1} max={200} value={form.pax_count} onChange={(e) => update("pax_count", e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="b-notes">Notes (optional)</Label>
+                  <Textarea id="b-notes" value={form.notes} onChange={(e) => update("notes", e.target.value)} maxLength={2000} />
                 </div>
                 <Button type="submit" className="w-full" disabled={mut.isPending}>
                   {mut.isPending ? "Submitting…" : "Submit booking"}

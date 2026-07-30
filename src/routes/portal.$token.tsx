@@ -220,7 +220,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
   const [f, setF] = useState({
     name: "", surname: "", client_phone: "", client_email: "",
     pickup_at: "", room_number: "",
-    flight_number: "", pax_count: "1", notes: "", extra_pax: "",
+    flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "",
   });
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
@@ -239,6 +239,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       client_email: f.client_email.trim() || null,
       room_number: f.room_number.trim() || null,
       flight_number: f.flight_number.trim() || null,
+      vehicle: f.vehicle.trim() || null,
       notes: f.notes.trim() || null,
       from_location: fromPick.address,
       from_place_id: fromPick.place_id,
@@ -259,7 +260,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
     setBusy(false);
     if (!r.ok) { toast.error("Failed to submit"); return; }
     toast.success("Booking submitted — awaiting coordinator approval");
-    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", pax_count: "1", notes: "", extra_pax: "" });
+    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "" });
     setFromPick({ address: "", place_id: null, lat: null, lng: null });
     setToPick({ address: "", place_id: null, lat: null, lng: null });
     onCreated();
@@ -290,6 +291,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
           </div>
           {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
         </Field>
+        <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <div className="md:col-span-2">
           <Field label="Additional passengers (comma-separated, optional)">
@@ -399,6 +401,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
     name: payload.name ?? "", surname: payload.surname ?? "",
     client_phone: payload.client_phone ?? "", client_email: payload.client_email ?? "",
     room_number: payload.room_number ?? "", flight_number: payload.flight_number ?? "",
+    vehicle: payload.vehicle ?? "",
     pax_count: String(payload.pax_count ?? 1), notes: payload.notes ?? "",
     extra_pax: Array.isArray(payload.pax_names) ? payload.pax_names.slice(1).join(", ") : "",
   });
@@ -436,6 +439,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             to_display_name: toPick.display_name ?? null,
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             room_number: form.room_number.trim() || null, flight_number: form.flight_number.trim() || null,
+            vehicle: form.vehicle.trim() || null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
             notes: form.notes.trim() || null,
           }
@@ -496,6 +500,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
               <>
                 <Field label="Room"><Input value={form.room_number} onChange={(e) => setForm({ ...form, room_number: e.target.value })} /></Field>
                 <Field label="Flight"><Input value={form.flight_number} onChange={(e) => setForm({ ...form, flight_number: e.target.value })} /></Field>
+                <Field label="Vehicle preference (optional)"><Input value={form.vehicle} onChange={(e) => setForm({ ...form, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
               </>
             )}
             <Field label="Pax"><Input type="number" min={1} value={form.pax_count} onChange={(e) => setForm({ ...form, pax_count: e.target.value })} /></Field>
