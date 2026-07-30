@@ -797,18 +797,6 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
-    const operationName = data.operation_name?.trim();
-    const rowAny = row as any;
-    if (operationName && rowAny?.operation_id) {
-      const { error: opErr } = await (supabaseAdmin as any)
-        .from("operations")
-        .update({
-          name: operationName,
-          company: data.clientcompanyname || null,
-        })
-        .eq("id", rowAny.operation_id);
-      if (opErr) throw new Error(opErr.message);
-    }
     // If the caller didn't send explicit passenger names, try to auto-fill
     // from the client/company field (e.g. "MV Ocean Pioneer (John, Jane)").
     let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
@@ -844,37 +832,12 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, operation_id, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
-    if (e1 || !existing) {
-      // TEMPORARY DIAGNOSTIC — remove once the "Job not found" on save is
-      // root-caused. Re-reads the row unscoped (no company filter) so the
-      // error message itself shows whether it's a missing row, a company
-      // mismatch, or something else — surfaces directly in the save toast
-      // since server console logs aren't reachable from this environment.
-      let diag = "no-diag";
-      try {
-        const { data: raw, error: rawErr } = await supabaseAdmin
-          .from("jobs")
-          .select("id, company_id, executor_company_id")
-          .eq("id", data.id)
-          .maybeSingle();
-        diag = JSON.stringify({
-          requestedId: data.id,
-          resolvedCompanyId: c.id,
-          resolvedIsAdmin: c.isAdmin,
-          guardError: e1?.message ?? null,
-          rawLookupError: rawErr?.message ?? null,
-          rawRow: raw ?? null,
-        });
-      } catch (diagErr) {
-        diag = `diag-failed: ${(diagErr as Error)?.message ?? diagErr}`;
-      }
-      throw new Error(`Job not found [DIAG ${diag}]`);
-    }
+    if (e1 || !existing) throw new Error("Job not found");
     // Driver-accepted lock: coordinator changes must be approved by driver.
     const lockable: LockableJob = {
       id: (existing as any).id,
@@ -1012,17 +975,6 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     // Auto-fill from client/company parentheses only when caller passed
     // no explicit pax array AND the trip has no existing passenger rows.
-    const operationName = data.operation_name?.trim();
-    if (operationName && (existing as any).operation_id) {
-      const { error: opErr } = await (supabaseAdmin as any)
-        .from("operations")
-        .update({
-          name: operationName,
-          company: data.clientcompanyname || null,
-        })
-        .eq("id", (existing as any).operation_id);
-      if (opErr) throw new Error(opErr.message);
-    }
     let paxToSync = passengerNamesOnly(data.pax);
     if (!paxToSync || paxToSync.length === 0) {
       const { count: existingCount } = await supabaseAdmin
@@ -2484,19 +2436,6 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
-    const { data: operationData, error: opErr } = await (supabaseAdmin as any)
-      .from("operations")
-      .insert({
-        company_id: c.id,
-        name: operationName,
-        company: firstTrip.clientcompanyname || null,
-        status: "planning",
-        source: "bulk_import",
-      })
-      .select("id, name")
-      .single();
-    if (opErr || !operationData) throw new Error(opErr?.message || "Could not create operation");
-    const operation = operationData as { id: string; name: string };
 
     const created: string[] = [];
     for (const t of data.trips) {
@@ -2506,7 +2445,6 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         .from("jobs")
         .insert({
           company_id: c.id,
-          operation_id: operation.id,
           from_location: t.from_location,
           to_location: t.to_location,
           date: t.date,
@@ -2561,8 +2499,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     }
     return {
       created,
-      operation_id: operation.id,
-      operation_name: operation.name,
+      operation_name: operationName,
       billing: { is_half_price: isHalfPrice, accuracy_score: data.billing_flags?.accuracy_score ?? null },
     };
   });
@@ -7777,7 +7714,7 @@ export const mergeTrips = createServerFn({ method: "POST" })
     const allIds = [data.keep_job_id, ...data.drop_job_ids];
     const { data: rows, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, company_id, driver_note, operation_id")
+      .select("id, company_id, driver_note")
       .in("id", allIds);
     if (error) throw new Error(error.message);
     if (!rows || rows.length !== allIds.length) throw new Error("not_found");
