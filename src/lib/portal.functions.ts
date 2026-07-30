@@ -15,12 +15,16 @@ async function admin() {
   return supabaseAdmin;
 }
 
+// Priority matches the canonical coordinator resolver (resolveCompany in
+// coordinator.functions.ts): owner_user_id first, driver-link fallback
+// second — so a user who both owns a company and is linked as a driver
+// elsewhere resolves to the same company across every path.
 async function myCompanyId(userId: string) {
   const a = await admin();
-  const { data } = await a.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
-  if (data?.company_id) return data.company_id as string;
   const { data: c } = await a.from("companies").select("id").eq("owner_user_id", userId).maybeSingle();
-  return (c?.id ?? null) as string | null;
+  if (c?.id) return c.id as string;
+  const { data } = await a.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
+  return (data?.company_id ?? null) as string | null;
 }
 
 // Mirrors the crew-notification email pattern (crew-trip-auto-create.ts):
@@ -280,6 +284,11 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     } catch (e: any) {
       await a.from("jobs").delete().eq("id", (job as any).id);
       throw new Error(e?.message ?? "spend_failed");
+    }
+
+    if (payload.flight_number) {
+      const { applyLiveStatusToJobBg } = await import("./coordinator.functions");
+      applyLiveStatusToJobBg((job as any).id);
     }
 
     const bookingPatch: Record<string, unknown> = {

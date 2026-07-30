@@ -2482,6 +2482,8 @@ export const requestClientFollowUp = createServerFn({ method: "POST" })
 
     const { data: newJob, error } = await supabaseAdmin.from("jobs").insert({
       company_id: job.company_id,
+      executor_company_id: job.executor_company_id ?? null,
+      origin_company_id: job.origin_company_id ?? null,
       from_location: data.from_location, to_location: data.to_location,
       date: data.date, time: `${data.time}:00`, pickup_at,
       status: "pending",

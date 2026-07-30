@@ -249,12 +249,16 @@ async function _admin() {
   return supabaseAdmin;
 }
 
+// Priority matches the canonical coordinator resolver (resolveCompany in
+// coordinator.functions.ts): owner_user_id first, driver-link fallback
+// second — so a user who both owns a company and is linked as a driver
+// elsewhere resolves to the same company across every path.
 async function _companyIdForUser(userId: string): Promise<string | null> {
   const sb = await _admin();
-  const { data: d } = await sb.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
-  if (d?.company_id) return d.company_id as string;
   const { data: c } = await sb.from("companies").select("id").eq("owner_user_id", userId).maybeSingle();
-  return (c?.id ?? null) as string | null;
+  if (c?.id) return c.id as string;
+  const { data: d } = await sb.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
+  return (d?.company_id ?? null) as string | null;
 }
 
 // Feature-gate + point charge. Returns { charged: true } on success or

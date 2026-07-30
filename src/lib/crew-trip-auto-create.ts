@@ -146,6 +146,10 @@ export async function autoCreateOrGroupCrewTrip(
     jobId = job.id;
     created = true;
     await admin.from("crew_trip_confirmations").insert({ job_id: jobId, stage: "created" });
+    if (flightNo) {
+      const { applyLiveStatusToJobBg } = await import("@/lib/coordinator.functions");
+      applyLiveStatusToJobBg(jobId);
+    }
   }
 
   // Seed a pax row for this crew member if not already present.
