@@ -38,8 +38,6 @@ export const FEATURE_META: FeatureMeta[] = [
     description: "Drafts 2–3 chat replies in the client's language and tone." },
 
   // Flight / vessel tracking (Lovable AI — web-grounded)
-  { key: "flight_lookup_bundle", label: "Flight lookup — trip bundle", group: "flights", toggleable: true,
-    description: "Charged once per trip when a flight code is attached. Covers the initial lookup and the automatic recheck ~30 min before pickup." },
   { key: "flight_lookup_refresh", label: "Flight lookup — manual refresh", group: "flights", toggleable: true,
     description: "Per-tap price when the coordinator or driver presses Refresh after the cached AI answer goes stale (>10 min old)." },
   { key: "flight_lookup_vessel", label: "Vessel lookup", group: "flights", toggleable: true,
@@ -92,7 +90,6 @@ const DEACTIVATED_AI_USAGE_KEYS = new Set([
   "ai_auto_coordinate",
   "ai_daily_plan",
   "ai_reply_drafter",
-  "flight_lookup_bundle",
   "flight_lookup_refresh",
   "flight_lookup_vessel",
   "flight_vessel_tracking",
