@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Plane as PlaneIcon, Ship as ShipIcon, Building2, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { parseFlightCode, looksLikeVessel } from "@/lib/flight-code";
 
 type EndpointKind = "airport" | "seaport" | "hotel" | "custom";
 
@@ -8,9 +9,11 @@ function inferEndpointKind(loc: string, flightOrShip: string): EndpointKind {
   const l = (loc ?? "").toLowerCase();
   const f = (flightOrShip ?? "").trim();
   if (f) {
-    if (/^[a-z]{2}\s?-?\d{1,4}$/i.test(f)) return "airport";
+    if (looksLikeVessel(f)) return "seaport";
+    if (parseFlightCode(f).ok) return "airport";
     if (/\b(ship|vessel|berth|port|cruise|freeport|marina)\b/i.test(l)) return "seaport";
-    return "airport";
+    if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
+    return "custom";
   }
   if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
   if (/\b(seaport|berth|terminal|marina|freeport|cruise|vessel|ship)\b/i.test(l)) return "seaport";
@@ -863,10 +866,15 @@ function ManualForm({
                 onBlur={() => handleLocationBlur("from")}
                 placeholder={placeholderForKind(fromKind, fromFlight)}
               />
-              {(fromKind === "airport" || fromKind === "seaport") && (
+              {fromKind !== "hotel" && (
                 <Input
                   value={fromFlight}
-                  onChange={(e) => setFromFlight(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    const v = e.target.value.toUpperCase();
+                    setFromFlight(v);
+                    const detected = inferEndpointKind(from, v);
+                    if (detected === "airport" || detected === "seaport") setFromKind(detected);
+                  }}
                   onBlur={() => handleFlightBlur("from")}
                   placeholder={fromKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
                   className="text-xs"
@@ -892,10 +900,15 @@ function ManualForm({
                 onBlur={() => handleLocationBlur("to")}
                 placeholder={placeholderForKind(toKind, toFlight)}
               />
-              {(toKind === "airport" || toKind === "seaport") && (
+              {toKind !== "hotel" && (
                 <Input
                   value={toFlight}
-                  onChange={(e) => setToFlight(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    const v = e.target.value.toUpperCase();
+                    setToFlight(v);
+                    const detected = inferEndpointKind(to, v);
+                    if (detected === "airport" || detected === "seaport") setToKind(detected);
+                  }}
                   onBlur={() => handleFlightBlur("to")}
                   placeholder={toKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
                   className="text-xs"

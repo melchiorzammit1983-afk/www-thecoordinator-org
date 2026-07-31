@@ -46,6 +46,7 @@ import {
   ArrowRight,
   Clock,
   Plane,
+  Ship,
   User as UserIcon,
   Info,
 } from "lucide-react";
@@ -202,6 +203,7 @@ type Job = {
   flightorship: string | null;
   from_flight: string | null;
   to_flight: string | null;
+  tracking_kind?: string | null;
   flight_status: string | null;
   flight_status_note: string | null;
   flight_status_updated_at: string | null;
@@ -3872,7 +3874,7 @@ function DispatchTripList({
                     )}
                     {flight && (
                       <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
-                        <Plane className="h-3 w-3" />
+                        {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
                         {flight}
                       </span>
                     )}

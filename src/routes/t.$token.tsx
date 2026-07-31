@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { formatMaltaDateTime } from "@/lib/time";
 import {
   MapPin, Send, Plus, LocateFixed, Share2, Phone, Loader2, CalendarPlus,
-  CheckCircle2, Plane, Bell, BellOff, AlertTriangle, WifiOff, Users, Lock,
+  CheckCircle2, Plane, Ship, Bell, BellOff, AlertTriangle, WifiOff, Users, Lock,
 } from "lucide-react";
 import {
   getClientTripPortal, chooseClientIdentity, listClientTripMessages,
@@ -461,7 +461,8 @@ function FlightCard({ job }: { job: any }) {
   return (
     <section className={cn("rounded-2xl border p-4 shadow-sm", color)}>
       <div className="flex items-center gap-2 text-xs font-semibold uppercase opacity-70 mb-2">
-        <Plane className="h-3.5 w-3.5" /> Flight {code}
+        {job.tracking_kind === "vessel" ? <Ship className="h-3.5 w-3.5" /> : <Plane className="h-3.5 w-3.5" />}
+        {job.tracking_kind === "vessel" ? "Vessel" : "Flight"} {code}
       </div>
       <div className="text-sm font-medium">{job.flight_status_note ?? "Awaiting flight info…"}</div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
