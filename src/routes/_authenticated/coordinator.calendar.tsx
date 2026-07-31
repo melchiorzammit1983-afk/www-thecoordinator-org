@@ -2515,7 +2515,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
 
       {/* Tap area — opens details sheet */}
-      <button type="button" onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
+      <div onClick={() => ctx.onOpenDetails(job)} className="w-full text-left">
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -2886,7 +2886,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             </span>
           </div>
         </div>
-      </button>
+      </div>
 
       {/* Action bar — large tap targets, well spaced from top-right kebab */}
       <div className="mt-2 flex items-stretch gap-1.5 border-t border-border/60 pt-2">

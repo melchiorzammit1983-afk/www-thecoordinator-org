@@ -59,6 +59,14 @@
 - **Expected result:** The calendar must say that approval was requested until the current driver approves the reassignment.
 - **Fix:** Use the server response's `pending` flag in single and bulk assignment feedback. The driver manifest remains strictly scoped to its assigned driver row.
 
+### QA-006 - Dispatch card contains a button inside a button
+
+- **Severity:** Medium
+- **Reproduction:** Open QA trip #1 in the Dispatch board while the invalid `QA123` flight code is visible.
+- **Actual result:** The browser console reports a React hydration error because the card's clickable button contains the `fix code` button.
+- **Expected result:** The trip card and its inline controls render valid interactive markup without hydration errors.
+- **Fix:** Change the clickable card body to a non-interactive container so its inline action buttons are no longer nested inside a button.
+
 ## Next scenarios
 
 1. Create and redeem a Gamma invite, then validate reduced-permission sync access and tenant isolation.
