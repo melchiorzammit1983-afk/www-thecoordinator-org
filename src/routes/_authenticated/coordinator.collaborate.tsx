@@ -52,7 +52,15 @@ function CollaboratePage() {
   const [mode, setMode] = useState<"sync" | "provider">("provider");
   const [ttl, setTtl] = useState(7);
   const [perms, setPerms] = useState<Record<string, boolean>>({
-    view_jobs: true, view_drivers: true, view_pax: true, view_chat: true,
+    view_jobs: true,
+    edit_jobs: false,
+    create_jobs: false,
+    view_drivers: true,
+    assign_drivers: false,
+    view_pax: true,
+    edit_pax: false,
+    view_chat: true,
+    post_chat: false,
   });
 
   const createMut = useMutation({
