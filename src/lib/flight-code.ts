@@ -186,11 +186,11 @@ export function describeFlight(parsed: ParsedFlight): string {
  * Short inline warning for a flight-number field, or null when it looks fine.
  *
  * This is a FORMAT check only (does it look like a real IATA flight code) —
- * there is no live flight-schedule provider wired up in this app right now
- * (see `liveStatusProviderEnabled()` in coordinator.functions.ts, which is
- * hardcoded off pending a dedicated transport-data API key), so this cannot
- * confirm the flight actually exists/operates on the given date. Never
- * blocks submission — callers just show this text next to the field.
+ * it runs before any lookup and can't confirm the flight actually
+ * exists/operates on the given date (AeroDataBox, when configured via
+ * `AERODATABOX_API_KEY`, does that; see `fetchLiveStatusViaAeroDataBox` in
+ * coordinator.functions.ts). Never blocks submission — callers just show
+ * this text next to the field.
  */
 export function flightFormatWarning(input: string | null | undefined): string | null {
   const s = (input ?? "").toString().trim();
