@@ -314,8 +314,9 @@ function ClientTripPortal() {
           {/* Traffic / route ETA */}
           <TripTrafficCard job={job} />
 
-          {/* Flight card */}
-          {(job.from_flight || job.to_flight) && (
+          {/* Flight card — vessels have no live-status source, so showing a
+              permanent "not available" card would just be noise for a passenger. */}
+          {(job.from_flight || job.to_flight) && job.tracking_kind !== "vessel" && (
             <FlightCard job={job} />
           )}
 
