@@ -41,12 +41,7 @@ import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
-import { Route as AuthenticatedAdminAiActivityRouteImport } from './routes/_authenticated/admin.ai-activity'
-import { Route as AuthenticatedAdminAiCostsRouteImport } from './routes/_authenticated/admin.ai-costs'
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
-import { Route as AuthenticatedAdminAiLessonsRouteImport } from './routes/_authenticated/admin.ai-lessons'
-import { Route as AuthenticatedAdminAiOverageRouteImport } from './routes/_authenticated/admin.ai-overage'
-import { Route as AuthenticatedAdminAiSettingsRouteImport } from './routes/_authenticated/admin.ai-settings'
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
@@ -55,9 +50,6 @@ import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
-import { Route as AuthenticatedCoordinatorAiCenterRouteImport } from './routes/_authenticated/coordinator.ai-center'
-import { Route as AuthenticatedCoordinatorAiLearningRouteImport } from './routes/_authenticated/coordinator.ai-learning'
-import { Route as AuthenticatedCoordinatorAiOverageRouteImport } from './routes/_authenticated/coordinator.ai-overage'
 import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
@@ -283,40 +275,10 @@ const AuthenticatedAdminActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminAiActivityRoute =
-  AuthenticatedAdminAiActivityRouteImport.update({
-    id: '/ai-activity',
-    path: '/ai-activity',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminAiCostsRoute =
-  AuthenticatedAdminAiCostsRouteImport.update({
-    id: '/ai-costs',
-    path: '/ai-costs',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 const AuthenticatedAdminAiInsightsRoute =
   AuthenticatedAdminAiInsightsRouteImport.update({
     id: '/ai-insights',
     path: '/ai-insights',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminAiLessonsRoute =
-  AuthenticatedAdminAiLessonsRouteImport.update({
-    id: '/ai-lessons',
-    path: '/ai-lessons',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminAiOverageRoute =
-  AuthenticatedAdminAiOverageRouteImport.update({
-    id: '/ai-overage',
-    path: '/ai-overage',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminAiSettingsRoute =
-  AuthenticatedAdminAiSettingsRouteImport.update({
-    id: '/ai-settings',
-    path: '/ai-settings',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminPasswordResetsRoute =
@@ -365,24 +327,6 @@ const AuthenticatedCoordinatorAddressSettingsRoute =
   AuthenticatedCoordinatorAddressSettingsRouteImport.update({
     id: '/address-settings',
     path: '/address-settings',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorAiCenterRoute =
-  AuthenticatedCoordinatorAiCenterRouteImport.update({
-    id: '/ai-center',
-    path: '/ai-center',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorAiLearningRoute =
-  AuthenticatedCoordinatorAiLearningRouteImport.update({
-    id: '/ai-learning',
-    path: '/ai-learning',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorAiOverageRoute =
-  AuthenticatedCoordinatorAiOverageRouteImport.update({
-    id: '/ai-overage',
-    path: '/ai-overage',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorAvailabilityRoute =
@@ -762,12 +706,7 @@ export interface FileRoutesByFullPath {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
-  '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
-  '/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
-  '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
-  '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
-  '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -775,9 +714,6 @@ export interface FileRoutesByFullPath {
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
-  '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
-  '/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
-  '/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -868,12 +804,7 @@ export interface FileRoutesByTo {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/admin/activity': typeof AuthenticatedAdminActivityRoute
-  '/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
-  '/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
-  '/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
-  '/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
-  '/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -881,9 +812,6 @@ export interface FileRoutesByTo {
   '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
   '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
-  '/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
-  '/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
-  '/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -979,12 +907,7 @@ export interface FileRoutesById {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/_authenticated/admin/activity': typeof AuthenticatedAdminActivityRoute
-  '/_authenticated/admin/ai-activity': typeof AuthenticatedAdminAiActivityRoute
-  '/_authenticated/admin/ai-costs': typeof AuthenticatedAdminAiCostsRoute
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
-  '/_authenticated/admin/ai-lessons': typeof AuthenticatedAdminAiLessonsRoute
-  '/_authenticated/admin/ai-overage': typeof AuthenticatedAdminAiOverageRoute
-  '/_authenticated/admin/ai-settings': typeof AuthenticatedAdminAiSettingsRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
@@ -992,9 +915,6 @@ export interface FileRoutesById {
   '/_authenticated/admin/revenue': typeof AuthenticatedAdminRevenueRoute
   '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
-  '/_authenticated/coordinator/ai-center': typeof AuthenticatedCoordinatorAiCenterRoute
-  '/_authenticated/coordinator/ai-learning': typeof AuthenticatedCoordinatorAiLearningRoute
-  '/_authenticated/coordinator/ai-overage': typeof AuthenticatedCoordinatorAiOverageRoute
   '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -1091,12 +1011,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
-    | '/admin/ai-activity'
-    | '/admin/ai-costs'
     | '/admin/ai-insights'
-    | '/admin/ai-lessons'
-    | '/admin/ai-overage'
-    | '/admin/ai-settings'
     | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -1104,9 +1019,6 @@ export interface FileRouteTypes {
     | '/admin/revenue'
     | '/admin/topups'
     | '/coordinator/address-settings'
-    | '/coordinator/ai-center'
-    | '/coordinator/ai-learning'
-    | '/coordinator/ai-overage'
     | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
@@ -1197,12 +1109,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/admin/activity'
-    | '/admin/ai-activity'
-    | '/admin/ai-costs'
     | '/admin/ai-insights'
-    | '/admin/ai-lessons'
-    | '/admin/ai-overage'
-    | '/admin/ai-settings'
     | '/admin/password-resets'
     | '/admin/portal-settings'
     | '/admin/pricing'
@@ -1210,9 +1117,6 @@ export interface FileRouteTypes {
     | '/admin/revenue'
     | '/admin/topups'
     | '/coordinator/address-settings'
-    | '/coordinator/ai-center'
-    | '/coordinator/ai-learning'
-    | '/coordinator/ai-overage'
     | '/coordinator/availability'
     | '/coordinator/billing'
     | '/coordinator/board-creator'
@@ -1307,12 +1211,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/_authenticated/admin/activity'
-    | '/_authenticated/admin/ai-activity'
-    | '/_authenticated/admin/ai-costs'
     | '/_authenticated/admin/ai-insights'
-    | '/_authenticated/admin/ai-lessons'
-    | '/_authenticated/admin/ai-overage'
-    | '/_authenticated/admin/ai-settings'
     | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/pricing'
@@ -1320,9 +1219,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/revenue'
     | '/_authenticated/admin/topups'
     | '/_authenticated/coordinator/address-settings'
-    | '/_authenticated/coordinator/ai-center'
-    | '/_authenticated/coordinator/ai-learning'
-    | '/_authenticated/coordinator/ai-overage'
     | '/_authenticated/coordinator/availability'
     | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/board-creator'
@@ -1676,46 +1572,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/ai-activity': {
-      id: '/_authenticated/admin/ai-activity'
-      path: '/ai-activity'
-      fullPath: '/admin/ai-activity'
-      preLoaderRoute: typeof AuthenticatedAdminAiActivityRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/ai-costs': {
-      id: '/_authenticated/admin/ai-costs'
-      path: '/ai-costs'
-      fullPath: '/admin/ai-costs'
-      preLoaderRoute: typeof AuthenticatedAdminAiCostsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
     '/_authenticated/admin/ai-insights': {
       id: '/_authenticated/admin/ai-insights'
       path: '/ai-insights'
       fullPath: '/admin/ai-insights'
       preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/ai-lessons': {
-      id: '/_authenticated/admin/ai-lessons'
-      path: '/ai-lessons'
-      fullPath: '/admin/ai-lessons'
-      preLoaderRoute: typeof AuthenticatedAdminAiLessonsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/ai-overage': {
-      id: '/_authenticated/admin/ai-overage'
-      path: '/ai-overage'
-      fullPath: '/admin/ai-overage'
-      preLoaderRoute: typeof AuthenticatedAdminAiOverageRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/ai-settings': {
-      id: '/_authenticated/admin/ai-settings'
-      path: '/ai-settings'
-      fullPath: '/admin/ai-settings'
-      preLoaderRoute: typeof AuthenticatedAdminAiSettingsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/password-resets': {
@@ -1772,27 +1633,6 @@ declare module '@tanstack/react-router' {
       path: '/address-settings'
       fullPath: '/coordinator/address-settings'
       preLoaderRoute: typeof AuthenticatedCoordinatorAddressSettingsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/ai-center': {
-      id: '/_authenticated/coordinator/ai-center'
-      path: '/ai-center'
-      fullPath: '/coordinator/ai-center'
-      preLoaderRoute: typeof AuthenticatedCoordinatorAiCenterRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/ai-learning': {
-      id: '/_authenticated/coordinator/ai-learning'
-      path: '/ai-learning'
-      fullPath: '/coordinator/ai-learning'
-      preLoaderRoute: typeof AuthenticatedCoordinatorAiLearningRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/ai-overage': {
-      id: '/_authenticated/coordinator/ai-overage'
-      path: '/ai-overage'
-      fullPath: '/coordinator/ai-overage'
-      preLoaderRoute: typeof AuthenticatedCoordinatorAiOverageRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/availability': {
@@ -2220,12 +2060,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminActivityRoute: typeof AuthenticatedAdminActivityRoute
-  AuthenticatedAdminAiActivityRoute: typeof AuthenticatedAdminAiActivityRoute
-  AuthenticatedAdminAiCostsRoute: typeof AuthenticatedAdminAiCostsRoute
   AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
-  AuthenticatedAdminAiLessonsRoute: typeof AuthenticatedAdminAiLessonsRoute
-  AuthenticatedAdminAiOverageRoute: typeof AuthenticatedAdminAiOverageRoute
-  AuthenticatedAdminAiSettingsRoute: typeof AuthenticatedAdminAiSettingsRoute
   AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
   AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
   AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
@@ -2237,12 +2072,7 @@ interface AuthenticatedAdminRouteChildren {
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminActivityRoute: AuthenticatedAdminActivityRoute,
-  AuthenticatedAdminAiActivityRoute: AuthenticatedAdminAiActivityRoute,
-  AuthenticatedAdminAiCostsRoute: AuthenticatedAdminAiCostsRoute,
   AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
-  AuthenticatedAdminAiLessonsRoute: AuthenticatedAdminAiLessonsRoute,
-  AuthenticatedAdminAiOverageRoute: AuthenticatedAdminAiOverageRoute,
-  AuthenticatedAdminAiSettingsRoute: AuthenticatedAdminAiSettingsRoute,
   AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,
   AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
   AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
@@ -2272,9 +2102,6 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
-  AuthenticatedCoordinatorAiCenterRoute: typeof AuthenticatedCoordinatorAiCenterRoute
-  AuthenticatedCoordinatorAiLearningRoute: typeof AuthenticatedCoordinatorAiLearningRoute
-  AuthenticatedCoordinatorAiOverageRoute: typeof AuthenticatedCoordinatorAiOverageRoute
   AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
@@ -2299,12 +2126,6 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
   {
     AuthenticatedCoordinatorAddressSettingsRoute:
       AuthenticatedCoordinatorAddressSettingsRoute,
-    AuthenticatedCoordinatorAiCenterRoute:
-      AuthenticatedCoordinatorAiCenterRoute,
-    AuthenticatedCoordinatorAiLearningRoute:
-      AuthenticatedCoordinatorAiLearningRoute,
-    AuthenticatedCoordinatorAiOverageRoute:
-      AuthenticatedCoordinatorAiOverageRoute,
     AuthenticatedCoordinatorAvailabilityRoute:
       AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
