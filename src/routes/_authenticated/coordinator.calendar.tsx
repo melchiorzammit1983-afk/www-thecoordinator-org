@@ -2558,6 +2558,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
+  const flightGlyph = job.tracking_kind === "vessel" ? "🚢" : "✈";
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
     if (!iso) return "";
@@ -2782,22 +2783,22 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
             <TripConflictBadge jobId={job.id} driverId={job.driver_id} date={job.date} />
             {delayed && (
               <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-destructive border border-destructive/60 bg-destructive/10 ring-1 ring-destructive/50 shadow-[0_0_0_2px_rgba(239,68,68,0.25)] animate-pulse truncate max-w-full">
-                ✈ {flightCode} {flightMsg}
+                {flightGlyph} {flightCode} {flightMsg}
               </div>
             )}
             {flightEarly && (
               <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 bg-blue-500/10 truncate max-w-full">
-                ✈ {flightCode} {flightMsg}
+                {flightGlyph} {flightCode} {flightMsg}
               </div>
             )}
             {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "on_time" || job.flight_status === "landed" || job.flight_status === "arrived" || job.flight_status === "departed") && (
               <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 bg-emerald-500/10 truncate max-w-full">
-                ✈ {flightCode} · {flightMsg || job.flight_status}
+                {flightGlyph} {flightCode} · {flightMsg || job.flight_status}
               </div>
             )}
             {expanded && !delayed && !flightEarly && hasFlightCode && schedTime && !flightMsg.startsWith("Not tracked") && !(job.flight_status === "on_time" || job.flight_status === "landed" || job.flight_status === "arrived" || job.flight_status === "departed") && (
               <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                ✈ {flightCode} · {flightMsg}
+                {flightGlyph} {flightCode} · {flightMsg}
               </div>
             )}
             {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
@@ -2814,7 +2815,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 border border-amber-500/40 bg-amber-500/10 hover:underline truncate max-w-full text-left"
                 title="Click to fix the flight code"
               >
-                ✈ {flightCode} · Not tracked · fix code
+                {flightGlyph} {flightCode} · Not tracked · fix code
               </button>
             )}
             {job.status && job.status !== "pending" && job.status !== "active" && (
@@ -2867,8 +2868,14 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 </Badge>
               )}
               {expanded && flightCode && !delayed && !flightEarly && (
-                <Badge variant="outline" className="text-[10px]">
-                  ✈ {flightCode}
+                <Badge variant="outline" className="text-[10px] gap-1">
+                  {flightGlyph} {flightCode}
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <RefreshFlightButton
+                      jobId={job.id}
+                      kind={job.tracking_kind === "vessel" ? "vessel" : "flight"}
+                    />
+                  </span>
                 </Badge>
               )}
               {job.tracking_enabled && (
