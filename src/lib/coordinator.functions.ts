@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
-import { parseFlightCode, looksLikeVessel } from "./flight-code";
+import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 
 type Ctx = { supabase: any; userId: string };
@@ -2853,14 +2853,7 @@ export async function applyLiveStatusToJob(
   const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
 
   if (!result.ok) {
-    const reasonNote =
-      result.reason === "not_configured"
-        ? "Live status not configured"
-        : result.reason === "invalid_code"
-          ? `Couldn't recognise "${code}" as a flight code — check it`
-          : result.reason === "vessel_in_flight_field"
-            ? `"${code}" looks like a vessel — move it to the vessel field`
-            : `Couldn't find ${code} — please verify the code`;
+    const reasonNote = liveStatusFailureMessage(result.reason, code);
     await supabaseAdmin
       .from("jobs")
       .update({
