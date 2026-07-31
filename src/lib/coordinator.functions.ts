@@ -2765,6 +2765,14 @@ async function fetchLiveStatusViaAeroDataBox(
         { headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" } },
       );
       if (res.status === 404) continue; // no flight on this date — try the other candidate date
+      if (res.status === 401 || res.status === 403) {
+        // Bad/expired/unsubscribed RapidAPI key — distinct from "no data",
+        // so this doesn't silently look identical to a real not-found.
+        console.error(`[fetchLiveStatusViaAeroDataBox] ${res.status} — check AERODATABOX_API_KEY / RapidAPI subscription`);
+        const value: LiveStatusResult = { ok: false, reason: `aero_${res.status}` };
+        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
+        return value;
+      }
       if (res.status === 429) {
         const value: LiveStatusResult = { ok: false, reason: "aero_429" };
         aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
@@ -3126,6 +3134,7 @@ async function fetchLiveStatusViaGemini(
       scheduled: null,
       estimated: null,
       confidence: "low",
+      source: "gemini",
     };
     liveStatusCache.set(cacheKey, { at: Date.now(), value });
     return value;
@@ -3133,6 +3142,7 @@ async function fetchLiveStatusViaGemini(
 
   const value: LiveStatusResult = {
     ok: true,
+    source: "gemini",
     status: String(extracted?.status ?? "unknown"),
     note: String(extracted?.note ?? "").slice(0, 160),
     scheduled: normalizeMaltaIso(extracted?.scheduled),
@@ -3537,6 +3547,7 @@ async function _computeTripLiveStatus(data: {
     confidence?: "high" | "low";
     code?: string;
     reason?: string;
+    source?: "aerodatabox" | "gemini" | "aisstream";
   } | null = null;
   const code = (data.from_flight || data.to_flight || "").trim();
   const kind: "flight" | "vessel" = data.tracking_kind === "vessel" ? "vessel" : "flight";
@@ -3573,6 +3584,7 @@ async function _computeTripLiveStatus(data: {
         scheduled: r.scheduled ?? null,
         estimated: r.estimated ?? null,
         confidence: r.confidence,
+        source: r.source,
       };
     }
   }
