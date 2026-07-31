@@ -2695,6 +2695,13 @@ async function fetchLiveStatusViaAeroDataBox(
   const cached = aeroDataBoxCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
 
+  // What actually went wrong on the last attempt, so a failure can name its
+  // cause instead of defaulting to "no record for this date". Without this,
+  // a wrong URL, a 402 from an unsubscribed plan and a DNS failure are all
+  // indistinguishable from a flight that genuinely isn't scheduled — and
+  // production has no readable server logs to fall back on.
+  let lastFailure: string | null = null;
+
   for (const date of datesToTry) {
     try {
       const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
@@ -2717,7 +2724,23 @@ async function fetchLiveStatusViaAeroDataBox(
         aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
         return value;
       }
-      if (!res.ok) continue;
+      if (!res.ok) {
+        // Any other non-2xx: capture the status and a short body snippet.
+        // 402 in particular is what an unsubscribed plan tends to return,
+        // and a 400/404 here usually means the request path is wrong for
+        // this marketplace rather than the flight being absent.
+        let detail = "";
+        try {
+          detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+        } catch {
+          /* body already consumed or unreadable — status alone still helps */
+        }
+        console.error(
+          `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
+        );
+        lastFailure = `aero_http_${res.status}`;
+        continue;
+      }
       // AeroDataBox returns a bare object (not an array) when there's
       // exactly one match for a flight number + date — must handle both.
       const json = (await res.json()) as AeroFlight | AeroFlight[];
@@ -2771,12 +2794,20 @@ async function fetchLiveStatusViaAeroDataBox(
       };
       aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
       return value;
-    } catch {
+    } catch (e) {
+      // DNS/TLS/connect failure, or malformed JSON. Silently continuing here
+      // is what made an unreachable provider look like an unknown flight.
+      console.error(
+        `[fetchLiveStatusViaAeroDataBox] request to ${provider.name} threw for ${flightNumber}/${date}: ${(e as Error)?.message ?? e}`,
+      );
+      lastFailure = "aero_unreachable";
       continue;
     }
   }
 
-  const value: LiveStatusResult = { ok: false, reason: "no_result" };
+  // Only report a genuine "not in the schedule data" when every attempt was
+  // a clean 404. Anything else keeps its real cause.
+  const value: LiveStatusResult = { ok: false, reason: lastFailure ?? "no_result" };
   aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
