@@ -16,10 +16,7 @@ import { TOGGLEABLE_FEATURES } from "@/lib/feature-descriptions";
 import { useFeaturePrefs, useSetFeaturePref } from "@/hooks/use-feature-prefs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listAiFeatureCosts } from "@/lib/billing.functions";
-import { useReferencePack } from "@/hooks/use-reference-rate";
-import { formatPoints } from "@/lib/points-eur";
-import { Wallet } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { updateMyOperationsPhone } from "@/lib/coordinator.functions";
 import { useMyCompany } from "@/hooks/use-coordinator";
@@ -144,12 +141,6 @@ function SettingsPage() {
           checked={prefs.haptics_enabled} onChange={(v) => update.mutate({ haptics_enabled: v })} />
       </Section>
 
-      {/* Account */}
-      <Section title="Account" icon={User}>
-        <Row leftIcon={User} title="Billing & wallet" onClick={undefined}
-          trailing={<Link to="/coordinator/billing" className="text-sm text-primary">Open</Link>} />
-      </Section>
-
       <MobileLayoutSheet open={layoutOpen} onOpenChange={setLayoutOpen} />
     </div>
   );
@@ -272,24 +263,11 @@ function ToggleRow({ label, description, checked, onChange }: {
 // ---------------- Per-feature opt-out ----------------
 
 function FeatureUsageSection() {
-  const { prefs, isEnabled } = useFeaturePrefs();
+  const { isEnabled } = useFeaturePrefs();
   const setPref = useSetFeaturePref();
-  const listCostsFn = useServerFn(listAiFeatureCosts);
-  const { data: costs } = useQuery<Array<{ feature_key: string; points_cost: number | string; enabled?: boolean; is_addon?: boolean }>>({
-    queryKey: ["ai-feature-costs"],
-    queryFn: () => listCostsFn() as any,
-    staleTime: 5 * 60_000,
-  });
-  const pack = useReferencePack();
-
-  // Only surface features the admin has marked as an add-on AND left enabled.
-  const visibleKeys = new Set(
-    (costs ?? []).filter((c) => c.is_addon === true && c.enabled !== false).map((c) => c.feature_key),
-  );
 
   const groups: Record<string, typeof TOGGLEABLE_FEATURES> = {};
   for (const f of TOGGLEABLE_FEATURES) {
-    if (!visibleKeys.has(f.key)) continue; // admin hid it or didn't mark it as add-on
     (groups[f.group] ||= []).push(f);
   }
   const groupOrder: Array<keyof typeof groups> = ["assistant", "extraction", "ops", "flights", "routing"];
@@ -298,17 +276,9 @@ function FeatureUsageSection() {
     flights: "Flights & vessels", routing: "Live routing",
   };
 
-  function costLabel(key: string): string {
-    const c = (costs ?? []).find((r) => r.feature_key === key);
-    if (!c) return "Free";
-    const pts = Number(c.points_cost);
-    if (!pts || pts <= 0) return "Free";
-    return `${formatPoints(pts, pack)} per use`;
-  }
-
   return (
-    <Section title="Feature usage & cost" icon={Wallet} action={
-      <span className="text-[10px] text-muted-foreground">Turn off features you don't want to pay for</span>
+    <Section title="Features" icon={SlidersHorizontal} action={
+      <span className="text-[10px] text-muted-foreground">Turn off features you don't use</span>
     }>
       {groupOrder.map((g) => {
         const items = groups[g];
@@ -321,7 +291,6 @@ function FeatureUsageSection() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{f.label}</div>
                   <div className="text-xs text-muted-foreground">{f.description}</div>
-                  <div className="mt-1 text-[11px] font-medium text-foreground/70">{costLabel(f.key)}</div>
                 </div>
                 <Switch
                   className="mt-1 shrink-0"
@@ -339,7 +308,6 @@ function FeatureUsageSection() {
     </Section>
   );
 }
-
 
 
 function MobileLayoutSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
