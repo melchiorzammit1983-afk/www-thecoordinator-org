@@ -181,11 +181,6 @@ export const refreshLiveEta = createServerFn({ method: "POST" })
     try {
       const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
       await assertUserFeatureEnabled(supabase, _metCo, "live_eta_refresh");
-      await supabase.rpc("spend_points", {
-        _company_id: _metCo,
-        _feature_key: "live_eta_refresh",
-        _job_id: data.job_id,
-      });
     } catch {
       /* metering / opt-out failures shouldn't hide the ETA */
     }

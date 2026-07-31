@@ -285,14 +285,6 @@ async function _tryCharge(
       .select("enabled")
       .eq("company_id", companyId).eq("feature_key", featureKey).maybeSingle();
     if (pref && pref.enabled === false) return { charged: false, reason: "feature_disabled_by_user" };
-    const { error } = await sb.rpc("spend_points" as any, {
-      _company_id: companyId,
-      _feature_key: featureKey,
-      _job_id: (jobId ?? undefined) as unknown as string,
-      _note: note,
-      _cost_override: undefined as unknown as number,
-    } as any);
-    if (error) return { charged: false, reason: error.message || "spend_failed" };
     return { charged: true };
   } catch (e: any) {
     return { charged: false, reason: e?.message ?? "charge_error" };

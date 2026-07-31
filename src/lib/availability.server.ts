@@ -139,13 +139,6 @@ export async function tryAutoForward(jobId: string, reason: "off_hours" | "unans
   try {
     const { assertUserFeatureEnabled } = await import("@/lib/user-feature-prefs.server");
     await assertUserFeatureEnabled(sb, originCompanyId, "trip_auto_forward");
-    await sb.rpc("spend_points", {
-      _company_id: originCompanyId,
-      _feature_key: "trip_auto_forward",
-      _job_id: jobId as unknown as string,
-      _note: `auto-forward hop ${hops + 1} → ${nextId} (${reason})`,
-      _cost_override: undefined as unknown as number,
-    });
   } catch {
     // ignore metering errors
   }

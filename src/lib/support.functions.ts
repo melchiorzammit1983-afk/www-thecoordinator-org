@@ -51,16 +51,6 @@ export const logHelpQuestion = createServerFn({ method: "POST" })
     }).select("id").single();
     if (error) throw new Error(error.message);
 
-    // Try to spend a point; ignore failures so chat doesn't break.
-    if (companyId) {
-      await sb.rpc("spend_points", {
-        _company_id: companyId,
-        _feature_key: "ai_guide_chat",
-        _job_id: undefined,
-        _note: "Ask the Guide question",
-        _cost_override: undefined,
-      });
-    }
     return { id: row.id };
   });
 
