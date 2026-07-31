@@ -73,8 +73,6 @@ export const FEATURE_META: FeatureMeta[] = [
     description: "Sends the per-trip client link when a driver is assigned." },
   { key: "portal_booking", label: "Portal booking", group: "other", toggleable: false,
     description: "Booking created via a hotel/company portal." },
-  { key: "ai_char_overage", label: "AI long-message overage", group: "other", toggleable: false,
-    description: "Per-character billing for AI messages beyond the free threshold. Managed on the AI overage page." },
 ];
 
 export const FEATURE_META_BY_KEY: Record<string, FeatureMeta> = Object.fromEntries(
