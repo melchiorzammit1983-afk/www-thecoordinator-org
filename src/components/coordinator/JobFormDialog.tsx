@@ -968,11 +968,11 @@ function ManualForm({
         {/* STEP 3 — WHEN */}
         <section data-step="3" className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
+            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onInput={(e) => setDate(e.currentTarget.value)} onChange={(e) => setDate(e.target.value)} required /></div>
             <div className="space-y-1.5">
               <Label>Time</Label>
               <div className="flex items-center gap-1.5">
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
+                <Input type="time" value={time} onInput={(e) => setTime(e.currentTarget.value)} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
                 <div className="flex items-center gap-0.5">
                   {[-15, -5, 5, 15].map((delta) => (
                     <Button

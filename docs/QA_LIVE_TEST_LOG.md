@@ -28,13 +28,14 @@
 - **Fix:** Initialize every permission key, using `false` for disabled permissions.
 - **Verification:** Fixed and verified in Lovable preview: Alpha created a provider invite and Beta redeemed it successfully.
 
-### QA-002 - Changed schedule appears to save the original default date/time
+### QA-002 - Native schedule inputs can submit the original default date/time
 
-- **Severity:** High (under investigation)
+- **Severity:** High
 - **Reproduction:** In Alpha's New trip form, change the visible date/time from the defaults to 2026-08-01 10:30, then create the trip.
 - **Actual result:** QA trip #1 was stored and shown in Dispatch as 2026-07-31 09:00, the original defaults.
 - **Expected result:** The created record uses the date/time shown when Create is pressed.
-- **Notes:** The React bindings in `JobFormDialog` appear correct; reproduce manually in the preview before changing code, to distinguish a native date/time automation-event issue from an application defect.
+- **Cause:** The native date and time inputs only committed through the change handler. In the affected interaction path the visible control updated without the submitted form state being refreshed.
+- **Fix:** Commit both controls on `input` as well as `change`, so desktop, mobile, and native picker interactions consistently update the submitted schedule.
 
 ### QA-003 - Dispatch history is absent after provider acceptance
 
