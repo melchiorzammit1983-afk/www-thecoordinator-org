@@ -736,8 +736,11 @@ export function TripDetailsSheet({
           {/* Flight */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                {job.tracking_kind === "vessel" ? "Vessel" : "Flight"}
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  {job.tracking_kind === "vessel" ? "Vessel" : "Flight"}
+                </div>
+                <RefreshLiveStatusButton jobId={job.id} label="Refresh" />
               </div>
               <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
@@ -1362,7 +1365,7 @@ function TripWaitAdjustmentsPanel({ jobId }: { jobId: string }) {
   );
 }
 
-function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
+function RefreshLiveStatusButton({ jobId, label = "Refresh ETA" }: { jobId: string; label?: string }) {
   const qc = useQueryClient();
   const refreshFn = useServerFn(refreshJobLiveStatus);
   const mut = useMutation({
@@ -1382,6 +1385,7 @@ function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
         toast.error(`Traffic: ${t.reason}`);
       }
       if (f?.ok && f.note) toast.message(`Flight ${f.code}: ${f.note}`);
+      else if (f && !f.ok) toast.error(f.reason ? String(f.reason) : "Couldn't refresh flight/vessel status");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1393,7 +1397,7 @@ function RefreshLiveStatusButton({ jobId }: { jobId: string }) {
       onClick={() => mut.mutate()}
     >
       <RefreshCw className={`h-3 w-3 mr-1 ${mut.isPending ? "animate-spin" : ""}`} />
-      {mut.isPending ? "Refreshing…" : "Refresh ETA"}
+      {mut.isPending ? "Refreshing…" : label}
     </Button>
   );
 }
