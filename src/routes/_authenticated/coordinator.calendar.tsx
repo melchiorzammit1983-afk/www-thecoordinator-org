@@ -47,6 +47,7 @@ import {
   Clock,
   Plane,
   Ship,
+  RefreshCw,
   User as UserIcon,
   Info,
 } from "lucide-react";
@@ -3740,6 +3741,40 @@ function urgencyRank(job: Job): number {
   return 2 + t / 60_000; // later
 }
 
+// Manual "check now" action for a trip's flight/vessel status, right on the
+// card — the calendar otherwise only auto-refreshes silently every 5 min for
+// pickups within the next 6h, with no per-trip manual trigger.
+function RefreshFlightButton({ jobId, kind }: { jobId: string; kind: "flight" | "vessel" }) {
+  const qc = useQueryClient();
+  const refreshFn = useServerFn(refreshJobLiveStatus);
+  const mut = useMutation({
+    mutationFn: () => refreshFn({ data: { job_id: jobId } }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      const f = r?.flight;
+      if (f?.ok && f.note) toast.message(`${kind === "vessel" ? "Vessel" : "Flight"} ${f.code}: ${f.note}`);
+      else if (f && !f.ok) toast.error(f.reason ? String(f.reason) : "Couldn't refresh status");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-6 px-1.5"
+      disabled={mut.isPending}
+      onClick={(e) => {
+        e.stopPropagation();
+        mut.mutate();
+      }}
+      title={`Refresh ${kind === "vessel" ? "vessel" : "flight"} status`}
+    >
+      <RefreshCw className={`h-3 w-3 ${mut.isPending ? "animate-spin" : ""}`} />
+    </Button>
+  );
+}
+
 function DispatchTripList({
   jobs,
   onOpenDetails,
@@ -3946,6 +3981,18 @@ function DispatchTripList({
 
                       {/* Actions */}
                       <div className="flex flex-col gap-2">
+                        {flight && (
+                          <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
+                            <span className="inline-flex items-center gap-1 truncate text-muted-foreground">
+                              {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
+                              <span className="truncate">{flight}</span>
+                            </span>
+                            <RefreshFlightButton
+                              jobId={job.id}
+                              kind={job.tracking_kind === "vessel" ? "vessel" : "flight"}
+                            />
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-2">
                           {onOpenChat && (
                             <Button size="sm" variant="outline" onClick={() => onOpenChat(job)}>
