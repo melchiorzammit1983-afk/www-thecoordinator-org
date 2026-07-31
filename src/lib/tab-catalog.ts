@@ -1,4 +1,4 @@
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Coins, Gift, MapPin, Clock } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Gift, MapPin, Clock } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
 
 export type TabDef = {
@@ -23,7 +23,6 @@ export const TAB_CATALOG: TabDef[] = [
   { id: "portal_links", to: "/coordinator/portal-links",    label: "Portal Links", icon: Link2,           exact: false, feature: "portal_links",   defaultSlot: "more" },
   { id: "collaborate", to: "/coordinator/collaborate",      label: "Collaborate",  icon: Handshake,       exact: false, feature: "collaborate",    defaultSlot: "more" },
   { id: "statements", to: "/coordinator/statements",        label: "Statements",   icon: FileText,        exact: false, feature: "statements",     defaultSlot: "more" },
-  { id: "billing",    to: "/coordinator/billing",           label: "Billing",      icon: Coins,           exact: false, feature: null,             defaultSlot: "more" },
   { id: "refer",      to: "/coordinator/refer",             label: "Refer & earn", icon: Gift,            exact: false, feature: null,             defaultSlot: "more" },
   { id: "branding",   to: "/coordinator/branding",          label: "Branding",     icon: Palette,         exact: false, feature: "branding_advert", defaultSlot: "more" },
   { id: "address",    to: "/coordinator/address-settings",  label: "Address & Map", icon: MapPin,         exact: false, feature: null,             defaultSlot: "more" },

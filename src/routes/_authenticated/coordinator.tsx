@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, Coins, KeyRound, Gift, AlertTriangle, MapPin, Clock, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, KeyRound, Gift, AlertTriangle, MapPin, Clock, Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import { useFeatures } from "@/hooks/use-features";
 import { whoAmI } from "@/lib/admin.functions";
 import { ChangePasswordDialog } from "@/components/coordinator/ChangePasswordDialog";
 import { BrandLogo } from "@/components/branding/BrandLogo";
-import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
 
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
@@ -65,7 +64,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Business",
     items: [
-      { to: "/coordinator/billing", label: "Billing", icon: Coins, exact: false, feature: null },
       { to: "/coordinator/refer", label: "Refer & earn", icon: Gift, exact: false, feature: null },
       { to: "/coordinator/branding", label: "Branding", icon: Palette, exact: false, feature: "branding_advert" },
       { to: "/coordinator/address-settings", label: "Address & Map", icon: MapPin, exact: false, feature: null },
@@ -178,8 +176,6 @@ function CoordinatorLayout() {
             <div className="font-semibold text-sm truncate">{company.name}</div>
             <div className="text-xs text-muted-foreground">Coordinator</div>
           </div>
-          
-          <RequestTopupDialog trigger={<button type="button" className="inline-flex"><PointsBadge /></button>} />
         </div>
 
         <nav className="flex flex-col p-3 overflow-y-auto">

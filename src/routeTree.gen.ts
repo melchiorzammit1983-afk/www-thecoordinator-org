@@ -44,14 +44,10 @@ import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
-import { Route as AuthenticatedAdminPricingRouteImport } from './routes/_authenticated/admin.pricing'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
-import { Route as AuthenticatedAdminRevenueRouteImport } from './routes/_authenticated/admin.revenue'
-import { Route as AuthenticatedAdminTopupsRouteImport } from './routes/_authenticated/admin.topups'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
 import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
-import { Route as AuthenticatedCoordinatorBillingRouteImport } from './routes/_authenticated/coordinator.billing'
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
 import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
@@ -293,28 +289,10 @@ const AuthenticatedAdminPortalSettingsRoute =
     path: '/portal-settings',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminPricingRoute =
-  AuthenticatedAdminPricingRouteImport.update({
-    id: '/pricing',
-    path: '/pricing',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 const AuthenticatedAdminRequestsRoute =
   AuthenticatedAdminRequestsRouteImport.update({
     id: '/requests',
     path: '/requests',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminRevenueRoute =
-  AuthenticatedAdminRevenueRouteImport.update({
-    id: '/revenue',
-    path: '/revenue',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminTopupsRoute =
-  AuthenticatedAdminTopupsRouteImport.update({
-    id: '/topups',
-    path: '/topups',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedCoordinatorIndexRoute =
@@ -333,12 +311,6 @@ const AuthenticatedCoordinatorAvailabilityRoute =
   AuthenticatedCoordinatorAvailabilityRouteImport.update({
     id: '/availability',
     path: '/availability',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorBillingRoute =
-  AuthenticatedCoordinatorBillingRouteImport.update({
-    id: '/billing',
-    path: '/billing',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorBoardCreatorRoute =
@@ -709,13 +681,9 @@ export interface FileRoutesByFullPath {
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
-  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
-  '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
-  '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
-  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
@@ -807,13 +775,9 @@ export interface FileRoutesByTo {
   '/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
-  '/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
-  '/admin/revenue': typeof AuthenticatedAdminRevenueRoute
-  '/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
-  '/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
@@ -910,13 +874,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/ai-insights': typeof AuthenticatedAdminAiInsightsRoute
   '/_authenticated/admin/password-resets': typeof AuthenticatedAdminPasswordResetsRoute
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
-  '/_authenticated/admin/pricing': typeof AuthenticatedAdminPricingRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
-  '/_authenticated/admin/revenue': typeof AuthenticatedAdminRevenueRoute
-  '/_authenticated/admin/topups': typeof AuthenticatedAdminTopupsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
-  '/_authenticated/coordinator/billing': typeof AuthenticatedCoordinatorBillingRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
   '/_authenticated/coordinator/calendar': typeof AuthenticatedCoordinatorCalendarRoute
@@ -1014,13 +974,9 @@ export interface FileRouteTypes {
     | '/admin/ai-insights'
     | '/admin/password-resets'
     | '/admin/portal-settings'
-    | '/admin/pricing'
     | '/admin/requests'
-    | '/admin/revenue'
-    | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/availability'
-    | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
     | '/coordinator/calendar'
@@ -1112,13 +1068,9 @@ export interface FileRouteTypes {
     | '/admin/ai-insights'
     | '/admin/password-resets'
     | '/admin/portal-settings'
-    | '/admin/pricing'
     | '/admin/requests'
-    | '/admin/revenue'
-    | '/admin/topups'
     | '/coordinator/address-settings'
     | '/coordinator/availability'
-    | '/coordinator/billing'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
     | '/coordinator/calendar'
@@ -1214,13 +1166,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/ai-insights'
     | '/_authenticated/admin/password-resets'
     | '/_authenticated/admin/portal-settings'
-    | '/_authenticated/admin/pricing'
     | '/_authenticated/admin/requests'
-    | '/_authenticated/admin/revenue'
-    | '/_authenticated/admin/topups'
     | '/_authenticated/coordinator/address-settings'
     | '/_authenticated/coordinator/availability'
-    | '/_authenticated/coordinator/billing'
     | '/_authenticated/coordinator/board-creator'
     | '/_authenticated/coordinator/branding'
     | '/_authenticated/coordinator/calendar'
@@ -1593,32 +1541,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/pricing': {
-      id: '/_authenticated/admin/pricing'
-      path: '/pricing'
-      fullPath: '/admin/pricing'
-      preLoaderRoute: typeof AuthenticatedAdminPricingRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
     '/_authenticated/admin/requests': {
       id: '/_authenticated/admin/requests'
       path: '/requests'
       fullPath: '/admin/requests'
       preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/revenue': {
-      id: '/_authenticated/admin/revenue'
-      path: '/revenue'
-      fullPath: '/admin/revenue'
-      preLoaderRoute: typeof AuthenticatedAdminRevenueRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/topups': {
-      id: '/_authenticated/admin/topups'
-      path: '/topups'
-      fullPath: '/admin/topups'
-      preLoaderRoute: typeof AuthenticatedAdminTopupsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/coordinator/': {
@@ -1640,13 +1567,6 @@ declare module '@tanstack/react-router' {
       path: '/availability'
       fullPath: '/coordinator/availability'
       preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/billing': {
-      id: '/_authenticated/coordinator/billing'
-      path: '/billing'
-      fullPath: '/coordinator/billing'
-      preLoaderRoute: typeof AuthenticatedCoordinatorBillingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/board-creator': {
@@ -2063,10 +1983,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminAiInsightsRoute: typeof AuthenticatedAdminAiInsightsRoute
   AuthenticatedAdminPasswordResetsRoute: typeof AuthenticatedAdminPasswordResetsRoute
   AuthenticatedAdminPortalSettingsRoute: typeof AuthenticatedAdminPortalSettingsRoute
-  AuthenticatedAdminPricingRoute: typeof AuthenticatedAdminPricingRoute
   AuthenticatedAdminRequestsRoute: typeof AuthenticatedAdminRequestsRoute
-  AuthenticatedAdminRevenueRoute: typeof AuthenticatedAdminRevenueRoute
-  AuthenticatedAdminTopupsRoute: typeof AuthenticatedAdminTopupsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
@@ -2075,10 +1992,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminAiInsightsRoute: AuthenticatedAdminAiInsightsRoute,
   AuthenticatedAdminPasswordResetsRoute: AuthenticatedAdminPasswordResetsRoute,
   AuthenticatedAdminPortalSettingsRoute: AuthenticatedAdminPortalSettingsRoute,
-  AuthenticatedAdminPricingRoute: AuthenticatedAdminPricingRoute,
   AuthenticatedAdminRequestsRoute: AuthenticatedAdminRequestsRoute,
-  AuthenticatedAdminRevenueRoute: AuthenticatedAdminRevenueRoute,
-  AuthenticatedAdminTopupsRoute: AuthenticatedAdminTopupsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
@@ -2103,7 +2017,6 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
   AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
-  AuthenticatedCoordinatorBillingRoute: typeof AuthenticatedCoordinatorBillingRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
   AuthenticatedCoordinatorCalendarRoute: typeof AuthenticatedCoordinatorCalendarRoute
@@ -2128,7 +2041,6 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorAddressSettingsRoute,
     AuthenticatedCoordinatorAvailabilityRoute:
       AuthenticatedCoordinatorAvailabilityRoute,
-    AuthenticatedCoordinatorBillingRoute: AuthenticatedCoordinatorBillingRoute,
     AuthenticatedCoordinatorBoardCreatorRoute:
       AuthenticatedCoordinatorBoardCreatorRoute,
     AuthenticatedCoordinatorBrandingRoute:

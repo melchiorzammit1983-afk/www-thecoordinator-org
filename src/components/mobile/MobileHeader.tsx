@@ -2,7 +2,6 @@ import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useScrollDirection } from "@/hooks/use-scroll-direction";
 import { BrandLogo } from "@/components/branding/BrandLogo";
-import { PointsBadge, RequestTopupDialog } from "@/components/billing/RequestTopupDialog";
 
 import { cn } from "@/lib/utils";
 
@@ -34,14 +33,6 @@ export function MobileHeader({ logoUrl, name, onChangePassword }: Props) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold">{name}</div>
       </div>
-      
-      <RequestTopupDialog
-        trigger={
-          <button type="button" className="inline-flex shrink-0">
-            <PointsBadge />
-          </button>
-        }
-      />
       <Button
         variant="ghost"
         size="icon"

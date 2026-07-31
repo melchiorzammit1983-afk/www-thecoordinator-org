@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyFeatures } from "@/lib/coordinator.functions";
-import { getMyBilling } from "@/lib/billing.functions";
 import { supabase } from "@/integrations/supabase/client";
 import type { FeatureKey } from "@/lib/features";
 
@@ -36,42 +35,6 @@ export function useFeatures() {
 
 export function useFeature(key: FeatureKey): boolean {
   const { data, isLoading } = useFeatures();
-  const { data: billing } = useMyBilling();
   if (isLoading || !data) return true;
-  if (data[key] === false) return false;
-  // Admin-level kill switch: if the cost row exists and is explicitly disabled,
-  // hide the surface for every user regardless of entitlement.
-  const cost = billing?.costs?.find((c) => c.feature_key === key);
-  if (cost && cost.enabled === false) return false;
-  return true;
-}
-
-export function useMyBilling() {
-  const fn = useServerFn(getMyBilling);
-  return useQuery({
-    queryKey: ["my-billing"],
-    queryFn: () => fn() as Promise<{
-      company: { id: string; name: string; points_balance: number; trial_ends_at: string | null; grace_actions_remaining: number } | null;
-      subscription: { plan_id: string; points_remaining_this_period: number; current_period_end: string; plans: { code: string; name: string; included_points: number; price_monthly: number } } | null;
-      costs: { feature_key: string; points_cost: number; label: string | null; min_plan_code: string | null; is_addon: boolean; category: string | null; enabled: boolean; block_on_empty: boolean }[];
-      recent: { id: string; feature_key: string | null; points_deducted: number; created_at: string; note: string | null }[];
-    } | null>,
-    staleTime: 60_000,
-  });
-}
-
-
-export function useFeatureCost(key: string): number {
-  const { data } = useMyBilling();
-  if (!data) return 1;
-  const raw = data.costs.find((c) => c.feature_key === key)?.points_cost;
-  return raw != null ? Number(raw) : 1;
-}
-
-export function usePointsRemaining(): number {
-  const { data } = useMyBilling();
-  if (!data) return 0;
-  const plan = Number(data.subscription?.points_remaining_this_period ?? 0);
-  const balance = Number(data.company?.points_balance ?? 0);
-  return plan + balance;
+  return data[key] !== false;
 }
