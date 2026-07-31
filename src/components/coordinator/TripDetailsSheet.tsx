@@ -29,7 +29,7 @@ import { TripRouteInsights } from "./TripRouteInsights";
 import { ScheduleConflictBanner } from "./ScheduleConflictBanner";
 import { ClientNameWithNote } from "./ClientNameWithNote";
 import {
-  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
+  Pencil, MessagesSquare, MessageCircle, Link2, Users, Plane, Ship, QrCode, Navigation2, CircleCheck, CircleAlert, MapPin, RefreshCw, Check, CheckCheck, ShieldAlert, Lock, Wallet, FileText, Receipt, SendHorizonal, X,
 } from "lucide-react";
 
 
@@ -79,6 +79,7 @@ export type DetailsJob = {
   payment_status?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
+  tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
   flight_status_updated_at?: string | null;
   flight_scheduled_at: string | null; flight_estimated_at: string | null;
@@ -735,12 +736,14 @@ export function TripDetailsSheet({
           {/* Flight */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                {job.tracking_kind === "vessel" ? "Vessel" : "Flight"}
+              </div>
               <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
-                    {job.from_flight && <div>From: <b>✈ {job.from_flight}</b></div>}
-                    {job.to_flight && <div>To: <b>✈ {job.to_flight}</b></div>}
+                    {job.from_flight && <div>From: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.from_flight}</b></div>}
+                    {job.to_flight && <div>To: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.to_flight}</b></div>}
                   </div>
                   <FlightStatusPill status={job.flight_status} />
                 </div>
@@ -763,18 +766,20 @@ export function TripDetailsSheet({
                       ? `Updated ${formatMaltaTime(job.flight_status_updated_at)}`
                       : "Not checked yet"}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="underline"
-                    >
-                      Malta Airport
-                    </a>
-                  </div>
+                  {job.tracking_kind !== "vessel" && (
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Malta Airport
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  Automatic live updates are temporarily unavailable. Check the airport board before dispatch.
+                  Automatic live updates are temporarily unavailable. Check the {job.tracking_kind === "vessel" ? "port" : "airport"} board before dispatch.
                 </p>
               </div>
             </section>
