@@ -181,18 +181,6 @@ export const acceptPublicBookingRequest = createServerFn({ method: "POST" })
     } as any).select("id").single();
     if (jerr) throw new Error(jerr.message);
 
-    try {
-      await a.rpc("spend_points" as any, {
-        _company_id: cid,
-        _feature_key: "trip_created",
-        _job_id: (job as any).id,
-        _note: `Public portal booking accepted (${(req as any).portal_id})`,
-      } as any);
-    } catch (e: any) {
-      await a.from("jobs").delete().eq("id", (job as any).id);
-      throw new Error(e?.message ?? "spend_failed");
-    }
-
     if (payload.flight_number) {
       const { applyLiveStatusToJobBg } = await import("./coordinator.functions");
       applyLiveStatusToJobBg((job as any).id);

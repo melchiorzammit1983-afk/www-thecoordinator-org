@@ -217,17 +217,6 @@ export const startOnTheGoTrip = createServerFn({ method: "POST" })
       lng: data.lng ?? null,
     } as any);
 
-    // Meter the trip creation on the coordinator's account (as today).
-    try {
-      await supabaseAdmin.rpc("spend_points", {
-        _company_id: coordinatorId,
-        _feature_key: "trip_created",
-        _job_id: jobId as unknown as string,
-        _note: "Driver on-the-go trip",
-        _cost_override: undefined as unknown as number,
-      });
-    } catch { /* soft-meter */ }
-
     await logMap(coordinatorId, jobId, link.subject_id!, "en_route",
       data.note ?? "Driver started on-the-go trip",
       { source: "driver_otg" }, data.lat, data.lng);

@@ -9,22 +9,6 @@ async function getAdminClient() {
   return supabaseAdmin;
 }
 
-async function spendSoft(companyId: string | null | undefined, featureKey: string, note: string, jobId?: string) {
-  if (!companyId) return;
-  try {
-    const sb = await getAdminClient();
-    await sb.rpc("spend_points", {
-      _company_id: companyId,
-      _feature_key: featureKey,
-      _job_id: (jobId ?? undefined) as unknown as string,
-      _note: note,
-      _cost_override: undefined as unknown as number,
-    });
-  } catch {
-    // metering never breaks primary action
-  }
-}
-
 
 
 
@@ -280,7 +264,6 @@ export const dispatchJobToPartner = createServerFn({ method: "POST" })
       if (updateError) throw new Error("Couldn't complete the hand-off — no changes were saved");
       throw new Error("Trip state changed — please refresh and retry");
     }
-    await spendSoft(c.id, "trip_dispatched", "Trip dispatched to partner", data.job_id);
     return { ok: true };
   });
 

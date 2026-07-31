@@ -53,28 +53,6 @@ async function lookupCompanyForUser(
   return null;
 }
 
-/**
- * Best-effort metering: deducts points for a feature but NEVER throws.
- * Use for billable events that must not break core operations (trip creation,
- * dispatch). Features with block_on_empty=true still deduct; overflow either
- * hits the subscription pool or is allowed negative when block_on_empty=false.
- */
-async function spendSoft(companyId: string | null | undefined, featureKey: string, note: string, jobId?: string) {
-  if (!companyId) return;
-  try {
-    const sb = await getAdminClient();
-    await sb.rpc("spend_points", {
-      _company_id: companyId,
-      _feature_key: featureKey,
-      _job_id: (jobId ?? undefined) as unknown as string,
-      _note: note,
-      _cost_override: undefined as unknown as number,
-    });
-  } catch {
-    // swallow — metering must never break the primary action
-  }
-}
-
 async function checkIsAdmin(userId: string): Promise<boolean> {
   try {
     const supabaseAdmin = await getAdminClient();
@@ -793,7 +771,6 @@ export const createJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
-    await spendSoft(c.id, "trip_created", "Trip created", row.id);
     if (data.from_flight || data.to_flight) {
       applyLiveStatusToJobBg(row.id as string);
     }
@@ -1062,20 +1039,6 @@ export const autoShiftEarlyFlight = createServerFn({ method: "POST" })
       await _gateShift(supabaseAdmin, c.id, "auto_shift_early_flight");
     } catch (e) {
       throw new Error(_gerrShift(e) ?? (e as Error).message);
-    }
-    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-      _company_id: c.id,
-      _feature_key: "auto_shift_early_flight",
-      _job_id: data.id as unknown as string,
-      _note: "auto-shift pickup to earlier flight time",
-      _cost_override: undefined as unknown as number,
-    });
-    if (spendErr) {
-      const msg = spendErr.message || "";
-      if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to auto-shift.");
-      if (msg.includes("feature_disabled")) throw new Error("Auto-shift has been disabled by the administrator.");
-      if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for auto-shift.");
-      throw new Error(msg);
     }
 
     const { date, time } = isoToMaltaDateTime(iso);
@@ -1728,7 +1691,6 @@ export const cloneJob = createServerFn({ method: "POST" })
       expect: { driver_id: null, group_id: null, parent_job_id: null },
     });
 
-    await spendSoft(c.id, "trip_created", "Trip cloned", row.id as string);
     applyLiveStatusToJobBg(row.id as string);
     return { ...(row as any), _validation: report };
   });
@@ -2109,7 +2071,6 @@ export const approveBooking = createServerFn({ method: "POST" })
       applyLiveStatusToJobBg(job.id as string);
     }
     await supabaseAdmin.from("client_bookings").update({ status: "accepted", job_id: job.id }).eq("id", data.id);
-    await spendSoft(c.id, "trip_created", "Trip from client booking", job.id);
     return { ok: true, job };
   });
 
@@ -2222,9 +2183,6 @@ export const generateMagicLink = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
-    if (data.kind === "client") {
-      await spendSoft(c.id, "client_link_sent", "Client tracking link created");
-    }
     return row;
   });
 
@@ -2420,7 +2378,6 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     // Flat convenience fee for using bulk import, once per batch — on top of
     // each row's own trip_created charge, not instead of it.
-    await spendSoft(c.id, "bulkupload", `Bulk import (${data.trips.length} trips)`);
 
     // Half-price applies to the per-trip processing fee when the AI's initial
     // accuracy was under 75%. Resolve the effective base cost once (company
@@ -2504,23 +2461,6 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       await syncJobLabels(context, c.id, job.id, data.label_ids);
       if (t.from_flight || t.to_flight) {
         applyLiveStatusToJobBg(job.id as string);
-      }
-      if (isHalfPrice) {
-        // Bypass spendSoft (which uses default pricing) so we can apply the
-        // 50% cost_override. Still never throws — metering must not break saves.
-        try {
-          await supabaseAdmin.rpc("spend_points", {
-            _company_id: c.id,
-            _feature_key: "trip_created",
-            _job_id: job.id,
-            _note: `Trip created (bulk, 50% AI-accuracy discount, score=${(data.billing_flags?.accuracy_score ?? 0).toFixed(2)})`,
-            _cost_override: halfCostOverride as unknown as number,
-          });
-        } catch {
-          /* ignore metering errors */
-        }
-      } else {
-        await spendSoft(c.id, "trip_created", "Trip created (bulk)", job.id);
       }
     }
     if (created.length) {
@@ -2954,19 +2894,9 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     const companyId = (job as any).company_id as string;
 
-    const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-      _company_id: companyId,
-      _feature_key: meterKey,
-      _job_id: jobId,
-      _note: "flight/vessel lookup (on trip creation)",
-      _cost_override: undefined as unknown as number,
-    });
-    if (spendErr) return; // out of points / disabled — skip silently, never block trip creation
+// out of points / disabled — skip silently, never block trip creation
 
-    const result = await applyLiveStatusToJob(supabaseAdmin, job as any);
-    if (!result.ok) {
-      await refundPoints(companyId, meterKey, "creation lookup failed", jobId);
-    }
+    await applyLiveStatusToJob(supabaseAdmin, job as any);
   } catch {
     // best-effort — never let a flight lookup break trip creation
   }
@@ -3079,19 +3009,9 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
       }
       const meterKey = (j as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
       try {
-        const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-          _company_id: c.id,
-          _feature_key: meterKey,
-          _job_id: (j as any).id,
-          _note: "flight/vessel lookup (bulk refresh)",
-          _cost_override: undefined as unknown as number,
-        });
-        if (spendErr) break;
         const r = await applyLiveStatusToJob(supabaseAdmin, j as any);
         if (r.ok) updated++;
-        else await refundPoints(c.id, meterKey, "refresh failed", (j as any).id);
       } catch {
-        await refundPoints(c.id, meterKey, "refresh threw", (j as any).id);
       }
     }
     return { checked: jobs.length, updated, configured, skippedFresh };
@@ -3141,35 +3061,10 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
         throw new Error(_e(err) ?? (err as Error).message);
       }
     }
-    // Skip charging when the cached AI answer is still fresh — the caller
-    // gets the same result and we don't burn refresh points.
-    const lastAt = (job as any).flight_status_updated_at as string | null;
-    const fresh = !!lastAt && Date.now() - new Date(lastAt).getTime() < FLIGHT_REFRESH_FREE_MS;
-    const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
-    if (!fresh) {
-      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-        _company_id: c.id,
-        _feature_key: meterKey,
-        _job_id: data.job_id,
-        _note: "flight/vessel manual refresh",
-        _cost_override: undefined as unknown as number,
-      });
-      if (spendErr) {
-        const msg = spendErr.message || "";
-        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-        if (msg.includes("feature_disabled"))
-          throw new Error("Flight/vessel tracking has been disabled by the administrator.");
-        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
-        throw new Error(msg);
-      }
-    }
-
     try {
       const r = await applyLiveStatusToJob(supabaseAdmin, job as any);
-      if (!fresh && !r.ok) await refundPoints(c.id, meterKey, "refresh failed", data.job_id);
       return r;
     } catch (e: any) {
-      if (!fresh) await refundPoints(c.id, meterKey, "refresh threw", data.job_id);
       return { ok: false as const, reason: "exception", error: String(e?.message ?? e) };
     }
   });
@@ -3415,21 +3310,6 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
           throw new Error(_e(err) ?? (err as Error).message);
         }
       }
-      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-        _company_id: c.id,
-        _feature_key: flightMeterKey,
-        _job_id: data.job_id,
-        _note: "flight/vessel manual refresh",
-        _cost_override: undefined as unknown as number,
-      });
-      if (spendErr) {
-        const msg = spendErr.message || "";
-        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to refresh status.");
-        if (msg.includes("feature_disabled"))
-          throw new Error("Flight/vessel tracking has been disabled by the administrator.");
-        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for flight/vessel tracking.");
-        throw new Error(msg);
-      }
     }
 
     let preview;
@@ -3444,12 +3324,7 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
       });
     } catch (e) {
-      if (shouldMeterFlight) await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
       throw e;
-    }
-
-    if (shouldMeterFlight && !preview.flight?.ok) {
-      await refundPoints(c.id, flightMeterKey, "refresh failed", data.job_id);
     }
 
     const patch: Record<string, any> = {};
@@ -3574,7 +3449,6 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
     if (iErr) throw new Error(iErr.message);
 
     // Meter the child trip
-    await spendSoft(c.id, "trip_created", "Trip split from parent", job.id);
 
     if (inheritsChain) {
       // Mirror the accepted hop so chain timelines / statements reflect the split child.
@@ -3587,7 +3461,6 @@ export const splitPaxToNewJob = createServerFn({ method: "POST" })
         note: "split from parent trip",
         decided_at: new Date().toISOString(),
       });
-      await spendSoft(src.origin_company_id ?? src.company_id, "trip_dispatched", "Trip dispatched via split", job.id);
     }
 
     // Copy labels from parent → child so the card is visually complete.
@@ -5122,20 +4995,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       } catch (e) {
         throw new Error(friendlyGateError(e) ?? (e as Error).message);
       }
-      const { error: spendErr } = await supabaseAdmin.rpc("spend_points", {
-        _company_id: co.id,
-        _feature_key: extractionKey,
-        _job_id: undefined as unknown as string,
-        _note: willUseMedia ? "ai_extraction (media)" : "ai_extraction (text)",
-        _cost_override: undefined as unknown as number,
-      });
-      if (spendErr) {
-        const msg = spendErr.message || "";
-        if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to continue.");
-        if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for AI extraction.");
-        if (msg.includes("feature_disabled")) throw new Error("AI extraction has been disabled by the administrator.");
-        throw new Error(msg);
-      }
     }
 
     const key = process.env.GEMINI_API_KEY;
@@ -5247,21 +5106,11 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
 
     if (transportError || !res) {
       if (co)
-        await refundPoints(
-          co.id,
-          willUseMedia ? "ai_extraction_media" : "ai_extraction",
-          "AI extraction transport failure",
-        );
       throw new Error("AI is temporarily unreachable — please try again");
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       if (co)
-        await refundPoints(
-          co.id,
-          willUseMedia ? "ai_extraction_media" : "ai_extraction",
-          `AI extraction ${res.status}`,
-        );
       if (res.status === 429) throw new Error("AI is rate limited — please try again in a moment");
       if (res.status === 503) throw new Error("AI is temporarily overloaded — please try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
@@ -5270,7 +5119,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     const json = (await res.json()) as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
     if (!text) {
-      if (co) await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction empty");
       throw new Error("AI returned an empty response — please try again");
     }
 
@@ -5279,7 +5127,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       parsed = safeJsonParse(text);
     } catch {
       if (co)
-        await refundPoints(co.id, willUseMedia ? "ai_extraction_media" : "ai_extraction", "AI extraction invalid JSON");
       throw new Error("AI response was unreadable — please rephrase and try again");
     }
 
@@ -5340,11 +5187,6 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
       return { type: "question" as const, payload: rawPayload.trim().slice(0, 500) };
     }
     if (co)
-      await refundPoints(
-        co.id,
-        willUseMedia ? "ai_extraction_media" : "ai_extraction",
-        "AI extraction unrecognized shape",
-      );
     throw new Error("AI response was unreadable — please rephrase and try again");
   });
 
@@ -5574,7 +5416,6 @@ export const getClientTripLink = createServerFn({ method: "POST" })
         .update({ client_link_token: token } as never)
         .eq("id", data.job_id);
       if (uErr) throw new Error(uErr.message);
-      await spendSoft(company.id, "client_link_sent", "Client trip link issued", data.job_id);
     }
     const { count } = await supabaseAdmin
       .from("pax")
@@ -5951,58 +5792,8 @@ export const rejectClientJob = createServerFn({ method: "POST" })
 
 // ==========================================================
 // AI SUITE — group suggestions, daily plan, reply drafter,
-// voice-to-trip. All metered via spend_points RPC.
+// voice-to-trip.
 // ==========================================================
-
-async function spendOrThrow(companyId: string, featureKey: string, note: string, jobId?: string) {
-  const sb = await getAdminClient();
-  // Respect the coordinator's per-feature opt-out before billing.
-  const { assertUserFeatureEnabled, friendlyGateError } = await import("@/lib/user-feature-prefs.server");
-  try {
-    await assertUserFeatureEnabled(sb, companyId, featureKey);
-  } catch (e) {
-    throw new Error(friendlyGateError(e) ?? (e as Error).message);
-  }
-  const { error } = await sb.rpc("spend_points", {
-    _company_id: companyId,
-    _feature_key: featureKey,
-    _job_id: (jobId ?? undefined) as unknown as string,
-    _note: note,
-    _cost_override: undefined as unknown as number,
-  });
-  if (error) {
-    const msg = error.message || "";
-    if (msg.includes("insufficient_points")) throw new Error("Out of points — buy a top-up to continue.");
-    if (msg.includes("feature_capped")) throw new Error("Monthly cap reached for this AI feature.");
-    if (msg.includes("feature_disabled")) throw new Error("This feature has been disabled by the administrator.");
-    throw new Error(msg);
-  }
-}
-
-// Best-effort refund when a paid AI call fails after metering. Uses spend_points
-// with a negative _cost_override; if the RPC rejects negatives, we swallow and log.
-export async function refundPoints(companyId: string, featureKey: string, note: string, jobId?: string) {
-  try {
-    const sb = await getAdminClient();
-    const { data: costRow } = await sb
-      .from("ai_feature_costs")
-      .select("points_cost")
-      .eq("feature_key", featureKey)
-      .maybeSingle();
-    const cost = Number(costRow?.points_cost ?? 0);
-    if (!cost) return;
-    const { error } = await sb.rpc("spend_points", {
-      _company_id: companyId,
-      _feature_key: featureKey,
-      _job_id: (jobId ?? undefined) as unknown as string,
-      _note: `REFUND: ${note}`,
-      _cost_override: -cost as unknown as number,
-    });
-    if (error) console.warn("[refundPoints] failed:", error.message);
-  } catch (e) {
-    console.warn("[refundPoints] threw:", (e as Error).message);
-  }
-}
 
 // Shared shapes for Gemini extraction — always tolerate missing keys.
 const tripRowSchema = z
@@ -6292,20 +6083,9 @@ export async function runAutoCoordinate(
     .maybeSingle();
   const meteringMode: "per_action" | "per_run" | "per_trip" = (costRow?.metering_mode as any) ?? "per_action";
 
-  const chargePlanIfNeeded = async (proposals: CoordProposal[]) => {
-    // Per-run / per-trip metering happens up-front; per-action defers to accept.
-    if (meteringMode === "per_run" && proposals.length > 0) {
-      await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate planning run");
-    } else if (meteringMode === "per_trip") {
-      const touched = new Set<string>();
-      for (const p of proposals) p.trip_ids.forEach((t) => touched.add(t));
-      const perCost = Number(costRow?.points_cost ?? 1);
-      for (let i = 0; i < touched.size; i++) {
-        await spendOrThrow(companyId, "ai_auto_coordinate", "Auto-Coordinate trip", undefined);
-        void perCost;
-      }
-    }
-  };
+  // Points metering was removed — planning runs are unmetered. Kept as a
+  // no-op so the metering_mode value still reported to callers stays stable.
+  const chargePlanIfNeeded = async (_proposals: CoordProposal[]) => {};
 
   if (list.length === 0) {
     return { proposals: [] as CoordProposal[], metering_mode: meteringMode, considered: 0, pendingReview };
@@ -6726,20 +6506,10 @@ export const applyAutoCoordinateProposal = createServerFn({ method: "POST" })
         throw new Error("Not an active Collaborate partner");
       }
       for (const jobId of data.trip_ids) {
-        await spendOrThrow(c.id, "ai_agent_dispatch", `Auto-Coordinate dispatch ${jobId.slice(0, 8)}`, jobId);
         await dispatchJobToPartnerInternal(sb, c.id, jobId, data.partner_company_id, "via AI Auto-Coordinate");
       }
     }
 
-    // Per-action metering (per_run / per_trip already charged at plan time).
-    const { data: costRow } = await sb
-      .from("ai_feature_costs")
-      .select("metering_mode")
-      .eq("feature_key", "ai_auto_coordinate")
-      .maybeSingle();
-    if ((costRow?.metering_mode ?? "per_action") === "per_action") {
-      await spendOrThrow(c.id, "ai_auto_coordinate", `Auto-Coordinate ${data.kind}`);
-    }
     return { ok: true };
   });
 
@@ -6769,7 +6539,6 @@ export const aiPlanDriverDay = createServerFn({ method: "POST" })
     if (list.length < 2)
       return { ordered_trip_ids: list.map((j: any) => j.id), summary: "Not enough trips to reorder." };
 
-    await spendOrThrow(c.id, "ai_daily_plan", `Daily plan for ${data.date}`);
 
     const summary = list
       .map((j: any) => `${j.id}: ${j.time ?? "??"} | ${j.from_location ?? ""} → ${j.to_location ?? ""}`)
@@ -6805,7 +6574,6 @@ export const aiDraftChatReplies = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     await assertFeatureEnabled(c.id, "ai_reply_drafter");
-    await spendOrThrow(c.id, "ai_reply_drafter", "Chat reply drafts");
     const parsed = await callGemini(
       await buildSystemPrompt(
         c.id,
@@ -6833,7 +6601,6 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     await assertFeatureEnabled(c.id, "ai_voice_to_trip");
-    await spendOrThrow(c.id, "ai_voice_to_trip", "Voice note → trip");
 
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
@@ -6869,26 +6636,22 @@ export const aiVoiceNoteToTrip = createServerFn({ method: "POST" })
         }),
       });
     } catch {
-      await refundPoints(c.id, "ai_voice_to_trip", "Voice note transport failure");
       throw new Error("AI is temporarily unreachable — please try again");
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      await refundPoints(c.id, "ai_voice_to_trip", `Voice note ${res.status}`);
       if (res.status === 429) throw new Error("AI is rate limited — try again shortly");
       throw new Error(`AI error ${res.status}: ${body.slice(0, 200)}`);
     }
     const json = (await res.json()) as any;
     const text: string = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
     if (!text) {
-      await refundPoints(c.id, "ai_voice_to_trip", "Voice note empty response");
       throw new Error("AI returned an empty transcript — recording may be silent");
     }
     let parsed: any;
     try {
       parsed = safeJsonParse(text);
     } catch {
-      await refundPoints(c.id, "ai_voice_to_trip", "Voice note invalid JSON");
       throw new Error("AI response was unreadable — please try again");
     }
     const trips = Array.isArray(parsed?.trips) ? parsed.trips : [];
@@ -7043,7 +6806,6 @@ export const runAiCommand = createServerFn({ method: "POST" })
 
     const featureKey = data.mode === "execute" ? "ai_command_execute" : "ai_command_read";
     await assertFeatureEnabled(c.id, featureKey);
-    await spendOrThrow(c.id, featureKey, `AI command (${data.mode}): ${data.prompt.slice(0, 60)}`);
 
     const now = new Date();
     const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -7366,7 +7128,6 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           affected++;
           results.push({ index: idx, ok: true, message: `ungrouped ${count ?? 0}` });
         } else if (a.type === "message") {
-          await spendOrThrow(c.id, "ai_agent_message", `AI message on trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
           const body = String(a.body ?? "").trim();
           if (!body) throw new Error("empty message");
           let thread_kind: "group" | "private" | "driver_coord" = "group";
@@ -7413,7 +7174,6 @@ export const applyAiCommandActions = createServerFn({ method: "POST" })
           affected++;
           results.push({ index: idx, ok: true, message: `message sent (${a.thread})` });
         } else if (a.type === "dispatch") {
-          await spendOrThrow(c.id, "ai_agent_dispatch", `AI dispatch trip ${String(a.job_id).slice(0, 8)}`, a.job_id);
           await dispatchJobToPartnerInternal(sb, c.id, a.job_id, a.partner_company_id, "via AI agent");
           affected++;
           results.push({ index: idx, ok: true, message: "dispatched to partner" });
@@ -7495,7 +7255,6 @@ export const autoAssignJob = createServerFn({ method: "POST" })
       return { ok: false, driver_id: null, reason: row?.reason ?? "no_driver", score: 0 };
     }
     // Charge only on successful assignment
-    await spendOrThrow(c.id, "ai_auto_assign", `Auto-assign trip ${data.job_id.slice(0, 8)}`, data.job_id);
     return { ok: true, driver_id: row.driver_id, reason: row.reason, score: Number(row.score ?? 0) };
   });
 
