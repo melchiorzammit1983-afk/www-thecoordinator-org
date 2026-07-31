@@ -234,7 +234,26 @@ export function liveStatusFailureMessage(reason: string | null | undefined, code
       return "Flight provider quota reached — try again shortly";
     case "provider_unavailable":
       return "Flight provider is unavailable right now";
-    default:
+    case "aero_unreachable":
+      return "Couldn't reach the flight provider — network or address problem";
+    default: {
+      // aero_http_<status>: any other non-2xx. Worth naming the code, since
+      // 402 usually means the plan isn't active and 400/404 usually means
+      // the request address is wrong — very different fixes.
+      const m = /^aero_http_(\d{3})$/.exec(reason ?? "");
+      if (m) {
+        const status = m[1];
+        const hint =
+          status === "402"
+            ? " — subscription not active"
+            : status === "400" || status === "404"
+              ? " — provider didn't recognise the request"
+              : status.startsWith("5")
+                ? " — provider having problems, try again shortly"
+                : "";
+        return `Flight provider returned HTTP ${status}${hint}`;
+      }
       return `Couldn't find ${code} — the provider has no record of it for this date`;
+    }
   }
 }
