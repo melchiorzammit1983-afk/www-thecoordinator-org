@@ -1384,8 +1384,15 @@ function RefreshLiveStatusButton({ jobId, label = "Refresh ETA" }: { jobId: stri
       } else if (t?.reason) {
         toast.error(`Traffic: ${t.reason}`);
       }
-      if (f?.ok && f.note) toast.message(`Flight ${f.code}: ${f.note}`);
-      else if (f && !f.ok) toast.error(f.reason ? String(f.reason) : "Couldn't refresh flight/vessel status");
+      if (f?.ok) {
+        // f.note is often empty (e.g. no terminal/gate assigned yet) — never
+        // go silent on a successful check, fall back to status + time.
+        const timeTxt = f.scheduled ? formatMaltaTime(f.scheduled) : f.estimated ? formatMaltaTime(f.estimated) : "";
+        const fallback = `${(f.status ?? "unknown").replace(/_/g, " ")}${timeTxt ? ` · ${timeTxt}` : ""}`;
+        toast.message(`Flight ${f.code}: ${f.note || fallback}`);
+      } else if (f && !f.ok) {
+        toast.error(f.reason ? String(f.reason) : "Couldn't refresh flight/vessel status");
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

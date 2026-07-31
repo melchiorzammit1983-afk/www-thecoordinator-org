@@ -3752,8 +3752,16 @@ function RefreshFlightButton({ jobId, kind }: { jobId: string; kind: "flight" | 
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       const f = r?.flight;
-      if (f?.ok && f.note) toast.message(`${kind === "vessel" ? "Vessel" : "Flight"} ${f.code}: ${f.note}`);
-      else if (f && !f.ok) toast.error(f.reason ? String(f.reason) : "Couldn't refresh status");
+      const label = kind === "vessel" ? "Vessel" : "Flight";
+      if (f?.ok) {
+        // f.note is often empty (e.g. no terminal/gate assigned yet) — never
+        // go silent on a successful check, fall back to status + time.
+        const timeTxt = f.scheduled ? formatMaltaTime(f.scheduled) : f.estimated ? formatMaltaTime(f.estimated) : "";
+        const fallback = `${(f.status ?? "unknown").replace(/_/g, " ")}${timeTxt ? ` · ${timeTxt}` : ""}`;
+        toast.message(`${label} ${f.code}: ${f.note || fallback}`);
+      } else if (f && !f.ok) {
+        toast.error(f.reason ? String(f.reason) : "Couldn't refresh status");
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
