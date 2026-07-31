@@ -1100,6 +1100,7 @@ function CalendarPage() {
           paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0, 5)}` : ""
         }
         drivers={drivers ?? []}
+        initialPax={paxJob?.pax ?? []}
       />
       <TripChatDialog
         open={!!chatJob}

@@ -19,13 +19,14 @@ type Driver = { id: string; name: string; vehicle: string | null };
 type Pax = { id: string; name: string; status: string };
 
 export function PaxSplitDialog({
-  open, onOpenChange, jobId, jobLabel, drivers,
+  open, onOpenChange, jobId, jobLabel, drivers, initialPax = [],
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   jobId: string | null;
   jobLabel: string;
   drivers: Driver[];
+  initialPax?: Pax[];
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [driverId, setDriverId] = useState<string>("__none__");
@@ -40,6 +41,7 @@ export function PaxSplitDialog({
     queryFn: () => listFn({ data: { job_id: jobId! } }) as Promise<Pax[]>,
     enabled: !!jobId && open,
   });
+  const visiblePax = pax?.length ? pax : initialPax;
 
   const qc = useQueryClient();
   const splitFn = useServerFn(splitPaxToNewJob);
@@ -78,8 +80,8 @@ export function PaxSplitDialog({
           <DialogDescription>{jobLabel}</DialogDescription>
         </DialogHeader>
         <div className="max-h-72 overflow-auto space-y-1.5 rounded-md border p-2">
-          {(pax ?? []).length === 0 && <div className="text-xs text-muted-foreground py-4 text-center">No passengers on this trip.</div>}
-          {(pax ?? []).map((p) => (
+          {visiblePax.length === 0 && <div className="text-xs text-muted-foreground py-4 text-center">No passengers on this trip.</div>}
+          {visiblePax.map((p) => (
             <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer rounded p-1 hover:bg-muted/50">
               <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggle(p.id)} />
               <span className="flex-1">{p.name}</span>
