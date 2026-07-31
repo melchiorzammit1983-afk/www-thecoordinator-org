@@ -2502,8 +2502,43 @@ function liveStatusProviderEnabled(): boolean {
 // AeroDataBox (real airline schedule data) is the only live-status provider.
 // Optional — without a key, flight lookups report "not configured" rather
 // than failing.
+//
+// It is resold through two marketplaces with different front doors. The
+// upstream service and the response bodies are identical, so only the host,
+// the auth header and the env var differ — everything downstream of the
+// fetch is provider-agnostic. api.market wins when both keys are present.
+type AeroProvider = {
+  name: "api.market" | "rapidapi";
+  url: (flightNumber: string, date: string) => string;
+  headers: Record<string, string>;
+};
+
+function aeroProvider(): AeroProvider | null {
+  const market = process.env.AERODATABOX_API_MARKET_KEY;
+  if (market) {
+    return {
+      name: "api.market",
+      url: (f, d) =>
+        `https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/${encodeURIComponent(f)}/${d}`,
+      // api.market renamed this header when it rebranded from MagicAPI.
+      // Both are sent because we cannot reach the host from CI to confirm
+      // which one the account is on, and an unrecognised header is ignored.
+      headers: { "x-api-market-key": market, "x-magicapi-key": market },
+    };
+  }
+  const rapid = process.env.AERODATABOX_API_KEY;
+  if (rapid) {
+    return {
+      name: "rapidapi",
+      url: (f, d) => `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(f)}/${d}`,
+      headers: { "X-RapidAPI-Key": rapid, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" },
+    };
+  }
+  return null;
+}
+
 function aeroDataBoxEnabled(): boolean {
-  return !!process.env.AERODATABOX_API_KEY;
+  return aeroProvider() !== null;
 }
 const aeroDataBoxCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const AERODATABOX_TTL_MS = 20 * 60_000;
@@ -2637,8 +2672,8 @@ async function fetchLiveStatusViaAeroDataBox(
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  const key = process.env.AERODATABOX_API_KEY;
-  if (!key) return { ok: false, reason: "not_configured" };
+  const provider = aeroProvider();
+  if (!provider) return { ok: false, reason: "not_configured" };
 
   const parsed = parseFlightCode(identifier);
   if (!parsed.ok || !parsed.iata || !parsed.number) return { ok: false, reason: "invalid_code" };
@@ -2662,15 +2697,17 @@ async function fetchLiveStatusViaAeroDataBox(
 
   for (const date of datesToTry) {
     try {
-      const res = await fetch(
-        `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(flightNumber)}/${date}`,
-        { headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" } },
-      );
+      const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
       if (res.status === 404) continue; // no flight on this date — try the other candidate date
       if (res.status === 401 || res.status === 403) {
-        // Bad/expired/unsubscribed RapidAPI key — distinct from "no data",
-        // so this doesn't silently look identical to a real not-found.
-        console.error(`[fetchLiveStatusViaAeroDataBox] ${res.status} — check AERODATABOX_API_KEY / RapidAPI subscription`);
+        // Bad/expired/unsubscribed key — distinct from "no data", so this
+        // doesn't silently look identical to a real not-found. Note that
+        // holding an account is not the same as being subscribed to the
+        // API: both marketplaces 403 until a plan is selected.
+        const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
+        console.error(
+          `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
+        );
         const value: LiveStatusResult = { ok: false, reason: `aero_${res.status}` };
         aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
         return value;

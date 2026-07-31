@@ -187,10 +187,10 @@ export function describeFlight(parsed: ParsedFlight): string {
  *
  * This is a FORMAT check only (does it look like a real IATA flight code) —
  * it runs before any lookup and can't confirm the flight actually
- * exists/operates on the given date (AeroDataBox, when configured via
- * `AERODATABOX_API_KEY`, does that; see `fetchLiveStatusViaAeroDataBox` in
- * coordinator.functions.ts). Never blocks submission — callers just show
- * this text next to the field.
+ * exists/operates on the given date (AeroDataBox does that, when configured
+ * via `AERODATABOX_API_MARKET_KEY` or `AERODATABOX_API_KEY`; see
+ * `fetchLiveStatusViaAeroDataBox` in coordinator.functions.ts). Never blocks
+ * submission — callers just show this text next to the field.
  */
 export function flightFormatWarning(input: string | null | undefined): string | null {
   const s = (input ?? "").toString().trim();
