@@ -348,8 +348,8 @@ function CalendarPage() {
   const assignFn = useServerFn(assignDriver);
   const assignMut = useMutation({
     mutationFn: (v: { job_id: string; driver_id: string | null }) => assignFn({ data: v }),
-    onSuccess: () => {
-      toast.success("Assigned");
+    onSuccess: (result: { ok?: true; group_id?: string | null; pending?: boolean; message?: string }) => {
+      toast.success(result?.pending ? (result.message ?? "Driver approval requested") : "Assigned");
       refetch();
     },
     onError: (e: Error) => toast.error(e.message),
