@@ -98,10 +98,15 @@ export function BulkActionBar({
 
   const assignMut = useMutation({
     mutationFn: async (driver_id: string | null) => {
-      for (const j of jobs) await assignFn({ data: { job_id: j.id, driver_id } });
+      return Promise.all(jobs.map((j) => assignFn({ data: { job_id: j.id, driver_id } })));
     },
-    onSuccess: () => {
-      toast.success(`${jobs.length} trips updated`);
+    onSuccess: (results: Array<{ ok?: true; group_id?: string | null; pending?: boolean }>) => {
+      const pending = results.filter((result) => result?.pending).length;
+      toast.success(
+        pending
+          ? `${pending} driver approval request${pending === 1 ? "" : "s"} sent; ${jobs.length - pending} trip${jobs.length - pending === 1 ? "" : "s"} assigned`
+          : `${jobs.length} trips assigned`,
+      );
       qc.invalidateQueries({ queryKey: ["jobs"] });
       onClear();
     },

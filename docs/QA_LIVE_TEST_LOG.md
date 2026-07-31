@@ -51,6 +51,14 @@
 - **Expected result:** The receiving company can access the transferred passenger record to manage boarding, no-shows, and splitting.
 - **Impact:** Provider companies cannot complete passenger-level operations on accepted work; client/driver tracking may show a passenger that the operating company cannot act on.
 
+### QA-005 - Reassignment approval was reported as an immediate assignment
+
+- **Severity:** High
+- **Reproduction:** In QA Beta, assign the accepted and en-route QA trip #1 from `QA Beta Driver One` to `QA Beta Partners (me)`.
+- **Actual result:** The server correctly keeps the current driver and creates an approval request, but the calendar showed the success message `Assigned`. The My Driving portal consequently still showed no trip, which could be mistaken for a manifest defect.
+- **Expected result:** The calendar must say that approval was requested until the current driver approves the reassignment.
+- **Fix:** Use the server response's `pending` flag in single and bulk assignment feedback. The driver manifest remains strictly scoped to its assigned driver row.
+
 ## Next scenarios
 
 1. Create and redeem a Gamma invite, then validate reduced-permission sync access and tenant isolation.
