@@ -2779,27 +2779,56 @@ async function fetchLiveStatusViaAeroDataBox(
         return value;
       }
       if (!res.ok) continue;
-      const flights = (await res.json()) as AeroFlight[];
-      if (!Array.isArray(flights) || flights.length === 0) continue;
+      // AeroDataBox returns a bare object (not an array) when there's
+      // exactly one match for a flight number + date — must handle both.
+      const json = (await res.json()) as AeroFlight | AeroFlight[];
+      const flights = Array.isArray(json) ? json : [json];
+      if (!flights.length) continue;
 
       const flight = pickAeroFlight(flights, pickupIso, side);
-      const endpoint = side ? pickAeroEndpoint(flight, side) : (flight.arrival ?? flight.departure);
-      const note = [
-        endpoint?.terminal ? `Terminal ${endpoint.terminal}` : "",
-        endpoint?.gate ? `Gate ${endpoint.gate}` : "",
-      ]
-        .filter(Boolean)
-        .join(", ");
+      const depSched = aeroScheduledTime(flight.departure);
+      const depActual = aeroPickTime(flight.departure);
+      const arrSched = aeroScheduledTime(flight.arrival);
+      const arrActual = aeroPickTime(flight.arrival);
+      const depCode = aeroAirportCode(flight.departure);
+      const arrCode = aeroAirportCode(flight.arrival);
+
+      // Template-based note (no LLM): "MLA 08:15 → IST 12:30 (+12m)".
+      const parts: string[] = [];
+      if (depCode || depSched) parts.push(`${depCode} ${fmtHm(depActual ?? depSched)}`.trim());
+      if (arrCode || arrSched) parts.push(`${arrCode} ${fmtHm(arrActual ?? arrSched)}`.trim());
+      let note = parts.join(" → ");
+      if (arrSched && arrActual) {
+        const drift = Math.round((new Date(arrActual).getTime() - new Date(arrSched).getTime()) / 60000);
+        if (Math.abs(drift) >= 5) note += drift > 0 ? ` (+${drift}m)` : ` (${drift}m)`;
+      }
+      const status = mapAeroStatus(flight.status);
+      if (status === "cancelled") note = `CANCELLED · ${note}`.trim();
+      else if (status === "diverted") note = `Diverted · ${note}`.trim();
+
+      // Anchor persisted times to the semantic side: from_flight means
+      // passenger arriving in Malta, to_flight means departing Malta. Only
+      // fall back to the other side when the provider genuinely has no
+      // time for the requested side, and downgrade confidence when it does.
+      const pickupMs = pickupIso ? new Date(pickupIso).getTime() : null;
+      const anchor: FlightSide = (() => {
+        if (side === "arr" && (arrSched || arrActual)) return "arr";
+        if (side === "dep" && (depSched || depActual)) return "dep";
+        if (!pickupMs) return arrSched ? "arr" : "dep";
+        const dArr = arrSched ? Math.abs(new Date(arrSched).getTime() - pickupMs) : Infinity;
+        const dDep = depSched ? Math.abs(new Date(depSched).getTime() - pickupMs) : Infinity;
+        return dArr <= dDep ? "arr" : "dep";
+      })();
 
       // AeroDataBox times are already proper UTC ISO — unlike Gemini's
       // free-text extraction, these do NOT need normalizeMaltaIso.
       const value: LiveStatusResult = {
         ok: true,
-        status: mapAeroStatus(flight.status),
-        note,
-        scheduled: aeroScheduledTime(endpoint),
-        estimated: aeroPickTime(endpoint),
-        confidence: "high",
+        status,
+        note: note.slice(0, 160),
+        scheduled: anchor === "arr" ? arrSched : depSched,
+        estimated: anchor === "arr" ? arrActual : depActual,
+        confidence: side && anchor !== side ? "low" : "high",
         source: "aerodatabox",
       };
       aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
