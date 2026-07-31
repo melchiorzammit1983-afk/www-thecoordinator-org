@@ -2578,6 +2578,7 @@ type LiveStatusResult = {
   estimated?: string | null;
   confidence?: "high" | "low";
   reason?: string;
+  source?: "aerodatabox" | "gemini" | "aisstream";
 };
 type FlightSide = "arr" | "dep";
 
@@ -2589,6 +2590,21 @@ const LIVE_STATUS_TTL_MS = 20 * 60_000;
 function liveStatusProviderEnabled(): boolean {
   return true;
 }
+// Dedicated data-source providers, tried before the Gemini web-search
+// fallback. Each is independently optional — missing key means that
+// provider is skipped and behavior is identical to Gemini-only.
+function aeroDataBoxEnabled(): boolean {
+  return !!process.env.AERODATABOX_API_KEY;
+}
+function aisStreamEnabled(): boolean {
+  return !!process.env.AISSTREAM_API_KEY;
+}
+// Separate caches per provider (not unified with liveStatusCache) so each
+// provider's freshness/reliability characteristics stay independent.
+const aeroDataBoxCache = new Map<string, { at: number; value: LiveStatusResult }>();
+const AERODATABOX_TTL_MS = 20 * 60_000; // real schedule data — safe to cache as long as Gemini's
+const aisStreamCache = new Map<string, { at: number; value: LiveStatusResult }>();
+const AISSTREAM_TTL_MS = 5 * 60_000; // vessel position/ETA is more volatile, best-effort
 // Cache window for the manual-refresh meter: within this window the refresh
 // button is free (already-paid cached answer).
 const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
@@ -2712,16 +2728,215 @@ function fmtHm(iso: string | null): string {
   }
 }
 
-// Dispatcher: Lovable AI (Gemini web-grounded) for both flights and vessels.
-// AeroDataBox was removed on 2026-07 — billed via flight_lookup_refresh /
-// flight_lookup_vessel (see applyLiveStatusToJobBg).
+// ---- AeroDataBox (real airline schedule data — primary flight source) ----
+
+async function fetchLiveStatusViaAeroDataBox(
+  identifier: string,
+  pickupIso: string | null,
+  side?: FlightSide,
+): Promise<LiveStatusResult> {
+  const key = process.env.AERODATABOX_API_KEY;
+  if (!key) return { ok: false, reason: "not_configured" };
+
+  const parsed = parseFlightCode(identifier);
+  if (!parsed.ok || !parsed.iata || !parsed.number) return { ok: false, reason: "invalid_code" };
+  const flightNumber = `${parsed.iata}${parsed.number}${parsed.suffix ?? ""}`;
+
+  // AeroDataBox keys `date` to the DEPARTURE airport's local date. Malta is
+  // the departure airport when side === "dep", so the Malta date is always
+  // right. When side === "arr" (Malta is the arrival airport, flight
+  // departed elsewhere), a late-night/early-morning Malta arrival can
+  // correspond to the PRIOR calendar day at the origin — try that day too
+  // if the first comes back empty. This is pure calendar-date arithmetic,
+  // not a wall-clock Malta-timezone conversion (see src/lib/time.ts).
+  const baseMaltaDate = isoToMaltaDateTime(pickupIso ?? new Date().toISOString()).date;
+  const prevDate = new Date(`${baseMaltaDate}T00:00:00Z`);
+  prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+  const datesToTry = side === "arr" ? [baseMaltaDate, prevDate.toISOString().slice(0, 10)] : [baseMaltaDate];
+
+  const cacheKey = `${flightNumber}:${baseMaltaDate}:${side ?? "any"}`;
+  const cached = aeroDataBoxCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
+
+  for (const date of datesToTry) {
+    try {
+      const res = await fetch(
+        `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(flightNumber)}/${date}`,
+        { headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" } },
+      );
+      if (res.status === 404) continue; // no flight on this date — try the other candidate date
+      if (res.status === 429) {
+        const value: LiveStatusResult = { ok: false, reason: "aero_429" };
+        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
+        return value;
+      }
+      if (!res.ok) continue;
+      const flights = (await res.json()) as AeroFlight[];
+      if (!Array.isArray(flights) || flights.length === 0) continue;
+
+      const flight = pickAeroFlight(flights, pickupIso, side);
+      const endpoint = side ? pickAeroEndpoint(flight, side) : (flight.arrival ?? flight.departure);
+      const note = [
+        endpoint?.terminal ? `Terminal ${endpoint.terminal}` : "",
+        endpoint?.gate ? `Gate ${endpoint.gate}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      // AeroDataBox times are already proper UTC ISO — unlike Gemini's
+      // free-text extraction, these do NOT need normalizeMaltaIso.
+      const value: LiveStatusResult = {
+        ok: true,
+        status: mapAeroStatus(flight.status),
+        note,
+        scheduled: aeroScheduledTime(endpoint),
+        estimated: aeroPickTime(endpoint),
+        confidence: "high",
+        source: "aerodatabox",
+      };
+      aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
+      return value;
+    } catch {
+      continue;
+    }
+  }
+
+  const value: LiveStatusResult = { ok: false, reason: "no_result" };
+  aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
+  return value;
+}
+
+// ---- AISStream (free marine AIS — background-only, best-effort) ----
+// Websocket-only: there's no simple "look up this vessel by name" request.
+// Catching a specific vessel means listening for it to broadcast
+// ShipStaticData (name/ETA/destination), which happens far less often than
+// position pings — realistically minutes, not seconds. NEVER call this
+// from a user-blocking path (manual refresh) — only from fire-and-forget
+// background lookups, with a strict timeout and a clean fallback to Gemini
+// on any miss/error/timeout/missing key.
+
+const AISSTREAM_TIMEOUT_MS = 12_000;
+// Central Mediterranean / Malta approaches — adjust if crew-change vessels
+// regularly operate outside this box. [[lat,lon],[lat,lon]] per AISStream's
+// BoundingBoxes format.
+const AISSTREAM_BBOX: [[number, number], [number, number]] = [
+  [33, 10],
+  [38, 18],
+];
+
+function normalizeVesselName(s: string | null | undefined): string {
+  return (s ?? "")
+    .toUpperCase()
+    .replace(/^M\/?V\.?\s+/, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+// AIS ETA carries month/day/hour/minute only (UTC, no year) — resolve to
+// the next upcoming occurrence of that month/day from "now".
+function aisEtaToIso(eta: { Month?: number; Day?: number; Hour?: number; Minute?: number } | undefined): string | null {
+  if (!eta || !eta.Month || !eta.Day) return null;
+  const now = Date.now();
+  const year = new Date(now).getUTCFullYear();
+  let candidate = Date.UTC(year, eta.Month - 1, eta.Day, eta.Hour ?? 0, eta.Minute ?? 0);
+  if (candidate < now - 24 * 60 * 60_000) {
+    candidate = Date.UTC(year + 1, eta.Month - 1, eta.Day, eta.Hour ?? 0, eta.Minute ?? 0);
+  }
+  return Number.isFinite(candidate) ? new Date(candidate).toISOString() : null;
+}
+
+async function fetchLiveStatusViaAISStream(name: string, pickupIso: string | null): Promise<LiveStatusResult> {
+  const key = process.env.AISSTREAM_API_KEY;
+  if (!key) return { ok: false, reason: "not_configured" };
+
+  const target = normalizeVesselName(name);
+  if (!target) return { ok: false, reason: "no_code" };
+
+  const cacheKey = `${target}:${isoToDayKey(pickupIso)}`;
+  const cached = aisStreamCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < AISSTREAM_TTL_MS) return cached.value;
+
+  const value = await new Promise<LiveStatusResult>((resolve) => {
+    let settled = false;
+    let ws: WebSocket | undefined;
+    const finish = (v: LiveStatusResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws?.close();
+      } catch {
+        /* best effort */
+      }
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish({ ok: false, reason: "timeout" }), AISSTREAM_TIMEOUT_MS);
+    try {
+      ws = new WebSocket("wss://stream.aisstream.io/v0/stream");
+      ws.onopen = () => {
+        ws?.send(
+          JSON.stringify({
+            APIKey: key,
+            BoundingBoxes: [AISSTREAM_BBOX],
+            FilterMessageTypes: ["ShipStaticData"],
+          }),
+        );
+      };
+      ws.onmessage = (ev: MessageEvent) => {
+        try {
+          const msg = JSON.parse(String(ev.data)) as {
+            MetaData?: { ShipName?: string };
+            Message?: { ShipStaticData?: { Destination?: string; Eta?: any } };
+          };
+          const shipName = msg?.MetaData?.ShipName;
+          if (!shipName || normalizeVesselName(shipName) !== target) return;
+          const staticData = msg?.Message?.ShipStaticData;
+          const scheduled = aisEtaToIso(staticData?.Eta);
+          finish({
+            ok: true,
+            status: "underway",
+            note: staticData?.Destination ? `To ${staticData.Destination}` : "",
+            scheduled,
+            estimated: scheduled,
+            confidence: "high",
+            source: "aisstream",
+          });
+        } catch {
+          /* ignore unparseable frame */
+        }
+      };
+      ws.onerror = () => finish({ ok: false, reason: "exception" });
+      ws.onclose = () => finish({ ok: false, reason: "no_result" });
+    } catch {
+      finish({ ok: false, reason: "exception" });
+    }
+  });
+
+  aisStreamCache.set(cacheKey, { at: Date.now(), value });
+  return value;
+}
+
+// Dispatcher: tries a dedicated data-source provider first (AeroDataBox for
+// flights always; AISStream for vessels only when the caller explicitly
+// opts into the slower best-effort path), falling back to Gemini
+// web-grounded search — billed via flight_lookup_refresh / flight_lookup_vessel
+// (see applyLiveStatusToJobBg) regardless of which provider ultimately answers.
 async function fetchLiveStatus(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
   side?: FlightSide,
   airportHint?: string | null,
+  allowSlowVesselProvider?: boolean,
 ): Promise<LiveStatusResult> {
+  if (kind === "flight" && aeroDataBoxEnabled()) {
+    const aero = await fetchLiveStatusViaAeroDataBox(identifier, pickupIso, side);
+    if (aero.ok) return aero;
+  }
+  if (kind === "vessel" && allowSlowVesselProvider && aisStreamEnabled()) {
+    const ais = await fetchLiveStatusViaAISStream(identifier, pickupIso);
+    if (ais.ok) return ais;
+  }
   const r = await fetchLiveStatusViaGemini(kind, identifier, pickupIso, { side, airportHint });
   if (!r.ok && r.reason === "not_configured") {
     return {
@@ -2733,14 +2948,21 @@ async function fetchLiveStatus(
       confidence: "low",
     };
   }
-  // Auto-fix: if the AI couldn't find the code, try common trivial fixes
-  // (uppercase, strip spaces, drop leading zeros) and retry once. Never
+  // Auto-fix: if nothing found the code, try common trivial fixes
+  // (uppercase, strip spaces, drop leading zeros) and retry once, through
+  // the same provider waterfall (AeroDataBox first, then Gemini). Never
   // charges twice — the caller only spends points once per call site.
   if (r.ok && r.status === "unknown" && kind === "flight") {
     try {
       const { suggestCorrections } = await import("./flight-code");
       const candidates = suggestCorrections(identifier);
       for (const alt of candidates) {
+        if (aeroDataBoxEnabled()) {
+          const aeroRetry = await fetchLiveStatusViaAeroDataBox(alt, pickupIso, side);
+          if (aeroRetry.ok) {
+            return { ...aeroRetry, note: aeroRetry.note ? `${aeroRetry.note} · matched ${alt}` : `Matched as ${alt}` };
+          }
+        }
         const retry = await fetchLiveStatusViaGemini(kind, alt, pickupIso, { variant: "fix", side, airportHint });
         if (retry.ok && retry.status && retry.status !== "unknown") {
           return { ...retry, note: retry.note ? `${retry.note} · matched ${alt}` : `Matched as ${alt}` };
@@ -2938,6 +3160,7 @@ export async function applyLiveStatusToJob(
     pickup_at: string | null;
     tracking_kind?: string | null;
   },
+  allowSlowVesselProvider?: boolean,
 ): Promise<LiveStatusResult> {
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
@@ -2957,7 +3180,7 @@ export async function applyLiveStatusToJob(
       .filter(Boolean)
       .join(" / ") || undefined;
 
-  let result = await fetchLiveStatus(kind, code, job.pickup_at, side, locationHint);
+  let result = await fetchLiveStatus(kind, code, job.pickup_at, side, locationHint, allowSlowVesselProvider);
 
   // Retry once with an airport hint if the first pass produced nothing usable
   // and didn't already have one. AeroDataBox doesn't accept airport hints,
@@ -3041,7 +3264,7 @@ export async function applyLiveStatusToJob(
  * meter as a manual refresh, and refunds automatically if the lookup did
  * not succeed (no charge for failures on our side).
  */
-export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
+export async function applyLiveStatusToJobBg(jobId: string, allowSlowVesselProvider = true): Promise<void> {
   try {
     if (!liveStatusProviderEnabled()) return;
     const supabaseAdmin = await getAdminClient();
@@ -3069,7 +3292,10 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     });
     if (spendErr) return; // out of points / disabled — skip silently, never block trip creation
 
-    const result = await applyLiveStatusToJob(supabaseAdmin, job as any);
+    // Background/fire-and-forget path — safe to allow the slower best-effort
+    // AISStream vessel lookup here, unlike every user-blocking call site
+    // (caller can still cap this per-batch, e.g. the T-30 cron sweep).
+    const result = await applyLiveStatusToJob(supabaseAdmin, job as any, allowSlowVesselProvider);
     if (!result.ok) {
       await refundPoints(companyId, meterKey, "creation lookup failed", jobId);
     }

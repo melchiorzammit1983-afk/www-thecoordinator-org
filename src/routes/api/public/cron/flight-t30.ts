@@ -26,7 +26,7 @@ export const Route = createFileRoute("/api/public/cron/flight-t30")({
 
         const { data: jobs, error } = await supabaseAdmin
           .from("jobs")
-          .select("id, flight_status_updated_at")
+          .select("id, flight_status_updated_at, tracking_kind")
           .or("from_flight.not.is.null,to_flight.not.is.null")
           .not("status", "in", "(completed,cancelled)")
           .gte("pickup_at", from)
@@ -38,8 +38,18 @@ export const Route = createFileRoute("/api/public/cron/flight-t30")({
           return !last || last < staleCutoff;
         });
 
+        // AISStream (the vessel background-only provider) waits up to ~12s
+        // per lookup. Cap how many vessel jobs in a single cron batch get
+        // that slow path so a batch full of due vessel trips can't push
+        // this route's total time toward the function's max duration —
+        // the rest still get a fast Gemini-only pass.
+        const VESSEL_SLOW_CAP = 3;
+        let vesselSlowUsed = 0;
         for (const j of due) {
-          await applyLiveStatusToJobBg((j as any).id);
+          const isVessel = (j as any).tracking_kind === "vessel";
+          const allowSlow = !isVessel || vesselSlowUsed < VESSEL_SLOW_CAP;
+          if (isVessel && allowSlow) vesselSlowUsed++;
+          await applyLiveStatusToJobBg((j as any).id, allowSlow);
         }
 
         return Response.json({ ok: true, checked: due.length });
