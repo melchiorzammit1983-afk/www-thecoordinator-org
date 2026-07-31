@@ -487,6 +487,7 @@ export const listJobChain = createServerFn({ method: "GET" })
       .eq("job_id", data.job_id)
       .order("hop_index", { ascending: true });
     if (error) throw new Error(error.message);
+    return { job, hops: hops ?? [] };
   });
 
 // ---------- PRICE PROPOSALS (private per-hop) ----------

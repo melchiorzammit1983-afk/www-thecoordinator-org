@@ -3358,14 +3358,17 @@ export const listJobPax = createServerFn({ method: "GET" })
     const supabaseAdmin = await getAdminClient();
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
-      .select("id")
+      .select("id, company_id, executor_company_id, origin_company_id, dispatch_chain_company_ids")
       .eq("id", data.job_id)
-      .or(
-        `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`,
-      )
       .maybeSingle();
     if (jErr) throw new Error(jErr.message);
-    if (!job) return [];
+    const visible = !!job && (
+      job.company_id === c.id ||
+      job.executor_company_id === c.id ||
+      job.origin_company_id === c.id ||
+      (Array.isArray(job.dispatch_chain_company_ids) && job.dispatch_chain_company_ids.includes(c.id))
+    );
+    if (!visible) return [];
     const { data: rows, error } = await supabaseAdmin
       .from("pax")
       .select("id, name, status, phone, note")
