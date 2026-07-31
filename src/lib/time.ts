@@ -43,9 +43,15 @@ export function formatMaltaDateTime(iso: string, opts: Intl.DateTimeFormatOption
 }
 
 export function formatMaltaTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: "2-digit", minute: "2-digit", timeZone: MALTA_TZ,
-  });
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MALTA_TZ, hour12: false, hour: "2-digit", minute: "2-digit",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  let hh = get("hour");
+  // Intl may format midnight as 24 in en-GB — normalize (same as isoToMaltaDateTime).
+  if (hh === "24") hh = "00";
+  return `${hh}:${get("minute")}`;
 }
 
 /**

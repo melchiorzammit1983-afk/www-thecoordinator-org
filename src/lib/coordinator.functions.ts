@@ -2567,8 +2567,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 //   2) gemini-2.5-flash-lite (JSON) → structured {status, scheduled, estimated,
 //      delay_minutes, note, confidence}
 // If step 1 didn't actually ground (no groundingChunks) we force confidence "low".
-// In-memory cache keyed by `${kind}:${identifier}:${date}` for 5 minutes to avoid
-// re-spending points on rapid refreshes.
+// In-memory cache keyed by `${kind}:${identifier}:${maltaDate}:${side}` for 20
+// minutes to avoid re-spending points on rapid refreshes.
 
 type LiveStatusResult = {
   ok: boolean;
@@ -2720,8 +2720,9 @@ async function fetchLiveStatus(
   identifier: string,
   pickupIso: string | null,
   side?: FlightSide,
+  airportHint?: string | null,
 ): Promise<LiveStatusResult> {
-  const r = await fetchLiveStatusViaGemini(kind, identifier, pickupIso);
+  const r = await fetchLiveStatusViaGemini(kind, identifier, pickupIso, { side, airportHint });
   if (!r.ok && r.reason === "not_configured") {
     return {
       ok: true,
@@ -2740,7 +2741,7 @@ async function fetchLiveStatus(
       const { suggestCorrections } = await import("./flight-code");
       const candidates = suggestCorrections(identifier);
       for (const alt of candidates) {
-        const retry = await fetchLiveStatusViaGemini(kind, alt, pickupIso, { variant: "fix" });
+        const retry = await fetchLiveStatusViaGemini(kind, alt, pickupIso, { variant: "fix", side, airportHint });
         if (retry.ok && retry.status && retry.status !== "unknown") {
           return { ...retry, note: retry.note ? `${retry.note} · matched ${alt}` : `Matched as ${alt}` };
         }
@@ -2749,24 +2750,20 @@ async function fetchLiveStatus(
       /* auto-fix best-effort */
     }
   }
-  // Also try side-agnostic when side was specified but no scheduled time.
-  if (r.ok && r.confidence === "low" && side) {
-    void side; // side param currently only used by the (removed) ADB path
-  }
   return r;
 }
 
 function isoToDayKey(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  const safeIso = Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  return isoToMaltaDateTime(safeIso).date;
 }
 
 async function fetchLiveStatusViaGemini(
   kind: "flight" | "vessel",
   identifier: string,
   pickupIso: string | null,
-  opts: { airportHint?: string | null; variant?: string } = {},
+  opts: { airportHint?: string | null; variant?: string; side?: FlightSide } = {},
 ): Promise<LiveStatusResult> {
   const id = (identifier || "").trim();
   if (!id) return { ok: false, reason: "no_code" };
@@ -2789,13 +2786,28 @@ async function fetchLiveStatusViaGemini(
   if (!key) return { ok: false, reason: "not_configured" };
 
   const variant = opts.variant ? `:${opts.variant}` : "";
-  const cacheKey = `v4:${kind}:${canonical}:${isoToDayKey(pickupIso)}${variant}`;
+  const cacheKey = `v4:${kind}:${canonical}:${isoToDayKey(pickupIso)}:${opts.side ?? "any"}${variant}`;
   const cached = liveStatusCache.get(cacheKey);
   if (cached && Date.now() - cached.at < LIVE_STATUS_TTL_MS) return cached.value;
 
+  // Framed as disambiguation context only — telling the model the pickup
+  // time before asking it to look up the schedule risks it just echoing
+  // that time back as the "scheduled" answer instead of verifying for real.
   const pickupLine = pickupIso
-    ? `The scheduled pickup around this event is ${pickupIso} (UTC ISO).`
+    ? `For reference only — do not simply restate this: the trip's own planned pickup is around ${pickupIso} (UTC ISO). Use it only to identify which day's/direction's flight or vessel we mean; independently verify the actual scheduled time from real search results.`
     : `No specific pickup time was provided.`;
+
+  // Which endpoint we actually need — the single biggest source of an
+  // hours-scale wrong answer is the model reporting the origin airport's
+  // departure time instead of the Malta arrival time (or vice versa).
+  const sideLine =
+    kind === "flight" && opts.side
+      ? opts.side === "arr"
+        ? "We specifically need the ARRIVAL time at Malta International Airport (MLA/LMML) — not the departure time from the origin airport."
+        : "We specifically need the DEPARTURE time from Malta International Airport (MLA/LMML) — not the arrival time at the destination airport."
+      : "";
+
+  const todayMalta = isoToMaltaDateTime(new Date().toISOString()).date;
 
   // Airline-name expansion is the single biggest reliability win for
   // two-letter carrier codes that Gemini otherwise doesn't disambiguate.
@@ -2811,8 +2823,8 @@ async function fetchLiveStatusViaGemini(
 
   const groundedPrompt =
     kind === "flight"
-      ? `You are checking the current status of ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
-      : `You are checking the current status of the ${flightDescriptor} for today (${new Date().toISOString().slice(0, 10)}).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
+      ? `You are checking the current status of ${flightDescriptor} for today (${todayMalta}, Malta date).\n${sideLine}\n${pickupLine}\n\nSearch the web for authoritative sources (airline site, airport board, FlightRadar24, FlightAware). Report:\n- scheduled departure/arrival time (local, with timezone if you can) and ISO8601 equivalent if derivable\n- current estimated time (if delayed/early)\n- status: one of on_time / delayed / landed / departed / cancelled / diverted / boarding / unknown\n- any brief note (gate, terminal, delay minutes) — under 15 words\n\nIf you cannot confidently identify THIS exact flight for today, say so plainly.`
+      : `You are checking the current status of the ${flightDescriptor} for today (${todayMalta}, Malta date).\n${pickupLine}\n\nSearch the web for authoritative sources (MarineTraffic, VesselFinder, port authority notices). Report:\n- current position or last-known location\n- estimated arrival time at its next port (ISO8601 if derivable)\n- status: one of underway / arrived / delayed / anchored / departed / cancelled / unknown\n- any brief note (delay minutes, port name) — under 15 words\n\nIf you cannot confidently identify THIS exact vessel for today, say so plainly.`;
 
   // ---- Step 1: grounded free-text ----
   let groundedText = "";
@@ -2909,7 +2921,7 @@ async function fetchLiveStatusViaGemini(
   return value;
 }
 
-// Persist the live status onto a job row. Applies the 45-min "time_mismatch"
+// Persist the live status onto a job row. Applies the 15-min "time_mismatch"
 // override identically for flights and vessels. When the first grounded call
 // returns nothing, retries once with an airport hint derived from the job's
 // endpoints before giving up.
@@ -2936,13 +2948,23 @@ export async function applyLiveStatusToJob(
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
   const side: FlightSide | undefined =
     kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
+  // Endpoint names give the AI real disambiguation context up front — which
+  // airport/port to focus on — instead of only supplying it on a retry.
+  const locationHint =
+    [job.from_location, job.to_location]
+      .filter(Boolean)
+      .map((s) => String(s).split(",")[0]?.trim())
+      .filter(Boolean)
+      .join(" / ") || undefined;
 
-  let result = await fetchLiveStatus(kind, code, job.pickup_at, side);
+  let result = await fetchLiveStatus(kind, code, job.pickup_at, side, locationHint);
 
-  // Retry once with an airport hint if the first pass produced nothing usable.
-  // AeroDataBox doesn't accept airport hints, but the Gemini vessel path does.
+  // Retry once with an airport hint if the first pass produced nothing usable
+  // and didn't already have one. AeroDataBox doesn't accept airport hints,
+  // but the Gemini vessel path does.
   const needsRetry =
     kind === "vessel" &&
+    !locationHint &&
     ((!result.ok && (result.reason === "no_result" || result.reason === "exception")) ||
       (result.ok && result.confidence === "low" && !result.scheduled));
   if (needsRetry) {
@@ -3297,7 +3319,13 @@ async function _computeTripLiveStatus(data: {
   } else if (code) {
     const side: FlightSide | undefined =
       kind === "flight" ? (data.from_flight ? "arr" : data.to_flight ? "dep" : undefined) : undefined;
-    const r = await fetchLiveStatus(kind, code, pickupIso, side);
+    const locationHint =
+      [data.from_location, data.to_location]
+        .filter(Boolean)
+        .map((s) => String(s).split(",")[0]?.trim())
+        .filter(Boolean)
+        .join(" / ") || undefined;
+    const r = await fetchLiveStatus(kind, code, pickupIso, side, locationHint);
     if (!r.ok) {
       flight = { ok: false, code, reason: r.reason ?? "no_result" };
     } else {
