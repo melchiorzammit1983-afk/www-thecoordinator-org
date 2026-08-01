@@ -8,27 +8,51 @@ export const flightScheduleImportFields: ImportField[] = [
     required: true,
     aliases: ["flight", "flight no", "flight number"],
   },
-  { key: "date", label: "Date", required: true, aliases: ["flight date", "scheduled date"] },
+  {
+    key: "date",
+    label: "Date",
+    required: true,
+    aliases: ["flight date", "scheduled date", "date of flight", "departure date"],
+  },
   {
     key: "direction",
     label: "Arrival / Departure",
     required: true,
-    aliases: ["direction", "type", "arrival/departure"],
+    aliases: ["direction", "arrival/departure", "arr dep", "movement"],
   },
   {
     key: "scheduledTime",
     label: "Scheduled Time",
     required: true,
-    aliases: ["time", "scheduled time", "std", "sta"],
+    aliases: [
+      "time",
+      "scheduled time",
+      "arrival time",
+      "departure time",
+      "std",
+      "sta",
+      "eta",
+      "etd",
+    ],
   },
-  { key: "origin", label: "Origin", required: true, aliases: ["from", "origin airport"] },
+  {
+    key: "origin",
+    label: "Origin",
+    required: true,
+    aliases: ["from", "origin airport", "from airport", "departure airport"],
+  },
   {
     key: "destination",
     label: "Destination",
     required: true,
-    aliases: ["to", "destination airport"],
+    aliases: ["to", "destination airport", "to airport", "arrival airport"],
   },
-  { key: "airline", label: "Airline", required: true, aliases: ["carrier", "operator"] },
+  {
+    key: "airline",
+    label: "Airline",
+    required: true,
+    aliases: ["carrier", "operator", "airline name", "carrier name"],
+  },
 ];
 
 const datePattern = /^\d{4}-\d{1,2}-\d{1,2}$|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$/;
