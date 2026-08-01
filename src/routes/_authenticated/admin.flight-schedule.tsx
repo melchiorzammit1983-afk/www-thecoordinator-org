@@ -6,8 +6,10 @@ import { Archive, CalendarDays, FileText, History, Layers3 } from "lucide-react"
 import { ImportPreviewWorkflow } from "@/components/import-engine/ImportPreviewWorkflow";
 import {
   activateFlightScheduleDraft,
+  compareFlightScheduleVersions,
   createFlightScheduleDraft,
   getFlightScheduleOverview,
+  type FlightScheduleComparisonResult,
   type FlightScheduleImportSession,
   type FlightScheduleVersion,
 } from "@/lib/flight-schedule.functions";
@@ -20,12 +22,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -42,9 +57,12 @@ export const Route = createFileRoute("/_authenticated/admin/flight-schedule")({
 
 function FlightSchedulePage() {
   const [selectedVersion, setSelectedVersion] = useState<FlightScheduleVersion>();
+  const [leftComparisonId, setLeftComparisonId] = useState("");
+  const [rightComparisonId, setRightComparisonId] = useState("");
   const overviewFn = useServerFn(getFlightScheduleOverview);
   const createDraftFn = useServerFn(createFlightScheduleDraft);
   const activateDraftFn = useServerFn(activateFlightScheduleDraft);
+  const compareVersionsFn = useServerFn(compareFlightScheduleVersions);
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["flight-schedule-overview"],
     queryFn: () => overviewFn(),
@@ -52,6 +70,12 @@ function FlightSchedulePage() {
   const activation = useMutation({
     mutationFn: (scheduleVersionId: string) => activateDraftFn({ data: { scheduleVersionId } }),
     onSuccess: () => refetch(),
+  });
+  const comparison = useMutation({
+    mutationFn: () =>
+      compareVersionsFn({
+        data: { leftVersionId: leftComparisonId, rightVersionId: rightComparisonId },
+      }),
   });
   const active = data?.active;
   const activeSession = active ? sessionFor(active, data?.imports ?? []) : undefined;
@@ -117,6 +141,18 @@ function FlightSchedulePage() {
           )}
         </CardContent>
       </Card>
+
+      <ScheduleComparisonCard
+        versions={versions}
+        leftVersionId={leftComparisonId}
+        rightVersionId={rightComparisonId}
+        onLeftVersionChange={setLeftComparisonId}
+        onRightVersionChange={setRightComparisonId}
+        onCompare={() => comparison.mutate()}
+        isComparing={comparison.isPending}
+        error={comparison.error}
+        result={comparison.data}
+      />
 
       <ImportPreviewWorkflow
         sourceAdapter={spreadsheetFlightScheduleAdapter}
@@ -288,6 +324,208 @@ function FlightSchedulePage() {
       />
     </div>
   );
+}
+
+function ScheduleComparisonCard({
+  versions,
+  leftVersionId,
+  rightVersionId,
+  onLeftVersionChange,
+  onRightVersionChange,
+  onCompare,
+  isComparing,
+  error,
+  result,
+}: {
+  versions: FlightScheduleVersion[];
+  leftVersionId: string;
+  rightVersionId: string;
+  onLeftVersionChange: (value: string) => void;
+  onRightVersionChange: (value: string) => void;
+  onCompare: () => void;
+  isComparing: boolean;
+  error: Error | null;
+  result?: FlightScheduleComparisonResult;
+}) {
+  const canCompare = Boolean(leftVersionId && rightVersionId && leftVersionId !== rightVersionId);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Compare Schedule Versions</CardTitle>
+        <CardDescription>
+          Read-only comparison of two immutable schedules before an operational decision.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <VersionSelect
+            label="First version"
+            value={leftVersionId}
+            versions={versions}
+            onChange={onLeftVersionChange}
+          />
+          <VersionSelect
+            label="Second version"
+            value={rightVersionId}
+            versions={versions}
+            onChange={onRightVersionChange}
+          />
+          <Button type="button" disabled={!canCompare || isComparing} onClick={onCompare}>
+            {isComparing ? "Comparing..." : "Compare"}
+          </Button>
+        </div>
+        {leftVersionId === rightVersionId && leftVersionId ? (
+          <p className="text-sm text-destructive">Choose two different schedule versions.</p>
+        ) : null}
+        {error ? (
+          <p className="text-sm text-destructive">
+            {error.message || "Comparison could not be loaded."}
+          </p>
+        ) : null}
+        {result ? <ComparisonResult result={result} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VersionSelect({
+  label,
+  value,
+  versions,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  versions: FlightScheduleVersion[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-2 text-sm font-medium">
+      {label}
+      <Select
+        value={value || "__none"}
+        onValueChange={(next) => onChange(next === "__none" ? "" : next)}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Choose a schedule" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none">Choose a schedule</SelectItem>
+          {versions.map((version) => (
+            <SelectItem key={version.id} value={version.id}>
+              {version.name} ({version.status})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+function ComparisonResult({ result }: { result: FlightScheduleComparisonResult }) {
+  const { comparison } = result;
+  return (
+    <div className="space-y-4 border-t pt-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <SummaryCard label="Flights Added" value={comparison.added.length} icon={FileText} />
+        <SummaryCard label="Flights Removed" value={comparison.removed.length} icon={Archive} />
+        <SummaryCard label="Time Changes" value={comparison.timeChanges.length} icon={History} />
+        <SummaryCard
+          label="Airline Changes"
+          value={comparison.airlineChanges.length}
+          icon={Layers3}
+        />
+        <SummaryCard
+          label="Route Changes"
+          value={comparison.routeChanges.length}
+          icon={CalendarDays}
+        />
+      </div>
+      <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2">
+        <div>
+          <p className="font-medium">First: {result.left.name}</p>
+          <p className="text-muted-foreground">
+            {result.left.flightCount} flights - {formatDate(result.leftImport?.created_at)} -{" "}
+            {result.leftImport?.created_by ?? result.left.created_by ?? "Unknown"}
+          </p>
+        </div>
+        <div>
+          <p className="font-medium">Second: {result.right.name}</p>
+          <p className="text-muted-foreground">
+            {result.right.flightCount} flights - {formatDate(result.rightImport?.created_at)} -{" "}
+            {result.rightImport?.created_by ?? result.right.created_by ?? "Unknown"}
+          </p>
+        </div>
+      </div>
+      <Accordion type="multiple" className="w-full">
+        <ChangeList title="Flights Added" value="added" count={comparison.added.length}>
+          {comparison.added.map((flight) => `+ ${flightLabel(flight)}`)}
+        </ChangeList>
+        <ChangeList title="Flights Removed" value="removed" count={comparison.removed.length}>
+          {comparison.removed.map((flight) => `- ${flightLabel(flight)}`)}
+        </ChangeList>
+        <ChangeList title="Flight Time Changes" value="time" count={comparison.timeChanges.length}>
+          {comparison.timeChanges.map(
+            (change) => `${flightLabel(change.flight)}: ${change.before} to ${change.after}`,
+          )}
+        </ChangeList>
+        <ChangeList
+          title="Airline Changes"
+          value="airline"
+          count={comparison.airlineChanges.length}
+        >
+          {comparison.airlineChanges.map(
+            (change) => `${flightLabel(change.flight)}: ${change.before} to ${change.after}`,
+          )}
+        </ChangeList>
+        <ChangeList
+          title="Origin/Destination Changes"
+          value="route"
+          count={comparison.routeChanges.length}
+        >
+          {comparison.routeChanges.map(
+            (change) =>
+              `${flightLabel(change.flight)}: ${change.before.origin}-${change.before.destination} to ${change.after.origin}-${change.after.destination}`,
+          )}
+        </ChangeList>
+      </Accordion>
+    </div>
+  );
+}
+
+function ChangeList({
+  title,
+  value,
+  count,
+  children,
+}: {
+  title: string;
+  value: string;
+  count: number;
+  children: string[];
+}) {
+  return (
+    <AccordionItem value={value}>
+      <AccordionTrigger>
+        {title} ({count})
+      </AccordionTrigger>
+      <AccordionContent>
+        {children.length ? (
+          <ul className="space-y-1 font-mono text-xs">
+            {children.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No changes in this category.</p>
+        )}
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
+function flightLabel(flight: { flightNumber: string; scheduledDate: string; direction: string }) {
+  return `${flight.flightNumber} - ${flight.scheduledDate} ${flight.direction}`;
 }
 
 function ScheduleDetailsDialog({

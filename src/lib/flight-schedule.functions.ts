@@ -2,6 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertAdmin } from "@/lib/admin.functions";
+import {
+  compareFlightScheduleRecords,
+  type ComparableFlightScheduleRecord,
+  type FlightScheduleComparison,
+} from "@/lib/flight-schedule-comparison";
 
 const draftRecordSchema = z.object({
   rowNumber: z.number().int().positive(),
@@ -49,6 +54,14 @@ export type FlightScheduleImportSession = {
   validation_status: string;
   created_by: string | null;
   created_at: string;
+};
+
+export type FlightScheduleComparisonResult = {
+  left: FlightScheduleVersion;
+  right: FlightScheduleVersion;
+  leftImport: FlightScheduleImportSession | null;
+  rightImport: FlightScheduleImportSession | null;
+  comparison: FlightScheduleComparison;
 };
 
 function toIsoDate(value: string) {
@@ -140,6 +153,100 @@ export const getFlightScheduleOverview = createServerFn({ method: "GET" })
       drafts: (drafts ?? []).map(withFlightCount),
       archived: (archived ?? []).map(withFlightCount),
     };
+  });
+
+/** Reads exactly two immutable versions and compares their stored flight rows. */
+export const compareFlightScheduleVersions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        leftVersionId: z.string().uuid(),
+        rightVersionId: z.string().uuid(),
+      })
+      .refine((value) => value.leftVersionId !== value.rightVersionId, {
+        message: "Choose two different schedule versions.",
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const versionIds = [data.leftVersionId, data.rightVersionId];
+    // A single row query reads both schedules; no data is changed or written.
+    const [
+      { data: versions, error: versionsError },
+      { data: records, error: recordsError },
+      { data: imports, error: importsError },
+    ] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sb as any)
+        .from("flight_schedule_versions")
+        .select(
+          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, updated_at, activated_by, activated_at",
+        )
+        .in("id", versionIds),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sb as any)
+        .from("flight_schedule_records")
+        .select(
+          "schedule_version_id, scheduled_date, direction, airline, flight_number, scheduled_time, origin, destination",
+        )
+        .in("schedule_version_id", versionIds),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sb as any)
+        .from("flight_schedule_imports")
+        .select(
+          "id, schedule_version_id, source_filename, source_type, status, total_rows, valid_rows, warning_rows, error_rows, validation_status, created_by, created_at",
+        )
+        .in("schedule_version_id", versionIds)
+        .order("created_at", { ascending: false }),
+    ]);
+    if (versionsError) throw new Error(versionsError.message);
+    if (recordsError) throw new Error(recordsError.message);
+    if (importsError) throw new Error(importsError.message);
+    const rawVersions = (versions ?? []) as Array<Omit<FlightScheduleVersion, "flightCount">>;
+    if (rawVersions.length !== 2) throw new Error("One or both schedule versions no longer exist.");
+
+    const versionRecords = new Map<string, ComparableFlightScheduleRecord[]>();
+    for (const record of records ?? []) {
+      const scheduleVersionId = record.schedule_version_id as string;
+      versionRecords.set(scheduleVersionId, [
+        ...(versionRecords.get(scheduleVersionId) ?? []),
+        {
+          scheduledDate: record.scheduled_date,
+          direction: record.direction,
+          airline: record.airline,
+          flightNumber: record.flight_number,
+          scheduledTime: record.scheduled_time,
+          origin: record.origin,
+          destination: record.destination,
+        },
+      ]);
+    }
+    const versionById = new Map(rawVersions.map((version) => [version.id, version]));
+    const versionWithCount = (versionId: string): FlightScheduleVersion => ({
+      ...(versionById.get(versionId) as Omit<FlightScheduleVersion, "flightCount">),
+      flightCount: versionRecords.get(versionId)?.length ?? 0,
+    });
+    const importByVersionId = new Map<string, FlightScheduleImportSession>();
+    for (const importSession of imports ?? []) {
+      if (!importByVersionId.has(importSession.schedule_version_id)) {
+        importByVersionId.set(importSession.schedule_version_id, importSession);
+      }
+    }
+
+    const left = versionWithCount(data.leftVersionId);
+    const right = versionWithCount(data.rightVersionId);
+    return {
+      left,
+      right,
+      leftImport: importByVersionId.get(left.id) ?? null,
+      rightImport: importByVersionId.get(right.id) ?? null,
+      comparison: compareFlightScheduleRecords(
+        versionRecords.get(left.id) ?? [],
+        versionRecords.get(right.id) ?? [],
+      ),
+    } as FlightScheduleComparisonResult;
   });
 
 export const createFlightScheduleDraft = createServerFn({ method: "POST" })
