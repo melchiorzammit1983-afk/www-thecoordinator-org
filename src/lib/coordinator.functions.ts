@@ -658,6 +658,11 @@ type LinkedFlightScheduleRecord = {
   flight_number: string;
   origin: string;
   destination: string;
+  schedule_version?: {
+    id: string;
+    name: string;
+    status: "draft" | "active" | "archived";
+  };
 };
 
 function safeFlightSearchTerm(value: string) {
@@ -708,12 +713,18 @@ export const getLinkedFlightScheduleRecord = createServerFn({ method: "POST" })
     // Generated types are refreshed by the Lovable-owned project after migrations.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: record, error } = await (supabaseAdmin as any).from("flight_schedule_records")
-      .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination")
+      .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(id, name, status)")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!record) throw new Error("The linked flight record no longer exists.");
-    return record as LinkedFlightScheduleRecord;
+    const scheduleVersion = Array.isArray(record.flight_schedule_versions)
+      ? record.flight_schedule_versions[0]
+      : record.flight_schedule_versions;
+    return {
+      ...record,
+      schedule_version: scheduleVersion,
+    } as LinkedFlightScheduleRecord;
   });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {

@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus } from "@/lib/coordinator.functions";
+import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
@@ -79,6 +79,7 @@ export type DetailsJob = {
   payment_status?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
+  flight_schedule_record_id?: string | null;
   tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
   flight_status_updated_at?: string | null;
@@ -154,6 +155,7 @@ export function TripDetailsSheet({
   const qc = useQueryClient();
   const normalizeFn = useServerFn(normalizeJobData);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
+  const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
   const [driverChatOpen, setDriverChatOpen] = useState(false);
   const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
@@ -173,6 +175,22 @@ export function TripDetailsSheet({
     }>>,
     enabled: open && isRealJobId,
     refetchInterval: open && isRealJobId ? 20_000 : false,
+  });
+
+  const { data: linkedFlight, isLoading: isLinkedFlightLoading } = useQuery({
+    queryKey: ["linked-flight-schedule-record", job.flight_schedule_record_id],
+    queryFn: () => linkedFlightFn({ data: { id: job.flight_schedule_record_id! } }) as Promise<{
+      id: string;
+      scheduled_date: string;
+      scheduled_time: string;
+      direction: "arrival" | "departure";
+      airline: string;
+      flight_number: string;
+      origin: string;
+      destination: string;
+      schedule_version?: { id: string; name: string; status: "draft" | "active" | "archived" };
+    }>,
+    enabled: open && !!job.flight_schedule_record_id,
   });
 
   const sosListFn = useServerFn(listSosForJob);
@@ -733,7 +751,47 @@ export function TripDetailsSheet({
 
           </section>
 
-          {/* Flight */}
+          {/* Linked flight schedule */}
+          <section className="space-y-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+              Flight information
+            </div>
+            {!job.flight_schedule_record_id ? (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                No flight linked.
+              </div>
+            ) : isLinkedFlightLoading ? (
+              <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                Loading flight information…
+              </div>
+            ) : linkedFlight ? (
+              <div className="rounded-md border p-3 text-xs space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      <Plane className="h-3.5 w-3.5 text-primary" />
+                      {linkedFlight.flight_number}
+                    </div>
+                    <div className="text-muted-foreground">{linkedFlight.airline}</div>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px]">Scheduled</Badge>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-2 text-muted-foreground">
+                  <div><dt className="sr-only">Direction</dt><dd><span className="text-foreground">Direction:</span> {linkedFlight.direction === "arrival" ? "Arrival" : "Departure"}</dd></div>
+                  <div><dt className="sr-only">Scheduled time</dt><dd><span className="text-foreground">Scheduled:</span> {linkedFlight.scheduled_time}</dd></div>
+                  <div><dt className="sr-only">Origin</dt><dd><span className="text-foreground">Origin:</span> {linkedFlight.origin}</dd></div>
+                  <div><dt className="sr-only">Destination</dt><dd><span className="text-foreground">Destination:</span> {linkedFlight.destination}</dd></div>
+                  <div className="col-span-2"><dt className="sr-only">Schedule version</dt><dd><span className="text-foreground">Schedule version:</span> {linkedFlight.schedule_version?.name ?? "Unavailable"}</dd></div>
+                </dl>
+              </div>
+            ) : (
+              <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                Flight information is unavailable.
+              </div>
+            )}
+          </section>
+
+          {/* Live flight tracking */}
           {(job.from_flight || job.to_flight) && (
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-2">
