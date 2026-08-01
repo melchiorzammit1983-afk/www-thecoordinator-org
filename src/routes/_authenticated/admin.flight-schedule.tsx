@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Archive, CalendarDays, FileText, History, Layers3 } from "lucide-react";
+import { Archive, CalendarDays, FileText, History, Layers3, RotateCcw, Search } from "lucide-react";
 import { ImportPreviewWorkflow } from "@/components/import-engine/ImportPreviewWorkflow";
 import {
   activateFlightScheduleDraft,
   compareFlightScheduleVersions,
   createFlightScheduleDraft,
   getFlightScheduleOverview,
+  searchFlightScheduleRecords,
   type FlightScheduleComparisonResult,
   type FlightScheduleImportSession,
+  type FlightScheduleSearchRecord,
   type FlightScheduleVersion,
 } from "@/lib/flight-schedule.functions";
 import {
@@ -21,6 +23,7 @@ import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Accordion,
   AccordionContent,
@@ -153,6 +156,8 @@ function FlightSchedulePage() {
         error={comparison.error}
         result={comparison.data}
       />
+
+      <FlightSearchCard versions={versions} />
 
       <ImportPreviewWorkflow
         sourceAdapter={spreadsheetFlightScheduleAdapter}
@@ -322,6 +327,276 @@ function FlightSchedulePage() {
         session={selectedVersion ? sessionFor(selectedVersion, data?.imports ?? []) : undefined}
         onClose={() => setSelectedVersion(undefined)}
       />
+    </div>
+  );
+}
+
+type FlightSearchFilters = {
+  search?: string;
+  versionId?: string;
+  status?: "active" | "draft" | "archived";
+  direction?: "arrival" | "departure";
+  date?: string;
+  airline?: string;
+  sortBy: "time" | "flightNumber" | "airline" | "date";
+  sortDirection: "asc" | "desc";
+  page: number;
+  pageSize: number;
+};
+
+const initialFlightSearchFilters: FlightSearchFilters = {
+  sortBy: "date",
+  sortDirection: "asc",
+  page: 0,
+  pageSize: 50,
+};
+
+function FlightSearchCard({ versions }: { versions: FlightScheduleVersion[] }) {
+  const searchFlightsFn = useServerFn(searchFlightScheduleRecords);
+  const [filters, setFilters] = useState<FlightSearchFilters>(initialFlightSearchFilters);
+  const [appliedFilters, setAppliedFilters] = useState<FlightSearchFilters>();
+  const { data, error, isFetching } = useQuery({
+    queryKey: ["flight-schedule-search", appliedFilters],
+    queryFn: () => searchFlightsFn({ data: appliedFilters! }),
+    enabled: Boolean(appliedFilters),
+  });
+  const update = <K extends keyof FlightSearchFilters>(key: K, value: FlightSearchFilters[K]) =>
+    setFilters((current) => ({ ...current, [key]: value }));
+  const apply = () => setAppliedFilters({ ...filters, page: 0 });
+  const reset = () => {
+    setFilters(initialFlightSearchFilters);
+    setAppliedFilters(undefined);
+  };
+  const changePage = (page: number) =>
+    setAppliedFilters((current) => (current ? { ...current, page } : current));
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start gap-3 space-y-0">
+        <Search className="h-5 w-5 text-primary mt-0.5" />
+        <div>
+          <CardTitle>Search Schedule Flights</CardTitle>
+          <CardDescription>
+            Read-only operational search across imported schedule versions.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <SearchField label="Search flight, airline, or airport">
+            <Input
+              value={filters.search ?? ""}
+              placeholder="KM 515, Ryanair, MLA..."
+              onChange={(event) => update("search", event.target.value || undefined)}
+            />
+          </SearchField>
+          <SearchField label="Schedule version">
+            <Select
+              value={filters.versionId ?? "__all"}
+              onValueChange={(value) => update("versionId", value === "__all" ? undefined : value)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all">All versions</SelectItem>
+                {versions.map((version) => (
+                  <SelectItem key={version.id} value={version.id}>
+                    {version.name} ({version.status})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SearchField>
+          <SearchField label="Status">
+            <Select
+              value={filters.status ?? "__all"}
+              onValueChange={(value) =>
+                update(
+                  "status",
+                  value === "__all" ? undefined : (value as FlightSearchFilters["status"]),
+                )
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </SearchField>
+          <SearchField label="Direction">
+            <Select
+              value={filters.direction ?? "__all"}
+              onValueChange={(value) =>
+                update(
+                  "direction",
+                  value === "__all" ? undefined : (value as FlightSearchFilters["direction"]),
+                )
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all">Arrivals and departures</SelectItem>
+                <SelectItem value="arrival">Arrival</SelectItem>
+                <SelectItem value="departure">Departure</SelectItem>
+              </SelectContent>
+            </Select>
+          </SearchField>
+          <SearchField label="Date">
+            <Input
+              type="date"
+              value={filters.date ?? ""}
+              onChange={(event) => update("date", event.target.value || undefined)}
+            />
+          </SearchField>
+          <SearchField label="Airline filter">
+            <Input
+              value={filters.airline ?? ""}
+              placeholder="Airline name"
+              onChange={(event) => update("airline", event.target.value || undefined)}
+            />
+          </SearchField>
+          <SearchField label="Sort by">
+            <Select
+              value={filters.sortBy}
+              onValueChange={(value) => update("sortBy", value as FlightSearchFilters["sortBy"])}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Date</SelectItem>
+                <SelectItem value="time">Flight time</SelectItem>
+                <SelectItem value="flightNumber">Flight number</SelectItem>
+                <SelectItem value="airline">Airline</SelectItem>
+              </SelectContent>
+            </Select>
+          </SearchField>
+          <SearchField label="Order">
+            <Select
+              value={filters.sortDirection}
+              onValueChange={(value) =>
+                update("sortDirection", value as FlightSearchFilters["sortDirection"])
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </SearchField>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={apply} disabled={isFetching}>
+            <Search /> {isFetching ? "Searching..." : "Search flights"}
+          </Button>
+          <Button type="button" variant="outline" onClick={reset} disabled={isFetching}>
+            <RotateCcw /> Reset
+          </Button>
+        </div>
+        {error ? (
+          <p className="text-sm text-destructive">
+            {error.message || "Search could not be loaded."}
+          </p>
+        ) : null}
+        {data ? <FlightSearchResults result={data} onPageChange={changePage} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SearchField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-2 text-sm font-medium">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function FlightSearchResults({
+  result,
+  onPageChange,
+}: {
+  result: { records: FlightScheduleSearchRecord[]; total: number; page: number; pageSize: number };
+  onPageChange: (page: number) => void;
+}) {
+  const showingFrom = result.total ? result.page * result.pageSize + 1 : 0;
+  const showingTo = Math.min((result.page + 1) * result.pageSize, result.total);
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <p className="text-sm text-muted-foreground">
+        {result.total
+          ? `Showing ${showingFrom}-${showingTo} of ${result.total} flights.`
+          : "No flights match these filters."}
+      </p>
+      {result.records.length ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Flight Number</TableHead>
+              <TableHead>Airline</TableHead>
+              <TableHead>Origin</TableHead>
+              <TableHead>Destination</TableHead>
+              <TableHead>Scheduled Time</TableHead>
+              <TableHead>Direction</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Schedule Version</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {result.records.map((record) => (
+              <TableRow key={record.id}>
+                <TableCell className="font-medium">{record.flightNumber}</TableCell>
+                <TableCell>{record.airline}</TableCell>
+                <TableCell>{record.origin}</TableCell>
+                <TableCell>{record.destination}</TableCell>
+                <TableCell>{record.scheduledTime}</TableCell>
+                <TableCell className="capitalize">{record.direction}</TableCell>
+                <TableCell>{record.scheduledDate}</TableCell>
+                <TableCell>{record.scheduleVersion.name}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className="capitalize">
+                    {record.scheduleVersion.status}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : null}
+      {result.total > result.pageSize ? (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(result.page - 1)}
+            disabled={result.page === 0}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">Page {result.page + 1}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(result.page + 1)}
+            disabled={showingTo >= result.total}
+          >
+            Next
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

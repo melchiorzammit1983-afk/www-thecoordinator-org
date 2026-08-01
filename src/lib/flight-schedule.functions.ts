@@ -64,6 +64,40 @@ export type FlightScheduleComparisonResult = {
   comparison: FlightScheduleComparison;
 };
 
+export type FlightScheduleSearchRecord = {
+  id: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  direction: "arrival" | "departure";
+  airline: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  scheduleVersion: { id: string; name: string; status: "draft" | "active" | "archived" };
+};
+
+export type FlightScheduleSearchResult = {
+  records: FlightScheduleSearchRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+type FlightScheduleSearchRow = {
+  id: string;
+  scheduled_date: string;
+  scheduled_time: string;
+  direction: "arrival" | "departure";
+  airline: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+  flight_schedule_versions:
+    | { id: string; name: string; status: "draft" | "active" | "archived" }
+    | Array<{ id: string; name: string; status: "draft" | "active" | "archived" }>
+    | null;
+};
+
 function toIsoDate(value: string) {
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
   const local = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(value);
@@ -94,6 +128,13 @@ function withFlightCount(version: unknown): FlightScheduleVersion {
     ...details,
     flightCount: records?.[0]?.count ?? 0,
   };
+}
+
+function normaliseSearchTerm(value: string) {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9 -]/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 /** Admin-only read model for active and immutable draft schedules. */
@@ -247,6 +288,92 @@ export const compareFlightScheduleVersions = createServerFn({ method: "POST" })
         versionRecords.get(right.id) ?? [],
       ),
     } as FlightScheduleComparisonResult;
+  });
+
+/** Paginated, admin-only search over immutable schedule records. */
+export const searchFlightScheduleRecords = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        search: z.string().trim().max(100).optional(),
+        versionId: z.string().uuid().optional(),
+        status: z.enum(["active", "draft", "archived"]).optional(),
+        direction: z.enum(["arrival", "departure"]).optional(),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        airline: z.string().trim().max(200).optional(),
+        sortBy: z.enum(["time", "flightNumber", "airline", "date"]).default("date"),
+        sortDirection: z.enum(["asc", "desc"]).default("asc"),
+        page: z.number().int().min(0).default(0),
+        pageSize: z.number().int().min(1).max(100).default(50),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const sb = await assertAdmin(context);
+    const sortColumn = {
+      time: "scheduled_time",
+      flightNumber: "flight_number",
+      airline: "airline",
+      date: "scheduled_date",
+    }[data.sortBy];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any = (sb as any)
+      .from("flight_schedule_records")
+      .select(
+        "id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(id, name, status)",
+        { count: "exact" },
+      );
+
+    if (data.versionId) query = query.eq("schedule_version_id", data.versionId);
+    if (data.status) query = query.eq("flight_schedule_versions.status", data.status);
+    if (data.direction) query = query.eq("direction", data.direction);
+    if (data.date) query = query.eq("scheduled_date", data.date);
+    if (data.airline) query = query.ilike("airline", `%${normaliseSearchTerm(data.airline)}%`);
+    if (data.search) {
+      const term = normaliseSearchTerm(data.search);
+      if (term) {
+        query = query.or(
+          `flight_number.ilike.%${term}%,airline.ilike.%${term}%,origin.ilike.%${term}%,destination.ilike.%${term}%`,
+        );
+      }
+    }
+
+    const from = data.page * data.pageSize;
+    const {
+      data: records,
+      count,
+      error,
+    } = await query
+      .order(sortColumn, { ascending: data.sortDirection === "asc" })
+      .order("id", { ascending: true })
+      .range(from, from + data.pageSize - 1);
+    if (error) throw new Error(error.message);
+    return {
+      records: (records ?? []).map((record: FlightScheduleSearchRow) => {
+        const scheduleVersion = Array.isArray(record.flight_schedule_versions)
+          ? record.flight_schedule_versions[0]
+          : record.flight_schedule_versions;
+        if (!scheduleVersion) throw new Error("A flight record is missing its schedule version.");
+        return {
+          id: record.id,
+          scheduledDate: record.scheduled_date,
+          scheduledTime: record.scheduled_time,
+          direction: record.direction,
+          airline: record.airline,
+          flightNumber: record.flight_number,
+          origin: record.origin,
+          destination: record.destination,
+          scheduleVersion,
+        };
+      }) as FlightScheduleSearchRecord[],
+      total: count ?? 0,
+      page: data.page,
+      pageSize: data.pageSize,
+    } as FlightScheduleSearchResult;
   });
 
 export const createFlightScheduleDraft = createServerFn({ method: "POST" })
