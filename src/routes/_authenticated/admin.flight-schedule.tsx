@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarDays, FileUp, History } from "lucide-react";
+import { CalendarDays, History } from "lucide-react";
+import { ImportPreviewWorkflow } from "@/components/import-engine/ImportPreviewWorkflow";
 import { getFlightScheduleOverview } from "@/lib/flight-schedule.functions";
+import {
+  flightScheduleImportFields,
+  validateFlightScheduleRecord,
+} from "@/lib/flight-schedule-import";
+import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/spreadsheet.adapter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -50,21 +56,11 @@ function FlightSchedulePage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex-row items-start gap-3 space-y-0">
-          <FileUp className="h-5 w-5 text-primary mt-0.5" />
-          <div>
-            <CardTitle>Upload Schedule</CardTitle>
-            <CardDescription>
-              CSV and Excel upload, mapping, validation, and preview will be added in Milestones
-              2–5.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          The import foundation is ready; no files can be uploaded in this milestone.
-        </CardContent>
-      </Card>
+      <ImportPreviewWorkflow
+        sourceAdapter={spreadsheetFlightScheduleAdapter}
+        fields={flightScheduleImportFields}
+        validateRecord={validateFlightScheduleRecord}
+      />
 
       <Card>
         <CardHeader className="flex-row items-start gap-3 space-y-0">
