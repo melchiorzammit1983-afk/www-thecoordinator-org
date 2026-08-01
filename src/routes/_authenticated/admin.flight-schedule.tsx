@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CalendarDays, History } from "lucide-react";
 import { ImportPreviewWorkflow } from "@/components/import-engine/ImportPreviewWorkflow";
 import {
+  activateFlightScheduleDraft,
   createFlightScheduleDraft,
   getFlightScheduleOverview,
 } from "@/lib/flight-schedule.functions";
@@ -14,6 +15,7 @@ import {
 import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/spreadsheet.adapter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -31,9 +33,14 @@ export const Route = createFileRoute("/_authenticated/admin/flight-schedule")({
 function FlightSchedulePage() {
   const overviewFn = useServerFn(getFlightScheduleOverview);
   const createDraftFn = useServerFn(createFlightScheduleDraft);
+  const activateDraftFn = useServerFn(activateFlightScheduleDraft);
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["flight-schedule-overview"],
     queryFn: () => overviewFn(),
+  });
+  const activation = useMutation({
+    mutationFn: (scheduleVersionId: string) => activateDraftFn({ data: { scheduleVersionId } }),
+    onSuccess: () => refetch(),
   });
   const active = data?.active;
 
@@ -58,9 +65,18 @@ function FlightSchedulePage() {
           {isLoading ? (
             "Loading…"
           ) : active ? (
-            <div className="flex items-center gap-2">
-              <span>{active.name}</span>
-              <Badge>Active</Badge>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span>{active.name}</span>
+                <Badge>Active</Badge>
+              </div>
+              <p className="text-muted-foreground">
+                Active since {new Date(active.activated_at ?? active.created_at).toLocaleString()}{" "}
+                â€¢ Activated by{" "}
+                <span className="font-mono text-xs">
+                  {active.activated_by ?? active.created_by ?? "Unknown"}
+                </span>
+              </p>
             </div>
           ) : (
             <span className="text-muted-foreground">No active schedule yet.</span>
@@ -98,7 +114,8 @@ function FlightSchedulePage() {
         <CardHeader>
           <CardTitle>Draft Imports</CardTitle>
           <CardDescription>
-            Immutable schedule drafts. Activation and editing are intentionally unavailable.
+            Immutable schedule drafts. Activation makes one draft the active schedule and archives
+            the previous active version.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -113,11 +130,14 @@ function FlightSchedulePage() {
                   <TableHead>Source</TableHead>
                   <TableHead>Flights</TableHead>
                   <TableHead>Validation</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.drafts.map((draft) => {
-                  const session = data.imports.find((item) => item.schedule_version_id === draft.id);
+                  const session = data.imports.find(
+                    (item) => item.schedule_version_id === draft.id,
+                  );
                   return (
                     <TableRow key={draft.id}>
                       <TableCell className="font-medium">{draft.name}</TableCell>
@@ -125,13 +145,24 @@ function FlightSchedulePage() {
                         <Badge variant="secondary">Draft</Badge>
                       </TableCell>
                       <TableCell>{new Date(draft.created_at).toLocaleString()}</TableCell>
-                      <TableCell className="font-mono text-xs">{draft.created_by ?? "Unknown"}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {draft.created_by ?? "Unknown"}
+                      </TableCell>
                       <TableCell>{session?.source_filename ?? "Unknown"}</TableCell>
                       <TableCell>{session?.total_rows ?? 0}</TableCell>
                       <TableCell>
                         {session
                           ? `${session.valid_rows} valid, ${session.warning_rows} warning, ${session.error_rows} error`
                           : "Unavailable"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          onClick={() => activation.mutate(draft.id)}
+                          disabled={activation.isPending}
+                        >
+                          {activation.isPending ? "Activatingâ€¦" : "Activate"}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -140,6 +171,54 @@ function FlightSchedulePage() {
             </Table>
           ) : (
             <p className="text-sm text-muted-foreground">No draft imports yet.</p>
+          )}
+          {activation.isError ? (
+            <p className="mt-4 text-sm text-destructive">
+              {activation.error instanceof Error
+                ? activation.error.message
+                : "Schedule activation failed."}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Archived Schedules</CardTitle>
+          <CardDescription>Archived schedules are preserved as read-only history.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data?.archived.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Previously activated</TableHead>
+                  <TableHead>Activated by</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.archived.map((version) => (
+                  <TableRow key={version.id}>
+                    <TableCell className="font-medium">{version.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">Archived</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {version.activated_at
+                        ? new Date(version.activated_at).toLocaleString()
+                        : "Unknown"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {version.activated_by ?? "Unknown"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No archived schedules yet.</p>
           )}
         </CardContent>
       </Card>
