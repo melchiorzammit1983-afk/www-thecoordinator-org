@@ -2682,8 +2682,8 @@ async function fetchLiveStatusViaAeroDataBox(
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  const provider = aeroProvider();
-  if (!provider) return { ok: false, reason: "not_configured" };
+  const providers = aeroProviders();
+  if (!providers.length) return { ok: false, reason: "not_configured" };
 
   const parsed = parseFlightCode(identifier);
   if (!parsed.ok || !parsed.iata || !parsed.number) return { ok: false, reason: "invalid_code" };
