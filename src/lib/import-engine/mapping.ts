@@ -3,6 +3,10 @@ import type { ImportField } from "@/lib/import-engine/types";
 const normalise = (value: string) =>
   value
     .trim()
+    // Spreadsheet exports commonly use camelCase/PascalCase headers such as
+    // FlightNumber. Split those words before matching aliases.
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .toLocaleLowerCase()
     .replace(/[_-]/g, " ")
     .replace(/[^a-z0-9 ]/g, " ")
