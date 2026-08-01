@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FileUp, RotateCcw, TriangleAlert } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileUp, LoaderCircle, RotateCcw, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,9 @@ import type {
   ImportField,
   ImportSource,
   ImportSourceAdapter,
+  ImportValidationSummary,
   NormalizedImportRecord,
+  ValidatedImportRow,
   ValidationRule,
 } from "@/lib/import-engine/types";
 
@@ -34,17 +36,24 @@ type Props<TRecord extends NormalizedImportRecord> = {
   sourceAdapter: ImportSourceAdapter<TRecord>;
   fields: ImportField[];
   rules: ValidationRule<TRecord>[];
+  onConfirm?: (input: {
+    source: ImportSource;
+    rows: ValidatedImportRow[];
+    summary: ImportValidationSummary;
+  }) => Promise<void>;
 };
 
 export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
   sourceAdapter,
   fields,
   rules,
+  onConfirm,
 }: Props<TRecord>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<ImportSource>();
   const [mappings, setMappings] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const records = source ? sourceAdapter.normalize(source, mappings) : [];
   const report = validateImport(records, {
@@ -76,6 +85,27 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
     setMappings({});
     setError(undefined);
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  async function confirmDraft() {
+    if (!source || !onConfirm || report.summary.errorRows > 0 || rows.length === 0) return;
+    try {
+      setIsConfirming(true);
+      setError(undefined);
+      await onConfirm({
+        source,
+        rows,
+        summary: {
+          ...report.summary,
+          warningRows: report.summary.warningRows + report.sourceWarnings.length,
+        },
+      });
+      reset();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not create the draft schedule.");
+    } finally {
+      setIsConfirming(false);
+    }
   }
 
   return (
@@ -209,6 +239,21 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
                 tone={report.summary.duplicateRows ? "bad" : undefined}
               />
             </CardContent>
+            {onConfirm && (
+              <CardContent className="pt-0">
+                <Button
+                  type="button"
+                  disabled={isConfirming || report.summary.errorRows > 0 || rows.length === 0}
+                  onClick={() => void confirmDraft()}
+                >
+                  {isConfirming && <LoaderCircle className="animate-spin" />}
+                  Create immutable draft schedule
+                </Button>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This creates a draft only. It does not activate or change any live schedule.
+                </p>
+              </CardContent>
+            )}
           </Card>
 
           <Card>
