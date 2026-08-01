@@ -2900,6 +2900,167 @@ export type Database = {
         }
         Relationships: []
       }
+      flight_schedule_imports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          error_rows: number
+          id: string
+          schedule_version_id: string | null
+          source_filename: string | null
+          source_type: string
+          status: string
+          summary: Json
+          total_rows: number
+          valid_rows: number
+          validation_status: string
+          warning_rows: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          error_rows?: number
+          id?: string
+          schedule_version_id?: string | null
+          source_filename?: string | null
+          source_type?: string
+          status?: string
+          summary?: Json
+          total_rows?: number
+          valid_rows?: number
+          validation_status?: string
+          warning_rows?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          error_rows?: number
+          id?: string
+          schedule_version_id?: string | null
+          source_filename?: string | null
+          source_type?: string
+          status?: string
+          summary?: Json
+          total_rows?: number
+          valid_rows?: number
+          validation_status?: string
+          warning_rows?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_schedule_imports_schedule_version_id_fkey"
+            columns: ["schedule_version_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_schedule_records: {
+        Row: {
+          aircraft_type: string | null
+          airline: string
+          created_at: string
+          destination: string
+          direction: string
+          flight_number: string
+          id: string
+          import_session_id: string
+          origin: string
+          schedule_version_id: string
+          scheduled_date: string
+          scheduled_time: string
+          source_row_number: number
+        }
+        Insert: {
+          aircraft_type?: string | null
+          airline: string
+          created_at?: string
+          destination: string
+          direction: string
+          flight_number: string
+          id?: string
+          import_session_id: string
+          origin: string
+          schedule_version_id: string
+          scheduled_date: string
+          scheduled_time: string
+          source_row_number: number
+        }
+        Update: {
+          aircraft_type?: string | null
+          airline?: string
+          created_at?: string
+          destination?: string
+          direction?: string
+          flight_number?: string
+          id?: string
+          import_session_id?: string
+          origin?: string
+          schedule_version_id?: string
+          scheduled_date?: string
+          scheduled_time?: string
+          source_row_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_schedule_records_import_session_id_fkey"
+            columns: ["import_session_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_imports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flight_schedule_records_schedule_version_id_fkey"
+            columns: ["schedule_version_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_schedule_versions: {
+        Row: {
+          activated_at: string | null
+          activated_by: string | null
+          coverage_end: string | null
+          coverage_start: string | null
+          created_at: string
+          created_by: string | null
+          effective_from: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          activated_by?: string | null
+          coverage_end?: string | null
+          coverage_start?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          activated_by?: string | null
+          coverage_end?: string | null
+          coverage_start?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       flight_status_snapshots: {
         Row: {
           actual_at: string | null
@@ -4080,6 +4241,7 @@ export type Database = {
           flight_estimated_at: string | null
           flight_gate: string | null
           flight_lookup_bundled_at: string | null
+          flight_schedule_record_id: string | null
           flight_scheduled_at: string | null
           flight_status: string | null
           flight_status_confidence: string | null
@@ -4219,6 +4381,7 @@ export type Database = {
           flight_estimated_at?: string | null
           flight_gate?: string | null
           flight_lookup_bundled_at?: string | null
+          flight_schedule_record_id?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_confidence?: string | null
@@ -4358,6 +4521,7 @@ export type Database = {
           flight_estimated_at?: string | null
           flight_gate?: string | null
           flight_lookup_bundled_at?: string | null
+          flight_schedule_record_id?: string | null
           flight_scheduled_at?: string | null
           flight_status?: string | null
           flight_status_confidence?: string | null
@@ -4451,6 +4615,13 @@ export type Database = {
             columns: ["executor_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_flight_schedule_record_id_fkey"
+            columns: ["flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
             referencedColumns: ["id"]
           },
           {
@@ -6739,6 +6910,13 @@ export type Database = {
       }
     }
     Functions: {
+      activate_flight_schedule_draft: {
+        Args: { p_activated_by: string; p_schedule_version_id: string }
+        Returns: {
+          archived_schedule_version_id: string
+          schedule_version_id: string
+        }[]
+      }
       admin_grant_ai_points: {
         Args: { _amount: number; _company_id: string; _note?: string }
         Returns: number
@@ -6762,6 +6940,19 @@ export type Database = {
       bump_public_ai_daily_count: { Args: never; Returns: number }
       canonical_jsonb: { Args: { _j: Json }; Returns: string }
       charge_extra_logos_weekly: { Args: never; Returns: number }
+      create_flight_schedule_draft: {
+        Args: {
+          p_created_by: string
+          p_records: Json
+          p_source_filename: string
+          p_source_type: string
+          p_summary: Json
+        }
+        Returns: {
+          import_session_id: string
+          schedule_version_id: string
+        }[]
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
