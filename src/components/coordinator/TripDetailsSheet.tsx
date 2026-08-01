@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
+import { formatMaltaDateTime, formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
+import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
@@ -156,6 +156,7 @@ export function TripDetailsSheet({
   const normalizeFn = useServerFn(normalizeJobData);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
+  const flightImpactFn = useServerFn(getFlightScheduleRecordImpact);
   const [paxChat, setPaxChat] = useState<{ paxId: string; name: string; identityId: string | null } | null>(null);
   const [driverChatOpen, setDriverChatOpen] = useState(false);
   const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
@@ -189,6 +190,19 @@ export function TripDetailsSheet({
       origin: string;
       destination: string;
       schedule_version?: { id: string; name: string; status: "draft" | "active" | "archived" };
+    }>,
+    enabled: open && !!job.flight_schedule_record_id,
+  });
+
+  const { data: flightImpact, isLoading: isFlightImpactLoading } = useQuery({
+    queryKey: ["flight-schedule-record-impact", job.flight_schedule_record_id],
+    queryFn: () => flightImpactFn({ data: { id: job.flight_schedule_record_id! } }) as Promise<{
+      linkedTrips: number;
+      totalPassengers: number;
+      assignedDrivers: number;
+      assignedVehicles: number;
+      earliestPickup: string | null;
+      latestPickup: string | null;
     }>,
     enabled: open && !!job.flight_schedule_record_id,
   });
@@ -783,6 +797,23 @@ export function TripDetailsSheet({
                   <div><dt className="sr-only">Destination</dt><dd><span className="text-foreground">Destination:</span> {linkedFlight.destination}</dd></div>
                   <div className="col-span-2"><dt className="sr-only">Schedule version</dt><dd><span className="text-foreground">Schedule version:</span> {linkedFlight.schedule_version?.name ?? "Unavailable"}</dd></div>
                 </dl>
+                <div className="border-t pt-2 space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight impact</div>
+                  {isFlightImpactLoading ? (
+                    <div className="text-muted-foreground">Loading operational totals…</div>
+                  ) : flightImpact ? (
+                    <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-muted-foreground">
+                      <div><dt className="sr-only">Linked trips</dt><dd><span className="text-foreground">Linked trips:</span> {flightImpact.linkedTrips}</dd></div>
+                      <div><dt className="sr-only">Total passengers</dt><dd><span className="text-foreground">Passengers:</span> {flightImpact.totalPassengers}</dd></div>
+                      <div><dt className="sr-only">Assigned drivers</dt><dd><span className="text-foreground">Drivers:</span> {flightImpact.assignedDrivers}</dd></div>
+                      <div><dt className="sr-only">Assigned vehicles</dt><dd><span className="text-foreground">Vehicles:</span> {flightImpact.assignedVehicles}</dd></div>
+                      <div className="col-span-2"><dt className="sr-only">Earliest pickup</dt><dd><span className="text-foreground">Earliest pickup:</span> {flightImpact.earliestPickup ? formatMaltaDateTime(flightImpact.earliestPickup, { dateStyle: "medium", timeStyle: "short" }) : "—"}</dd></div>
+                      <div className="col-span-2"><dt className="sr-only">Latest pickup</dt><dd><span className="text-foreground">Latest pickup:</span> {flightImpact.latestPickup ? formatMaltaDateTime(flightImpact.latestPickup, { dateStyle: "medium", timeStyle: "short" }) : "—"}</dd></div>
+                    </dl>
+                  ) : (
+                    <div className="text-muted-foreground">Flight impact is unavailable.</div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="rounded-md border p-3 text-xs text-muted-foreground">

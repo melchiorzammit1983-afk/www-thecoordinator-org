@@ -665,6 +665,13 @@ type LinkedFlightScheduleRecord = {
   };
 };
 
+type FlightImpactJob = {
+  pickup_at: string | null;
+  driver_id: string | null;
+  vehicle: string | null;
+  pax: Array<{ id: string }> | null;
+};
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -725,6 +732,53 @@ export const getLinkedFlightScheduleRecord = createServerFn({ method: "POST" })
       ...record,
       schedule_version: scheduleVersion,
     } as LinkedFlightScheduleRecord;
+  });
+
+/**
+ * Operational totals for one immutable flight record. Results are limited to
+ * jobs the requesting company can already see through its dispatch chain.
+ */
+export const getFlightScheduleRecordImpact = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    // Generated types are refreshed by the Lovable-owned project after migrations.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobsTable = supabaseAdmin as any;
+    const { data: jobs, error } = await jobsTable
+      .from("jobs")
+      .select("id, pickup_at, driver_id, vehicle, pax(id)")
+      .eq("flight_schedule_record_id", data.id)
+      .or(
+        `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`,
+      )
+      .order("pickup_at", { ascending: true })
+      .limit(10_000);
+    if (error) throw new Error(error.message);
+
+    const rows = (jobs ?? []) as FlightImpactJob[];
+    const pickupTimes = rows
+      .map((job) => job.pickup_at)
+      .filter((pickupAt): pickupAt is string => !!pickupAt)
+      .sort();
+    const assignedDrivers = new Set(rows.map((job) => job.driver_id).filter(Boolean));
+    const assignedVehicles = new Set(
+      rows.map((job) => job.vehicle?.trim()).filter(Boolean),
+    );
+
+    return {
+      linkedTrips: rows.length,
+      totalPassengers: rows.reduce(
+        (total, job) => total + (job.pax?.length ?? 0),
+        0,
+      ),
+      assignedDrivers: assignedDrivers.size,
+      assignedVehicles: assignedVehicles.size,
+      earliestPickup: pickupTimes[0] ?? null,
+      latestPickup: pickupTimes[pickupTimes.length - 1] ?? null,
+    };
   });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
