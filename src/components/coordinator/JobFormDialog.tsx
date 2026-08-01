@@ -53,7 +53,7 @@ function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange:
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking } from "@/lib/coordinator.functions";
+import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking, getLinkedFlightScheduleRecord, searchActiveFlightScheduleRecords } from "@/lib/coordinator.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
@@ -99,6 +99,7 @@ type Job = {
   flightorship: string | null;
   from_flight: string | null;
   to_flight: string | null;
+  flight_schedule_record_id?: string | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
@@ -224,6 +225,8 @@ function ManualForm({
   const [toLng, setToLng] = useState<number | null>(job?.dropoff_lng ?? null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
+  const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
+  const [flightSearch, setFlightSearch] = useState("");
   const [fromKind, setFromKind] = useState<EndpointKind>(() =>
     inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
   );
@@ -367,9 +370,21 @@ function ManualForm({
   const saveOperationsPhoneFn = useServerFn(updateMyOperationsPhone);
   const createFn = useServerFn(createJob);
   const updateFn = useServerFn(updateJob);
+  const searchActiveFlightsFn = useServerFn(searchActiveFlightScheduleRecords);
+  const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
   const reviewFn = useServerFn(markJobReviewed);
+  const { data: activeFlightMatches, isFetching: isSearchingFlights } = useQuery({
+    queryKey: ["active-flight-schedule-search", flightSearch],
+    queryFn: () => searchActiveFlightsFn({ data: { search: flightSearch } }),
+    enabled: flightSearch.trim().length >= 2,
+  });
+  const { data: linkedFlight } = useQuery({
+    queryKey: ["linked-flight-schedule-record", flightScheduleRecordId],
+    queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
+    enabled: !!flightScheduleRecordId,
+  });
   useEffect(() => {
     if (!myCompany || operationsPhoneDirty) return;
     setOperationsPhone(myCompany.operations_phone ?? "");
@@ -468,6 +483,7 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
+        flight_schedule_record_id: flightScheduleRecordId,
         tracking_kind: trackingKind,
         clientcompanyname: client,
         // This legacy field is the customer/booking phone. The visible 24/7
@@ -918,6 +934,34 @@ function ManualForm({
                 <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
               )}
             </div>
+          </div>
+          <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+            <div>
+              <Label htmlFor="active-flight-search">Linked schedule flight</Label>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Search the active schedule. This stores a reference only and never changes an existing link automatically.</p>
+            </div>
+            {flightScheduleRecordId && linkedFlight ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+                <span><b>{linkedFlight.flight_number}</b> · {linkedFlight.airline} · {linkedFlight.origin} → {linkedFlight.destination} · {linkedFlight.scheduled_date} {linkedFlight.scheduled_time?.slice(0, 5)}</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => setFlightScheduleRecordId(null)}>Remove link</Button>
+              </div>
+            ) : (
+              <>
+                <Input id="active-flight-search" value={flightSearch} onChange={(event) => setFlightSearch(event.target.value)} placeholder="Search flight number, airline, origin, or destination" />
+                {flightSearch.trim().length >= 2 ? (
+                  <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
+                    {isSearchingFlights ? <p className="p-2 text-xs text-muted-foreground">Searching active schedule…</p> : null}
+                    {!isSearchingFlights && activeFlightMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No active-schedule flights found.</p> : null}
+                    {activeFlightMatches?.map((flight) => (
+                      <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setFlightScheduleRecordId(flight.id); setFlightSearch(""); }}>
+                        <span className="font-medium">{flight.flight_number} · {flight.airline}</span>
+                        <span className="text-muted-foreground">{flight.origin} → {flight.destination} · {flight.scheduled_date} {flight.scheduled_time?.slice(0, 5)} · {flight.direction}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
           {duplicateWarning && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">

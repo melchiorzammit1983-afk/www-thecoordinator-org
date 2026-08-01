@@ -445,7 +445,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -614,6 +614,7 @@ const jobInput = z.object({
   flightorship: z.string().trim().max(120).optional().or(z.literal("")),
   from_flight: z.string().trim().max(40).optional().or(z.literal("")),
   to_flight: z.string().trim().max(40).optional().or(z.literal("")),
+  flight_schedule_record_id: z.string().uuid().nullable().optional(),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
@@ -647,6 +648,73 @@ const jobInput = z.object({
 const createJobInput = jobInput.extend({
   passengers: z.array(passengerInput).max(200).optional(),
 });
+
+type LinkedFlightScheduleRecord = {
+  id: string;
+  scheduled_date: string;
+  scheduled_time: string;
+  direction: "arrival" | "departure";
+  airline: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+};
+
+function safeFlightSearchTerm(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
+}
+
+async function assertActiveFlightScheduleRecord(supabaseAdmin: any, recordId: string) {
+  // Generated types are refreshed by the Lovable-owned project after migrations.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const schedules = supabaseAdmin as any;
+  const { data, error } = await schedules
+    .from("flight_schedule_records")
+    .select("id, flight_schedule_versions!inner(status)")
+    .eq("id", recordId)
+    .eq("flight_schedule_versions.status", "active")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Choose a flight from the active schedule.");
+}
+
+/** Shared schedule reference records available to authenticated coordinators. */
+export const searchActiveFlightScheduleRecords = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ search: z.string().trim().max(100).optional() }).parse(input ?? {}))
+  .handler(async ({ data }) => {
+    const supabaseAdmin = await getAdminClient();
+    // Generated types are refreshed by the Lovable-owned project after migrations.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabaseAdmin as any).from("flight_schedule_records")
+      .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+      .eq("flight_schedule_versions.status", "active")
+      .order("scheduled_date", { ascending: true })
+      .order("scheduled_time", { ascending: true })
+      .limit(20);
+    const term = data.search ? safeFlightSearchTerm(data.search) : "";
+    if (term) query = query.or(`flight_number.ilike.%${term}%,airline.ilike.%${term}%,origin.ilike.%${term}%,destination.ilike.%${term}%`);
+    const { data: records, error } = await query;
+    if (error) throw new Error(error.message);
+    return (records ?? []) as LinkedFlightScheduleRecord[];
+  });
+
+/** Reads an already-linked immutable record, including one from an archived schedule. */
+export const getLinkedFlightScheduleRecord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data }) => {
+    const supabaseAdmin = await getAdminClient();
+    // Generated types are refreshed by the Lovable-owned project after migrations.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: record, error } = await (supabaseAdmin as any).from("flight_schedule_records")
+      .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!record) throw new Error("The linked flight record no longer exists.");
+    return record as LinkedFlightScheduleRecord;
+  });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
   if (!labelIds) return;
@@ -728,6 +796,9 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    if (data.flight_schedule_record_id) {
+      await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
+    }
     const pickup_at = makePickupIso(data.date, data.time);
     const { data: row, error } = await supabaseAdmin
       .from("jobs")
@@ -741,6 +812,7 @@ export const createJob = createServerFn({ method: "POST" })
         flightorship: data.flightorship || data.from_flight || data.to_flight || null,
         from_flight: (data.from_flight || "").toUpperCase() || null,
         to_flight: (data.to_flight || "").toUpperCase() || null,
+        flight_schedule_record_id: data.flight_schedule_record_id ?? null,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
         tracking_enabled: data.tracking_enabled,
@@ -795,12 +867,17 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
+    const selectedFlightId = data.flight_schedule_record_id;
+    const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
+    if (selectedFlightId && selectedFlightId !== existingFlightId) {
+      await assertActiveFlightScheduleRecord(supabaseAdmin, selectedFlightId);
+    }
     // Driver-accepted lock: coordinator changes must be approved by driver.
     const lockable: LockableJob = {
       id: (existing as any).id,
@@ -824,6 +901,7 @@ export const updateJob = createServerFn({ method: "POST" })
         contact_phone: data.contact_phone || null,
         from_flight: (data.from_flight || "").toUpperCase() || null,
         to_flight: (data.to_flight || "").toUpperCase() || null,
+        flight_schedule_record_id: data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
         tracking_enabled: !!data.tracking_enabled,
@@ -882,6 +960,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
     if (data.tracking_kind !== undefined) patch.tracking_kind = data.tracking_kind;
+    if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
     if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;
     if (data.dropoff_lat !== undefined) patch.dropoff_lat = data.dropoff_lat;
