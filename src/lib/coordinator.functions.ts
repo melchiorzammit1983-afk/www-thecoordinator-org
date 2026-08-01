@@ -2814,7 +2814,9 @@ async function fetchLiveStatusViaAeroDataBox(
       );
       lastFailure = "aero_unreachable";
       continue;
+      }
     }
+    if (providerFailed) continue; // next configured key / marketplace
   }
 
   // Only report a genuine "not in the schedule data" when every attempt was
