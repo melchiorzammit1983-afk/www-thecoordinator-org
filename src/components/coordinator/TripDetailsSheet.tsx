@@ -159,7 +159,25 @@ export function TripDetailsSheet({
   const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
   const [boardingNote, setBoardingNote] = useState("");
 
-  const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+  const isRealJobIdRaw = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+
+  // Protected server fns 401 when there is no session (e.g. after sign-out while
+  // the sheet is mounted, or on the /auth screen). Gate every polling query on it.
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) setHasSession(!!data.session);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setHasSession(!!session);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+  const isRealJobId = isRealJobIdRaw && hasSession;
 
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],
