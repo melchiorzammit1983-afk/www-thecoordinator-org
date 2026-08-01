@@ -26,20 +26,20 @@ import type {
   ImportField,
   ImportSource,
   ImportSourceAdapter,
-  ImportValidationResult,
   NormalizedImportRecord,
+  ValidationRule,
 } from "@/lib/import-engine/types";
 
 type Props<TRecord extends NormalizedImportRecord> = {
   sourceAdapter: ImportSourceAdapter<TRecord>;
   fields: ImportField[];
-  validateRecord: (record: TRecord) => ImportValidationResult;
+  rules: ValidationRule<TRecord>[];
 };
 
 export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
   sourceAdapter,
   fields,
-  validateRecord,
+  rules,
 }: Props<TRecord>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<ImportSource>();
@@ -47,10 +47,13 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
   const [error, setError] = useState<string>();
 
   const records = source ? sourceAdapter.normalize(source, mappings) : [];
-  const rows = validateImport(records, { fields, validateRecord });
-  const validRows = rows.filter((row) => row.errors.length === 0).length;
-  const invalidRows = rows.length - validRows;
-  const warnings = rows.reduce((total, row) => total + row.warnings.length, 0);
+  const report = validateImport(records, {
+    fields,
+    rules,
+    sourceColumns: source?.columns,
+    mappedColumns: mappings,
+  });
+  const rows = report.rows;
   const requiredUnmapped = fields.filter((field) => field.required && !mappings[field.key]);
   const duplicateMappings = hasDuplicateMappings(mappings);
 
@@ -172,20 +175,39 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
             </Alert>
           )}
 
+          {report.sourceWarnings.length > 0 && (
+            <Alert>
+              <TriangleAlert />
+              <AlertTitle>Unmapped columns</AlertTitle>
+              <AlertDescription>
+                {report.sourceWarnings.map((warning) => warning.message).join(" ")}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>3. Validation summary</CardTitle>
               <CardDescription>Nothing is imported or saved at this stage.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-4">
-              <Summary label="Total rows" value={rows.length} />
-              <Summary label="Valid rows" value={validRows} tone="good" />
+            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <Summary label="Total rows" value={report.summary.totalRows} />
+              <Summary label="Valid" value={report.summary.validRows} tone="good" />
               <Summary
-                label="Invalid rows"
-                value={invalidRows}
-                tone={invalidRows ? "bad" : undefined}
+                label="Warnings"
+                value={report.summary.warningRows + report.sourceWarnings.length}
+                tone={report.summary.warningRows || report.sourceWarnings.length ? "warn" : undefined}
               />
-              <Summary label="Warnings" value={warnings} tone={warnings ? "warn" : undefined} />
+              <Summary
+                label="Errors"
+                value={report.summary.errorRows}
+                tone={report.summary.errorRows ? "bad" : undefined}
+              />
+              <Summary
+                label="Duplicates"
+                value={report.summary.duplicateRows}
+                tone={report.summary.duplicateRows ? "bad" : undefined}
+              />
             </CardContent>
           </Card>
 
@@ -212,15 +234,17 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
                   {rows.map((row) => (
                     <TableRow
                       key={row.rowNumber}
-                      className={row.errors.length ? "bg-destructive/5" : undefined}
+                      className={row.status === "error" ? "bg-destructive/5" : undefined}
                     >
                       <TableCell>{row.rowNumber}</TableCell>
                       <TableCell>
-                        {row.errors.length ? (
-                          <Badge variant="destructive">Invalid</Badge>
-                        ) : (
-                          <Badge variant="secondary">Valid</Badge>
-                        )}
+                        <Badge variant={row.status === "error" ? "destructive" : "secondary"}>
+                          {row.status === "valid"
+                            ? "Valid"
+                            : row.status === "warning"
+                              ? "Warning"
+                              : "Error"}
+                        </Badge>
                       </TableCell>
                       {fields.map((field) => (
                         <TableCell key={field.key}>
@@ -230,17 +254,16 @@ export function ImportPreviewWorkflow<TRecord extends NormalizedImportRecord>({
                         </TableCell>
                       ))}
                       <TableCell className="min-w-64">
-                        {[...row.errors, ...row.warnings].length ? (
+                        {row.issues.length ? (
                           <ul className="space-y-1 text-xs">
-                            {row.errors.map((issue, index) => (
-                              <li className="text-destructive" key={`error-${index}`}>
-                                {issue.message}
-                              </li>
-                            ))}
-                            {row.warnings.map((issue, index) => (
+                            {row.issues.map((issue, index) => (
                               <li
-                                className="text-amber-700 dark:text-amber-400"
-                                key={`warning-${index}`}
+                                className={
+                                  issue.severity === "error"
+                                    ? "text-destructive"
+                                    : "text-amber-700 dark:text-amber-400"
+                                }
+                                key={`${issue.rule}-${index}`}
                               >
                                 {issue.message}
                               </li>
