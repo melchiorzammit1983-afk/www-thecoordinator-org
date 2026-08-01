@@ -30,8 +30,10 @@ export type FlightScheduleVersion = {
   coverage_end: string | null;
   created_by: string | null;
   created_at: string;
+  updated_at: string;
   activated_by: string | null;
   activated_at: string | null;
+  flightCount: number;
 };
 
 export type FlightScheduleImportSession = {
@@ -71,6 +73,16 @@ function toIsoDate(value: string) {
   return date.toISOString().slice(0, 10);
 }
 
+function withFlightCount(version: unknown): FlightScheduleVersion {
+  const { flight_schedule_records: records, ...details } = version as FlightScheduleVersion & {
+    flight_schedule_records?: Array<{ count: number }>;
+  };
+  return {
+    ...details,
+    flightCount: records?.[0]?.count ?? 0,
+  };
+}
+
 /** Admin-only read model for active and immutable draft schedules. */
 export const getFlightScheduleOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -87,7 +99,7 @@ export const getFlightScheduleOverview = createServerFn({ method: "GET" })
       (sb as any)
         .from("flight_schedule_versions")
         .select(
-          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, activated_by, activated_at",
+          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, updated_at, activated_by, activated_at, flight_schedule_records(count)",
         )
         .eq("status", "active")
         .maybeSingle(),
@@ -98,35 +110,35 @@ export const getFlightScheduleOverview = createServerFn({ method: "GET" })
           "id, schedule_version_id, source_filename, source_type, status, total_rows, valid_rows, warning_rows, error_rows, validation_status, created_by, created_at",
         )
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(100),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sb as any)
         .from("flight_schedule_versions")
         .select(
-          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, activated_by, activated_at",
+          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, updated_at, activated_by, activated_at, flight_schedule_records(count)",
         )
         .eq("status", "draft")
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(100),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sb as any)
         .from("flight_schedule_versions")
         .select(
-          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, activated_by, activated_at",
+          "id, name, status, effective_from, coverage_start, coverage_end, created_by, created_at, updated_at, activated_by, activated_at, flight_schedule_records(count)",
         )
         .eq("status", "archived")
         .order("updated_at", { ascending: false })
-        .limit(25),
+        .limit(100),
     ]);
     if (activeError) throw new Error(activeError.message);
     if (importsError) throw new Error(importsError.message);
     if (draftsError) throw new Error(draftsError.message);
     if (archivedError) throw new Error(archivedError.message);
     return {
-      active: (active ?? null) as FlightScheduleVersion | null,
+      active: active ? withFlightCount(active) : null,
       imports: (imports ?? []) as FlightScheduleImportSession[],
-      drafts: (drafts ?? []) as FlightScheduleVersion[],
-      archived: (archived ?? []) as FlightScheduleVersion[],
+      drafts: (drafts ?? []).map(withFlightCount),
+      archived: (archived ?? []).map(withFlightCount),
     };
   });
 
