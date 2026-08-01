@@ -5183,12 +5183,10 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     }
 
     if (transportError || !res) {
-      if (co)
       throw new Error("AI is temporarily unreachable — please try again");
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      if (co)
       if (res.status === 429) throw new Error("AI is rate limited — please try again in a moment");
       if (res.status === 503) throw new Error("AI is temporarily overloaded — please try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);
