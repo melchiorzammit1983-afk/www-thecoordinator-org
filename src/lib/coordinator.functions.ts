@@ -2513,32 +2513,42 @@ type AeroProvider = {
   headers: Record<string, string>;
 };
 
-function aeroProvider(): AeroProvider | null {
+/**
+ * Ordered list of front doors to try. api.market is preferred (it's the
+ * paid marketplace this account is meant to run on), but a key can be
+ * valid while the marketplace subscription is inactive — which returns a
+ * 400 "No active Subscription found." rather than 401/403. So instead of
+ * a single provider we build a chain and fail over on any provider-level
+ * error (auth, subscription, quota), including every RapidAPI key we hold.
+ */
+function aeroProviders(): AeroProvider[] {
+  const list: AeroProvider[] = [];
   const market = process.env.AERODATABOX_API_MARKET_KEY;
   if (market) {
-    return {
+    list.push({
       name: "api.market",
       url: (f, d) =>
         `https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/${encodeURIComponent(f)}/${d}`,
       // api.market renamed this header when it rebranded from MagicAPI.
-      // Both are sent because we cannot reach the host from CI to confirm
-      // which one the account is on, and an unrecognised header is ignored.
-      headers: { "x-api-market-key": market, "x-magicapi-key": market },
-    };
+      // Both are sent because an unrecognised header is simply ignored.
+      headers: { "x-api-market-key": market, "x-magicapi-key": market, accept: "application/json" },
+    });
   }
-  const rapid = process.env.AERODATABOX_API_KEY;
-  if (rapid) {
-    return {
+  const rapidKeys = [process.env.AERODATABOX_API_KEY, process.env.aerodata].filter(
+    (k, i, a): k is string => !!k && a.indexOf(k) === i,
+  );
+  for (const rapid of rapidKeys) {
+    list.push({
       name: "rapidapi",
       url: (f, d) => `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(f)}/${d}`,
       headers: { "X-RapidAPI-Key": rapid, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" },
-    };
+    });
   }
-  return null;
+  return list;
 }
 
 function aeroDataBoxEnabled(): boolean {
-  return aeroProvider() !== null;
+  return aeroProviders().length > 0;
 }
 const aeroDataBoxCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const AERODATABOX_TTL_MS = 20 * 60_000;
