@@ -2712,45 +2712,47 @@ async function fetchLiveStatusViaAeroDataBox(
   // production has no readable server logs to fall back on.
   let lastFailure: string | null = null;
 
-  for (const date of datesToTry) {
-    try {
-      const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
-      if (res.status === 404) continue; // no flight on this date — try the other candidate date
-      if (res.status === 401 || res.status === 403) {
-        // Bad/expired/unsubscribed key — distinct from "no data", so this
-        // doesn't silently look identical to a real not-found. Note that
-        // holding an account is not the same as being subscribed to the
-        // API: both marketplaces 403 until a plan is selected.
-        const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
-        console.error(
-          `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
-        );
-        const value: LiveStatusResult = { ok: false, reason: `aero_${res.status}` };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (res.status === 429) {
-        const value: LiveStatusResult = { ok: false, reason: "aero_429" };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (!res.ok) {
-        // Any other non-2xx: capture the status and a short body snippet.
-        // 402 in particular is what an unsubscribed plan tends to return,
-        // and a 400/404 here usually means the request path is wrong for
-        // this marketplace rather than the flight being absent.
-        let detail = "";
-        try {
-          detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
-        } catch {
-          /* body already consumed or unreadable — status alone still helps */
+  // Try each configured front door in turn. A provider-level failure
+  // (bad key, inactive marketplace subscription, exhausted quota) must
+  // fall through to the next provider instead of ending the lookup.
+  for (const provider of providers) {
+    let providerFailed = false;
+    for (const date of datesToTry) {
+      try {
+        const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
+        if (res.status === 404) continue; // no flight on this date — try the other candidate date
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          // Bad/expired/unsubscribed key, or quota exhausted.
+          const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
+          );
+          lastFailure = `aero_${res.status}`;
+          providerFailed = true;
+          break;
         }
-        console.error(
-          `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
-        );
-        lastFailure = `aero_http_${res.status}`;
-        continue;
-      }
+        if (!res.ok) {
+          // Any other non-2xx: capture the status and a short body snippet.
+          // api.market answers an inactive plan with 400 "No active
+          // Subscription found." — treat that as a provider-level failure
+          // so the next configured key gets a turn.
+          let detail = "";
+          try {
+            detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+          } catch {
+            /* body already consumed or unreadable — status alone still helps */
+          }
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
+          );
+          const noSub = /no active subscription|invalid x-api-market-key|invalid x-magicapi-key/i.test(detail);
+          lastFailure = noSub ? "aero_no_subscription" : `aero_http_${res.status}`;
+          if (noSub || res.status === 402) {
+            providerFailed = true;
+            break;
+          }
+          continue;
+        }
       // AeroDataBox returns a bare object (not an array) when there's
       // exactly one match for a flight number + date — must handle both.
       const json = (await res.json()) as AeroFlight | AeroFlight[];
