@@ -63,6 +63,7 @@ import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
+import { Route as AuthenticatedCoordinatorAirportOperationsRouteImport } from './routes/_authenticated/coordinator.airport-operations'
 import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
 import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
 import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
@@ -398,6 +399,12 @@ const AuthenticatedCoordinatorAddressSettingsRoute =
     path: '/address-settings',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorAirportOperationsRoute =
+  AuthenticatedCoordinatorAirportOperationsRouteImport.update({
+    id: '/airport-operations',
+    path: '/airport-operations',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedAdminRequestsRoute =
   AuthenticatedAdminRequestsRouteImport.update({
     id: '/requests',
@@ -691,6 +698,7 @@ export interface FileRoutesByFullPath {
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
+  '/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -786,6 +794,7 @@ export interface FileRoutesByTo {
   '/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
+  '/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -886,6 +895,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/portal-settings': typeof AuthenticatedAdminPortalSettingsRoute
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
+  '/_authenticated/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
   '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -987,6 +997,7 @@ export interface FileRouteTypes {
     | '/admin/portal-settings'
     | '/admin/requests'
     | '/coordinator/address-settings'
+    | '/coordinator/airport-operations'
     | '/coordinator/availability'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -1082,6 +1093,7 @@ export interface FileRouteTypes {
     | '/admin/portal-settings'
     | '/admin/requests'
     | '/coordinator/address-settings'
+    | '/coordinator/airport-operations'
     | '/coordinator/availability'
     | '/coordinator/board-creator'
     | '/coordinator/branding'
@@ -1181,6 +1193,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/portal-settings'
     | '/_authenticated/admin/requests'
     | '/_authenticated/coordinator/address-settings'
+    | '/_authenticated/coordinator/airport-operations'
     | '/_authenticated/coordinator/availability'
     | '/_authenticated/coordinator/board-creator'
     | '/_authenticated/coordinator/branding'
@@ -1687,6 +1700,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorAddressSettingsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/airport-operations': {
+      id: '/_authenticated/coordinator/airport-operations'
+      path: '/airport-operations'
+      fullPath: '/coordinator/airport-operations'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAirportOperationsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/admin/requests': {
       id: '/_authenticated/admin/requests'
       path: '/requests'
@@ -2038,6 +2058,7 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
+  AuthenticatedCoordinatorAirportOperationsRoute: typeof AuthenticatedCoordinatorAirportOperationsRoute
   AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
@@ -2061,6 +2082,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
   {
     AuthenticatedCoordinatorAddressSettingsRoute:
       AuthenticatedCoordinatorAddressSettingsRoute,
+    AuthenticatedCoordinatorAirportOperationsRoute:
+      AuthenticatedCoordinatorAirportOperationsRoute,
     AuthenticatedCoordinatorAvailabilityRoute:
       AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBoardCreatorRoute:
