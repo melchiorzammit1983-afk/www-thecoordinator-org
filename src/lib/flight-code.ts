@@ -187,10 +187,10 @@ export function describeFlight(parsed: ParsedFlight): string {
  *
  * This is a FORMAT check only (does it look like a real IATA flight code) —
  * it runs before any lookup and can't confirm the flight actually
- * exists/operates on the given date (AeroDataBox, when configured via
- * `AERODATABOX_API_KEY`, does that; see `fetchLiveStatusViaAeroDataBox` in
- * coordinator.functions.ts). Never blocks submission — callers just show
- * this text next to the field.
+ * exists/operates on the given date (AeroDataBox does that, when configured
+ * via `AERODATABOX_API_MARKET_KEY` or `AERODATABOX_API_KEY`; see
+ * `fetchLiveStatusViaAeroDataBox` in coordinator.functions.ts). Never blocks
+ * submission — callers just show this text next to the field.
  */
 export function flightFormatWarning(input: string | null | undefined): string | null {
   const s = (input ?? "").toString().trim();
@@ -202,4 +202,58 @@ export function flightFormatWarning(input: string | null | undefined): string | 
     return fix ? `Doesn't look like a valid flight code — did you mean ${fix}?` : "Doesn't look like a valid flight code (e.g. FR1234)";
   }
   return null;
+}
+
+/**
+ * Plain-English explanation of why a live-status lookup failed.
+ *
+ * These used to collapse into a single "couldn't find it, check the code"
+ * message, which blamed the coordinator's data for what were really provider
+ * problems — a rejected API key looked exactly like a flight that genuinely
+ * isn't in the schedule data. Keep the causes distinct: a key/quota problem
+ * is fixed by an admin, a bad code is fixed by the coordinator, and telling
+ * them apart is the difference between a 30-second fix and an afternoon.
+ *
+ * Shared by the server (which persists this onto the trip row) and the
+ * refresh button's toast, so the two can never drift.
+ */
+export function liveStatusFailureMessage(reason: string | null | undefined, code: string): string {
+  switch (reason) {
+    case "not_configured":
+      return "Live flight tracking isn't configured yet";
+    case "invalid_code":
+      return `Couldn't recognise "${code}" as a flight code — check it`;
+    case "vessel_in_flight_field":
+      return `"${code}" looks like a vessel — move it to the vessel field`;
+    case "aero_401":
+    case "aero_403":
+      // Almost always an unsubscribed marketplace account rather than a
+      // malformed key: holding an account is not the same as selecting a plan.
+      return "Flight provider rejected the API key — check the key and that the account is subscribed";
+    case "aero_429":
+      return "Flight provider quota reached — try again shortly";
+    case "provider_unavailable":
+      return "Flight provider is unavailable right now";
+    case "aero_unreachable":
+      return "Couldn't reach the flight provider — network or address problem";
+    default: {
+      // aero_http_<status>: any other non-2xx. Worth naming the code, since
+      // 402 usually means the plan isn't active and 400/404 usually means
+      // the request address is wrong — very different fixes.
+      const m = /^aero_http_(\d{3})$/.exec(reason ?? "");
+      if (m) {
+        const status = m[1];
+        const hint =
+          status === "402"
+            ? " — subscription not active"
+            : status === "400" || status === "404"
+              ? " — provider didn't recognise the request"
+              : status.startsWith("5")
+                ? " — provider having problems, try again shortly"
+                : "";
+        return `Flight provider returned HTTP ${status}${hint}`;
+      }
+      return `Couldn't find ${code} — the provider has no record of it for this date`;
+    }
+  }
 }

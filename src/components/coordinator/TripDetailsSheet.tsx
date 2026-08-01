@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
 import { formatMaltaDateTime, formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -162,7 +163,25 @@ export function TripDetailsSheet({
   const [boardingReviewOpen, setBoardingReviewOpen] = useState(false);
   const [boardingNote, setBoardingNote] = useState("");
 
-  const isRealJobId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+  const isRealJobIdRaw = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+
+  // Protected server fns 401 when there is no session (e.g. after sign-out while
+  // the sheet is mounted, or on the /auth screen). Gate every polling query on it.
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) setHasSession(!!data.session);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setHasSession(!!session);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+  const isRealJobId = isRealJobIdRaw && hasSession;
 
   const { data: paxActivity } = useQuery({
     queryKey: ["pax-activity", job.id],

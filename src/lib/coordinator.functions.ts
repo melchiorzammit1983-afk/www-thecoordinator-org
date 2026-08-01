@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
-import { parseFlightCode, looksLikeVessel } from "./flight-code";
+import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 
 type Ctx = { supabase: any; userId: string };
@@ -2646,8 +2646,53 @@ function liveStatusProviderEnabled(): boolean {
 // AeroDataBox (real airline schedule data) is the only live-status provider.
 // Optional — without a key, flight lookups report "not configured" rather
 // than failing.
+//
+// It is resold through two marketplaces with different front doors. The
+// upstream service and the response bodies are identical, so only the host,
+// the auth header and the env var differ — everything downstream of the
+// fetch is provider-agnostic. api.market wins when both keys are present.
+type AeroProvider = {
+  name: "api.market" | "rapidapi";
+  url: (flightNumber: string, date: string) => string;
+  headers: Record<string, string>;
+};
+
+/**
+ * Ordered list of front doors to try. api.market is preferred (it's the
+ * paid marketplace this account is meant to run on), but a key can be
+ * valid while the marketplace subscription is inactive — which returns a
+ * 400 "No active Subscription found." rather than 401/403. So instead of
+ * a single provider we build a chain and fail over on any provider-level
+ * error (auth, subscription, quota), including every RapidAPI key we hold.
+ */
+function aeroProviders(): AeroProvider[] {
+  const list: AeroProvider[] = [];
+  const market = process.env.AERODATABOX_API_MARKET_KEY;
+  if (market) {
+    list.push({
+      name: "api.market",
+      url: (f, d) =>
+        `https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/${encodeURIComponent(f)}/${d}`,
+      // api.market renamed this header when it rebranded from MagicAPI.
+      // Both are sent because an unrecognised header is simply ignored.
+      headers: { "x-api-market-key": market, "x-magicapi-key": market, accept: "application/json" },
+    });
+  }
+  const rapidKeys = [process.env.AERODATABOX_API_KEY, process.env.aerodata].filter(
+    (k, i, a): k is string => !!k && a.indexOf(k) === i,
+  );
+  for (const rapid of rapidKeys) {
+    list.push({
+      name: "rapidapi",
+      url: (f, d) => `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(f)}/${d}`,
+      headers: { "X-RapidAPI-Key": rapid, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" },
+    });
+  }
+  return list;
+}
+
 function aeroDataBoxEnabled(): boolean {
-  return !!process.env.AERODATABOX_API_KEY;
+  return aeroProviders().length > 0;
 }
 const aeroDataBoxCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const AERODATABOX_TTL_MS = 20 * 60_000;
@@ -2781,8 +2826,8 @@ async function fetchLiveStatusViaAeroDataBox(
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  const key = process.env.AERODATABOX_API_KEY;
-  if (!key) return { ok: false, reason: "not_configured" };
+  const providers = aeroProviders();
+  if (!providers.length) return { ok: false, reason: "not_configured" };
 
   const parsed = parseFlightCode(identifier);
   if (!parsed.ok || !parsed.iata || !parsed.number) return { ok: false, reason: "invalid_code" };
@@ -2804,27 +2849,54 @@ async function fetchLiveStatusViaAeroDataBox(
   const cached = aeroDataBoxCache.get(cacheKey);
   if (cached && Date.now() - cached.at < AERODATABOX_TTL_MS) return cached.value;
 
-  for (const date of datesToTry) {
-    try {
-      const res = await fetch(
-        `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(flightNumber)}/${date}`,
-        { headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" } },
-      );
-      if (res.status === 404) continue; // no flight on this date — try the other candidate date
-      if (res.status === 401 || res.status === 403) {
-        // Bad/expired/unsubscribed RapidAPI key — distinct from "no data",
-        // so this doesn't silently look identical to a real not-found.
-        console.error(`[fetchLiveStatusViaAeroDataBox] ${res.status} — check AERODATABOX_API_KEY / RapidAPI subscription`);
-        const value: LiveStatusResult = { ok: false, reason: `aero_${res.status}` };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (res.status === 429) {
-        const value: LiveStatusResult = { ok: false, reason: "aero_429" };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (!res.ok) continue;
+  // What actually went wrong on the last attempt, so a failure can name its
+  // cause instead of defaulting to "no record for this date". Without this,
+  // a wrong URL, a 402 from an unsubscribed plan and a DNS failure are all
+  // indistinguishable from a flight that genuinely isn't scheduled — and
+  // production has no readable server logs to fall back on.
+  let lastFailure: string | null = null;
+
+  // Try each configured front door in turn. A provider-level failure
+  // (bad key, inactive marketplace subscription, exhausted quota) must
+  // fall through to the next provider instead of ending the lookup.
+  for (const provider of providers) {
+    let providerFailed = false;
+    for (const date of datesToTry) {
+      try {
+        const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
+        if (res.status === 404) continue; // no flight on this date — try the other candidate date
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          // Bad/expired/unsubscribed key, or quota exhausted.
+          const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
+          );
+          lastFailure = `aero_${res.status}`;
+          providerFailed = true;
+          break;
+        }
+        if (!res.ok) {
+          // Any other non-2xx: capture the status and a short body snippet.
+          // api.market answers an inactive plan with 400 "No active
+          // Subscription found." — treat that as a provider-level failure
+          // so the next configured key gets a turn.
+          let detail = "";
+          try {
+            detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+          } catch {
+            /* body already consumed or unreadable — status alone still helps */
+          }
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
+          );
+          const noSub = /no active subscription|invalid x-api-market-key|invalid x-magicapi-key/i.test(detail);
+          lastFailure = noSub ? "aero_no_subscription" : `aero_http_${res.status}`;
+          if (noSub || res.status === 402) {
+            providerFailed = true;
+            break;
+          }
+          continue;
+        }
       // AeroDataBox returns a bare object (not an array) when there's
       // exactly one match for a flight number + date — must handle both.
       const json = (await res.json()) as AeroFlight | AeroFlight[];
@@ -2878,12 +2950,22 @@ async function fetchLiveStatusViaAeroDataBox(
       };
       aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
       return value;
-    } catch {
+    } catch (e) {
+      // DNS/TLS/connect failure, or malformed JSON. Silently continuing here
+      // is what made an unreachable provider look like an unknown flight.
+      console.error(
+        `[fetchLiveStatusViaAeroDataBox] request to ${provider.name} threw for ${flightNumber}/${date}: ${(e as Error)?.message ?? e}`,
+      );
+      lastFailure = "aero_unreachable";
       continue;
+      }
     }
+    if (providerFailed) continue; // next configured key / marketplace
   }
 
-  const value: LiveStatusResult = { ok: false, reason: "no_result" };
+  // Only report a genuine "not in the schedule data" when every attempt was
+  // a clean 404. Anything else keeps its real cause.
+  const value: LiveStatusResult = { ok: false, reason: lastFailure ?? "no_result" };
   aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
@@ -2960,14 +3042,7 @@ export async function applyLiveStatusToJob(
   const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
 
   if (!result.ok) {
-    const reasonNote =
-      result.reason === "not_configured"
-        ? "Live status not configured"
-        : result.reason === "invalid_code"
-          ? `Couldn't recognise "${code}" as a flight code — check it`
-          : result.reason === "vessel_in_flight_field"
-            ? `"${code}" looks like a vessel — move it to the vessel field`
-            : `Couldn't find ${code} — please verify the code`;
+    const reasonNote = liveStatusFailureMessage(result.reason, code);
     await supabaseAdmin
       .from("jobs")
       .update({
@@ -5252,12 +5327,10 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     }
 
     if (transportError || !res) {
-      if (co)
       throw new Error("AI is temporarily unreachable — please try again");
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      if (co)
       if (res.status === 429) throw new Error("AI is rate limited — please try again in a moment");
       if (res.status === 503) throw new Error("AI is temporarily overloaded — please try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);

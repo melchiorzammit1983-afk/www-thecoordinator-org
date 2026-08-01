@@ -14,6 +14,7 @@ import {
 import { format, addDays, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import { formatMaltaDateTime, formatMaltaTime, isoToMaltaDateTime } from "@/lib/time";
+import { liveStatusFailureMessage } from "@/lib/flight-code";
 import {
   Plus,
   Copy,
@@ -1100,7 +1101,11 @@ function CalendarPage() {
           paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0, 5)}` : ""
         }
         drivers={drivers ?? []}
-        initialPax={paxJob?.pax ?? []}
+        initialPax={(paxJob?.pax ?? []).map((p) => ({
+          ...p,
+          status: p.status ?? "pending",
+          boarded_at: p.boarded_at ?? null,
+        }))}
       />
       <TripChatDialog
         open={!!chatJob}
@@ -3613,7 +3618,10 @@ function RefreshFlightButton({ jobId, kind }: { jobId: string; kind: "flight" | 
         const fallback = `${(f.status ?? "unknown").replace(/_/g, " ")}${timeTxt ? ` · ${timeTxt}` : ""}`;
         toast.message(`${label} ${f.code}: ${f.note || fallback}`);
       } else if (f && !f.ok) {
-        toast.error(f.reason ? String(f.reason) : "Couldn't refresh status");
+        // Raw reason codes ("aero_403", "no_result") meant nothing to a
+        // coordinator and hid whether the problem was theirs or the
+        // provider's — show the same plain-English cause we persist.
+        toast.error(liveStatusFailureMessage(f.reason, f.code ?? ""));
       }
     },
     onError: (e: Error) => toast.error(e.message),
