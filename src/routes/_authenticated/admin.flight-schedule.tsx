@@ -6,7 +6,7 @@ import { ImportPreviewWorkflow } from "@/components/import-engine/ImportPreviewW
 import { getFlightScheduleOverview } from "@/lib/flight-schedule.functions";
 import {
   flightScheduleImportFields,
-  validateFlightScheduleRecord,
+  flightScheduleValidationRules,
 } from "@/lib/flight-schedule-import";
 import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/spreadsheet.adapter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,7 +59,7 @@ function FlightSchedulePage() {
       <ImportPreviewWorkflow
         sourceAdapter={spreadsheetFlightScheduleAdapter}
         fields={flightScheduleImportFields}
-        validateRecord={validateFlightScheduleRecord}
+        rules={flightScheduleValidationRules}
       />
 
       <Card>

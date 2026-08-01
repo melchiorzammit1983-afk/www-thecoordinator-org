@@ -1,4 +1,13 @@
-import type { ImportField, ImportValidationResult } from "@/lib/import-engine/types";
+import {
+  customRule,
+  dateRule,
+  duplicateRule,
+  enumRule,
+  regexRule,
+  requiredFieldRule,
+  timeRule,
+} from "@/lib/import-engine/rules";
+import type { ImportField, ValidationRule } from "@/lib/import-engine/types";
 import type { FlightScheduleRecord } from "@/lib/flight-schedule-sources/types";
 
 export const flightScheduleImportFields: ImportField[] = [
@@ -55,31 +64,48 @@ export const flightScheduleImportFields: ImportField[] = [
   },
 ];
 
-const datePattern = /^\d{4}-\d{1,2}-\d{1,2}$|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$/;
-const timePattern = /^([01]?\d|2[0-3]):[0-5]\d(?:\s?(?:am|pm))?$/i;
-
-export function validateFlightScheduleRecord(values: FlightScheduleRecord): ImportValidationResult {
-  const errors = [] as ImportValidationResult["errors"];
-  const warnings = [] as ImportValidationResult["warnings"];
-  if (values.date && !datePattern.test(values.date))
-    errors.push({ field: "date", message: "Date must be YYYY-MM-DD or DD/MM/YYYY." });
-  if (values.direction && !/^(arrival|departure|arr|dep)$/i.test(values.direction))
-    errors.push({ field: "direction", message: "Use Arrival or Departure." });
-  if (values.scheduledTime && !timePattern.test(values.scheduledTime))
-    errors.push({
-      field: "scheduledTime",
-      message: "Scheduled Time must be a valid time (for example 14:30).",
-    });
-  if (values.flightNumber && !/^[A-Z0-9]{2,4}\s?\d{1,4}[A-Z]?$/i.test(values.flightNumber))
-    warnings.push({
-      field: "flightNumber",
-      message: "Flight number format is unusual; verify it before a future import.",
-    });
-  if (
-    values.origin &&
-    values.destination &&
-    values.origin.trim().toLocaleLowerCase() === values.destination.trim().toLocaleLowerCase()
-  )
-    warnings.push({ field: "destination", message: "Origin and destination are the same." });
-  return { errors, warnings };
-}
+export const flightScheduleValidationRules: ValidationRule<FlightScheduleRecord>[] = [
+  requiredFieldRule("flightNumber", "Flight Number"),
+  requiredFieldRule("date", "Date"),
+  requiredFieldRule("direction", "Arrival / Departure"),
+  requiredFieldRule("scheduledTime", "Scheduled Time"),
+  requiredFieldRule("airline", "Airline"),
+  requiredFieldRule("origin", "Origin"),
+  requiredFieldRule("destination", "Destination"),
+  regexRule("flightNumber", /^[A-Z0-9]{2,4}\s?\d{1,4}[A-Z]?$/i, {
+    normalise: (value) => value.toLocaleUpperCase().replace(/\s+/g, " ").trim(),
+    severity: "warning",
+    message: "Flight number format is unusual; verify it before a future import.",
+  }),
+  dateRule("date"),
+  timeRule("scheduledTime"),
+  enumRule("direction", ["Arrival", "Departure"], {
+    message: "Use Arrival or Departure.",
+  }),
+  regexRule("origin", /^[A-Z]{3}$/, {
+    normalise: (value) => value.toLocaleUpperCase(),
+    message: "Origin must be a three-letter IATA airport code.",
+  }),
+  regexRule("destination", /^[A-Z]{3}$/, {
+    normalise: (value) => value.toLocaleUpperCase(),
+    message: "Destination must be a three-letter IATA airport code.",
+  }),
+  duplicateRule(["flightNumber", "date", "direction", "scheduledTime"]),
+  customRule(({ values }) => {
+    if (
+      values.origin &&
+      values.destination &&
+      values.origin.toLocaleLowerCase() === values.destination.toLocaleLowerCase()
+    ) {
+      return [
+        {
+          rule: "same-airport",
+          field: "destination",
+          severity: "warning",
+          message: "Origin and destination are the same.",
+        },
+      ];
+    }
+    return [];
+  }),
+];
