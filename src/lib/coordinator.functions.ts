@@ -2513,32 +2513,42 @@ type AeroProvider = {
   headers: Record<string, string>;
 };
 
-function aeroProvider(): AeroProvider | null {
+/**
+ * Ordered list of front doors to try. api.market is preferred (it's the
+ * paid marketplace this account is meant to run on), but a key can be
+ * valid while the marketplace subscription is inactive — which returns a
+ * 400 "No active Subscription found." rather than 401/403. So instead of
+ * a single provider we build a chain and fail over on any provider-level
+ * error (auth, subscription, quota), including every RapidAPI key we hold.
+ */
+function aeroProviders(): AeroProvider[] {
+  const list: AeroProvider[] = [];
   const market = process.env.AERODATABOX_API_MARKET_KEY;
   if (market) {
-    return {
+    list.push({
       name: "api.market",
       url: (f, d) =>
         `https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/${encodeURIComponent(f)}/${d}`,
       // api.market renamed this header when it rebranded from MagicAPI.
-      // Both are sent because we cannot reach the host from CI to confirm
-      // which one the account is on, and an unrecognised header is ignored.
-      headers: { "x-api-market-key": market, "x-magicapi-key": market },
-    };
+      // Both are sent because an unrecognised header is simply ignored.
+      headers: { "x-api-market-key": market, "x-magicapi-key": market, accept: "application/json" },
+    });
   }
-  const rapid = process.env.AERODATABOX_API_KEY;
-  if (rapid) {
-    return {
+  const rapidKeys = [process.env.AERODATABOX_API_KEY, process.env.aerodata].filter(
+    (k, i, a): k is string => !!k && a.indexOf(k) === i,
+  );
+  for (const rapid of rapidKeys) {
+    list.push({
       name: "rapidapi",
       url: (f, d) => `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(f)}/${d}`,
       headers: { "X-RapidAPI-Key": rapid, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" },
-    };
+    });
   }
-  return null;
+  return list;
 }
 
 function aeroDataBoxEnabled(): boolean {
-  return aeroProvider() !== null;
+  return aeroProviders().length > 0;
 }
 const aeroDataBoxCache = new Map<string, { at: number; value: LiveStatusResult }>();
 const AERODATABOX_TTL_MS = 20 * 60_000;
@@ -2672,8 +2682,8 @@ async function fetchLiveStatusViaAeroDataBox(
   pickupIso: string | null,
   side?: FlightSide,
 ): Promise<LiveStatusResult> {
-  const provider = aeroProvider();
-  if (!provider) return { ok: false, reason: "not_configured" };
+  const providers = aeroProviders();
+  if (!providers.length) return { ok: false, reason: "not_configured" };
 
   const parsed = parseFlightCode(identifier);
   if (!parsed.ok || !parsed.iata || !parsed.number) return { ok: false, reason: "invalid_code" };
@@ -2702,45 +2712,47 @@ async function fetchLiveStatusViaAeroDataBox(
   // production has no readable server logs to fall back on.
   let lastFailure: string | null = null;
 
-  for (const date of datesToTry) {
-    try {
-      const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
-      if (res.status === 404) continue; // no flight on this date — try the other candidate date
-      if (res.status === 401 || res.status === 403) {
-        // Bad/expired/unsubscribed key — distinct from "no data", so this
-        // doesn't silently look identical to a real not-found. Note that
-        // holding an account is not the same as being subscribed to the
-        // API: both marketplaces 403 until a plan is selected.
-        const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
-        console.error(
-          `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
-        );
-        const value: LiveStatusResult = { ok: false, reason: `aero_${res.status}` };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (res.status === 429) {
-        const value: LiveStatusResult = { ok: false, reason: "aero_429" };
-        aeroDataBoxCache.set(cacheKey, { at: Date.now(), value });
-        return value;
-      }
-      if (!res.ok) {
-        // Any other non-2xx: capture the status and a short body snippet.
-        // 402 in particular is what an unsubscribed plan tends to return,
-        // and a 400/404 here usually means the request path is wrong for
-        // this marketplace rather than the flight being absent.
-        let detail = "";
-        try {
-          detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
-        } catch {
-          /* body already consumed or unreadable — status alone still helps */
+  // Try each configured front door in turn. A provider-level failure
+  // (bad key, inactive marketplace subscription, exhausted quota) must
+  // fall through to the next provider instead of ending the lookup.
+  for (const provider of providers) {
+    let providerFailed = false;
+    for (const date of datesToTry) {
+      try {
+        const res = await fetch(provider.url(flightNumber, date), { headers: provider.headers });
+        if (res.status === 404) continue; // no flight on this date — try the other candidate date
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          // Bad/expired/unsubscribed key, or quota exhausted.
+          const envVar = provider.name === "api.market" ? "AERODATABOX_API_MARKET_KEY" : "AERODATABOX_API_KEY";
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] ${res.status} from ${provider.name} — check ${envVar} and that the account is subscribed to the AeroDataBox API`,
+          );
+          lastFailure = `aero_${res.status}`;
+          providerFailed = true;
+          break;
         }
-        console.error(
-          `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
-        );
-        lastFailure = `aero_http_${res.status}`;
-        continue;
-      }
+        if (!res.ok) {
+          // Any other non-2xx: capture the status and a short body snippet.
+          // api.market answers an inactive plan with 400 "No active
+          // Subscription found." — treat that as a provider-level failure
+          // so the next configured key gets a turn.
+          let detail = "";
+          try {
+            detail = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+          } catch {
+            /* body already consumed or unreadable — status alone still helps */
+          }
+          console.error(
+            `[fetchLiveStatusViaAeroDataBox] HTTP ${res.status} from ${provider.name} for ${flightNumber}/${date}${detail ? ` — ${detail}` : ""}`,
+          );
+          const noSub = /no active subscription|invalid x-api-market-key|invalid x-magicapi-key/i.test(detail);
+          lastFailure = noSub ? "aero_no_subscription" : `aero_http_${res.status}`;
+          if (noSub || res.status === 402) {
+            providerFailed = true;
+            break;
+          }
+          continue;
+        }
       // AeroDataBox returns a bare object (not an array) when there's
       // exactly one match for a flight number + date — must handle both.
       const json = (await res.json()) as AeroFlight | AeroFlight[];
@@ -2802,7 +2814,9 @@ async function fetchLiveStatusViaAeroDataBox(
       );
       lastFailure = "aero_unreachable";
       continue;
+      }
     }
+    if (providerFailed) continue; // next configured key / marketplace
   }
 
   // Only report a genuine "not in the schedule data" when every attempt was
@@ -5169,12 +5183,10 @@ export const extractTripsFromText = createServerFn({ method: "POST" })
     }
 
     if (transportError || !res) {
-      if (co)
       throw new Error("AI is temporarily unreachable — please try again");
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      if (co)
       if (res.status === 429) throw new Error("AI is rate limited — please try again in a moment");
       if (res.status === 503) throw new Error("AI is temporarily overloaded — please try again in a moment");
       throw new Error(`Gemini error ${res.status}: ${body.slice(0, 300)}`);

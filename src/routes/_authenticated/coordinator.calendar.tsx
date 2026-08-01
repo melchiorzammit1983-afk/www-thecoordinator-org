@@ -1101,7 +1101,11 @@ function CalendarPage() {
           paxJob ? `${paxJob.from_location} → ${paxJob.to_location} · ${paxJob.date} ${paxJob.time?.slice(0, 5)}` : ""
         }
         drivers={drivers ?? []}
-        initialPax={paxJob?.pax ?? []}
+        initialPax={(paxJob?.pax ?? []).map((p) => ({
+          ...p,
+          status: p.status ?? "pending",
+          boarded_at: p.boarded_at ?? null,
+        }))}
       />
       <TripChatDialog
         open={!!chatJob}
