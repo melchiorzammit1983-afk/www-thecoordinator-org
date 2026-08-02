@@ -4309,6 +4309,7 @@ export type Database = {
           safety_flag_note: string | null
           scheduled_transport_pickup_offset_minutes: number | null
           self_assigned_user_id: string | null
+          ship_event_id: string | null
           source: string
           status: Database["public"]["Enums"]["job_status"]
           time: string
@@ -4451,6 +4452,7 @@ export type Database = {
           safety_flag_note?: string | null
           scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time: string
@@ -4593,6 +4595,7 @@ export type Database = {
           safety_flag_note?: string | null
           scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
@@ -4655,6 +4658,13 @@ export type Database = {
             columns: ["parent_job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
             referencedColumns: ["id"]
           },
         ]
@@ -6392,6 +6402,80 @@ export type Database = {
           },
         ]
       }
+      ship_eta_review_completions: {
+        Row: {
+          company_id: string
+          eta_history_id: string
+          id: string
+          reviewed_at: string
+          reviewed_by: string | null
+        }
+        Insert: {
+          company_id: string
+          eta_history_id: string
+          id?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          eta_history_id?: string
+          id?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_eta_review_completions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_eta_review_completions_eta_history_id_fkey"
+            columns: ["eta_history_id"]
+            isOneToOne: true
+            referencedRelation: "ship_event_eta_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_eta_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          id: string
+          new_eta: string
+          previous_eta: string
+          ship_event_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_eta: string
+          previous_eta: string
+          ship_event_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_eta?: string
+          previous_eta?: string
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_eta_history_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_events: {
         Row: {
           company_id: string
@@ -7583,6 +7667,31 @@ export type Database = {
           _note?: string
         }
         Returns: number
+      }
+      update_ship_event_eta_with_history: {
+        Args: {
+          p_changed_by: string
+          p_company_id: string
+          p_eta: string
+          p_ship_event_id: string
+        }
+        Returns: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          eta: string
+          id: string
+          port: string
+          ship_name: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "ship_events"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       verify_trip_audit_chain: {
         Args: { _job_id: string }
