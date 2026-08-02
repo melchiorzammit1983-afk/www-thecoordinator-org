@@ -5,7 +5,7 @@ import { AlertCircle, Anchor, CalendarClock, Plane, RefreshCw, Route as RouteIco
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { completeShipEtaReview, getOperationsInbox } from "@/lib/coordinator.functions";
+import { completeShipEtaReview, completeTransportConflictReview, getOperationsInbox } from "@/lib/coordinator.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operations")({
@@ -16,15 +16,18 @@ export const Route = createFileRoute("/_authenticated/coordinator/operations")({
 function OperationsCentrePage() {
   const inboxFn = useServerFn(getOperationsInbox);
   const completeShipEtaReviewFn = useServerFn(completeShipEtaReview);
+  const completeTransportConflictReviewFn = useServerFn(completeTransportConflictReview);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["operations-inbox"],
     queryFn: () => inboxFn(),
     refetchInterval: 60_000,
   });
   const completeReview = useMutation({
-    mutationFn: (etaHistoryId: string) => completeShipEtaReviewFn({ data: { eta_history_id: etaHistoryId } }),
+    mutationFn: ({ kind, id }: { kind: "ship_eta" | "transport_conflict"; id: string }) => kind === "ship_eta"
+      ? completeShipEtaReviewFn({ data: { eta_history_id: id } })
+      : completeTransportConflictReviewFn({ data: { job_id: id } }),
     onSuccess: (result) => {
-      toast.success(result.alreadyCompleted ? "This Ship ETA review was already completed." : "Ship ETA review marked complete.");
+      toast.success(result.alreadyCompleted ? "This review was already completed." : "Review marked complete.");
       refetch();
     },
     onError: (reason: Error) => toast.error(reason.message || "Ship ETA review could not be completed."),
@@ -85,7 +88,7 @@ function OperationsCentrePage() {
                     <span className="text-xs text-muted-foreground">
                       {item.affectedTrips} affected trip{item.affectedTrips === 1 ? "" : "s"}
                     </span>
-                    {item.reviewHistoryId ? (
+                    {item.reviewKind && item.reviewTargetId ? (
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button asChild type="button" variant="outline" size="sm">
                           <Link to={item.href}>{item.action}</Link>
@@ -93,7 +96,7 @@ function OperationsCentrePage() {
                         <Button
                           type="button"
                           size="sm"
-                          onClick={() => completeReview.mutate(item.reviewHistoryId)}
+                          onClick={() => completeReview.mutate({ kind: item.reviewKind, id: item.reviewTargetId })}
                           disabled={completeReview.isPending}
                         >
                           {completeReview.isPending ? "Markingâ€¦" : "Mark Review Complete"}
