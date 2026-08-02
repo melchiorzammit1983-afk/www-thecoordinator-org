@@ -640,6 +640,7 @@ const jobInput = z.object({
   from_flight: z.string().trim().max(40).optional().or(z.literal("")),
   to_flight: z.string().trim().max(40).optional().or(z.literal("")),
   flight_schedule_record_id: z.string().uuid().nullable().optional(),
+  ship_event_id: z.string().uuid().nullable().optional(),
   scheduled_transport_pickup_offset_minutes: pickupOffsetMinutesInput.nullable().optional(),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
@@ -740,10 +741,22 @@ async function resolveScheduledTransportPickup(
   supabaseAdmin: any,
   companyId: string,
   flightScheduleRecordId: string | null | undefined,
+  shipEventId: string | null | undefined,
   requestedOffsetMinutes: number | null | undefined,
   fallbackDate: string,
   fallbackTime: string,
 ) {
+  if (flightScheduleRecordId && shipEventId) throw new Error("Choose either a Flight or a Ship, not both.");
+  if (shipEventId) {
+    const { data: ship, error } = await (supabaseAdmin as any).from("ship_events").select("eta, company_id").eq("id", shipEventId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!ship || ship.company_id !== companyId) throw new Error("Choose a Ship from your company.");
+    const { data: company, error: companyError } = await (supabaseAdmin as any).from("companies").select("default_arrival_pickup_offset_minutes").eq("id", companyId).single();
+    if (companyError) throw new Error(companyError.message);
+    const offset_minutes = requestedOffsetMinutes ?? (company?.default_arrival_pickup_offset_minutes ?? 0);
+    const pickup_at = new Date(new Date(ship.eta).getTime() + offset_minutes * 60_000).toISOString();
+    return { ...isoToMaltaDateTime(pickup_at), pickup_at, offset_minutes };
+  }
   if (!flightScheduleRecordId) {
     return {
       date: fallbackDate,
@@ -1054,6 +1067,7 @@ export const createJob = createServerFn({ method: "POST" })
       supabaseAdmin,
       c.id,
       data.flight_schedule_record_id,
+      data.ship_event_id,
       data.scheduled_transport_pickup_offset_minutes,
       data.date,
       data.time,
@@ -1071,6 +1085,7 @@ export const createJob = createServerFn({ method: "POST" })
         from_flight: (data.from_flight || "").toUpperCase() || null,
         to_flight: (data.to_flight || "").toUpperCase() || null,
         flight_schedule_record_id: data.flight_schedule_record_id ?? null,
+        ship_event_id: data.ship_event_id ?? null,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
@@ -1126,7 +1141,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
@@ -1134,6 +1149,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (e1 || !existing) throw new Error("Job not found");
     const selectedFlightId = data.flight_schedule_record_id;
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
+    const existingShipId = (existing as any).ship_event_id as string | null;
     if (selectedFlightId && selectedFlightId !== existingFlightId) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, selectedFlightId);
     }
@@ -1142,6 +1158,7 @@ export const updateJob = createServerFn({ method: "POST" })
       supabaseAdmin,
       c.id,
       effectiveFlightId,
+      data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
       data.scheduled_transport_pickup_offset_minutes === undefined
         ? ((existing as any).scheduled_transport_pickup_offset_minutes ?? null)
         : data.scheduled_transport_pickup_offset_minutes,
@@ -1172,6 +1189,7 @@ export const updateJob = createServerFn({ method: "POST" })
         from_flight: (data.from_flight || "").toUpperCase() || null,
         to_flight: (data.to_flight || "").toUpperCase() || null,
         flight_schedule_record_id: data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id,
+        ship_event_id: data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
@@ -1231,6 +1249,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
     if (data.tracking_kind !== undefined) patch.tracking_kind = data.tracking_kind;
     if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
+    if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
     if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;
