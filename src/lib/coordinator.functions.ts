@@ -1059,10 +1059,10 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
 
     const isAdmin = await getIsAdmin(context.userId);
-    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult] = await Promise.all([
+    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult] = await Promise.all([
       tables
         .from("flight_schedule_records")
-        .select("id, scheduled_date, scheduled_time, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+        .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
         .eq("flight_schedule_versions.status", "active")
         .gte("scheduled_date", today)
         .order("scheduled_date", { ascending: true })
@@ -1070,7 +1070,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         .limit(10_000),
       tables
         .from("jobs")
-        .select("id, flight_schedule_record_id, ship_event_id, date, time, from_location, to_location")
+        .select("id, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, date, time, from_location, to_location")
         .gte("date", today)
         .or(jobScope)
         .order("date", { ascending: true })
@@ -1102,8 +1102,10 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         .select("eta_history_id")
         .eq("company_id", c.id)
         .limit(10_000),
+      tables.from("companies").select("minimum_connection_buffer_minutes").eq("id", c.id).single(),
+      tables.from("transport_conflict_reviews").select("job_id").eq("company_id", c.id).limit(10_000),
     ]);
-    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult]) {
+    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult]) {
       if (result.error) throw new Error(result.error.message);
     }
 
@@ -1115,6 +1117,10 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       if (!job.ship_event_id) continue;
       linkedTripCountByShipId.set(job.ship_event_id, (linkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
     }
+    const activeFlights = (activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>;
+    const flightsById = new Map(activeFlights.map((flight) => [flight.id, flight]));
+    const shipsById = new Map(((shipsResult.data ?? []) as OperationsInboxShip[]).map((ship) => [ship.id, ship]));
+    const connectionBufferMinutes = (companyResult.data as { minimum_connection_buffer_minutes?: number } | null)?.minimum_connection_buffer_minutes ?? 60;
     const drafts = (draftVersionsResult.data ?? []) as Array<{ id: string; name: string; created_at: string }>;
     const draftRecordCounts = new Map<string, number>();
     if (drafts.length) {
@@ -1129,7 +1135,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       }
     }
 
-    const flightsWithoutTrips = ((activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>)
+    const flightsWithoutTrips = activeFlights
       .filter((flight) => !linkedFlightIds.has(flight.id))
       .map((flight) => ({
         id: `flight-${flight.id}`,
@@ -1141,6 +1147,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Link a trip",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const shipsWithoutTrips = ((shipsResult.data ?? []) as OperationsInboxShip[])
       .filter((ship) => !linkedShipIds.has(ship.id))
@@ -1154,6 +1162,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Link a trip",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const tripsWithoutTransport = jobs
       .filter((job) => !job.flight_schedule_record_id && !job.ship_event_id)
@@ -1167,6 +1177,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Add transport",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const draftSchedules = drafts.map((draft) => ({
       id: `draft-${draft.id}`,
@@ -1178,6 +1190,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       action: "Review schedule",
       href: "/admin/flight-schedule",
       reviewHistoryId: null,
+      reviewKind: null,
+      reviewTargetId: null,
     }));
     // History is newest first. Only the latest uncompleted change for a ship is
     // actionable; older changes are superseded by the current ETA.
@@ -1208,12 +1222,37 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
           action: "Review trip(s)",
           href: "/coordinator/calendar",
           reviewHistoryId: change.id,
+          reviewKind: "ship_eta" as const,
+          reviewTargetId: change.id,
         };
       });
 
+    const reviewedConflictJobIds = new Set(
+      ((transportConflictReviewsResult.data ?? []) as Array<{ job_id: string }>).map((review) => review.job_id),
+    );
+    const transportConflicts = jobs
+      .filter((job) => !!job.ship_event_id && !!job.onward_flight_schedule_record_id)
+      .filter((job) => !reviewedConflictJobIds.has(job.id))
+      .map((job) => ({ job, ship: shipsById.get(job.ship_event_id!), flight: flightsById.get(job.onward_flight_schedule_record_id!) }))
+      .filter((entry): entry is { job: OperationsInboxJob; ship: OperationsInboxShip; flight: AirportOperationsFlight } => !!entry.ship && !!entry.flight && entry.flight.direction === "departure")
+      .filter(({ ship, flight }) => new Date(ship.eta).getTime() + connectionBufferMinutes * 60_000 > new Date(maltaWallTimeToUtcIso(flight.scheduled_date, flight.scheduled_time)).getTime())
+      .map(({ job, ship, flight }) => ({
+        id: `transport-conflict-${job.id}`,
+        type: "Ship-to-flight connection conflict" as const,
+        priority: "high" as const,
+        transport: `${ship.ship_name} → ${flight.flight_number}`,
+        detail: `Ship ETA ${formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} + ${connectionBufferMinutes} min exceeds flight departure ${flight.scheduled_date} ${flight.scheduled_time.slice(0, 5)}`,
+        affectedTrips: 1,
+        action: "Review trip",
+        href: "/coordinator/calendar",
+        reviewHistoryId: null,
+        reviewKind: "transport_conflict" as const,
+        reviewTargetId: job.id,
+      }));
+
     return {
-      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length,
-      items: [...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + transportConflicts.length,
+      items: [...transportConflicts, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 
@@ -1272,6 +1311,49 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
     });
     if (completionError && completionError.code !== "23505") throw new Error(completionError.message);
     return { completed: completionError?.code !== "23505", alreadyCompleted: completionError?.code === "23505" };
+  });
+
+/**
+ * Completes an explicitly linked Ship-to-Flight conflict review. The conflict
+ * itself is never stored: it is recalculated against current ETA, active
+ * departure, and the company buffer before the immutable audit is written.
+ */
+export const completeTransportConflictReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const tables = supabaseAdmin as any;
+    const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
+    const { data: job, error: jobError } = await tables
+      .from("jobs")
+      .select("id, ship_event_id, onward_flight_schedule_record_id")
+      .eq("id", data.job_id)
+      .or(jobScope)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id || !job?.onward_flight_schedule_record_id) throw new Error("This trip has no explicit Ship-to-Flight connection to review.");
+
+    const [shipResult, flightResult, companyResult] = await Promise.all([
+      tables.from("ship_events").select("eta, company_id").eq("id", job.ship_event_id).maybeSingle(),
+      tables.from("flight_schedule_records").select("scheduled_date, scheduled_time, direction, flight_schedule_versions!inner(status)").eq("id", job.onward_flight_schedule_record_id).eq("direction", "departure").eq("flight_schedule_versions.status", "active").maybeSingle(),
+      tables.from("companies").select("minimum_connection_buffer_minutes").eq("id", c.id).single(),
+    ]);
+    for (const result of [shipResult, flightResult, companyResult]) if (result.error) throw new Error(result.error.message);
+    if (!shipResult.data || shipResult.data.company_id !== c.id || !flightResult.data) throw new Error("The explicit transport connection is no longer available for review.");
+    const buffer = companyResult.data?.minimum_connection_buffer_minutes ?? 60;
+    const shipReadyAt = new Date(shipResult.data.eta).getTime() + buffer * 60_000;
+    const flightDepartureAt = new Date(maltaWallTimeToUtcIso(flightResult.data.scheduled_date, flightResult.data.scheduled_time)).getTime();
+    if (shipReadyAt <= flightDepartureAt) throw new Error("This connection is no longer in conflict.");
+
+    const { error: reviewError } = await tables.from("transport_conflict_reviews").insert({
+      job_id: job.id,
+      company_id: c.id,
+      reviewed_by: context.userId,
+    });
+    if (reviewError && reviewError.code !== "23505") throw new Error(reviewError.message);
+    return { completed: reviewError?.code !== "23505", alreadyCompleted: reviewError?.code === "23505" };
   });
 
 async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
