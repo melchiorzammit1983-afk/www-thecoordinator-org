@@ -3519,14 +3519,27 @@ export async function applyLiveStatusToJob(
     to_location?: string | null;
     pickup_at: string | null;
     tracking_kind?: string | null;
+    flight_schedule_record_id?: string | null;
+    ship_event_id?: string | null;
   },
 ): Promise<LiveStatusResult> {
+  if (job.ship_event_id) {
+    const { data: ship, error } = await (supabaseAdmin as any)
+      .from("ship_events")
+      .select("eta, company_id")
+      .eq("id", job.ship_event_id)
+      .maybeSingle();
+    if (error) return { ok: false, reason: "exception", error: error.message };
+    if (!ship || (job.company_id && ship.company_id !== job.company_id)) return { ok: false, reason: "no_result" };
+    return notTracked(`Ship ETA ${formatMaltaTime(ship.eta)}`);
+  }
+  if (!job.flight_schedule_record_id) return notTracked("No transport linked");
   const code = job.from_flight || job.to_flight;
   if (!code) return { ok: false, reason: "no_code" };
   if (!liveStatusProviderEnabled()) {
     return { ok: false, reason: "provider_unavailable" };
   }
-  const kind: "flight" | "vessel" = (job.tracking_kind as any) === "vessel" ? "vessel" : "flight";
+  const kind: "flight" = "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
   const side: FlightSide | undefined =
     kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
@@ -3592,13 +3605,12 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status",
       )
       .eq("id", jobId)
       .maybeSingle();
     if (!job) return;
-    const code = (job as any).from_flight || (job as any).to_flight;
-    if (!code) return;
+    if (!(job as any).flight_schedule_record_id && !(job as any).ship_event_id) return;
     if ((job as any).status === "completed" || (job as any).status === "cancelled") return;
 
     const meterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
@@ -3992,7 +4004,7 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind, status, flight_status_updated_at",
+        "id, company_id, from_location, to_location, date, time, from_flight, to_flight, tracking_kind, flight_schedule_record_id, ship_event_id, status, flight_status_updated_at",
       )
       .eq("id", data.job_id)
       .maybeSingle();
@@ -4005,7 +4017,7 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // isn't finished, and the last lookup is older than the free cache
     // window — otherwise the provider cache returns the same answer and we'd
     // burn refresh points.
-    const hasCode = !finished && !!((job as any).from_flight || (job as any).to_flight);
+    const hasCode = !finished && !!(job as any).flight_schedule_record_id && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
     const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = liveStatusProviderEnabled() && hasCode && !flightFresh;
@@ -4031,10 +4043,27 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
         from_flight: finished ? undefined : ((job as any).from_flight ?? undefined),
         to_flight: finished ? undefined : ((job as any).to_flight ?? undefined),
-        tracking_kind: ((job as any).tracking_kind as any) === "vessel" ? "vessel" : "flight",
+        tracking_kind: (job as any).ship_event_id ? "vessel" : (job as any).flight_schedule_record_id ? "flight" : undefined,
       });
     } catch (e) {
       throw e;
+    }
+    if ((job as any).ship_event_id) {
+      const { data: ship, error: shipError } = await (supabaseAdmin as any)
+        .from("ship_events")
+        .select("eta, company_id")
+        .eq("id", (job as any).ship_event_id)
+        .maybeSingle();
+      if (shipError) throw new Error(shipError.message);
+      if (!ship || ship.company_id !== c.id) throw new Error("Linked Ship Event not found.");
+      preview.flight = {
+        ok: true,
+        status: "unknown",
+        note: `Ship ETA ${formatMaltaTime(ship.eta)}`,
+        scheduled: ship.eta,
+        estimated: ship.eta,
+        confidence: "low",
+      };
     }
 
     const patch: Record<string, any> = {};
