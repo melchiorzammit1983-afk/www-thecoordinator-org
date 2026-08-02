@@ -1,4 +1,4 @@
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Gift, MapPin, Clock, Plane, Ship } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Gift, MapPin, Clock, Plane, Ship, ListChecks } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
 
 export type TabDef = {
@@ -16,6 +16,7 @@ export const TAB_CATALOG: TabDef[] = [
   { id: "home",       to: "/coordinator",                   label: "Home",         icon: LayoutDashboard, exact: true,  feature: null,             defaultSlot: "bottom" },
   { id: "dispatch",   to: "/coordinator/calendar",          label: "Dispatch",     icon: CalendarDays,    exact: false, feature: "dispatch",       defaultSlot: "bottom" },
   { id: "pending",    to: "/coordinator/pending",           label: "Pending",      icon: Inbox,           exact: false, feature: "pending",        defaultSlot: "more" },
+  { id: "operations", to: "/coordinator/operations",        label: "Operations Centre", icon: ListChecks, exact: false, feature: null, defaultSlot: "more" },
   { id: "drivers",    to: "/coordinator/drivers",           label: "Drivers",      icon: Users,           exact: false, feature: "drivers",        defaultSlot: "more" },
   { id: "airport_operations", to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null, defaultSlot: "more" },
   { id: "ship_operations", to: "/coordinator/ship-operations", label: "Ship Operations", icon: Ship, exact: false, feature: null, defaultSlot: "more" },

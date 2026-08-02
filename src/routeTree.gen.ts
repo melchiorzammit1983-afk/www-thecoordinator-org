@@ -49,6 +49,7 @@ import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authen
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
 import { Route as AuthenticatedCoordinatorAirportOperationsRouteImport } from './routes/_authenticated/coordinator.airport-operations'
+import { Route as AuthenticatedCoordinatorOperationsRouteImport } from './routes/_authenticated/coordinator.operations'
 import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
 import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
@@ -320,6 +321,12 @@ const AuthenticatedCoordinatorAirportOperationsRoute =
   AuthenticatedCoordinatorAirportOperationsRouteImport.update({
     id: '/airport-operations',
     path: '/airport-operations',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorOperationsRoute =
+  AuthenticatedCoordinatorOperationsRouteImport.update({
+    id: '/operations',
+    path: '/operations',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorAvailabilityRoute =
@@ -706,6 +713,7 @@ export interface FileRoutesByFullPath {
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
+  '/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -803,6 +811,7 @@ export interface FileRoutesByTo {
   '/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
+  '/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -905,6 +914,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/requests': typeof AuthenticatedAdminRequestsRoute
   '/_authenticated/coordinator/address-settings': typeof AuthenticatedCoordinatorAddressSettingsRoute
   '/_authenticated/coordinator/airport-operations': typeof AuthenticatedCoordinatorAirportOperationsRoute
+  '/_authenticated/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/_authenticated/coordinator/availability': typeof AuthenticatedCoordinatorAvailabilityRoute
   '/_authenticated/coordinator/board-creator': typeof AuthenticatedCoordinatorBoardCreatorRoute
   '/_authenticated/coordinator/branding': typeof AuthenticatedCoordinatorBrandingRoute
@@ -1615,6 +1625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorAirportOperationsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/operations': {
+      id: '/_authenticated/coordinator/operations'
+      path: '/operations'
+      fullPath: '/coordinator/operations'
+      preLoaderRoute: typeof AuthenticatedCoordinatorOperationsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/availability': {
       id: '/_authenticated/coordinator/availability'
       path: '/availability'
@@ -2079,6 +2096,7 @@ const AuthenticatedCoordinatorPortalsRouteWithChildren =
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorAddressSettingsRoute: typeof AuthenticatedCoordinatorAddressSettingsRoute
   AuthenticatedCoordinatorAirportOperationsRoute: typeof AuthenticatedCoordinatorAirportOperationsRoute
+  AuthenticatedCoordinatorOperationsRoute: typeof AuthenticatedCoordinatorOperationsRoute
   AuthenticatedCoordinatorAvailabilityRoute: typeof AuthenticatedCoordinatorAvailabilityRoute
   AuthenticatedCoordinatorBoardCreatorRoute: typeof AuthenticatedCoordinatorBoardCreatorRoute
   AuthenticatedCoordinatorBrandingRoute: typeof AuthenticatedCoordinatorBrandingRoute
@@ -2105,6 +2123,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorAddressSettingsRoute,
     AuthenticatedCoordinatorAirportOperationsRoute:
       AuthenticatedCoordinatorAirportOperationsRoute,
+    AuthenticatedCoordinatorOperationsRoute:
+      AuthenticatedCoordinatorOperationsRoute,
     AuthenticatedCoordinatorAvailabilityRoute:
       AuthenticatedCoordinatorAvailabilityRoute,
     AuthenticatedCoordinatorBoardCreatorRoute:

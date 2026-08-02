@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaTime } from "./time";
+import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaDateTime, formatMaltaTime } from "./time";
+import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 
@@ -719,6 +720,23 @@ type AirportOperationsFlight = {
   destination: string;
 };
 
+type OperationsInboxJob = {
+  id: string;
+  flight_schedule_record_id: string | null;
+  ship_event_id: string | null;
+  date: string;
+  time: string;
+  from_location: string;
+  to_location: string;
+};
+
+type OperationsInboxShip = {
+  id: string;
+  ship_name: string;
+  eta: string;
+  port: string;
+};
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -977,6 +995,130 @@ export const getAirportOperationsDashboard = createServerFn({ method: "GET" })
           fromLocation: job.from_location,
           toLocation: job.to_location,
         })),
+    };
+  });
+
+/**
+ * Read-only, company-scoped operations attention list. This deliberately only
+ * reports relationships that exist now; it does not infer ETA changes or use
+ * unrelated review flags.
+ */
+export const getOperationsInbox = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const today = isoToMaltaDateTime(new Date().toISOString()).date;
+    // Generated types can lag the Lovable-managed migration state.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tables = supabaseAdmin as any;
+    const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
+
+    const isAdmin = await getIsAdmin(context.userId);
+    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult] = await Promise.all([
+      tables
+        .from("flight_schedule_records")
+        .select("id, scheduled_date, scheduled_time, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+        .eq("flight_schedule_versions.status", "active")
+        .gte("scheduled_date", today)
+        .order("scheduled_date", { ascending: true })
+        .order("scheduled_time", { ascending: true })
+        .limit(10_000),
+      tables
+        .from("jobs")
+        .select("id, flight_schedule_record_id, ship_event_id, date, time, from_location, to_location")
+        .gte("date", today)
+        .or(jobScope)
+        .order("date", { ascending: true })
+        .order("time", { ascending: true })
+        .limit(10_000),
+      tables
+        .from("ship_events")
+        .select("id, ship_name, eta, port")
+        .eq("company_id", c.id)
+        .gte("eta", new Date().toISOString())
+        .order("eta", { ascending: true })
+        .limit(10_000),
+      isAdmin
+        ? tables
+            .from("flight_schedule_versions")
+            .select("id, name, created_at")
+            .eq("status", "draft")
+            .order("created_at", { ascending: true })
+            .limit(100)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult]) {
+      if (result.error) throw new Error(result.error.message);
+    }
+
+    const jobs = (jobsResult.data ?? []) as OperationsInboxJob[];
+    const linkedFlightIds = new Set(jobs.map((job) => job.flight_schedule_record_id).filter(Boolean));
+    const linkedShipIds = new Set(jobs.map((job) => job.ship_event_id).filter(Boolean));
+    const drafts = (draftVersionsResult.data ?? []) as Array<{ id: string; name: string; created_at: string }>;
+    const draftRecordCounts = new Map<string, number>();
+    if (drafts.length) {
+      const { data: draftRecords, error: draftRecordsError } = await tables
+        .from("flight_schedule_records")
+        .select("schedule_version_id")
+        .in("schedule_version_id", drafts.map((draft) => draft.id))
+        .limit(10_000);
+      if (draftRecordsError) throw new Error(draftRecordsError.message);
+      for (const record of (draftRecords ?? []) as Array<{ schedule_version_id: string }>) {
+        draftRecordCounts.set(record.schedule_version_id, (draftRecordCounts.get(record.schedule_version_id) ?? 0) + 1);
+      }
+    }
+
+    const flightsWithoutTrips = ((activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>)
+      .filter((flight) => !linkedFlightIds.has(flight.id))
+      .map((flight) => ({
+        id: `flight-${flight.id}`,
+        type: "Flight without trip" as const,
+        priority: "medium" as const,
+        transport: `${flight.flight_number} · ${flight.airline}`,
+        detail: `${flight.origin} → ${flight.destination} · ${flight.scheduled_date} ${flight.scheduled_time}`,
+        affectedTrips: 0,
+        action: "Link a trip",
+        href: "/coordinator/calendar",
+      }));
+    const shipsWithoutTrips = ((shipsResult.data ?? []) as OperationsInboxShip[])
+      .filter((ship) => !linkedShipIds.has(ship.id))
+      .map((ship) => ({
+        id: `ship-${ship.id}`,
+        type: "Ship without trip" as const,
+        priority: "medium" as const,
+        transport: ship.ship_name,
+        detail: `${ship.port} · ETA ${formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })}`,
+        affectedTrips: 0,
+        action: "Link a trip",
+        href: "/coordinator/calendar",
+      }));
+    const tripsWithoutTransport = jobs
+      .filter((job) => !job.flight_schedule_record_id && !job.ship_event_id)
+      .map((job) => ({
+        id: `trip-${job.id}`,
+        type: "Trip without transport" as const,
+        priority: "high" as const,
+        transport: `${job.from_location} → ${job.to_location}`,
+        detail: `${job.date} ${job.time.slice(0, 5)}`,
+        affectedTrips: 1,
+        action: "Add transport",
+        href: "/coordinator/calendar",
+      }));
+    const draftSchedules = drafts.map((draft) => ({
+      id: `draft-${draft.id}`,
+      type: "Draft schedule awaiting activation" as const,
+      priority: "low" as const,
+      transport: draft.name,
+      detail: `${draftRecordCounts.get(draft.id) ?? 0} flights imported · ${formatMaltaDateTime(draft.created_at, { dateStyle: "medium", timeStyle: "short" })}`,
+      affectedTrips: 0,
+      action: "Review schedule",
+      href: "/admin/flight-schedule",
+    }));
+
+    return {
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length,
+      items: [...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 

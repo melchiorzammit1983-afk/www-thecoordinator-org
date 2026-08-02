@@ -20,7 +20,7 @@ export async function assertAdmin(ctx: { supabase: any; userId: string }) {
   return supabaseAdmin;
 }
 
-async function getIsAdmin(userId: string) {
+export async function getIsAdmin(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (userError) throw new Error(userError.message);
