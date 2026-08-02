@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { updateMyOperationalPickupOffsets, updateMyOperationsPhone } from "@/lib/coordinator.functions";
+import { updateMyMinimumConnectionBuffer, updateMyOperationalPickupOffsets, updateMyOperationsPhone } from "@/lib/coordinator.functions";
 import { type Company, useMyCompany } from "@/hooks/use-coordinator";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -78,6 +78,7 @@ function SettingsPage() {
 
       <OperationsPhoneSection />
       <OperationalPickupOffsetSection />
+      <MinimumConnectionBufferSection />
 
       {/* Core operational automation. The legacy database field is still
           called ai_toggles until the later schema-cleanup phase. */}
@@ -256,6 +257,49 @@ function OperationalPickupOffsetSection() {
         </div>
         <Button type="button" onClick={() => save.mutate()} disabled={isLoading || save.isPending || !valid || !changed}>
           {save.isPending ? "Saving…" : "Save pickup defaults"}
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+function MinimumConnectionBufferSection() {
+  const { data: company, isLoading } = useMyCompany();
+  const updateFn = useServerFn(updateMyMinimumConnectionBuffer);
+  const qc = useQueryClient();
+  const [minutes, setMinutes] = useState("60");
+
+  useEffect(() => {
+    if (company) setMinutes(String(company.minimum_connection_buffer_minutes ?? 60));
+  }, [company]);
+
+  const value = Number(minutes);
+  const valid = Number.isInteger(value) && value >= 0 && value <= 1440;
+  const changed = value !== (company?.minimum_connection_buffer_minutes ?? 60);
+  const save = useMutation({
+    mutationFn: () => updateFn({ data: { minimum_connection_buffer_minutes: value } }),
+    onSuccess: (result) => {
+      qc.setQueryData(["my-company"], (current: Company) => current ? {
+        ...current,
+        minimum_connection_buffer_minutes: result.minimum_connection_buffer_minutes,
+      } : current);
+      toast.success("Minimum connection buffer updated");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <Section title="Ship-to-flight connection buffer" icon={SlidersHorizontal}>
+      <div className="space-y-3 px-4 py-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Used to flag a Ship arrival that leaves too little time for an explicitly linked onward flight. It never changes trips automatically.
+        </p>
+        <label className="block max-w-xs space-y-1.5">
+          <span className="text-sm font-medium">Minimum connection (minutes)</span>
+          <Input type="number" min={0} max={1440} step={5} value={minutes} onChange={(event) => setMinutes(event.target.value)} disabled={isLoading} />
+        </label>
+        <Button type="button" onClick={() => save.mutate()} disabled={isLoading || save.isPending || !valid || !changed}>
+          {save.isPending ? "Saving…" : "Save connection buffer"}
         </Button>
       </div>
     </Section>
