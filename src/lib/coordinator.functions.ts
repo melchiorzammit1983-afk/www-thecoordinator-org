@@ -737,6 +737,19 @@ type OperationsInboxShip = {
   port: string;
 };
 
+type OperationsInboxShipEtaChange = {
+  id: string;
+  ship_event_id: string;
+  previous_eta: string;
+  new_eta: string;
+  changed_at: string;
+  ship_events: {
+    ship_name: string;
+    eta: string;
+    company_id: string;
+  } | null;
+};
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -1000,8 +1013,8 @@ export const getAirportOperationsDashboard = createServerFn({ method: "GET" })
 
 /**
  * Read-only, company-scoped operations attention list. This deliberately only
- * reports relationships that exist now; it does not infer ETA changes or use
- * unrelated review flags.
+ * reports verified relationships that exist now. ETA review items come only
+ * from immutable Ship ETA history; unrelated review flags are never reused.
  */
 export const getOperationsInbox = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -1015,7 +1028,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
 
     const isAdmin = await getIsAdmin(context.userId);
-    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult] = await Promise.all([
+    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult] = await Promise.all([
       tables
         .from("flight_schedule_records")
         .select("id, scheduled_date, scheduled_time, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
@@ -1047,14 +1060,25 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
             .order("created_at", { ascending: true })
             .limit(100)
         : Promise.resolve({ data: [], error: null }),
+      tables
+        .from("ship_event_eta_history")
+        .select("id, ship_event_id, previous_eta, new_eta, changed_at, ship_events!inner(ship_name, eta, company_id)")
+        .eq("ship_events.company_id", c.id)
+        .order("changed_at", { ascending: false })
+        .limit(10_000),
     ]);
-    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult]) {
+    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult]) {
       if (result.error) throw new Error(result.error.message);
     }
 
     const jobs = (jobsResult.data ?? []) as OperationsInboxJob[];
     const linkedFlightIds = new Set(jobs.map((job) => job.flight_schedule_record_id).filter(Boolean));
     const linkedShipIds = new Set(jobs.map((job) => job.ship_event_id).filter(Boolean));
+    const linkedTripCountByShipId = new Map<string, number>();
+    for (const job of jobs) {
+      if (!job.ship_event_id) continue;
+      linkedTripCountByShipId.set(job.ship_event_id, (linkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
+    }
     const drafts = (draftVersionsResult.data ?? []) as Array<{ id: string; name: string; created_at: string }>;
     const draftRecordCounts = new Map<string, number>();
     if (drafts.length) {
@@ -1115,10 +1139,36 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       action: "Review schedule",
       href: "/admin/flight-schedule",
     }));
+    // History is newest first. Without a mark-as-reviewed workflow, only the
+    // latest change for each ship is actionable; older changes are superseded.
+    const reviewedShipIds = new Set<string>();
+    const shipEtaChanges = ((shipEtaHistoryResult.data ?? []) as OperationsInboxShipEtaChange[])
+      .filter((change) => change.previous_eta !== change.new_eta)
+      .filter((change) => (linkedTripCountByShipId.get(change.ship_event_id) ?? 0) > 0)
+      .filter((change) => {
+        if (reviewedShipIds.has(change.ship_event_id)) return false;
+        reviewedShipIds.add(change.ship_event_id);
+        return true;
+      })
+      .map((change) => {
+        const linkedTrips = linkedTripCountByShipId.get(change.ship_event_id) ?? 0;
+        const ship = change.ship_events;
+        const currentEta = ship?.eta ?? change.new_eta;
+        return {
+          id: `ship-eta-${change.id}`,
+          type: "Ship ETA changed" as const,
+          priority: "high" as const,
+          transport: ship?.ship_name ?? "Ship event",
+          detail: `Previous ETA ${formatMaltaDateTime(change.previous_eta, { dateStyle: "medium", timeStyle: "short" })} · Current ETA ${formatMaltaDateTime(currentEta, { dateStyle: "medium", timeStyle: "short" })} · Changed ${formatMaltaDateTime(change.changed_at, { dateStyle: "medium", timeStyle: "short" })}`,
+          affectedTrips: linkedTrips,
+          action: "Review trip links",
+          href: "/coordinator/calendar",
+        };
+      });
 
     return {
-      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length,
-      items: [...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length,
+      items: [...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 
