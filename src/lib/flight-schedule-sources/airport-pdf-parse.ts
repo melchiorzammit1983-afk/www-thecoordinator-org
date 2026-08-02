@@ -36,8 +36,16 @@ export type ParsedSchedule = {
 
 const DATE_LINE = /^(\d{2})-(\d{2})-(\d{4})$/;
 const COVERAGE_LINE = /FROM\s+(\d{2}-\d{2}-\d{4}).*TO\s+(\d{2}-\d{2}-\d{4})/i;
+// Multi-leg routes print as "DXB / LCA": for an arrival the last leg is the
+// airport the aircraft comes from, for a departure the first leg is the next stop.
 const FLIGHT_LINE =
-  /^(.{2,80}?)\s{2,}([A-Z0-9]{2,4})\s{2,}([A-Z]{3})\s{2,}([A-Z0-9]{1,3})\s?(\d{1,4}[A-Z]?)\s{2,}(\d{1,2}):(\d{2})$/;
+  /^(.{2,80}?)\s{2,}([A-Z0-9]{2,4})\s{2,}([A-Z]{3}(?:\s*\/\s*[A-Z]{3})*)\s{2,}([A-Z0-9]{1,3})\s?(\d{1,4}[A-Z]?)\s{2,}(\d{1,2}):(\d{2})$/;
+
+function immediateAirport(route: string, direction: "Arrival" | "Departure") {
+  const legs = route.split("/").map((leg) => leg.trim());
+  return direction === "Arrival" ? legs[legs.length - 1] : legs[0];
+}
+
 
 function toIsoDate(day: string, month: string, year: string) {
   return `${year}-${month}-${day}`;
