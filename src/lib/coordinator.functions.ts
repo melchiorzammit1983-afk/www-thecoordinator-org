@@ -672,6 +672,26 @@ type FlightImpactJob = {
   pax: Array<{ id: string }> | null;
 };
 
+type AirportOperationsJob = FlightImpactJob & {
+  id: string;
+  flight_schedule_record_id: string | null;
+  date: string;
+  time: string;
+  from_location: string;
+  to_location: string;
+};
+
+type AirportOperationsFlight = {
+  id: string;
+  scheduled_date: string;
+  scheduled_time: string;
+  direction: "arrival" | "departure";
+  airline: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+};
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -778,6 +798,102 @@ export const getFlightScheduleRecordImpact = createServerFn({ method: "POST" })
       assignedVehicles: assignedVehicles.size,
       earliestPickup: pickupTimes[0] ?? null,
       latestPickup: pickupTimes[pickupTimes.length - 1] ?? null,
+    };
+  });
+
+/**
+ * Read-only airport board built from the active reference schedule and the
+ * requesting coordinator's existing jobs. Operational rows never cross the
+ * company/dispatch-chain boundary.
+ */
+export const getAirportOperationsDashboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const now = new Date();
+    const currentWallTime = isoToMaltaDateTime(now.toISOString());
+    const windowEndWallTime = isoToMaltaDateTime(new Date(now.getTime() + 2 * 60 * 60_000).toISOString());
+    const today = currentWallTime.date;
+
+    // Schedule tables were added by a migration that can lag generated types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduleTable = supabaseAdmin as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobsTable = supabaseAdmin as any;
+    const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
+    const [todayFlightsResult, windowFlightsResult, jobsResult] = await Promise.all([
+      scheduleTable
+        .from("flight_schedule_records")
+        .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+        .eq("flight_schedule_versions.status", "active")
+        .eq("scheduled_date", today)
+        .order("scheduled_time", { ascending: true })
+        .limit(10_000),
+      scheduleTable
+        .from("flight_schedule_records")
+        .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+        .eq("flight_schedule_versions.status", "active")
+        .gte("scheduled_date", today)
+        .lte("scheduled_date", windowEndWallTime.date)
+        .order("scheduled_date", { ascending: true })
+        .order("scheduled_time", { ascending: true })
+        .limit(10_000),
+      jobsTable
+        .from("jobs")
+        .select("id, flight_schedule_record_id, pickup_at, driver_id, vehicle, date, time, from_location, to_location, pax(id)")
+        .eq("date", today)
+        .or(jobScope)
+        .order("pickup_at", { ascending: true })
+        .limit(10_000),
+    ]);
+    if (todayFlightsResult.error) throw new Error(todayFlightsResult.error.message);
+    if (windowFlightsResult.error) throw new Error(windowFlightsResult.error.message);
+    if (jobsResult.error) throw new Error(jobsResult.error.message);
+
+    const todayFlights = (todayFlightsResult.data ?? []) as AirportOperationsFlight[];
+    const todayJobs = (jobsResult.data ?? []) as AirportOperationsJob[];
+    const linkedFlightIds = new Set(
+      todayJobs.map((job) => job.flight_schedule_record_id).filter((id): id is string => !!id),
+    );
+    const assignedDrivers = new Set(todayJobs.map((job) => job.driver_id).filter(Boolean));
+    const assignedVehicles = new Set(todayJobs.map((job) => job.vehicle?.trim()).filter(Boolean));
+    const withinUpcomingWindow = (flight: AirportOperationsFlight) => {
+      if (flight.scheduled_date === today && flight.scheduled_time >= currentWallTime.time) {
+        return windowEndWallTime.date === today
+          ? flight.scheduled_time <= windowEndWallTime.time
+          : true;
+      }
+      return flight.scheduled_date === windowEndWallTime.date && windowEndWallTime.date !== today && flight.scheduled_time <= windowEndWallTime.time;
+    };
+
+    return {
+      today,
+      summary: {
+        scheduledArrivals: todayFlights.filter((flight) => flight.direction === "arrival").length,
+        scheduledDepartures: todayFlights.filter((flight) => flight.direction === "departure").length,
+        linkedTrips: todayJobs.filter((job) => !!job.flight_schedule_record_id).length,
+        totalPassengers: todayJobs.reduce((total, job) => total + (job.pax?.length ?? 0), 0),
+        driversAssigned: assignedDrivers.size,
+        vehiclesAssigned: assignedVehicles.size,
+      },
+      upcomingFlights: ((windowFlightsResult.data ?? []) as AirportOperationsFlight[])
+        .filter(withinUpcomingWindow)
+        .slice(0, 12),
+      flightsWithoutTrips: todayFlights
+        .filter((flight) => !linkedFlightIds.has(flight.id))
+        .slice(0, 12),
+      tripsWithoutFlights: todayJobs
+        .filter((job) => !job.flight_schedule_record_id)
+        .slice(0, 12)
+        .map((job) => ({
+          id: job.id,
+          pickupAt: job.pickup_at,
+          date: job.date,
+          time: job.time,
+          fromLocation: job.from_location,
+          toLocation: job.to_location,
+        })),
     };
   });
 

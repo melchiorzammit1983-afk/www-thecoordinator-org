@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, KeyRound, Gift, AlertTriangle, MapPin, Clock, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, KeyRound, Gift, AlertTriangle, MapPin, Clock, Plane, Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
+      { to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null },
       { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
       { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
       { to: "/coordinator/availability", label: "Availability", icon: Clock, exact: false, feature: "availability_autoforward" },
