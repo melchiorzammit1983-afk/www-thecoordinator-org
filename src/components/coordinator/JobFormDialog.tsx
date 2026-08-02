@@ -401,11 +401,15 @@ function ManualForm({
     ? (pickupOffsetMinutes ?? (linkedFlight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0)))
-    : null;
+    : linkedShip
+      ? (pickupOffsetMinutes ?? (myCompany?.default_arrival_pickup_offset_minutes ?? 0))
+      : null;
   const calculatedPickup = useMemo(() => {
-    if (!linkedFlight || effectivePickupOffsetMinutes == null) return null;
-    const scheduledAt = maltaWallTimeToUtcIso(linkedFlight.scheduled_date, linkedFlight.scheduled_time);
-    const adjustment = linkedFlight.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
+    if (effectivePickupOffsetMinutes == null || (!linkedFlight && !linkedShip)) return null;
+    const scheduledAt = linkedFlight
+      ? maltaWallTimeToUtcIso(linkedFlight.scheduled_date, linkedFlight.scheduled_time)
+      : linkedShip!.eta;
+    const adjustment = linkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
     const pickupAt = new Date(new Date(scheduledAt).getTime() + adjustment * 60_000).toISOString();
     return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
   }, [linkedFlight, effectivePickupOffsetMinutes]);
@@ -521,7 +525,7 @@ function ManualForm({
         from_flight: fromFlight, to_flight: toFlight,
         flight_schedule_record_id: flightScheduleRecordId,
         ship_event_id: shipEventId,
-        scheduled_transport_pickup_offset_minutes: flightScheduleRecordId ? effectivePickupOffsetMinutes : null,
+        scheduled_transport_pickup_offset_minutes: (flightScheduleRecordId || shipEventId) ? effectivePickupOffsetMinutes : null,
         tracking_kind: trackingKind,
         clientcompanyname: client,
         // This legacy field is the customer/booking phone. The visible 24/7
@@ -1042,7 +1046,7 @@ function ManualForm({
             </> : null}
             {transportType === "ship" ? <div className="space-y-2">
               <Label htmlFor="ship-event-search">Linked ship event</Label>
-              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No ship events found.</p> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
+              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No ship events found.</p> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
             </div> : null}
           </div>
           {duplicateWarning && (
