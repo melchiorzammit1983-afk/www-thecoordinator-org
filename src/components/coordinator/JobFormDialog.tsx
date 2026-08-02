@@ -948,6 +948,9 @@ function ManualForm({
             ) : (
               <>
                 <Input id="active-flight-search" value={flightSearch} onChange={(event) => setFlightSearch(event.target.value)} placeholder="Search flight number, airline, origin, or destination" />
+                {flightSearch.trim().length > 0 && flightSearch.trim().length < 2 ? (
+                  <p className="text-[11px] text-muted-foreground" aria-live="polite">Type at least two characters to search the active schedule.</p>
+                ) : null}
                 {flightSearch.trim().length >= 2 ? (
                   <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
                     {isSearchingFlights ? <p className="p-2 text-xs text-muted-foreground">Searching active schedule…</p> : null}

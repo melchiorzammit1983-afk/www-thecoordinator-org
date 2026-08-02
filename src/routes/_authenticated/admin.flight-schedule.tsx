@@ -23,6 +23,7 @@ import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   Accordion,
@@ -66,13 +67,16 @@ function FlightSchedulePage() {
   const createDraftFn = useServerFn(createFlightScheduleDraft);
   const activateDraftFn = useServerFn(activateFlightScheduleDraft);
   const compareVersionsFn = useServerFn(compareFlightScheduleVersions);
-  const { data, isLoading, refetch } = useQuery({
+  const { data, error: overviewError, isLoading, refetch } = useQuery({
     queryKey: ["flight-schedule-overview"],
     queryFn: () => overviewFn(),
   });
   const activation = useMutation({
     mutationFn: (scheduleVersionId: string) => activateDraftFn({ data: { scheduleVersionId } }),
-    onSuccess: () => refetch(),
+    onSuccess: async () => {
+      await refetch();
+      toast.success("Schedule activated");
+    },
   });
   const comparison = useMutation({
     mutationFn: () =>
@@ -94,6 +98,19 @@ function FlightSchedulePage() {
           Admin-managed schedule versions for future flight validation.
         </p>
       </header>
+
+      {overviewError ? (
+        <Card className="border-destructive/40">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+            <span className="text-destructive">
+              {overviewError.message || "Flight schedules could not be loaded."}
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryCard label="Schedule Versions" value={versions.length} icon={Layers3} />
@@ -182,6 +199,7 @@ function FlightSchedulePage() {
             },
           });
           await refetch();
+          toast.success("Draft schedule created");
         }}
       />
 
@@ -194,6 +212,7 @@ function FlightSchedulePage() {
         </CardHeader>
         <CardContent>
           {data?.drafts.length ? (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -244,6 +263,7 @@ function FlightSchedulePage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No draft schedules yet.</p>
           )}
@@ -264,6 +284,7 @@ function FlightSchedulePage() {
         </CardHeader>
         <CardContent>
           {data?.archived.length ? (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -299,6 +320,7 @@ function FlightSchedulePage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No archived schedules yet.</p>
           )}
