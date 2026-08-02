@@ -85,6 +85,44 @@ export const listShipEvents = createServerFn({ method: "GET" })
     return (data ?? []) as ShipEvent[];
   });
 
+/** Company-private choices for linking a job to a manually managed ship event. */
+export const searchShipEvents = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ search: z.string().trim().max(100).optional() }).parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    let query = shipEventsTable(sb)
+      .from("ship_events")
+      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .eq("company_id", companyId)
+      .order("eta", { ascending: true })
+      .limit(20);
+    const term = data.search?.replace(/[^a-zA-Z0-9 .'-]/g, " ").trim();
+    if (term) query = query.or(`ship_name.ilike.%${term}%,port.ilike.%${term}%`);
+    const { data: events, error } = await query;
+    if (error) throw new Error(error.message);
+    return (events ?? []) as ShipEvent[];
+  });
+
+/** Reads an existing job link without requiring the ship to still be searchable. */
+export const getLinkedShipEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const { data: event, error } = await shipEventsTable(sb)
+      .from("ship_events")
+      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!event) throw new Error("The linked ship event no longer exists.");
+    return event as ShipEvent;
+  });
+
 export const createShipEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => shipEventInput.parse(input))

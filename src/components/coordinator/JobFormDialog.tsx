@@ -54,6 +54,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking, getLinkedFlightScheduleRecord, searchActiveFlightScheduleRecords } from "@/lib/coordinator.functions";
+import { getLinkedShipEvent, searchShipEvents } from "@/lib/ship-events.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
@@ -101,6 +102,7 @@ type Job = {
   from_flight: string | null;
   to_flight: string | null;
   flight_schedule_record_id?: string | null;
+  ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
@@ -228,8 +230,11 @@ function ManualForm({
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
+  const [shipEventId, setShipEventId] = useState<string | null>(job?.ship_event_id ?? null);
+  const [transportType, setTransportType] = useState<"none" | "flight" | "ship">(job?.ship_event_id ? "ship" : job?.flight_schedule_record_id ? "flight" : "none");
   const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
   const [flightSearch, setFlightSearch] = useState("");
+  const [shipSearch, setShipSearch] = useState("");
   const [fromKind, setFromKind] = useState<EndpointKind>(() =>
     inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
   );
@@ -375,6 +380,8 @@ function ManualForm({
   const updateFn = useServerFn(updateJob);
   const searchActiveFlightsFn = useServerFn(searchActiveFlightScheduleRecords);
   const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
+  const searchShipsFn = useServerFn(searchShipEvents);
+  const linkedShipFn = useServerFn(getLinkedShipEvent);
   const previewFn = useServerFn(previewTripStatus);
   const refreshFn = useServerFn(refreshJobLiveStatus);
   const reviewFn = useServerFn(markJobReviewed);
@@ -388,6 +395,8 @@ function ManualForm({
     queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
     enabled: !!flightScheduleRecordId,
   });
+  const { data: shipMatches, isFetching: isSearchingShips } = useQuery({ queryKey: ["ship-event-search", shipSearch], queryFn: () => searchShipsFn({ data: { search: shipSearch } }), enabled: transportType === "ship" && shipSearch.trim().length >= 2 });
+  const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: !!shipEventId });
   const effectivePickupOffsetMinutes = linkedFlight
     ? (pickupOffsetMinutes ?? (linkedFlight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
@@ -511,6 +520,7 @@ function ManualForm({
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
         flight_schedule_record_id: flightScheduleRecordId,
+        ship_event_id: shipEventId,
         scheduled_transport_pickup_offset_minutes: flightScheduleRecordId ? effectivePickupOffsetMinutes : null,
         tracking_kind: trackingKind,
         clientcompanyname: client,
@@ -964,6 +974,14 @@ function ManualForm({
             </div>
           </div>
           <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+            <div className="space-y-1">
+              <Label>Transport type</Label>
+              <Select value={transportType} onValueChange={(value: "none" | "flight" | "ship") => { setTransportType(value); if (value !== "flight") { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); } if (value !== "ship") setShipEventId(null); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="none">None</SelectItem><SelectItem value="flight">Flight</SelectItem><SelectItem value="ship">Ship</SelectItem></SelectContent>
+              </Select>
+            </div>
+            {transportType === "flight" ? <>
             <div>
               <Label htmlFor="active-flight-search">Linked schedule flight</Label>
               <p className="mt-0.5 text-[11px] text-muted-foreground">Search the active schedule. This stores a reference only and never changes an existing link automatically.</p>
@@ -1021,6 +1039,11 @@ function ManualForm({
                 ) : null}
               </>
             )}
+            </> : null}
+            {transportType === "ship" ? <div className="space-y-2">
+              <Label htmlFor="ship-event-search">Linked ship event</Label>
+              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No ship events found.</p> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
+            </div> : null}
           </div>
           {duplicateWarning && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
