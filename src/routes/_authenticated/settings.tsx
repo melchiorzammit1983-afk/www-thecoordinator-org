@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Activity, LayoutGrid, Palette, Bell, User, Phone } from "lucide-react";
+import { ChevronRight, ChevronUp, ChevronDown, Eye, EyeOff, RotateCcw, Settings as SettingsIcon, Activity, LayoutGrid, Palette, Bell, User, Phone, Plane } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -18,8 +18,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { updateMyOperationsPhone } from "@/lib/coordinator.functions";
-import { useMyCompany } from "@/hooks/use-coordinator";
+import { updateMyOperationalPickupOffsets, updateMyOperationsPhone } from "@/lib/coordinator.functions";
+import { type Company, useMyCompany } from "@/hooks/use-coordinator";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — The Coordinator" }] }),
@@ -77,6 +77,7 @@ function SettingsPage() {
       </Section>
 
       <OperationsPhoneSection />
+      <OperationalPickupOffsetSection />
 
       {/* Core operational automation. The legacy database field is still
           called ai_toggles until the later schema-cleanup phase. */}
@@ -200,6 +201,62 @@ function OperationsPhoneSection() {
             {save.isPending ? "Saving…" : "Save number"}
           </Button>
         </div>
+      </div>
+    </Section>
+  );
+}
+
+function OperationalPickupOffsetSection() {
+  const { data: company, isLoading } = useMyCompany();
+  const updateFn = useServerFn(updateMyOperationalPickupOffsets);
+  const qc = useQueryClient();
+  const [departure, setDeparture] = useState("180");
+  const [arrival, setArrival] = useState("0");
+
+  useEffect(() => {
+    if (!company) return;
+    setDeparture(String(company.default_departure_pickup_offset_minutes ?? 180));
+    setArrival(String(company.default_arrival_pickup_offset_minutes ?? 0));
+  }, [company]);
+
+  const departureValue = Number(departure);
+  const arrivalValue = Number(arrival);
+  const valid = Number.isInteger(departureValue) && Number.isInteger(arrivalValue)
+    && departureValue >= 0 && departureValue <= 1440 && arrivalValue >= 0 && arrivalValue <= 1440;
+  const changed = departureValue !== (company?.default_departure_pickup_offset_minutes ?? 180)
+    || arrivalValue !== (company?.default_arrival_pickup_offset_minutes ?? 0);
+  const save = useMutation({
+    mutationFn: () => updateFn({ data: { departure_offset_minutes: departureValue, arrival_offset_minutes: arrivalValue } }),
+    onSuccess: (result) => {
+      qc.setQueryData(["my-company"], (current: Company) => current ? {
+        ...current,
+        default_departure_pickup_offset_minutes: result.default_departure_pickup_offset_minutes,
+        default_arrival_pickup_offset_minutes: result.default_arrival_pickup_offset_minutes,
+      } : current);
+      toast.success("Operational pickup defaults updated");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <Section title="Flight pickup defaults" icon={Plane}>
+      <div className="space-y-3 px-4 py-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Used when a scheduled flight is linked to a trip. Departures calculate before the scheduled time; arrivals calculate after it. Coordinators can override the value for an individual trip.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-sm font-medium">Departure offset (minutes)</span>
+            <Input type="number" min={0} max={1440} step={5} value={departure} onChange={(event) => setDeparture(event.target.value)} disabled={isLoading} />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-sm font-medium">Arrival offset (minutes)</span>
+            <Input type="number" min={0} max={1440} step={5} value={arrival} onChange={(event) => setArrival(event.target.value)} disabled={isLoading} />
+          </label>
+        </div>
+        <Button type="button" onClick={() => save.mutate()} disabled={isLoading || save.isPending || !valid || !changed}>
+          {save.isPending ? "Saving…" : "Save pickup defaults"}
+        </Button>
       </div>
     </Section>
   );

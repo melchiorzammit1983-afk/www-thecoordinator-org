@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Car, Plane, PlaneLanding, PlaneTakeoff, Route as RouteIcon, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAirportOperationsDashboard } from "@/lib/coordinator.functions";
@@ -14,7 +15,7 @@ export const Route = createFileRoute("/_authenticated/coordinator/airport-operat
 
 function AirportOperationsPage() {
   const dashboardFn = useServerFn(getAirportOperationsDashboard);
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["airport-operations-dashboard"],
     queryFn: () => dashboardFn(),
     refetchInterval: 60_000,
@@ -30,8 +31,15 @@ function AirportOperationsPage() {
       </header>
 
       {error ? (
-        <Card>
-          <CardContent className="p-5 text-sm text-destructive">{error.message}</CardContent>
+        <Card className="border-destructive/40">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5 text-sm">
+            <span className="text-destructive">
+              {error.message || "Airport operations could not be loaded."}
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Try again
+            </Button>
+          </CardContent>
         </Card>
       ) : isLoading ? (
         <Card>

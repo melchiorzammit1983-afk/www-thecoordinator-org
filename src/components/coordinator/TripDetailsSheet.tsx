@@ -81,6 +81,7 @@ export type DetailsJob = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
   flight_schedule_record_id?: string | null;
+  scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
   flight_status_updated_at?: string | null;
@@ -815,6 +816,7 @@ export function TripDetailsSheet({
                   <div><dt className="sr-only">Origin</dt><dd><span className="text-foreground">Origin:</span> {linkedFlight.origin}</dd></div>
                   <div><dt className="sr-only">Destination</dt><dd><span className="text-foreground">Destination:</span> {linkedFlight.destination}</dd></div>
                   <div className="col-span-2"><dt className="sr-only">Schedule version</dt><dd><span className="text-foreground">Schedule version:</span> {linkedFlight.schedule_version?.name ?? "Unavailable"}</dd></div>
+                  {job.scheduled_transport_pickup_offset_minutes != null ? <div className="col-span-2"><dt className="sr-only">Operational pickup</dt><dd><span className="text-foreground">Operational pickup:</span> {job.date} {job.time?.slice(0, 5)} ({job.scheduled_transport_pickup_offset_minutes} min {linkedFlight.direction === "departure" ? "before departure" : "after arrival"})</dd></div> : null}
                 </dl>
                 <div className="border-t pt-2 space-y-1.5">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Flight impact</div>

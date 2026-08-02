@@ -7,6 +7,8 @@ export type Company = {
   name: string;
   status: string;
   operations_phone: string | null;
+  default_departure_pickup_offset_minutes: number;
+  default_arrival_pickup_offset_minutes: number;
   isAdmin: boolean;
 } | null;
 
