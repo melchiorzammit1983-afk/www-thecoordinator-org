@@ -1,74 +1,67 @@
-# Switch flight tracking to AI-only, with bundled + metered charging
+# Transport Core schema drift — investigation report
 
-## Goal
-Kill the AeroDataBox/RapidAPI path (source of the `adb_429` errors) and make every flight lookup go through Lovable AI. Charge cleanly:
-- **1 bundled fee** at trip creation when a flight code is present → covers the creation lookup **and** the automatic T-30 recheck.
-- **Per-refresh fee** (default `0.5 pts`) for every manual refresh after that.
-- If the AI can't find the flight, no charge, and the UI advises the user to double-check the code — AI will still try to auto-fix common formatting issues first.
+Read-only investigation of the connected preview database against four repository migrations. Nothing was applied or changed.
 
-## Code changes
+## 1. Core tables and enum types
 
-### 1. `src/lib/coordinator.functions.ts` — one provider, one code path
-- Delete `fetchLiveStatusViaAeroDataBox`, the `adb:v3:*` cache map, `AERODATABOX_TTL_MS`, and every `process.env.AERODATABOX_API_KEY` read.
-- `fetchLiveStatus()` always calls `fetchLiveStatusViaGemini(kind, code, pickupIso, opts)` (already handles airport-hint retries and vessels).
-- `fetchLiveStatusViaGemini()` hardening:
-  - Normalize every input through `parseFlightCode()` before caching (`ai:v1:${canonical}:${day}` key).
-  - Extend cache TTL to 10 min so double-refreshes don't double-charge.
-  - Before returning "not found", retry once with `parseFlightCode`'s auto-fix suggestion (e.g. `KM 117` → `KM117`, `RY 1234` → `FR1234`).
-  - Return a structured `{ ok: false, reason: 'not_found', hint: 'Please verify the flight code' }` on final failure — no `adb_*` codes leak to UI.
-- `getFlightTrackingConfig()` → provider label `"Lovable AI"`; `configured` gated on `LOVABLE_API_KEY`.
+| Object | Present in preview DB |
+|---|---|
+| public.operations | No |
+| public.trips | No |
+| public.passengers | No |
+| public.trip_stops | No |
+| enum operation_status | No |
+| enum trip_status_v2 | No |
+| enum passenger_type_v2 | No |
+| enum passenger_row_status_v2 | No |
+| enum trip_stop_type_v2 | No |
 
-### 2. Billing — new charge policy
-Introduce three feature keys in `ai_feature_costs` (seeded via migration):
-| key | default pts | when it fires |
-|---|---|---|
-| `flight_lookup_bundle` | `1.5` | Once per trip on create/update, only when a flight code is set AND wasn't previously charged for this `job_id` |
-| `flight_lookup_refresh` | `0.5` | Every manual refresh via `FlightRefreshButton` after the bundle is spent |
-| `flight_lookup_vessel` | `0.5` | Vessel lookups (kept for parity) |
+Existing public enums are only the legacy set (job_status, pax_status, group_status, booking_status, driver_status, dispatch_*, etc.). The entire Transport Core layer from `20260724153000_transport_core_rebuild.sql` is absent.
 
-Existing `flight_status_extra_lookup` / `flight_vessel_tracking` rows → migrated into the two new keys (values preserved if admin already customized them), then hidden as Legacy.
+## 2. Link columns
 
-Bundle-tracking column on `jobs`: `flight_lookup_bundled_at timestamptz null` (migration + grants). Charge logic:
-- On `createJob` / `updateJob`, when `from_flight` or `to_flight` becomes set and `flight_lookup_bundled_at is null` → `spend_points('flight_lookup_bundle')`, stamp column, then fire the first lookup async (uses bundle, not another charge).
-- T-30 cron (`src/routes/api/public/cron/flight-t30.ts`) → runs for every trip with a code and `pickup_at` between now+25min and now+35min. **No charge** — reads the pre-paid bundle.
-- `refreshJobLiveStatus` → if cache hit (<10 min): free. Otherwise `spend_points('flight_lookup_refresh')`; only mark spent on `ok:true` results (failures = no charge, per your rule).
-- If flight code is changed on an existing trip → re-charge the bundle (new flight = new tracking).
+| Column | Present |
+|---|---|
+| jobs.operation_id | No |
+| pax.operation_id | No |
+| trips.legacy_job_id | No (table missing) |
+| jobs.flight_schedule_record_id | Yes |
+| trips.flight_schedule_record_id | No (table missing) |
+| jobs.scheduled_transport_pickup_offset_minutes | Yes |
+| companies.default_departure/arrival_pickup_offset_minutes | Yes |
 
-### 3. Admin UI — dedicated Flight lookup card
-New section in `src/routes/_authenticated/admin.ai-settings.tsx` above the generic action list:
-- **Flight lookup**
-  - Bundled lookups per trip (read-only note: "2 lookups included: creation + T-30")
-  - Bundled fee (pts) — editable, wired to `flight_lookup_bundle`
-  - Manual refresh fee (pts) — editable, wired to `flight_lookup_refresh`
-  - Cache TTL (min) — editable, stored in `admin_portal_settings` (new col `flight_cache_ttl_min` default 10)
-  - Provider status (read-only) — "Lovable AI · configured" / not configured
-  - Enabled + Allow when empty switches
-- Corresponding legacy keys move under the collapsible "Legacy / unused" group.
+So `20260801160000` and `20260802061035` were applied only in their `jobs`/`companies` halves; their `trips` halves never ran.
 
-### 4. UI copy / removal of AeroDataBox references
-- `FlightTrackingIndicator.tsx` → "Live flight tracking via Lovable AI" / "not configured (missing LOVABLE_API_KEY)".
-- `FlightRefreshButton.tsx` toast:
-  - Success → status + note.
-  - `reason: not_found` → `toast.message("Couldn't find <code>. Please verify the flight number.")`.
-  - Other failure → `toast.error("Flight lookup temporarily unavailable, try again in a minute.")`.
-- `feature-descriptions.ts` → rewrite `flight_lookup_bundle` / `flight_lookup_refresh` / `auto_shift_early_flight` descriptions to reference AI, not AeroDataBox.
-- `docs/…` help articles + `src/content/help/articles/coordinator-ai-extraction.tsx` → replace "AeroDataBox" wording.
-- `AERODATABOX_API_KEY` secret becomes unused (leave in secrets store, safe to delete manually later).
+## 3. Triggers and functions matching transport_core / flight_schedule
 
-### 5. Watchtower & entitlements
-- `watchtower.functions.ts` "Flight code not tracked" banner: keep, but link to the new hint.
-- `user-prefs.functions.ts` "auto_flight_tracking" description → "Uses AI to look up live flight status."
+Functions present: `create_flight_schedule_draft`, `activate_flight_schedule_draft`, `prevent_flight_schedule_import_mutation`.
+Triggers present: `flight_schedule_imports_immutable`, `flight_schedule_records_immutable`.
 
-## Verification (manual, on preview)
-1. **Create a trip with `LO673`** → wallet ledger shows one `flight_lookup_bundle` charge, `flight_lookup_bundled_at` stamped, trip card shows live status within ~5s. Refresh twice quickly → no additional charge (cache hit). Refresh after 10 min → one `flight_lookup_refresh` charge.
-2. **Create a trip with `AA9999` (fake)** → bundle charge fires, AI returns `not_found`, toast asks user to verify code, `flight_status = unknown`. Fix to `AA100`, save → new bundle charge fires (flight code changed).
-3. **Trigger T-30 cron manually** (`/api/public/cron/flight-t30`) with a trip due in 30 min → status refreshes, **no** wallet charge.
-4. **Vessel lookup** ("Virtu Ferries 10:00") → routed through Gemini, `flight_lookup_vessel` charge, arrival ETA populated.
-5. **Delete `LOVABLE_API_KEY` env in preview** → indicator shows "not configured", refresh button returns friendly error, no charge.
-6. **Admin AI Settings** → edit refresh fee to `1.0`, save; next refresh charges `1.0`. Toggle Bundle "Allow when empty" off; user with 0 wallet sees "Not enough points" on trip create with flight code (trip still saves, flight fields stay unknown).
-7. Confirm no `adb_*` string appears anywhere in the running app (grep the built bundle for regression).
+Absent: `touch_transport_updated_at`, `derive_operation_name`, `ensure_job_operation_id`, `refresh_trip_stops_for_job`, `mirror_job_to_transport_core`, `mirror_pax_to_transport_core`, `mirror_job_flight_schedule_link`, and every `trg_jobs_transport_core_*` / `trg_pax_transport_core_mirror` trigger.
 
-## Out of scope
-- No DB changes to flight status columns themselves (`flight_status`, `flight_scheduled_at`, etc. keep their existing shape).
-- No changes to trip creation UX, calendar filters, or how flight status shows on trip cards.
-- Not rewriting AeroDataBox secret UX (the secret can stay, it just becomes unused).
+Flight schedule tables (`flight_schedule_versions`, `flight_schedule_imports`, `flight_schedule_records`) all exist, so `20260801202443` is fully applied.
+
+## 4. Can the Transport Core migration apply safely?
+
+Yes — all prerequisites it depends on exist, and no conflicts were found:
+
+- Referenced base tables exist: `companies`, `jobs`, `pax`, `drivers`, `groups`, `group_stops`.
+- Every `jobs` column read by the mirror functions and backfill exists; the only missing names are `operation_id` (created by the migration itself) and `pax` columns (`job_id`, `name`, `phone`, `note`) which all exist on `pax`.
+- `group_stops` has the `stop_index`, `display_name`, `address`, `group_id` columns the stop backfill reads.
+- No name collisions: none of the tables, enums, functions, triggers, indexes or constraints it creates already exist.
+- Data will satisfy the final `SET NOT NULL` steps: 71 jobs (0 with null company_id/from/to/date/time), 143 pax (0 with null job_id), 21 group_stops. The backfill covers all of them.
+
+Two caveats, not blockers:
+
+1. The migration enables RLS on the four new tables and adds no policies and no `GRANT`s. That is intentional in the repo (server-function-only access), but any browser query against `operations`/`trips`/`passengers`/`trip_stops` will fail with a permission error until grants/policies are added.
+2. It installs `AFTER INSERT/UPDATE/DELETE` mirror triggers on `jobs` and `pax`, so every write to those tables afterwards also writes Transport Core rows. Behaviour change, expected by design.
+
+## Smallest safe sequence (not applied)
+
+1. `20260724153000_transport_core_rebuild.sql` — creates enums, four tables, link columns, FKs, mirror functions/triggers, backfills, then sets `operation_id` NOT NULL.
+2. `20260725160000_fix_pax_operation_link.sql` — replaces `mirror_pax_to_transport_core` with the self-healing version (must follow step 1; it depends on `derive_operation_name` and `operations`).
+3. Re-run the `trips`-only halves of `20260801160000_trip_flight_schedule_link.sql` and `20260802061035_operational_pickup_offsets.sql` — both are `ADD COLUMN IF NOT EXISTS` / `CREATE OR REPLACE`, so re-running them whole is idempotent and ends with the correct combined `mirror_job_flight_schedule_link` trigger (run `20260802061035` last so the offset-aware version wins).
+
+No other migration needs to be replayed. Steps 1–2 must run in one transaction-safe order before step 3, because step 3 references `trips.legacy_job_id`.
+
+Nothing has been applied. Say the word if you want this sequence executed.
