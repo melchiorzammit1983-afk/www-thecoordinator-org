@@ -1,11 +1,12 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertCircle, Anchor, CalendarClock, Plane, RefreshCw, Route as RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getOperationsInbox } from "@/lib/coordinator.functions";
+import { completeShipEtaReview, getOperationsInbox } from "@/lib/coordinator.functions";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operations")({
   head: () => ({ meta: [{ title: "Operations Centre — Coordinator" }] }),
@@ -14,10 +15,19 @@ export const Route = createFileRoute("/_authenticated/coordinator/operations")({
 
 function OperationsCentrePage() {
   const inboxFn = useServerFn(getOperationsInbox);
+  const completeShipEtaReviewFn = useServerFn(completeShipEtaReview);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["operations-inbox"],
     queryFn: () => inboxFn(),
     refetchInterval: 60_000,
+  });
+  const completeReview = useMutation({
+    mutationFn: (etaHistoryId: string) => completeShipEtaReviewFn({ data: { eta_history_id: etaHistoryId } }),
+    onSuccess: (result) => {
+      toast.success(result.alreadyCompleted ? "This Ship ETA review was already completed." : "Ship ETA review marked complete.");
+      refetch();
+    },
+    onError: (reason: Error) => toast.error(reason.message || "Ship ETA review could not be completed."),
   });
 
   return (
@@ -75,9 +85,25 @@ function OperationsCentrePage() {
                     <span className="text-xs text-muted-foreground">
                       {item.affectedTrips} affected trip{item.affectedTrips === 1 ? "" : "s"}
                     </span>
-                    <Button asChild type="button" variant="outline" size="sm">
-                      <Link to={item.href}>{item.action}</Link>
-                    </Button>
+                    {item.reviewHistoryId ? (
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button asChild type="button" variant="outline" size="sm">
+                          <Link to={item.href}>{item.action}</Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => completeReview.mutate(item.reviewHistoryId)}
+                          disabled={completeReview.isPending}
+                        >
+                          {completeReview.isPending ? "Markingâ€¦" : "Mark Review Complete"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button asChild type="button" variant="outline" size="sm">
+                        <Link to={item.href}>{item.action}</Link>
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
