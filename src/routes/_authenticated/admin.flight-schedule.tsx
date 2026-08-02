@@ -19,7 +19,10 @@ import {
   flightScheduleImportFields,
   flightScheduleValidationRules,
 } from "@/lib/flight-schedule-import";
-import { spreadsheetFlightScheduleAdapter } from "@/lib/flight-schedule-sources/spreadsheet.adapter";
+import {
+  flightScheduleSourceAdapter,
+  flightScheduleSourceTypeFor,
+} from "@/lib/flight-schedule-sources/flight-schedule.adapter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -177,14 +180,14 @@ function FlightSchedulePage() {
       <FlightSearchCard versions={versions} />
 
       <ImportPreviewWorkflow
-        sourceAdapter={spreadsheetFlightScheduleAdapter}
+        sourceAdapter={flightScheduleSourceAdapter}
         fields={flightScheduleImportFields}
         rules={flightScheduleValidationRules}
         onConfirm={async ({ source, rows, summary }) => {
           await createDraftFn({
             data: {
               sourceFilename: source.fileName,
-              sourceType: "spreadsheet",
+              sourceType: flightScheduleSourceTypeFor(source.fileName),
               summary,
               records: rows.map((row) => ({
                 rowNumber: row.rowNumber,

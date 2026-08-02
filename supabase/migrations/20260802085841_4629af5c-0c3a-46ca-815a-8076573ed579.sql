@@ -1,0 +1,2 @@
+ALTER TABLE public.flight_schedule_imports DROP CONSTRAINT IF EXISTS flight_schedule_imports_source_type_check;
+ALTER TABLE public.flight_schedule_imports ADD CONSTRAINT flight_schedule_imports_source_type_check CHECK (source_type IN ('spreadsheet','pdf'));
