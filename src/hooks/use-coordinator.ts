@@ -9,6 +9,7 @@ export type Company = {
   operations_phone: string | null;
   default_departure_pickup_offset_minutes: number;
   default_arrival_pickup_offset_minutes: number;
+  minimum_connection_buffer_minutes: number;
   isAdmin: boolean;
 } | null;
 

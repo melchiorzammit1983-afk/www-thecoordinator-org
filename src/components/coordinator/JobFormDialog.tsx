@@ -103,6 +103,7 @@ type Job = {
   to_flight: string | null;
   flight_schedule_record_id?: string | null;
   ship_event_id?: string | null;
+  onward_flight_schedule_record_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
@@ -231,10 +232,12 @@ function ManualForm({
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
   const [shipEventId, setShipEventId] = useState<string | null>(job?.ship_event_id ?? null);
+  const [onwardFlightScheduleRecordId, setOnwardFlightScheduleRecordId] = useState<string | null>(job?.onward_flight_schedule_record_id ?? null);
   const [transportType, setTransportType] = useState<"none" | "flight" | "ship">(job?.ship_event_id ? "ship" : job?.flight_schedule_record_id ? "flight" : "none");
   const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
   const [flightSearch, setFlightSearch] = useState("");
   const [shipSearch, setShipSearch] = useState("");
+  const [onwardFlightSearch, setOnwardFlightSearch] = useState("");
   const [newShipEta, setNewShipEta] = useState("");
   const [newShipPort, setNewShipPort] = useState("");
   const [fromKind, setFromKind] = useState<EndpointKind>(() =>
@@ -401,6 +404,16 @@ function ManualForm({
     queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
     enabled: !!flightScheduleRecordId,
   });
+  const { data: onwardFlightMatches, isFetching: isSearchingOnwardFlights } = useQuery({
+    queryKey: ["onward-active-flight-schedule-search", onwardFlightSearch],
+    queryFn: () => searchActiveFlightsFn({ data: { search: onwardFlightSearch } }),
+    enabled: transportType === "ship" && onwardFlightSearch.trim().length >= 2,
+  });
+  const { data: linkedOnwardFlight } = useQuery({
+    queryKey: ["linked-onward-flight-schedule-record", onwardFlightScheduleRecordId],
+    queryFn: () => linkedFlightFn({ data: { id: onwardFlightScheduleRecordId! } }),
+    enabled: !!onwardFlightScheduleRecordId,
+  });
   const { data: shipMatches, isFetching: isSearchingShips } = useQuery({ queryKey: ["ship-event-search", shipSearch], queryFn: () => searchShipsFn({ data: { search: shipSearch } }), enabled: transportType === "ship" && shipSearch.trim().length >= 2 });
   const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: !!shipEventId });
   const createInlineShip = useMutation({
@@ -443,6 +456,14 @@ function ManualForm({
     setPickupOffsetMinutes(flight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0));
+  }
+  function selectOnwardFlight(flight: { id: string; direction: "arrival" | "departure" }) {
+    if (flight.direction !== "departure") {
+      toast.error("Choose a departure from the active schedule.");
+      return;
+    }
+    setOnwardFlightScheduleRecordId(flight.id);
+    setOnwardFlightSearch("");
   }
   useEffect(() => {
     if (!myCompany || operationsPhoneDirty) return;
@@ -544,6 +565,7 @@ function ManualForm({
         from_flight: fromFlight, to_flight: toFlight,
         flight_schedule_record_id: flightScheduleRecordId,
         ship_event_id: shipEventId,
+        onward_flight_schedule_record_id: transportType === "ship" ? onwardFlightScheduleRecordId : null,
         scheduled_transport_pickup_offset_minutes: (flightScheduleRecordId || shipEventId) ? effectivePickupOffsetMinutes : null,
         tracking_kind: trackingKind,
         clientcompanyname: client,
@@ -999,7 +1021,7 @@ function ManualForm({
           <div className="space-y-2 rounded-md border bg-muted/20 p-3">
             <div className="space-y-1">
               <Label>Transport type</Label>
-              <Select value={transportType} onValueChange={(value: "none" | "flight" | "ship") => { setTransportType(value); if (value !== "flight") { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); } if (value !== "ship") setShipEventId(null); }}>
+              <Select value={transportType} onValueChange={(value: "none" | "flight" | "ship") => { setTransportType(value); if (value !== "flight") { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); } if (value !== "ship") { setShipEventId(null); setOnwardFlightScheduleRecordId(null); setOnwardFlightSearch(""); } }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="none">None</SelectItem><SelectItem value="flight">Flight</SelectItem><SelectItem value="ship">Ship</SelectItem></SelectContent>
               </Select>
@@ -1067,6 +1089,38 @@ function ManualForm({
               <Label htmlFor="ship-event-search">Linked ship event</Label>
               {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
             </div> : null}
+            {transportType === "ship" && shipEventId ? (
+              <div className="space-y-2 border-t pt-3">
+                <div>
+                  <Label htmlFor="onward-flight-search">Connecting flight (optional)</Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Choose the passenger's onward departure from the active schedule. It does not change Ship tracking or the Ship pickup time.
+                  </p>
+                </div>
+                {onwardFlightScheduleRecordId && linkedOnwardFlight ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+                    <span><b>{linkedOnwardFlight.flight_number}</b> · {linkedOnwardFlight.airline} · {linkedOnwardFlight.origin} → {linkedOnwardFlight.destination} · {linkedOnwardFlight.scheduled_date} {linkedOnwardFlight.scheduled_time?.slice(0, 5)}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setOnwardFlightScheduleRecordId(null)}>Remove connecting flight</Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input id="onward-flight-search" value={onwardFlightSearch} onChange={(event) => setOnwardFlightSearch(event.target.value)} placeholder="Search active departure flight" />
+                    {onwardFlightSearch.trim().length >= 2 ? (
+                      <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
+                        {isSearchingOnwardFlights ? <p className="p-2 text-xs text-muted-foreground">Searching active departures…</p> : null}
+                        {!isSearchingOnwardFlights && onwardFlightMatches?.filter((flight) => flight.direction === "departure").length === 0 ? <p className="p-2 text-xs text-muted-foreground">No active-schedule departures found.</p> : null}
+                        {onwardFlightMatches?.filter((flight) => flight.direction === "departure").map((flight) => (
+                          <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectOnwardFlight(flight)}>
+                            <span className="font-medium">{flight.flight_number} · {flight.airline}</span>
+                            <span className="text-muted-foreground">{flight.origin} → {flight.destination} · {flight.scheduled_date} {flight.scheduled_time?.slice(0, 5)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
           {duplicateWarning && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
