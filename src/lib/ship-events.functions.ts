@@ -58,12 +58,16 @@ async function getMyCompanyId(userId: string): Promise<string> {
   throw new Error("No company assigned to this user");
 }
 
-// datetime-local controls may include seconds, depending on browser and
-// platform settings. The operational model is minute-precise, so normalize
-// either native representation before converting Malta wall time to UTC.
+// datetime-local controls may include seconds, milliseconds, or an ISO offset
+// after server-function serialization. The operational model is minute-precise,
+// so retain the wall-clock minute selected in the form before converting Malta
+// wall time to UTC.
 const localEta = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/, "Enter a valid ETA")
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/,
+    "Enter a valid ETA",
+  )
   .transform((value) => value.slice(0, 16));
 const shipEventInput = z.object({
   ship_name: z.string().trim().min(1, "Enter a ship name").max(200),
