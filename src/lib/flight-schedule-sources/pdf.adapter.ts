@@ -55,7 +55,7 @@ async function readPdfLines(file: File) {
     }
     page.cleanup();
   }
-  await document.destroy();
+  await document.cleanup();
   return lines;
 }
 
