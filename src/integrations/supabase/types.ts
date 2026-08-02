@@ -1575,6 +1575,7 @@ export type Database = {
           grace_reset_at: string
           id: string
           logo_url: string | null
+          minimum_connection_buffer_minutes: number
           minimum_fare: number
           name: string
           operations_phone: string | null
@@ -1628,6 +1629,7 @@ export type Database = {
           grace_reset_at?: string
           id?: string
           logo_url?: string | null
+          minimum_connection_buffer_minutes?: number
           minimum_fare?: number
           name: string
           operations_phone?: string | null
@@ -1681,6 +1683,7 @@ export type Database = {
           grace_reset_at?: string
           id?: string
           logo_url?: string | null
+          minimum_connection_buffer_minutes?: number
           minimum_fare?: number
           name?: string
           operations_phone?: string | null
@@ -4275,6 +4278,7 @@ export type Database = {
           live_eta_updated_at: string | null
           needs_review: boolean
           notes: string | null
+          onward_flight_schedule_record_id: string | null
           operation_id: string
           origin_company_id: string | null
           paid_amount: number | null
@@ -4418,6 +4422,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          onward_flight_schedule_record_id?: string | null
           operation_id: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4561,6 +4566,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          onward_flight_schedule_record_id?: string | null
           operation_id?: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4635,6 +4641,13 @@ export type Database = {
           {
             foreignKeyName: "jobs_flight_schedule_record_id_fkey"
             columns: ["flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_onward_flight_schedule_record_id_fkey"
+            columns: ["onward_flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
             referencedColumns: ["id"]
@@ -7058,6 +7071,7 @@ export type Database = {
           live_eta_updated_at: string | null
           metadata: Json
           needs_review: boolean
+          onward_flight_schedule_record_id: string | null
           operation_id: string
           parent_trip_id: string | null
           pickup_at: string | null
@@ -7069,6 +7083,7 @@ export type Database = {
           route_distance_m: number | null
           route_duration_sec: number | null
           scheduled_transport_pickup_offset_minutes: number | null
+          ship_event_id: string | null
           source: string
           status: Database["public"]["Enums"]["trip_status_v2"]
           time: string
@@ -7114,6 +7129,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           metadata?: Json
           needs_review?: boolean
+          onward_flight_schedule_record_id?: string | null
           operation_id: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7125,6 +7141,7 @@ export type Database = {
           route_distance_m?: number | null
           route_duration_sec?: number | null
           scheduled_transport_pickup_offset_minutes?: number | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time: string
@@ -7170,6 +7187,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           metadata?: Json
           needs_review?: boolean
+          onward_flight_schedule_record_id?: string | null
           operation_id?: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7181,6 +7199,7 @@ export type Database = {
           route_distance_m?: number | null
           route_duration_sec?: number | null
           scheduled_transport_pickup_offset_minutes?: number | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time?: string
@@ -7224,6 +7243,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "trips_onward_flight_schedule_record_id_fkey"
+            columns: ["onward_flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "trips_operation_id_fkey"
             columns: ["operation_id"]
             isOneToOne: false
@@ -7235,6 +7261,13 @@ export type Database = {
             columns: ["parent_trip_id"]
             isOneToOne: false
             referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
             referencedColumns: ["id"]
           },
         ]
