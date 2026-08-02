@@ -4275,6 +4275,7 @@ export type Database = {
           live_eta_updated_at: string | null
           needs_review: boolean
           notes: string | null
+          operation_id: string
           origin_company_id: string | null
           paid_amount: number | null
           paid_at: string | null
@@ -4416,6 +4417,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          operation_id: string
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
@@ -4557,6 +4559,7 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          operation_id?: string
           origin_company_id?: string | null
           paid_amount?: number | null
           paid_at?: string | null
@@ -4631,6 +4634,13 @@ export type Database = {
             columns: ["flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
             referencedColumns: ["id"]
           },
           {
@@ -4810,6 +4820,157 @@ export type Database = {
         }
         Relationships: []
       }
+      operations: {
+        Row: {
+          company: string | null
+          company_id: string
+          created_at: string
+          id: string
+          legacy_job_id: string | null
+          name: string
+          notes: string | null
+          source: string
+          status: Database["public"]["Enums"]["operation_status"]
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          company?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          legacy_job_id?: string | null
+          name: string
+          notes?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["operation_status"]
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          company?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          legacy_job_id?: string | null
+          name?: string
+          notes?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["operation_status"]
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operations_legacy_job_id_fkey"
+            columns: ["legacy_job_id"]
+            isOneToOne: true
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      passengers: {
+        Row: {
+          annex1_required: boolean
+          created_at: string
+          date: string | null
+          flight_number: string | null
+          from_location: string | null
+          id: string
+          immigration_required: boolean
+          legacy_pax_id: string | null
+          name: string
+          nationality: string | null
+          notes: string | null
+          operation_id: string
+          phone: string | null
+          row_number: number | null
+          status: Database["public"]["Enums"]["passenger_row_status_v2"]
+          time: string | null
+          to_location: string | null
+          trip_id: string
+          type: Database["public"]["Enums"]["passenger_type_v2"]
+          updated_at: string
+          vessel: string | null
+        }
+        Insert: {
+          annex1_required?: boolean
+          created_at?: string
+          date?: string | null
+          flight_number?: string | null
+          from_location?: string | null
+          id?: string
+          immigration_required?: boolean
+          legacy_pax_id?: string | null
+          name: string
+          nationality?: string | null
+          notes?: string | null
+          operation_id: string
+          phone?: string | null
+          row_number?: number | null
+          status?: Database["public"]["Enums"]["passenger_row_status_v2"]
+          time?: string | null
+          to_location?: string | null
+          trip_id: string
+          type?: Database["public"]["Enums"]["passenger_type_v2"]
+          updated_at?: string
+          vessel?: string | null
+        }
+        Update: {
+          annex1_required?: boolean
+          created_at?: string
+          date?: string | null
+          flight_number?: string | null
+          from_location?: string | null
+          id?: string
+          immigration_required?: boolean
+          legacy_pax_id?: string | null
+          name?: string
+          nationality?: string | null
+          notes?: string | null
+          operation_id?: string
+          phone?: string | null
+          row_number?: number | null
+          status?: Database["public"]["Enums"]["passenger_row_status_v2"]
+          time?: string | null
+          to_location?: string | null
+          trip_id?: string
+          type?: Database["public"]["Enums"]["passenger_type_v2"]
+          updated_at?: string
+          vessel?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "passengers_legacy_pax_id_fkey"
+            columns: ["legacy_pax_id"]
+            isOneToOne: true
+            referencedRelation: "pax"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "passengers_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "passengers_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       password_reset_requests: {
         Row: {
           created_at: string
@@ -4846,6 +5007,7 @@ export type Database = {
           name: string
           noshow_at: string | null
           note: string | null
+          operation_id: string
           phone: string | null
           status: Database["public"]["Enums"]["pax_status"]
           stop_id: string | null
@@ -4862,6 +5024,7 @@ export type Database = {
           name: string
           noshow_at?: string | null
           note?: string | null
+          operation_id: string
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           stop_id?: string | null
@@ -4878,6 +5041,7 @@ export type Database = {
           name?: string
           noshow_at?: string | null
           note?: string | null
+          operation_id?: string
           phone?: string | null
           status?: Database["public"]["Enums"]["pax_status"]
           stop_id?: string | null
@@ -4896,6 +5060,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pax_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
             referencedColumns: ["id"]
           },
           {
@@ -6719,6 +6890,271 @@ export type Database = {
           },
         ]
       }
+      trip_stops: {
+        Row: {
+          created_at: string
+          id: string
+          legacy_group_stop_id: string | null
+          location: string
+          stop_order: number
+          time: string | null
+          trip_id: string
+          type: Database["public"]["Enums"]["trip_stop_type_v2"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          legacy_group_stop_id?: string | null
+          location: string
+          stop_order: number
+          time?: string | null
+          trip_id: string
+          type: Database["public"]["Enums"]["trip_stop_type_v2"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          legacy_group_stop_id?: string | null
+          location?: string
+          stop_order?: number
+          time?: string | null
+          trip_id?: string
+          type?: Database["public"]["Enums"]["trip_stop_type_v2"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_stops_legacy_group_stop_id_fkey"
+            columns: ["legacy_group_stop_id"]
+            isOneToOne: true
+            referencedRelation: "group_stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_stops_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trips: {
+        Row: {
+          client_link_token: string | null
+          clientcompanyname: string | null
+          company_id: string
+          contact_phone: string | null
+          created_at: string
+          created_by_driver: boolean
+          date: string
+          driver_id: string | null
+          dropoff_display_name: string | null
+          dropoff_place_id: string | null
+          flight_estimated_at: string | null
+          flight_schedule_record_id: string | null
+          flight_scheduled_at: string | null
+          flight_status: string | null
+          flight_status_confidence: string | null
+          flight_status_note: string | null
+          flight_status_updated_at: string | null
+          flightorship: string | null
+          from_flight: string | null
+          from_location: string
+          group_name: string | null
+          group_note: string | null
+          grouped_at: string | null
+          grouped_count: number | null
+          id: string
+          leave_by_at: string | null
+          legacy_job_id: string | null
+          live_eta_sec: number | null
+          live_eta_updated_at: string | null
+          metadata: Json
+          needs_review: boolean
+          operation_id: string
+          parent_trip_id: string | null
+          pickup_at: string | null
+          pickup_display_name: string | null
+          pickup_place_id: string | null
+          pickup_shift_reason: string | null
+          qr_strict_mode: boolean
+          route_computed_at: string | null
+          route_distance_m: number | null
+          route_duration_sec: number | null
+          scheduled_transport_pickup_offset_minutes: number | null
+          source: string
+          status: Database["public"]["Enums"]["trip_status_v2"]
+          time: string
+          to_flight: string | null
+          to_location: string
+          tracking_enabled: boolean
+          tracking_kind: string | null
+          traffic_delay_minutes: number | null
+          traffic_severity: string | null
+          trip_no: number | null
+          updated_at: string
+          vehicle: string | null
+        }
+        Insert: {
+          client_link_token?: string | null
+          clientcompanyname?: string | null
+          company_id: string
+          contact_phone?: string | null
+          created_at?: string
+          created_by_driver?: boolean
+          date: string
+          driver_id?: string | null
+          dropoff_display_name?: string | null
+          dropoff_place_id?: string | null
+          flight_estimated_at?: string | null
+          flight_schedule_record_id?: string | null
+          flight_scheduled_at?: string | null
+          flight_status?: string | null
+          flight_status_confidence?: string | null
+          flight_status_note?: string | null
+          flight_status_updated_at?: string | null
+          flightorship?: string | null
+          from_flight?: string | null
+          from_location: string
+          group_name?: string | null
+          group_note?: string | null
+          grouped_at?: string | null
+          grouped_count?: number | null
+          id?: string
+          leave_by_at?: string | null
+          legacy_job_id?: string | null
+          live_eta_sec?: number | null
+          live_eta_updated_at?: string | null
+          metadata?: Json
+          needs_review?: boolean
+          operation_id: string
+          parent_trip_id?: string | null
+          pickup_at?: string | null
+          pickup_display_name?: string | null
+          pickup_place_id?: string | null
+          pickup_shift_reason?: string | null
+          qr_strict_mode?: boolean
+          route_computed_at?: string | null
+          route_distance_m?: number | null
+          route_duration_sec?: number | null
+          scheduled_transport_pickup_offset_minutes?: number | null
+          source?: string
+          status?: Database["public"]["Enums"]["trip_status_v2"]
+          time: string
+          to_flight?: string | null
+          to_location: string
+          tracking_enabled?: boolean
+          tracking_kind?: string | null
+          traffic_delay_minutes?: number | null
+          traffic_severity?: string | null
+          trip_no?: number | null
+          updated_at?: string
+          vehicle?: string | null
+        }
+        Update: {
+          client_link_token?: string | null
+          clientcompanyname?: string | null
+          company_id?: string
+          contact_phone?: string | null
+          created_at?: string
+          created_by_driver?: boolean
+          date?: string
+          driver_id?: string | null
+          dropoff_display_name?: string | null
+          dropoff_place_id?: string | null
+          flight_estimated_at?: string | null
+          flight_schedule_record_id?: string | null
+          flight_scheduled_at?: string | null
+          flight_status?: string | null
+          flight_status_confidence?: string | null
+          flight_status_note?: string | null
+          flight_status_updated_at?: string | null
+          flightorship?: string | null
+          from_flight?: string | null
+          from_location?: string
+          group_name?: string | null
+          group_note?: string | null
+          grouped_at?: string | null
+          grouped_count?: number | null
+          id?: string
+          leave_by_at?: string | null
+          legacy_job_id?: string | null
+          live_eta_sec?: number | null
+          live_eta_updated_at?: string | null
+          metadata?: Json
+          needs_review?: boolean
+          operation_id?: string
+          parent_trip_id?: string | null
+          pickup_at?: string | null
+          pickup_display_name?: string | null
+          pickup_place_id?: string | null
+          pickup_shift_reason?: string | null
+          qr_strict_mode?: boolean
+          route_computed_at?: string | null
+          route_distance_m?: number | null
+          route_duration_sec?: number | null
+          scheduled_transport_pickup_offset_minutes?: number | null
+          source?: string
+          status?: Database["public"]["Enums"]["trip_status_v2"]
+          time?: string
+          to_flight?: string | null
+          to_location?: string
+          tracking_enabled?: boolean
+          tracking_kind?: string | null
+          traffic_delay_minutes?: number | null
+          traffic_severity?: string | null
+          trip_no?: number | null
+          updated_at?: string
+          vehicle?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trips_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_flight_schedule_record_id_fkey"
+            columns: ["flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_legacy_job_id_fkey"
+            columns: ["legacy_job_id"]
+            isOneToOne: true
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_parent_trip_id_fkey"
+            columns: ["parent_trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_feature_preferences: {
         Row: {
           company_id: string
@@ -7010,6 +7446,15 @@ export type Database = {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
       }
+      derive_operation_name: {
+        Args: {
+          p_client: string
+          p_explicit: string
+          p_from: string
+          p_to: string
+        }
+        Returns: string
+      }
       driver_clear_payout: { Args: { _job_id: string }; Returns: undefined }
       driver_guide_consume: {
         Args: { _company_id: string; _driver_id: string }
@@ -7100,6 +7545,18 @@ export type Database = {
         }
         Returns: string
       }
+      refresh_trip_stops_for_job: {
+        Args: {
+          p_dropoff_display_name: string
+          p_dropoff_location: string
+          p_job_id: string
+          p_pickup_display_name: string
+          p_pickup_location: string
+          p_pickup_time: string
+          p_trip_id: string
+        }
+        Returns: undefined
+      }
       register_client_booking_attempt: {
         Args: { _company_id: string; _limit?: number }
         Returns: boolean
@@ -7171,6 +7628,9 @@ export type Database = {
         | "in_progress"
         | "cancelled"
       magic_link_kind: "driver" | "client"
+      operation_status: "planning" | "active" | "completed"
+      passenger_row_status_v2: "valid" | "warning" | "incomplete"
+      passenger_type_v2: "joining" | "leaving" | "transfer" | "hotel" | "other"
       pax_status:
         | "pending"
         | "verified"
@@ -7181,6 +7641,13 @@ export type Database = {
         | "cancelled"
       payment_status: "pending" | "paid" | "partial"
       topup_request_status: "pending" | "fulfilled" | "rejected"
+      trip_status_v2:
+        | "planned"
+        | "assigned"
+        | "in_progress"
+        | "completed"
+        | "cancelled"
+      trip_stop_type_v2: "pickup" | "stop" | "dropoff"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -7344,6 +7811,9 @@ export const Constants = {
         "cancelled",
       ],
       magic_link_kind: ["driver", "client"],
+      operation_status: ["planning", "active", "completed"],
+      passenger_row_status_v2: ["valid", "warning", "incomplete"],
+      passenger_type_v2: ["joining", "leaving", "transfer", "hotel", "other"],
       pax_status: [
         "pending",
         "verified",
@@ -7355,6 +7825,14 @@ export const Constants = {
       ],
       payment_status: ["pending", "paid", "partial"],
       topup_request_status: ["pending", "fulfilled", "rejected"],
+      trip_status_v2: [
+        "planned",
+        "assigned",
+        "in_progress",
+        "completed",
+        "cancelled",
+      ],
+      trip_stop_type_v2: ["pickup", "stop", "dropoff"],
     },
   },
 } as const
