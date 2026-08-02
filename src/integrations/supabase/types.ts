@@ -6221,6 +6221,50 @@ export type Database = {
           },
         ]
       }
+      ship_events: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          eta: string
+          id: string
+          port: string
+          ship_name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          eta: string
+          id?: string
+          port: string
+          ship_name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          eta?: string
+          id?: string
+          port?: string
+          ship_name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       support_ticket_messages: {
         Row: {
           author: string
