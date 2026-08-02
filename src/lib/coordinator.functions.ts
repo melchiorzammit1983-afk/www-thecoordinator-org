@@ -1228,7 +1228,7 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
+    
     const today = isoToMaltaDateTime(new Date().toISOString()).date;
     // Generated types can lag the Lovable-managed migration state.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1354,6 +1354,7 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
     if (data.flight_schedule_record_id) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
     }
@@ -3170,6 +3171,7 @@ type LiveStatusResult = {
   estimated?: string | null;
   confidence?: "high" | "low";
   reason?: string;
+  error?: string;
   source?: "aerodatabox";
 };
 type FlightSide = "arr" | "dep";
