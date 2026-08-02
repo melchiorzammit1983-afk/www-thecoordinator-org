@@ -4306,6 +4306,7 @@ export type Database = {
           route_duration_sec: number | null
           safety_flag_at: string | null
           safety_flag_note: string | null
+          scheduled_transport_pickup_offset_minutes: number | null
           self_assigned_user_id: string | null
           source: string
           status: Database["public"]["Enums"]["job_status"]
@@ -4446,6 +4447,7 @@ export type Database = {
           route_duration_sec?: number | null
           safety_flag_at?: string | null
           safety_flag_note?: string | null
+          scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
@@ -4586,6 +4588,7 @@ export type Database = {
           route_duration_sec?: number | null
           safety_flag_at?: string | null
           safety_flag_note?: string | null
+          scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
