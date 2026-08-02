@@ -106,7 +106,8 @@ export function parseAirportScheduleLines(lines: string[]): ParsedSchedule {
       continue;
     }
 
-    const [, airline, aircraftType, airportCode, carrier, number, hours, minutes] = flight;
+    const [, airline, aircraftType, route, carrier, number, hours, minutes] = flight;
+    const airportCode = immediateAirport(route, direction);
     flights.push({
       rowNumber: flights.length + 1,
       date,
