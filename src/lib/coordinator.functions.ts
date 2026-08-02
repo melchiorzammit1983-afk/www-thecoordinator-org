@@ -1197,6 +1197,7 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
     const today = isoToMaltaDateTime(new Date().toISOString()).date;
     // Generated types can lag the Lovable-managed migration state.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1351,7 +1352,7 @@ export const createJob = createServerFn({ method: "POST" })
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
-        tracking_enabled: data.tracking_enabled,
+        tracking_enabled: !!transportTrackingKind && data.tracking_enabled,
         vehicle: data.vehicle || null,
         notes: data.notes || null,
         contact_phone: data.contact_phone || null,
@@ -1364,7 +1365,7 @@ export const createJob = createServerFn({ method: "POST" })
         pickup_lng: data.pickup_lng ?? null,
         dropoff_lat: data.dropoff_lat ?? null,
         dropoff_lng: data.dropoff_lng ?? null,
-        tracking_kind: data.tracking_kind ?? "flight",
+        tracking_kind: transportTrackingKind,
       } as any)
       .select()
       .single();
@@ -1416,11 +1417,13 @@ export const updateJob = createServerFn({ method: "POST" })
       await assertActiveFlightScheduleRecord(supabaseAdmin, selectedFlightId);
     }
     const effectiveFlightId = data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id;
+    const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
+    const transportTrackingKind = effectiveShipId ? "vessel" : effectiveFlightId ? "flight" : null;
     const scheduledPickup = await resolveScheduledTransportPickup(
       supabaseAdmin,
       c.id,
       effectiveFlightId,
-      data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
+      effectiveShipId,
       data.scheduled_transport_pickup_offset_minutes === undefined
         ? ((existing as any).scheduled_transport_pickup_offset_minutes ?? null)
         : data.scheduled_transport_pickup_offset_minutes,
@@ -1509,7 +1512,8 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
-    if (data.tracking_kind !== undefined) patch.tracking_kind = data.tracking_kind;
+    patch.tracking_kind = transportTrackingKind;
+    patch.tracking_enabled = !!transportTrackingKind && !!data.tracking_enabled;
     if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
     if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;

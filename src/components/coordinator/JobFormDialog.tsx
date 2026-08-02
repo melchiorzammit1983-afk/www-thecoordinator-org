@@ -241,10 +241,13 @@ function ManualForm({
   const [toKind, setToKind] = useState<EndpointKind>(() =>
     inferEndpointKind(job?.to_location ?? prefill?.to_location ?? "", job?.to_flight ?? prefill?.to_flight ?? ""),
   );
-  const trackingKind: "flight" | "vessel" =
-    (fromKind === "seaport" && toKind !== "airport") || (toKind === "seaport" && fromKind !== "airport")
-      ? "vessel"
-      : "flight";
+  // Transport tracking is determined by the explicit relationship, never by
+  // location labels or identifiers. A Ship pickup can start anywhere.
+  const trackingKind: "flight" | "vessel" | null = shipEventId
+    ? "vessel"
+    : flightScheduleRecordId
+      ? "flight"
+      : null;
   const { routes: recentRoutes, recordRoute, toggleFavorite } = useRecentRoutes();
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
@@ -452,7 +455,7 @@ function ManualForm({
         date, time,
         from_flight: fromFlight || undefined,
         to_flight: toFlight || undefined,
-        tracking_kind: trackingKind,
+        tracking_kind: trackingKind ?? undefined,
       } });
     },
     onSuccess: () => {
@@ -535,7 +538,7 @@ function ManualForm({
         driver_id: driverId === "__none__" ? null : driverId,
         // Tracking is always on — there's no meaningful reason for a
         // coordinator to create a trip without it.
-        qr_strict_mode: false, tracking_enabled: true,
+        qr_strict_mode: false, tracking_enabled: trackingKind !== null,
         vehicle: vehicle.trim(),
         notes: notes.trim(),
         label_ids: labelIds,
