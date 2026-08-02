@@ -1563,6 +1563,8 @@ export type Database = {
           created_at: string
           currency: string
           custom_link: string
+          default_arrival_pickup_offset_minutes: number
+          default_departure_pickup_offset_minutes: number
           default_driver_commission_pct: number
           default_driver_pay_per_hour: number
           default_driver_pay_per_km: number
@@ -1614,6 +1616,8 @@ export type Database = {
           created_at?: string
           currency?: string
           custom_link?: string
+          default_arrival_pickup_offset_minutes?: number
+          default_departure_pickup_offset_minutes?: number
           default_driver_commission_pct?: number
           default_driver_pay_per_hour?: number
           default_driver_pay_per_km?: number
@@ -1665,6 +1669,8 @@ export type Database = {
           created_at?: string
           currency?: string
           custom_link?: string
+          default_arrival_pickup_offset_minutes?: number
+          default_departure_pickup_offset_minutes?: number
           default_driver_commission_pct?: number
           default_driver_pay_per_hour?: number
           default_driver_pay_per_km?: number
