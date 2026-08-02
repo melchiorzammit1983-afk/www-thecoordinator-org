@@ -89,6 +89,7 @@ import { RoutePinsMap } from "@/components/coordinator/RoutePinsMap";
 import { useMyCompany } from "@/hooks/use-coordinator";
 import { useRecentRoutes } from "@/hooks/use-recent-routes";
 import { Star } from "lucide-react";
+import { formatMaltaDateTime, isoToMaltaDateTime, maltaWallTimeToUtcIso } from "@/lib/time";
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
@@ -100,6 +101,7 @@ type Job = {
   from_flight: string | null;
   to_flight: string | null;
   flight_schedule_record_id?: string | null;
+  scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
@@ -226,6 +228,7 @@ function ManualForm({
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
+  const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
   const [flightSearch, setFlightSearch] = useState("");
   const [fromKind, setFromKind] = useState<EndpointKind>(() =>
     inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
@@ -385,6 +388,30 @@ function ManualForm({
     queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
     enabled: !!flightScheduleRecordId,
   });
+  const effectivePickupOffsetMinutes = linkedFlight
+    ? (pickupOffsetMinutes ?? (linkedFlight.direction === "departure"
+      ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
+      : (myCompany?.default_arrival_pickup_offset_minutes ?? 0)))
+    : null;
+  const calculatedPickup = useMemo(() => {
+    if (!linkedFlight || effectivePickupOffsetMinutes == null) return null;
+    const scheduledAt = maltaWallTimeToUtcIso(linkedFlight.scheduled_date, linkedFlight.scheduled_time);
+    const adjustment = linkedFlight.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
+    const pickupAt = new Date(new Date(scheduledAt).getTime() + adjustment * 60_000).toISOString();
+    return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
+  }, [linkedFlight, effectivePickupOffsetMinutes]);
+  useEffect(() => {
+    if (!calculatedPickup) return;
+    setDate(calculatedPickup.date);
+    setTime(calculatedPickup.time);
+  }, [calculatedPickup]);
+  function selectScheduledFlight(flight: { id: string; direction: "arrival" | "departure" }) {
+    setFlightScheduleRecordId(flight.id);
+    setFlightSearch("");
+    setPickupOffsetMinutes(flight.direction === "departure"
+      ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
+      : (myCompany?.default_arrival_pickup_offset_minutes ?? 0));
+  }
   useEffect(() => {
     if (!myCompany || operationsPhoneDirty) return;
     setOperationsPhone(myCompany.operations_phone ?? "");
@@ -484,6 +511,7 @@ function ManualForm({
         flightorship: fromFlight || toFlight || "",
         from_flight: fromFlight, to_flight: toFlight,
         flight_schedule_record_id: flightScheduleRecordId,
+        scheduled_transport_pickup_offset_minutes: flightScheduleRecordId ? effectivePickupOffsetMinutes : null,
         tracking_kind: trackingKind,
         clientcompanyname: client,
         // This legacy field is the customer/booking phone. The visible 24/7
@@ -941,9 +969,37 @@ function ManualForm({
               <p className="mt-0.5 text-[11px] text-muted-foreground">Search the active schedule. This stores a reference only and never changes an existing link automatically.</p>
             </div>
             {flightScheduleRecordId && linkedFlight ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+              <div className="space-y-3 rounded-md border bg-background px-3 py-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                 <span><b>{linkedFlight.flight_number}</b> · {linkedFlight.airline} · {linkedFlight.origin} → {linkedFlight.destination} · {linkedFlight.scheduled_date} {linkedFlight.scheduled_time?.slice(0, 5)}</span>
-                <Button type="button" size="sm" variant="outline" onClick={() => setFlightScheduleRecordId(null)}>Remove link</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); }}>Remove link</Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <div className="space-y-1">
+                    <Label htmlFor="scheduled-transport-offset">{linkedFlight.direction === "departure" ? "Departure pickup offset" : "Arrival pickup offset"}</Label>
+                    <p className="text-[11px] text-muted-foreground">{linkedFlight.direction === "departure" ? "Pickup is before the scheduled departure." : "Pickup is after the scheduled arrival."}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="scheduled-transport-offset"
+                      type="number"
+                      min={0}
+                      max={1440}
+                      step={5}
+                      className="w-24"
+                      value={effectivePickupOffsetMinutes ?? 0}
+                      onChange={(event) => setPickupOffsetMinutes(Math.min(1440, Math.max(0, Number(event.target.value) || 0)))}
+                      aria-label="Pickup offset in minutes"
+                    />
+                    <span className="text-muted-foreground">min</span>
+                  </div>
+                </div>
+                {calculatedPickup ? (
+                  <div className="rounded-md bg-muted/60 px-2.5 py-2 text-[11px]">
+                    <span className="font-medium text-foreground">Calculated pickup:</span>{" "}
+                    {formatMaltaDateTime(calculatedPickup.pickupAt, { dateStyle: "medium", timeStyle: "short" })}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -956,7 +1012,7 @@ function ManualForm({
                     {isSearchingFlights ? <p className="p-2 text-xs text-muted-foreground">Searching active schedule…</p> : null}
                     {!isSearchingFlights && activeFlightMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No active-schedule flights found.</p> : null}
                     {activeFlightMatches?.map((flight) => (
-                      <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setFlightScheduleRecordId(flight.id); setFlightSearch(""); }}>
+                      <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectScheduledFlight(flight)}>
                         <span className="font-medium">{flight.flight_number} · {flight.airline}</span>
                         <span className="text-muted-foreground">{flight.origin} → {flight.destination} · {flight.scheduled_date} {flight.scheduled_time?.slice(0, 5)} · {flight.direction}</span>
                       </button>
