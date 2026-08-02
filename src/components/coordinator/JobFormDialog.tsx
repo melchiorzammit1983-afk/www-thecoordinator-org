@@ -567,7 +567,9 @@ function ManualForm({
         ship_event_id: shipEventId,
         onward_flight_schedule_record_id: transportType === "ship" ? onwardFlightScheduleRecordId : null,
         scheduled_transport_pickup_offset_minutes: (flightScheduleRecordId || shipEventId) ? effectivePickupOffsetMinutes : null,
-        tracking_kind: trackingKind,
+        // The server accepts a supported tracker or an omitted value. Never
+        // send null here: `tracking_kind` is an optional enum, not nullable.
+        tracking_kind: trackingKind ?? undefined,
         clientcompanyname: client,
         // This legacy field is the customer/booking phone. The visible 24/7
         // number is company-level, so preserve an existing value on edit and
