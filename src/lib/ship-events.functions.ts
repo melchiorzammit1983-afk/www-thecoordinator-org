@@ -58,7 +58,13 @@ async function getMyCompanyId(userId: string): Promise<string> {
   throw new Error("No company assigned to this user");
 }
 
-const localEta = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Enter a valid ETA");
+// datetime-local controls may include seconds, depending on browser and
+// platform settings. The operational model is minute-precise, so normalize
+// either native representation before converting Malta wall time to UTC.
+const localEta = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/, "Enter a valid ETA")
+  .transform((value) => value.slice(0, 16));
 const shipEventInput = z.object({
   ship_name: z.string().trim().min(1, "Enter a ship name").max(200),
   eta: localEta,
@@ -153,14 +159,17 @@ export const updateShipEventEta = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
-    const { data: event, error } = await shipEventsTable(sb)
-      .from("ship_events")
-      .update({ eta: etaToIso(data.eta), updated_at: new Date().toISOString() })
-      .eq("id", data.id)
-      .eq("company_id", companyId)
-      .select("id, ship_name, eta, port, status, created_at, updated_at")
-      .maybeSingle();
+    const { data: result, error } = await shipEventsTable(sb).rpc(
+      "update_ship_event_eta_with_history",
+      {
+        p_ship_event_id: data.id,
+        p_company_id: companyId,
+        p_eta: etaToIso(data.eta),
+        p_changed_by: context.userId,
+      },
+    );
     if (error) throw new Error(error.message);
+    const event = Array.isArray(result) ? result[0] : result;
     if (!event) throw new Error("Ship event not found");
     return event as ShipEvent;
   });
