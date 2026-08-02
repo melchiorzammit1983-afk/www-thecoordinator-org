@@ -3171,6 +3171,7 @@ type LiveStatusResult = {
   estimated?: string | null;
   confidence?: "high" | "low";
   reason?: string;
+  error?: string;
   source?: "aerodatabox";
 };
 type FlightSide = "arr" | "dep";
