@@ -382,7 +382,7 @@ export const createFlightScheduleDraft = createServerFn({ method: "POST" })
     z
       .object({
         sourceFilename: z.string().trim().min(1).max(255),
-        sourceType: z.literal("spreadsheet"),
+        sourceType: z.enum(["spreadsheet", "pdf"]),
         summary: z.object({
           totalRows: z.number().int().min(1),
           validRows: z.number().int().min(0),

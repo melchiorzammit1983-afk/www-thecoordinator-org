@@ -9,150 +9,111 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as AdminAuthRouteImport } from './routes/admin-auth'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as CrewPortalRouteImport } from './routes/crew-portal'
-import { Route as DemoRouteImport } from './routes/demo'
-import { Route as HelpRouteImport } from './routes/help'
-import { Route as InstallRouteImport } from './routes/install'
-import { Route as McpRouteImport } from './routes/mcp'
-import { Route as RequestAccessRouteImport } from './routes/request-access'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
-import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
-import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
-import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
-import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
-import { Route as BTokenRouteImport } from './routes/b.$token'
-import { Route as CTokenRouteImport } from './routes/c.$token'
-import { Route as CrewPortalDashboardRouteImport } from './routes/crew-portal.dashboard'
-import { Route as GSessionRouteImport } from './routes/g.$session'
-import { Route as HSlugRouteImport } from './routes/h.$slug'
+import { Route as RequestAccessRouteImport } from './routes/request-access'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as InstallRouteImport } from './routes/install'
+import { Route as HelpRouteImport } from './routes/help'
+import { Route as DemoRouteImport } from './routes/demo'
+import { Route as CrewPortalRouteImport } from './routes/crew-portal'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdminAuthRouteImport } from './routes/admin-auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as HelpIndexRouteImport } from './routes/help.index'
-import { Route as HelpTopicRouteImport } from './routes/help.$topic'
-import { Route as PortalTokenRouteImport } from './routes/portal.$token'
-import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
-import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
-import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
-import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
-import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
-import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
-import { Route as AuthenticatedAdminFlightScheduleRouteImport } from './routes/_authenticated/admin.flight-schedule'
-import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
-import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
-import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
+import { Route as TTokenRouteImport } from './routes/t.$token'
+import { Route as PortalTokenRouteImport } from './routes/portal.$token'
+import { Route as HelpTopicRouteImport } from './routes/help.$topic'
+import { Route as HSlugRouteImport } from './routes/h.$slug'
+import { Route as GSessionRouteImport } from './routes/g.$session'
+import { Route as CrewPortalDashboardRouteImport } from './routes/crew-portal.dashboard'
+import { Route as CTokenRouteImport } from './routes/c.$token'
+import { Route as BTokenRouteImport } from './routes/b.$token'
+import { Route as ApiHelpChatRouteImport } from './routes/api/help-chat'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedMyTicketsRouteImport } from './routes/_authenticated/my-tickets'
+import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/coordinator'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
+import { Route as HSlugIndexRouteImport } from './routes/h.$slug.index'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
-import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
+import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
+import { Route as ApiCrewPortalVerifyCodeRouteImport } from './routes/api/crew-portal/verify-code'
+import { Route as ApiCrewPortalStatusRouteImport } from './routes/api/crew-portal/status'
+import { Route as ApiCrewPortalLoginRouteImport } from './routes/api/crew-portal/login'
+import { Route as ApiCrewPortalDashboardRouteImport } from './routes/api/crew-portal/dashboard'
+import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes/_authenticated/coordinator.statements'
+import { Route as AuthenticatedCoordinatorShipOperationsRouteImport } from './routes/_authenticated/coordinator.ship-operations'
+import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
+import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
+import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
+import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
+import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
+import { Route as AuthenticatedCoordinatorMyDrivingRouteImport } from './routes/_authenticated/coordinator.my-driving'
+import { Route as AuthenticatedCoordinatorLabelsRouteImport } from './routes/_authenticated/coordinator.labels'
+import { Route as AuthenticatedCoordinatorIncomingRouteImport } from './routes/_authenticated/coordinator.incoming'
+import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
+import { Route as AuthenticatedCoordinatorDispatchRulesRouteImport } from './routes/_authenticated/coordinator.dispatch-rules'
+import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
+import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
+import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
+import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
+import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
 import { Route as AuthenticatedCoordinatorAirportOperationsRouteImport } from './routes/_authenticated/coordinator.airport-operations'
 import { Route as AuthenticatedCoordinatorOperationsRouteImport } from './routes/_authenticated/coordinator.operations'
-import { Route as AuthenticatedCoordinatorAvailabilityRouteImport } from './routes/_authenticated/coordinator.availability'
-import { Route as AuthenticatedCoordinatorBoardCreatorRouteImport } from './routes/_authenticated/coordinator.board-creator'
-import { Route as AuthenticatedCoordinatorBrandingRouteImport } from './routes/_authenticated/coordinator.branding'
-import { Route as AuthenticatedCoordinatorCalendarRouteImport } from './routes/_authenticated/coordinator.calendar'
-import { Route as AuthenticatedCoordinatorCollaborateRouteImport } from './routes/_authenticated/coordinator.collaborate'
-import { Route as AuthenticatedCoordinatorDispatchRulesRouteImport } from './routes/_authenticated/coordinator.dispatch-rules'
-import { Route as AuthenticatedCoordinatorDriversRouteImport } from './routes/_authenticated/coordinator.drivers'
-import { Route as AuthenticatedCoordinatorIncomingRouteImport } from './routes/_authenticated/coordinator.incoming'
-import { Route as AuthenticatedCoordinatorLabelsRouteImport } from './routes/_authenticated/coordinator.labels'
-import { Route as AuthenticatedCoordinatorMyDrivingRouteImport } from './routes/_authenticated/coordinator.my-driving'
-import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
-import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
-import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
-import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
-import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
-import { Route as AuthenticatedCoordinatorShipOperationsRouteImport } from './routes/_authenticated/coordinator.ship-operations'
-import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes/_authenticated/coordinator.statements'
-import { Route as ApiCrewPortalDashboardRouteImport } from './routes/api/crew-portal/dashboard'
-import { Route as ApiCrewPortalLoginRouteImport } from './routes/api/crew-portal/login'
-import { Route as ApiCrewPortalStatusRouteImport } from './routes/api/crew-portal/status'
-import { Route as ApiCrewPortalVerifyCodeRouteImport } from './routes/api/crew-portal/verify-code'
-import { Route as HSlugIndexRouteImport } from './routes/h.$slug.index'
-import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
-import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
-import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
-import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
-import { Route as ApiPublicCronAutoForwardRouteImport } from './routes/api/public/cron/auto-forward'
-import { Route as ApiPublicCronFlightT30RouteImport } from './routes/api/public/cron/flight-t30'
-import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
-import { Route as ApiPublicHooksSummarizeLearningRouteImport } from './routes/api/public/hooks/summarize-learning'
-import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
-import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
-import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
+import { Route as AuthenticatedCoordinatorAddressSettingsRouteImport } from './routes/_authenticated/coordinator.address-settings'
+import { Route as AuthenticatedAdminRequestsRouteImport } from './routes/_authenticated/admin.requests'
+import { Route as AuthenticatedAdminPortalSettingsRouteImport } from './routes/_authenticated/admin.portal-settings'
+import { Route as AuthenticatedAdminPasswordResetsRouteImport } from './routes/_authenticated/admin.password-resets'
+import { Route as AuthenticatedAdminFlightScheduleRouteImport } from './routes/_authenticated/admin.flight-schedule'
+import { Route as AuthenticatedAdminAiInsightsRouteImport } from './routes/_authenticated/admin.ai-insights'
+import { Route as AuthenticatedAdminActivityRouteImport } from './routes/_authenticated/admin.activity'
+import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as MDriverTokenIndexRouteImport } from './routes/m.driver.$token.index'
 import { Route as MDriverTokenSettingsRouteImport } from './routes/m.driver.$token.settings'
-import { Route as ApiPublicBTokenIndexRouteImport } from './routes/api/public/b/$token/index'
-import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
-import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
-import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/public/portal/$token/index'
-import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
-import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
-import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
-import { Route as ApiPublicPortalTokenLogoRouteImport } from './routes/api/public/portal/$token/logo'
-import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
-import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
-import { Route as ApiPublicPortalTokenStatementRouteImport } from './routes/api/public/portal/$token/statement'
-import { Route as ApiPublicPortalTokenTripLocationRouteImport } from './routes/api/public/portal/$token/trip-location'
-import { Route as ApiPublicPortalBySlugSlugRouteImport } from './routes/api/public/portal/by-slug/$slug'
+import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
+import { Route as HSlugRQrRouteImport } from './routes/h.$slug.r.$qr'
+import { Route as ApiPublicHooksWaitThresholdsRouteImport } from './routes/api/public/hooks/wait-thresholds'
+import { Route as ApiPublicHooksSummarizeLearningRouteImport } from './routes/api/public/hooks/summarize-learning'
+import { Route as ApiPublicCronRolloverSubscriptionsRouteImport } from './routes/api/public/cron/rollover-subscriptions'
+import { Route as ApiPublicCronFlightT30RouteImport } from './routes/api/public/cron/flight-t30'
+import { Route as ApiPublicCronAutoForwardRouteImport } from './routes/api/public/cron/auto-forward'
+import { Route as ApiPublicCronAiAutoCoordinateRouteImport } from './routes/api/public/cron/ai-auto-coordinate'
+import { Route as AuthenticatedCoordinatorPortalsIdRouteImport } from './routes/_authenticated/coordinator.portals.$id'
 import { Route as ApiPublicTrackTokenIndexRouteImport } from './routes/api/public/track/$token/index'
-import { Route as ApiPublicTrackTokenChangeRequestsRouteImport } from './routes/api/public/track/$token/change-requests'
-import { Route as ApiPublicTrackTokenDriverMessagesRouteImport } from './routes/api/public/track/$token/driver-messages'
-import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
-import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
-import { Route as ApiPublicTrackTokenRebookRouteImport } from './routes/api/public/track/$token/rebook'
-import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
+import { Route as ApiPublicPortalTokenIndexRouteImport } from './routes/api/public/portal/$token/index'
+import { Route as ApiPublicBTokenIndexRouteImport } from './routes/api/public/b/$token/index'
 import { Route as MDriverTokenSignJobIdRouteImport } from './routes/m.driver.$token.sign.$jobId'
-import { Route as ApiPublicPortalTokenCrewIndexRouteImport } from './routes/api/public/portal/$token/crew/index'
-import { Route as ApiPublicPortalTokenCrewCrewIdRouteImport } from './routes/api/public/portal/$token/crew/$crewId'
+import { Route as ApiPublicTrackTokenVerifyRouteImport } from './routes/api/public/track/$token/verify'
+import { Route as ApiPublicTrackTokenRebookRouteImport } from './routes/api/public/track/$token/rebook'
+import { Route as ApiPublicTrackTokenMessagesRouteImport } from './routes/api/public/track/$token/messages'
+import { Route as ApiPublicTrackTokenLocationRouteImport } from './routes/api/public/track/$token/location'
+import { Route as ApiPublicTrackTokenDriverMessagesRouteImport } from './routes/api/public/track/$token/driver-messages'
+import { Route as ApiPublicTrackTokenChangeRequestsRouteImport } from './routes/api/public/track/$token/change-requests'
+import { Route as ApiPublicPortalBySlugSlugRouteImport } from './routes/api/public/portal/by-slug/$slug'
+import { Route as ApiPublicPortalTokenTripLocationRouteImport } from './routes/api/public/portal/$token/trip-location'
+import { Route as ApiPublicPortalTokenStatementRouteImport } from './routes/api/public/portal/$token/statement'
+import { Route as ApiPublicPortalTokenPaxLinkRouteImport } from './routes/api/public/portal/$token/pax-link'
+import { Route as ApiPublicPortalTokenMessagesRouteImport } from './routes/api/public/portal/$token/messages'
+import { Route as ApiPublicPortalTokenLogoRouteImport } from './routes/api/public/portal/$token/logo'
+import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
+import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
+import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
+import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
+import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
 import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/api/public/portal/guest/$session/index'
+import { Route as ApiPublicPortalTokenCrewIndexRouteImport } from './routes/api/public/portal/$token/crew/index'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
+import { Route as ApiPublicPortalTokenCrewCrewIdRouteImport } from './routes/api/public/portal/$token/crew/$crewId'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminAuthRoute = AdminAuthRouteImport.update({
-  id: '/admin-auth',
-  path: '/admin-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CrewPortalRoute = CrewPortalRouteImport.update({
-  id: '/crew-portal',
-  path: '/crew-portal',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoRoute = DemoRouteImport.update({
-  id: '/demo',
-  path: '/demo',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HelpRoute = HelpRouteImport.update({
-  id: '/help',
-  path: '/help',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InstallRoute = InstallRouteImport.update({
-  id: '/install',
-  path: '/install',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const McpRoute = McpRouteImport.update({
-  id: '/mcp',
-  path: '/mcp',
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RequestAccessRoute = RequestAccessRouteImport.update({
@@ -160,26 +121,113 @@ const RequestAccessRoute = RequestAccessRouteImport.update({
   path: '/request-access',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
-  id: '/sitemap.xml',
-  path: '/sitemap.xml',
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
-const Char91DotmcpChar93ListToolsRoute =
-  Char91DotmcpChar93ListToolsRouteImport.update({
-    id: '/.mcp/list-tools',
-    path: '/.mcp/list-tools',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const Char91DotwellKnownChar93OauthProtectedResourceRoute =
-  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
-    id: '/.well-known/oauth-protected-resource',
-    path: '/.well-known/oauth-protected-resource',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const InstallRoute = InstallRouteImport.update({
+  id: '/install',
+  path: '/install',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrewPortalRoute = CrewPortalRouteImport.update({
+  id: '/crew-portal',
+  path: '/crew-portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAuthRoute = AdminAuthRouteImport.update({
+  id: '/admin-auth',
+  path: '/admin-auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpIndexRoute = HelpIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HelpRoute,
+} as any)
+const TrackTokenRoute = TrackTokenRouteImport.update({
+  id: '/track/$token',
+  path: '/track/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TTokenRoute = TTokenRouteImport.update({
+  id: '/t/$token',
+  path: '/t/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalTokenRoute = PortalTokenRouteImport.update({
+  id: '/portal/$token',
+  path: '/portal/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpTopicRoute = HelpTopicRouteImport.update({
+  id: '/$topic',
+  path: '/$topic',
+  getParentRoute: () => HelpRoute,
+} as any)
+const HSlugRoute = HSlugRouteImport.update({
+  id: '/h/$slug',
+  path: '/h/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GSessionRoute = GSessionRouteImport.update({
+  id: '/g/$session',
+  path: '/g/$session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrewPortalDashboardRoute = CrewPortalDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => CrewPortalRoute,
+} as any)
+const CTokenRoute = CTokenRouteImport.update({
+  id: '/c/$token',
+  path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BTokenRoute = BTokenRouteImport.update({
+  id: '/b/$token',
+  path: '/b/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
+  id: '/api/help-chat',
+  path: '/api/help-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMyTicketsRoute = AuthenticatedMyTicketsRouteImport.update({
+  id: '/my-tickets',
+  path: '/my-tickets',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedCoordinatorRoute =
@@ -188,133 +236,169 @@ const AuthenticatedCoordinatorRoute =
     path: '/coordinator',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedMyTicketsRoute = AuthenticatedMyTicketsRouteImport.update({
-  id: '/my-tickets',
-  path: '/my-tickets',
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const ApiHelpChatRoute = ApiHelpChatRouteImport.update({
-  id: '/api/help-chat',
-  path: '/api/help-chat',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BTokenRoute = BTokenRouteImport.update({
-  id: '/b/$token',
-  path: '/b/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CTokenRoute = CTokenRouteImport.update({
-  id: '/c/$token',
-  path: '/c/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CrewPortalDashboardRoute = CrewPortalDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => CrewPortalRoute,
-} as any)
-const GSessionRoute = GSessionRouteImport.update({
-  id: '/g/$session',
-  path: '/g/$session',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HSlugRoute = HSlugRouteImport.update({
-  id: '/h/$slug',
-  path: '/h/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HelpIndexRoute = HelpIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => HelpRoute,
-} as any)
-const HelpTopicRoute = HelpTopicRouteImport.update({
-  id: '/$topic',
-  path: '/$topic',
-  getParentRoute: () => HelpRoute,
-} as any)
-const PortalTokenRoute = PortalTokenRouteImport.update({
-  id: '/portal/$token',
-  path: '/portal/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TTokenRoute = TTokenRouteImport.update({
-  id: '/t/$token',
-  path: '/t/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TrackTokenRoute = TrackTokenRouteImport.update({
-  id: '/track/$token',
-  path: '/track/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
-  id: '/.lovable/oauth/consent',
-  path: '/.lovable/oauth/consent',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Char91DotmcpChar93InvokeToolToolRoute =
-  Char91DotmcpChar93InvokeToolToolRouteImport.update({
-    id: '/.mcp/invoke-tool/$tool',
-    path: '/.mcp/invoke-tool/$tool',
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
-const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+const Char91DotmcpChar93ListToolsRoute =
+  Char91DotmcpChar93ListToolsRouteImport.update({
+    id: '/.mcp/list-tools',
+    path: '/.mcp/list-tools',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HSlugIndexRoute = HSlugIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AuthenticatedAdminRoute,
+  getParentRoute: () => HSlugRoute,
 } as any)
-const AuthenticatedAdminActivityRoute =
-  AuthenticatedAdminActivityRouteImport.update({
-    id: '/activity',
-    path: '/activity',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminAiInsightsRoute =
-  AuthenticatedAdminAiInsightsRouteImport.update({
-    id: '/ai-insights',
-    path: '/ai-insights',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminFlightScheduleRoute =
-  AuthenticatedAdminFlightScheduleRouteImport.update({
-    id: '/flight-schedule',
-    path: '/flight-schedule',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminPasswordResetsRoute =
-  AuthenticatedAdminPasswordResetsRouteImport.update({
-    id: '/password-resets',
-    path: '/password-resets',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminPortalSettingsRoute =
-  AuthenticatedAdminPortalSettingsRouteImport.update({
-    id: '/portal-settings',
-    path: '/portal-settings',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminRequestsRoute =
-  AuthenticatedAdminRequestsRouteImport.update({
-    id: '/requests',
-    path: '/requests',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 const AuthenticatedCoordinatorIndexRoute =
   AuthenticatedCoordinatorIndexRouteImport.update({
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
-const AuthenticatedCoordinatorAddressSettingsRoute =
-  AuthenticatedCoordinatorAddressSettingsRouteImport.update({
-    id: '/address-settings',
-    path: '/address-settings',
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const MDriverTokenRoute = MDriverTokenRouteImport.update({
+  id: '/m/driver/$token',
+  path: '/m/driver/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MClientTokenRoute = MClientTokenRouteImport.update({
+  id: '/m/client/$token',
+  path: '/m/client/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalVerifyCodeRoute = ApiCrewPortalVerifyCodeRouteImport.update({
+  id: '/api/crew-portal/verify-code',
+  path: '/api/crew-portal/verify-code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalStatusRoute = ApiCrewPortalStatusRouteImport.update({
+  id: '/api/crew-portal/status',
+  path: '/api/crew-portal/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalLoginRoute = ApiCrewPortalLoginRouteImport.update({
+  id: '/api/crew-portal/login',
+  path: '/api/crew-portal/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrewPortalDashboardRoute = ApiCrewPortalDashboardRouteImport.update({
+  id: '/api/crew-portal/dashboard',
+  path: '/api/crew-portal/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedCoordinatorStatementsRoute =
+  AuthenticatedCoordinatorStatementsRouteImport.update({
+    id: '/statements',
+    path: '/statements',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorShipOperationsRoute =
+  AuthenticatedCoordinatorShipOperationsRouteImport.update({
+    id: '/ship-operations',
+    path: '/ship-operations',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorReferRoute =
+  AuthenticatedCoordinatorReferRouteImport.update({
+    id: '/refer',
+    path: '/refer',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPricingRoute =
+  AuthenticatedCoordinatorPricingRouteImport.update({
+    id: '/pricing',
+    path: '/pricing',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPortalsRoute =
+  AuthenticatedCoordinatorPortalsRouteImport.update({
+    id: '/portals',
+    path: '/portals',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPortalLinksRoute =
+  AuthenticatedCoordinatorPortalLinksRouteImport.update({
+    id: '/portal-links',
+    path: '/portal-links',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPendingRoute =
+  AuthenticatedCoordinatorPendingRouteImport.update({
+    id: '/pending',
+    path: '/pending',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorMyDrivingRoute =
+  AuthenticatedCoordinatorMyDrivingRouteImport.update({
+    id: '/my-driving',
+    path: '/my-driving',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorLabelsRoute =
+  AuthenticatedCoordinatorLabelsRouteImport.update({
+    id: '/labels',
+    path: '/labels',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorIncomingRoute =
+  AuthenticatedCoordinatorIncomingRouteImport.update({
+    id: '/incoming',
+    path: '/incoming',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorDriversRoute =
+  AuthenticatedCoordinatorDriversRouteImport.update({
+    id: '/drivers',
+    path: '/drivers',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorDispatchRulesRoute =
+  AuthenticatedCoordinatorDispatchRulesRouteImport.update({
+    id: '/dispatch-rules',
+    path: '/dispatch-rules',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorCollaborateRoute =
+  AuthenticatedCoordinatorCollaborateRouteImport.update({
+    id: '/collaborate',
+    path: '/collaborate',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorCalendarRoute =
+  AuthenticatedCoordinatorCalendarRouteImport.update({
+    id: '/calendar',
+    path: '/calendar',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorBrandingRoute =
+  AuthenticatedCoordinatorBrandingRouteImport.update({
+    id: '/branding',
+    path: '/branding',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorBoardCreatorRoute =
+  AuthenticatedCoordinatorBoardCreatorRouteImport.update({
+    id: '/board-creator',
+    path: '/board-creator',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorAvailabilityRoute =
+  AuthenticatedCoordinatorAvailabilityRouteImport.update({
+    id: '/availability',
+    path: '/availability',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorAirportOperationsRoute =
@@ -329,195 +413,59 @@ const AuthenticatedCoordinatorOperationsRoute =
     path: '/operations',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
-const AuthenticatedCoordinatorAvailabilityRoute =
-  AuthenticatedCoordinatorAvailabilityRouteImport.update({
-    id: '/availability',
-    path: '/availability',
+const AuthenticatedCoordinatorAddressSettingsRoute =
+  AuthenticatedCoordinatorAddressSettingsRouteImport.update({
+    id: '/address-settings',
+    path: '/address-settings',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
-const AuthenticatedCoordinatorBoardCreatorRoute =
-  AuthenticatedCoordinatorBoardCreatorRouteImport.update({
-    id: '/board-creator',
-    path: '/board-creator',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminRequestsRoute =
+  AuthenticatedAdminRequestsRouteImport.update({
+    id: '/requests',
+    path: '/requests',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorBrandingRoute =
-  AuthenticatedCoordinatorBrandingRouteImport.update({
-    id: '/branding',
-    path: '/branding',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminPortalSettingsRoute =
+  AuthenticatedAdminPortalSettingsRouteImport.update({
+    id: '/portal-settings',
+    path: '/portal-settings',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorCalendarRoute =
-  AuthenticatedCoordinatorCalendarRouteImport.update({
-    id: '/calendar',
-    path: '/calendar',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminPasswordResetsRoute =
+  AuthenticatedAdminPasswordResetsRouteImport.update({
+    id: '/password-resets',
+    path: '/password-resets',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorCollaborateRoute =
-  AuthenticatedCoordinatorCollaborateRouteImport.update({
-    id: '/collaborate',
-    path: '/collaborate',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminFlightScheduleRoute =
+  AuthenticatedAdminFlightScheduleRouteImport.update({
+    id: '/flight-schedule',
+    path: '/flight-schedule',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorDispatchRulesRoute =
-  AuthenticatedCoordinatorDispatchRulesRouteImport.update({
-    id: '/dispatch-rules',
-    path: '/dispatch-rules',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminAiInsightsRoute =
+  AuthenticatedAdminAiInsightsRouteImport.update({
+    id: '/ai-insights',
+    path: '/ai-insights',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorDriversRoute =
-  AuthenticatedCoordinatorDriversRouteImport.update({
-    id: '/drivers',
-    path: '/drivers',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
+const AuthenticatedAdminActivityRoute =
+  AuthenticatedAdminActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedCoordinatorIncomingRoute =
-  AuthenticatedCoordinatorIncomingRouteImport.update({
-    id: '/incoming',
-    path: '/incoming',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorLabelsRoute =
-  AuthenticatedCoordinatorLabelsRouteImport.update({
-    id: '/labels',
-    path: '/labels',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorMyDrivingRoute =
-  AuthenticatedCoordinatorMyDrivingRouteImport.update({
-    id: '/my-driving',
-    path: '/my-driving',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorPendingRoute =
-  AuthenticatedCoordinatorPendingRouteImport.update({
-    id: '/pending',
-    path: '/pending',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorPortalLinksRoute =
-  AuthenticatedCoordinatorPortalLinksRouteImport.update({
-    id: '/portal-links',
-    path: '/portal-links',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorPortalsRoute =
-  AuthenticatedCoordinatorPortalsRouteImport.update({
-    id: '/portals',
-    path: '/portals',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorPricingRoute =
-  AuthenticatedCoordinatorPricingRouteImport.update({
-    id: '/pricing',
-    path: '/pricing',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorReferRoute =
-  AuthenticatedCoordinatorReferRouteImport.update({
-    id: '/refer',
-    path: '/refer',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorShipOperationsRoute =
-  AuthenticatedCoordinatorShipOperationsRouteImport.update({
-    id: '/ship-operations',
-    path: '/ship-operations',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const AuthenticatedCoordinatorStatementsRoute =
-  AuthenticatedCoordinatorStatementsRouteImport.update({
-    id: '/statements',
-    path: '/statements',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
-const ApiCrewPortalDashboardRoute = ApiCrewPortalDashboardRouteImport.update({
-  id: '/api/crew-portal/dashboard',
-  path: '/api/crew-portal/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrewPortalLoginRoute = ApiCrewPortalLoginRouteImport.update({
-  id: '/api/crew-portal/login',
-  path: '/api/crew-portal/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrewPortalStatusRoute = ApiCrewPortalStatusRouteImport.update({
-  id: '/api/crew-portal/status',
-  path: '/api/crew-portal/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrewPortalVerifyCodeRoute = ApiCrewPortalVerifyCodeRouteImport.update({
-  id: '/api/crew-portal/verify-code',
-  path: '/api/crew-portal/verify-code',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HSlugIndexRoute = HSlugIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => HSlugRoute,
-} as any)
-const MClientTokenRoute = MClientTokenRouteImport.update({
-  id: '/m/client/$token',
-  path: '/m/client/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MDriverTokenRoute = MDriverTokenRouteImport.update({
-  id: '/m/driver/$token',
-  path: '/m/driver/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedCoordinatorPortalsIdRoute =
-  AuthenticatedCoordinatorPortalsIdRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => AuthenticatedCoordinatorPortalsRoute,
-  } as any)
-const ApiPublicCronAiAutoCoordinateRoute =
-  ApiPublicCronAiAutoCoordinateRouteImport.update({
-    id: '/api/public/cron/ai-auto-coordinate',
-    path: '/api/public/cron/ai-auto-coordinate',
+const Char91DotmcpChar93InvokeToolToolRoute =
+  Char91DotmcpChar93InvokeToolToolRouteImport.update({
+    id: '/.mcp/invoke-tool/$tool',
+    path: '/.mcp/invoke-tool/$tool',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicCronAutoForwardRoute =
-  ApiPublicCronAutoForwardRouteImport.update({
-    id: '/api/public/cron/auto-forward',
-    path: '/api/public/cron/auto-forward',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicCronFlightT30Route = ApiPublicCronFlightT30RouteImport.update({
-  id: '/api/public/cron/flight-t30',
-  path: '/api/public/cron/flight-t30',
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicCronRolloverSubscriptionsRoute =
-  ApiPublicCronRolloverSubscriptionsRouteImport.update({
-    id: '/api/public/cron/rollover-subscriptions',
-    path: '/api/public/cron/rollover-subscriptions',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicHooksSummarizeLearningRoute =
-  ApiPublicHooksSummarizeLearningRouteImport.update({
-    id: '/api/public/hooks/summarize-learning',
-    path: '/api/public/hooks/summarize-learning',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicHooksWaitThresholdsRoute =
-  ApiPublicHooksWaitThresholdsRouteImport.update({
-    id: '/api/public/hooks/wait-thresholds',
-    path: '/api/public/hooks/wait-thresholds',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const HSlugRQrRoute = HSlugRQrRouteImport.update({
-  id: '/r/$qr',
-  path: '/r/$qr',
-  getParentRoute: () => HSlugRoute,
-} as any)
-const LovableEmailQueueProcessRoute =
-  LovableEmailQueueProcessRouteImport.update({
-    id: '/lovable/email/queue/process',
-    path: '/lovable/email/queue/process',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const MDriverTokenIndexRoute = MDriverTokenIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -528,80 +476,57 @@ const MDriverTokenSettingsRoute = MDriverTokenSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => MDriverTokenRoute,
 } as any)
-const ApiPublicBTokenIndexRoute = ApiPublicBTokenIndexRouteImport.update({
-  id: '/api/public/b/$token/',
-  path: '/api/public/b/$token/',
+const LovableEmailQueueProcessRoute =
+  LovableEmailQueueProcessRouteImport.update({
+    id: '/lovable/email/queue/process',
+    path: '/lovable/email/queue/process',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HSlugRQrRoute = HSlugRQrRouteImport.update({
+  id: '/r/$qr',
+  path: '/r/$qr',
+  getParentRoute: () => HSlugRoute,
+} as any)
+const ApiPublicHooksWaitThresholdsRoute =
+  ApiPublicHooksWaitThresholdsRouteImport.update({
+    id: '/api/public/hooks/wait-thresholds',
+    path: '/api/public/hooks/wait-thresholds',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksSummarizeLearningRoute =
+  ApiPublicHooksSummarizeLearningRouteImport.update({
+    id: '/api/public/hooks/summarize-learning',
+    path: '/api/public/hooks/summarize-learning',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicCronRolloverSubscriptionsRoute =
+  ApiPublicCronRolloverSubscriptionsRouteImport.update({
+    id: '/api/public/cron/rollover-subscriptions',
+    path: '/api/public/cron/rollover-subscriptions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicCronFlightT30Route = ApiPublicCronFlightT30RouteImport.update({
+  id: '/api/public/cron/flight-t30',
+  path: '/api/public/cron/flight-t30',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicBTokenMessagesRoute = ApiPublicBTokenMessagesRouteImport.update({
-  id: '/api/public/b/$token/messages',
-  path: '/api/public/b/$token/messages',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicBTokenSubmitRoute = ApiPublicBTokenSubmitRouteImport.update({
-  id: '/api/public/b/$token/submit',
-  path: '/api/public/b/$token/submit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicPortalTokenIndexRoute =
-  ApiPublicPortalTokenIndexRouteImport.update({
-    id: '/api/public/portal/$token/',
-    path: '/api/public/portal/$token/',
+const ApiPublicCronAutoForwardRoute =
+  ApiPublicCronAutoForwardRouteImport.update({
+    id: '/api/public/cron/auto-forward',
+    path: '/api/public/cron/auto-forward',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicPortalTokenAdminRoute =
-  ApiPublicPortalTokenAdminRouteImport.update({
-    id: '/api/public/portal/$token/admin',
-    path: '/api/public/portal/$token/admin',
+const ApiPublicCronAiAutoCoordinateRoute =
+  ApiPublicCronAiAutoCoordinateRouteImport.update({
+    id: '/api/public/cron/ai-auto-coordinate',
+    path: '/api/public/cron/ai-auto-coordinate',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicPortalTokenBookingsRoute =
-  ApiPublicPortalTokenBookingsRouteImport.update({
-    id: '/api/public/portal/$token/bookings',
-    path: '/api/public/portal/$token/bookings',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenChangeRequestsRoute =
-  ApiPublicPortalTokenChangeRequestsRouteImport.update({
-    id: '/api/public/portal/$token/change-requests',
-    path: '/api/public/portal/$token/change-requests',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenLogoRoute =
-  ApiPublicPortalTokenLogoRouteImport.update({
-    id: '/api/public/portal/$token/logo',
-    path: '/api/public/portal/$token/logo',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenMessagesRoute =
-  ApiPublicPortalTokenMessagesRouteImport.update({
-    id: '/api/public/portal/$token/messages',
-    path: '/api/public/portal/$token/messages',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenPaxLinkRoute =
-  ApiPublicPortalTokenPaxLinkRouteImport.update({
-    id: '/api/public/portal/$token/pax-link',
-    path: '/api/public/portal/$token/pax-link',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenStatementRoute =
-  ApiPublicPortalTokenStatementRouteImport.update({
-    id: '/api/public/portal/$token/statement',
-    path: '/api/public/portal/$token/statement',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenTripLocationRoute =
-  ApiPublicPortalTokenTripLocationRouteImport.update({
-    id: '/api/public/portal/$token/trip-location',
-    path: '/api/public/portal/$token/trip-location',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalBySlugSlugRoute =
-  ApiPublicPortalBySlugSlugRouteImport.update({
-    id: '/api/public/portal/by-slug/$slug',
-    path: '/api/public/portal/by-slug/$slug',
-    getParentRoute: () => rootRouteImport,
+const AuthenticatedCoordinatorPortalsIdRoute =
+  AuthenticatedCoordinatorPortalsIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedCoordinatorPortalsRoute,
   } as any)
 const ApiPublicTrackTokenIndexRoute =
   ApiPublicTrackTokenIndexRouteImport.update({
@@ -609,28 +534,26 @@ const ApiPublicTrackTokenIndexRoute =
     path: '/api/public/track/$token/',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicTrackTokenChangeRequestsRoute =
-  ApiPublicTrackTokenChangeRequestsRouteImport.update({
-    id: '/api/public/track/$token/change-requests',
-    path: '/api/public/track/$token/change-requests',
+const ApiPublicPortalTokenIndexRoute =
+  ApiPublicPortalTokenIndexRouteImport.update({
+    id: '/api/public/portal/$token/',
+    path: '/api/public/portal/$token/',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicTrackTokenDriverMessagesRoute =
-  ApiPublicTrackTokenDriverMessagesRouteImport.update({
-    id: '/api/public/track/$token/driver-messages',
-    path: '/api/public/track/$token/driver-messages',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicTrackTokenLocationRoute =
-  ApiPublicTrackTokenLocationRouteImport.update({
-    id: '/api/public/track/$token/location',
-    path: '/api/public/track/$token/location',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicTrackTokenMessagesRoute =
-  ApiPublicTrackTokenMessagesRouteImport.update({
-    id: '/api/public/track/$token/messages',
-    path: '/api/public/track/$token/messages',
+const ApiPublicBTokenIndexRoute = ApiPublicBTokenIndexRouteImport.update({
+  id: '/api/public/b/$token/',
+  path: '/api/public/b/$token/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
+  id: '/sign/$jobId',
+  path: '/sign/$jobId',
+  getParentRoute: () => MDriverTokenRoute,
+} as any)
+const ApiPublicTrackTokenVerifyRoute =
+  ApiPublicTrackTokenVerifyRouteImport.update({
+    id: '/api/public/track/$token/verify',
+    path: '/api/public/track/$token/verify',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicTrackTokenRebookRoute =
@@ -639,39 +562,116 @@ const ApiPublicTrackTokenRebookRoute =
     path: '/api/public/track/$token/rebook',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicTrackTokenVerifyRoute =
-  ApiPublicTrackTokenVerifyRouteImport.update({
-    id: '/api/public/track/$token/verify',
-    path: '/api/public/track/$token/verify',
+const ApiPublicTrackTokenMessagesRoute =
+  ApiPublicTrackTokenMessagesRouteImport.update({
+    id: '/api/public/track/$token/messages',
+    path: '/api/public/track/$token/messages',
     getParentRoute: () => rootRouteImport,
   } as any)
-const MDriverTokenSignJobIdRoute = MDriverTokenSignJobIdRouteImport.update({
-  id: '/sign/$jobId',
-  path: '/sign/$jobId',
-  getParentRoute: () => MDriverTokenRoute,
+const ApiPublicTrackTokenLocationRoute =
+  ApiPublicTrackTokenLocationRouteImport.update({
+    id: '/api/public/track/$token/location',
+    path: '/api/public/track/$token/location',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTrackTokenDriverMessagesRoute =
+  ApiPublicTrackTokenDriverMessagesRouteImport.update({
+    id: '/api/public/track/$token/driver-messages',
+    path: '/api/public/track/$token/driver-messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTrackTokenChangeRequestsRoute =
+  ApiPublicTrackTokenChangeRequestsRouteImport.update({
+    id: '/api/public/track/$token/change-requests',
+    path: '/api/public/track/$token/change-requests',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalBySlugSlugRoute =
+  ApiPublicPortalBySlugSlugRouteImport.update({
+    id: '/api/public/portal/by-slug/$slug',
+    path: '/api/public/portal/by-slug/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenTripLocationRoute =
+  ApiPublicPortalTokenTripLocationRouteImport.update({
+    id: '/api/public/portal/$token/trip-location',
+    path: '/api/public/portal/$token/trip-location',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenStatementRoute =
+  ApiPublicPortalTokenStatementRouteImport.update({
+    id: '/api/public/portal/$token/statement',
+    path: '/api/public/portal/$token/statement',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenPaxLinkRoute =
+  ApiPublicPortalTokenPaxLinkRouteImport.update({
+    id: '/api/public/portal/$token/pax-link',
+    path: '/api/public/portal/$token/pax-link',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenMessagesRoute =
+  ApiPublicPortalTokenMessagesRouteImport.update({
+    id: '/api/public/portal/$token/messages',
+    path: '/api/public/portal/$token/messages',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenLogoRoute =
+  ApiPublicPortalTokenLogoRouteImport.update({
+    id: '/api/public/portal/$token/logo',
+    path: '/api/public/portal/$token/logo',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenChangeRequestsRoute =
+  ApiPublicPortalTokenChangeRequestsRouteImport.update({
+    id: '/api/public/portal/$token/change-requests',
+    path: '/api/public/portal/$token/change-requests',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenBookingsRoute =
+  ApiPublicPortalTokenBookingsRouteImport.update({
+    id: '/api/public/portal/$token/bookings',
+    path: '/api/public/portal/$token/bookings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenAdminRoute =
+  ApiPublicPortalTokenAdminRouteImport.update({
+    id: '/api/public/portal/$token/admin',
+    path: '/api/public/portal/$token/admin',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicBTokenSubmitRoute = ApiPublicBTokenSubmitRouteImport.update({
+  id: '/api/public/b/$token/submit',
+  path: '/api/public/b/$token/submit',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicPortalTokenCrewIndexRoute =
-  ApiPublicPortalTokenCrewIndexRouteImport.update({
-    id: '/api/public/portal/$token/crew/',
-    path: '/api/public/portal/$token/crew/',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicPortalTokenCrewCrewIdRoute =
-  ApiPublicPortalTokenCrewCrewIdRouteImport.update({
-    id: '/api/public/portal/$token/crew/$crewId',
-    path: '/api/public/portal/$token/crew/$crewId',
-    getParentRoute: () => rootRouteImport,
-  } as any)
+const ApiPublicBTokenMessagesRoute = ApiPublicBTokenMessagesRouteImport.update({
+  id: '/api/public/b/$token/messages',
+  path: '/api/public/b/$token/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPortalGuestSessionIndexRoute =
   ApiPublicPortalGuestSessionIndexRouteImport.update({
     id: '/api/public/portal/guest/$session/',
     path: '/api/public/portal/guest/$session/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalTokenCrewIndexRoute =
+  ApiPublicPortalTokenCrewIndexRouteImport.update({
+    id: '/api/public/portal/$token/crew/',
+    path: '/api/public/portal/$token/crew/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalGuestRoomQrRoute =
   ApiPublicPortalGuestRoomQrRouteImport.update({
     id: '/api/public/portal/guest/room/$qr',
     path: '/api/public/portal/guest/room/$qr',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicPortalTokenCrewCrewIdRoute =
+  ApiPublicPortalTokenCrewCrewIdRouteImport.update({
+    id: '/api/public/portal/$token/crew/$crewId',
+    path: '/api/public/portal/$token/crew/$crewId',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -1345,67 +1345,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin-auth': {
-      id: '/admin-auth'
-      path: '/admin-auth'
-      fullPath: '/admin-auth'
-      preLoaderRoute: typeof AdminAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/crew-portal': {
-      id: '/crew-portal'
-      path: '/crew-portal'
-      fullPath: '/crew-portal'
-      preLoaderRoute: typeof CrewPortalRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo': {
-      id: '/demo'
-      path: '/demo'
-      fullPath: '/demo'
-      preLoaderRoute: typeof DemoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/help': {
-      id: '/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof HelpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/install': {
-      id: '/install'
-      path: '/install'
-      fullPath: '/install'
-      preLoaderRoute: typeof InstallRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mcp': {
-      id: '/mcp'
-      path: '/mcp'
-      fullPath: '/mcp'
-      preLoaderRoute: typeof McpRouteImport
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/request-access': {
@@ -1415,95 +1359,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RequestAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sitemap.xml': {
-      id: '/sitemap.xml'
-      path: '/sitemap.xml'
-      fullPath: '/sitemap.xml'
-      preLoaderRoute: typeof SitemapDotxmlRouteImport
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.mcp/list-tools': {
-      id: '/.mcp/list-tools'
-      path: '/.mcp/list-tools'
-      fullPath: '/.mcp/list-tools'
-      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
+    '/install': {
+      id: '/install'
+      path: '/install'
+      fullPath: '/install'
+      preLoaderRoute: typeof InstallRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.well-known/oauth-protected-resource': {
-      id: '/.well-known/oauth-protected-resource'
-      path: '/.well-known/oauth-protected-resource'
-      fullPath: '/.well-known/oauth-protected-resource'
-      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/admin': {
-      id: '/_authenticated/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/coordinator': {
-      id: '/_authenticated/coordinator'
-      path: '/coordinator'
-      fullPath: '/coordinator'
-      preLoaderRoute: typeof AuthenticatedCoordinatorRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/my-tickets': {
-      id: '/_authenticated/my-tickets'
-      path: '/my-tickets'
-      fullPath: '/my-tickets'
-      preLoaderRoute: typeof AuthenticatedMyTicketsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/api/help-chat': {
-      id: '/api/help-chat'
-      path: '/api/help-chat'
-      fullPath: '/api/help-chat'
-      preLoaderRoute: typeof ApiHelpChatRouteImport
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/b/$token': {
-      id: '/b/$token'
-      path: '/b/$token'
-      fullPath: '/b/$token'
-      preLoaderRoute: typeof BTokenRouteImport
+    '/crew-portal': {
+      id: '/crew-portal'
+      path: '/crew-portal'
+      fullPath: '/crew-portal'
+      preLoaderRoute: typeof CrewPortalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/c/$token': {
-      id: '/c/$token'
-      path: '/c/$token'
-      fullPath: '/c/$token'
-      preLoaderRoute: typeof CTokenRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/crew-portal/dashboard': {
-      id: '/crew-portal/dashboard'
-      path: '/dashboard'
-      fullPath: '/crew-portal/dashboard'
-      preLoaderRoute: typeof CrewPortalDashboardRouteImport
-      parentRoute: typeof CrewPortalRoute
-    }
-    '/g/$session': {
-      id: '/g/$session'
-      path: '/g/$session'
-      fullPath: '/g/$session'
-      preLoaderRoute: typeof GSessionRouteImport
+    '/admin-auth': {
+      id: '/admin-auth'
+      path: '/admin-auth'
+      fullPath: '/admin-auth'
+      preLoaderRoute: typeof AdminAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/h/$slug': {
-      id: '/h/$slug'
-      path: '/h/$slug'
-      fullPath: '/h/$slug'
-      preLoaderRoute: typeof HSlugRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/help/': {
@@ -1513,18 +1429,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpIndexRouteImport
       parentRoute: typeof HelpRoute
     }
-    '/help/$topic': {
-      id: '/help/$topic'
-      path: '/$topic'
-      fullPath: '/help/$topic'
-      preLoaderRoute: typeof HelpTopicRouteImport
-      parentRoute: typeof HelpRoute
-    }
-    '/portal/$token': {
-      id: '/portal/$token'
-      path: '/portal/$token'
-      fullPath: '/portal/$token'
-      preLoaderRoute: typeof PortalTokenRouteImport
+    '/track/$token': {
+      id: '/track/$token'
+      path: '/track/$token'
+      fullPath: '/track/$token'
+      preLoaderRoute: typeof TrackTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/t/$token': {
@@ -1534,75 +1443,110 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/track/$token': {
-      id: '/track/$token'
-      path: '/track/$token'
-      fullPath: '/track/$token'
-      preLoaderRoute: typeof TrackTokenRouteImport
+    '/portal/$token': {
+      id: '/portal/$token'
+      path: '/portal/$token'
+      fullPath: '/portal/$token'
+      preLoaderRoute: typeof PortalTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.lovable/oauth/consent': {
-      id: '/.lovable/oauth/consent'
-      path: '/.lovable/oauth/consent'
-      fullPath: '/.lovable/oauth/consent'
-      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+    '/help/$topic': {
+      id: '/help/$topic'
+      path: '/$topic'
+      fullPath: '/help/$topic'
+      preLoaderRoute: typeof HelpTopicRouteImport
+      parentRoute: typeof HelpRoute
+    }
+    '/h/$slug': {
+      id: '/h/$slug'
+      path: '/h/$slug'
+      fullPath: '/h/$slug'
+      preLoaderRoute: typeof HSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.mcp/invoke-tool/$tool': {
-      id: '/.mcp/invoke-tool/$tool'
-      path: '/.mcp/invoke-tool/$tool'
-      fullPath: '/.mcp/invoke-tool/$tool'
-      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+    '/g/$session': {
+      id: '/g/$session'
+      path: '/g/$session'
+      fullPath: '/g/$session'
+      preLoaderRoute: typeof GSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/admin/': {
-      id: '/_authenticated/admin/'
+    '/crew-portal/dashboard': {
+      id: '/crew-portal/dashboard'
+      path: '/dashboard'
+      fullPath: '/crew-portal/dashboard'
+      preLoaderRoute: typeof CrewPortalDashboardRouteImport
+      parentRoute: typeof CrewPortalRoute
+    }
+    '/c/$token': {
+      id: '/c/$token'
+      path: '/c/$token'
+      fullPath: '/c/$token'
+      preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b/$token': {
+      id: '/b/$token'
+      path: '/b/$token'
+      fullPath: '/b/$token'
+      preLoaderRoute: typeof BTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/help-chat': {
+      id: '/api/help-chat'
+      path: '/api/help-chat'
+      fullPath: '/api/help-chat'
+      preLoaderRoute: typeof ApiHelpChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/my-tickets': {
+      id: '/_authenticated/my-tickets'
+      path: '/my-tickets'
+      fullPath: '/my-tickets'
+      preLoaderRoute: typeof AuthenticatedMyTicketsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/coordinator': {
+      id: '/_authenticated/coordinator'
+      path: '/coordinator'
+      fullPath: '/coordinator'
+      preLoaderRoute: typeof AuthenticatedCoordinatorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/list-tools': {
+      id: '/.mcp/list-tools'
+      path: '/.mcp/list-tools'
+      fullPath: '/.mcp/list-tools'
+      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/h/$slug/': {
+      id: '/h/$slug/'
       path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/activity': {
-      id: '/_authenticated/admin/activity'
-      path: '/activity'
-      fullPath: '/admin/activity'
-      preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/ai-insights': {
-      id: '/_authenticated/admin/ai-insights'
-      path: '/ai-insights'
-      fullPath: '/admin/ai-insights'
-      preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/flight-schedule': {
-      id: '/_authenticated/admin/flight-schedule'
-      path: '/flight-schedule'
-      fullPath: '/admin/flight-schedule'
-      preLoaderRoute: typeof AuthenticatedAdminFlightScheduleRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/password-resets': {
-      id: '/_authenticated/admin/password-resets'
-      path: '/password-resets'
-      fullPath: '/admin/password-resets'
-      preLoaderRoute: typeof AuthenticatedAdminPasswordResetsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/portal-settings': {
-      id: '/_authenticated/admin/portal-settings'
-      path: '/portal-settings'
-      fullPath: '/admin/portal-settings'
-      preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/requests': {
-      id: '/_authenticated/admin/requests'
-      path: '/requests'
-      fullPath: '/admin/requests'
-      preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
+      fullPath: '/h/$slug/'
+      preLoaderRoute: typeof HSlugIndexRouteImport
+      parentRoute: typeof HSlugRoute
     }
     '/_authenticated/coordinator/': {
       id: '/_authenticated/coordinator/'
@@ -1611,11 +1555,172 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorIndexRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
-    '/_authenticated/coordinator/address-settings': {
-      id: '/_authenticated/coordinator/address-settings'
-      path: '/address-settings'
-      fullPath: '/coordinator/address-settings'
-      preLoaderRoute: typeof AuthenticatedCoordinatorAddressSettingsRouteImport
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/m/driver/$token': {
+      id: '/m/driver/$token'
+      path: '/m/driver/$token'
+      fullPath: '/m/driver/$token'
+      preLoaderRoute: typeof MDriverTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/m/client/$token': {
+      id: '/m/client/$token'
+      path: '/m/client/$token'
+      fullPath: '/m/client/$token'
+      preLoaderRoute: typeof MClientTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/verify-code': {
+      id: '/api/crew-portal/verify-code'
+      path: '/api/crew-portal/verify-code'
+      fullPath: '/api/crew-portal/verify-code'
+      preLoaderRoute: typeof ApiCrewPortalVerifyCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/status': {
+      id: '/api/crew-portal/status'
+      path: '/api/crew-portal/status'
+      fullPath: '/api/crew-portal/status'
+      preLoaderRoute: typeof ApiCrewPortalStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/login': {
+      id: '/api/crew-portal/login'
+      path: '/api/crew-portal/login'
+      fullPath: '/api/crew-portal/login'
+      preLoaderRoute: typeof ApiCrewPortalLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crew-portal/dashboard': {
+      id: '/api/crew-portal/dashboard'
+      path: '/api/crew-portal/dashboard'
+      fullPath: '/api/crew-portal/dashboard'
+      preLoaderRoute: typeof ApiCrewPortalDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/coordinator/statements': {
+      id: '/_authenticated/coordinator/statements'
+      path: '/statements'
+      fullPath: '/coordinator/statements'
+      preLoaderRoute: typeof AuthenticatedCoordinatorStatementsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/ship-operations': {
+      id: '/_authenticated/coordinator/ship-operations'
+      path: '/ship-operations'
+      fullPath: '/coordinator/ship-operations'
+      preLoaderRoute: typeof AuthenticatedCoordinatorShipOperationsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/refer': {
+      id: '/_authenticated/coordinator/refer'
+      path: '/refer'
+      fullPath: '/coordinator/refer'
+      preLoaderRoute: typeof AuthenticatedCoordinatorReferRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/pricing': {
+      id: '/_authenticated/coordinator/pricing'
+      path: '/pricing'
+      fullPath: '/coordinator/pricing'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPricingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/portals': {
+      id: '/_authenticated/coordinator/portals'
+      path: '/portals'
+      fullPath: '/coordinator/portals'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/portal-links': {
+      id: '/_authenticated/coordinator/portal-links'
+      path: '/portal-links'
+      fullPath: '/coordinator/portal-links'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalLinksRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/pending': {
+      id: '/_authenticated/coordinator/pending'
+      path: '/pending'
+      fullPath: '/coordinator/pending'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPendingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/my-driving': {
+      id: '/_authenticated/coordinator/my-driving'
+      path: '/my-driving'
+      fullPath: '/coordinator/my-driving'
+      preLoaderRoute: typeof AuthenticatedCoordinatorMyDrivingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/labels': {
+      id: '/_authenticated/coordinator/labels'
+      path: '/labels'
+      fullPath: '/coordinator/labels'
+      preLoaderRoute: typeof AuthenticatedCoordinatorLabelsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/incoming': {
+      id: '/_authenticated/coordinator/incoming'
+      path: '/incoming'
+      fullPath: '/coordinator/incoming'
+      preLoaderRoute: typeof AuthenticatedCoordinatorIncomingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/drivers': {
+      id: '/_authenticated/coordinator/drivers'
+      path: '/drivers'
+      fullPath: '/coordinator/drivers'
+      preLoaderRoute: typeof AuthenticatedCoordinatorDriversRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/dispatch-rules': {
+      id: '/_authenticated/coordinator/dispatch-rules'
+      path: '/dispatch-rules'
+      fullPath: '/coordinator/dispatch-rules'
+      preLoaderRoute: typeof AuthenticatedCoordinatorDispatchRulesRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/collaborate': {
+      id: '/_authenticated/coordinator/collaborate'
+      path: '/collaborate'
+      fullPath: '/coordinator/collaborate'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCollaborateRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/calendar': {
+      id: '/_authenticated/coordinator/calendar'
+      path: '/calendar'
+      fullPath: '/coordinator/calendar'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCalendarRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/branding': {
+      id: '/_authenticated/coordinator/branding'
+      path: '/branding'
+      fullPath: '/coordinator/branding'
+      preLoaderRoute: typeof AuthenticatedCoordinatorBrandingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/board-creator': {
+      id: '/_authenticated/coordinator/board-creator'
+      path: '/board-creator'
+      fullPath: '/coordinator/board-creator'
+      preLoaderRoute: typeof AuthenticatedCoordinatorBoardCreatorRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/availability': {
+      id: '/_authenticated/coordinator/availability'
+      path: '/availability'
+      fullPath: '/coordinator/availability'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/airport-operations': {
@@ -1632,235 +1737,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorOperationsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
-    '/_authenticated/coordinator/availability': {
-      id: '/_authenticated/coordinator/availability'
-      path: '/availability'
-      fullPath: '/coordinator/availability'
-      preLoaderRoute: typeof AuthenticatedCoordinatorAvailabilityRouteImport
+    '/_authenticated/coordinator/address-settings': {
+      id: '/_authenticated/coordinator/address-settings'
+      path: '/address-settings'
+      fullPath: '/coordinator/address-settings'
+      preLoaderRoute: typeof AuthenticatedCoordinatorAddressSettingsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
-    '/_authenticated/coordinator/board-creator': {
-      id: '/_authenticated/coordinator/board-creator'
-      path: '/board-creator'
-      fullPath: '/coordinator/board-creator'
-      preLoaderRoute: typeof AuthenticatedCoordinatorBoardCreatorRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/requests': {
+      id: '/_authenticated/admin/requests'
+      path: '/requests'
+      fullPath: '/admin/requests'
+      preLoaderRoute: typeof AuthenticatedAdminRequestsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/branding': {
-      id: '/_authenticated/coordinator/branding'
-      path: '/branding'
-      fullPath: '/coordinator/branding'
-      preLoaderRoute: typeof AuthenticatedCoordinatorBrandingRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/portal-settings': {
+      id: '/_authenticated/admin/portal-settings'
+      path: '/portal-settings'
+      fullPath: '/admin/portal-settings'
+      preLoaderRoute: typeof AuthenticatedAdminPortalSettingsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/calendar': {
-      id: '/_authenticated/coordinator/calendar'
-      path: '/calendar'
-      fullPath: '/coordinator/calendar'
-      preLoaderRoute: typeof AuthenticatedCoordinatorCalendarRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/password-resets': {
+      id: '/_authenticated/admin/password-resets'
+      path: '/password-resets'
+      fullPath: '/admin/password-resets'
+      preLoaderRoute: typeof AuthenticatedAdminPasswordResetsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/collaborate': {
-      id: '/_authenticated/coordinator/collaborate'
-      path: '/collaborate'
-      fullPath: '/coordinator/collaborate'
-      preLoaderRoute: typeof AuthenticatedCoordinatorCollaborateRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/flight-schedule': {
+      id: '/_authenticated/admin/flight-schedule'
+      path: '/flight-schedule'
+      fullPath: '/admin/flight-schedule'
+      preLoaderRoute: typeof AuthenticatedAdminFlightScheduleRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/dispatch-rules': {
-      id: '/_authenticated/coordinator/dispatch-rules'
-      path: '/dispatch-rules'
-      fullPath: '/coordinator/dispatch-rules'
-      preLoaderRoute: typeof AuthenticatedCoordinatorDispatchRulesRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/ai-insights': {
+      id: '/_authenticated/admin/ai-insights'
+      path: '/ai-insights'
+      fullPath: '/admin/ai-insights'
+      preLoaderRoute: typeof AuthenticatedAdminAiInsightsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/drivers': {
-      id: '/_authenticated/coordinator/drivers'
-      path: '/drivers'
-      fullPath: '/coordinator/drivers'
-      preLoaderRoute: typeof AuthenticatedCoordinatorDriversRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
+    '/_authenticated/admin/activity': {
+      id: '/_authenticated/admin/activity'
+      path: '/activity'
+      fullPath: '/admin/activity'
+      preLoaderRoute: typeof AuthenticatedAdminActivityRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/coordinator/incoming': {
-      id: '/_authenticated/coordinator/incoming'
-      path: '/incoming'
-      fullPath: '/coordinator/incoming'
-      preLoaderRoute: typeof AuthenticatedCoordinatorIncomingRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/labels': {
-      id: '/_authenticated/coordinator/labels'
-      path: '/labels'
-      fullPath: '/coordinator/labels'
-      preLoaderRoute: typeof AuthenticatedCoordinatorLabelsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/my-driving': {
-      id: '/_authenticated/coordinator/my-driving'
-      path: '/my-driving'
-      fullPath: '/coordinator/my-driving'
-      preLoaderRoute: typeof AuthenticatedCoordinatorMyDrivingRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/pending': {
-      id: '/_authenticated/coordinator/pending'
-      path: '/pending'
-      fullPath: '/coordinator/pending'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPendingRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/portal-links': {
-      id: '/_authenticated/coordinator/portal-links'
-      path: '/portal-links'
-      fullPath: '/coordinator/portal-links'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPortalLinksRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/portals': {
-      id: '/_authenticated/coordinator/portals'
-      path: '/portals'
-      fullPath: '/coordinator/portals'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/pricing': {
-      id: '/_authenticated/coordinator/pricing'
-      path: '/pricing'
-      fullPath: '/coordinator/pricing'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPricingRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/refer': {
-      id: '/_authenticated/coordinator/refer'
-      path: '/refer'
-      fullPath: '/coordinator/refer'
-      preLoaderRoute: typeof AuthenticatedCoordinatorReferRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/ship-operations': {
-      id: '/_authenticated/coordinator/ship-operations'
-      path: '/ship-operations'
-      fullPath: '/coordinator/ship-operations'
-      preLoaderRoute: typeof AuthenticatedCoordinatorShipOperationsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/_authenticated/coordinator/statements': {
-      id: '/_authenticated/coordinator/statements'
-      path: '/statements'
-      fullPath: '/coordinator/statements'
-      preLoaderRoute: typeof AuthenticatedCoordinatorStatementsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
-    '/api/crew-portal/dashboard': {
-      id: '/api/crew-portal/dashboard'
-      path: '/api/crew-portal/dashboard'
-      fullPath: '/api/crew-portal/dashboard'
-      preLoaderRoute: typeof ApiCrewPortalDashboardRouteImport
+    '/.mcp/invoke-tool/$tool': {
+      id: '/.mcp/invoke-tool/$tool'
+      path: '/.mcp/invoke-tool/$tool'
+      fullPath: '/.mcp/invoke-tool/$tool'
+      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/crew-portal/login': {
-      id: '/api/crew-portal/login'
-      path: '/api/crew-portal/login'
-      fullPath: '/api/crew-portal/login'
-      preLoaderRoute: typeof ApiCrewPortalLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/crew-portal/status': {
-      id: '/api/crew-portal/status'
-      path: '/api/crew-portal/status'
-      fullPath: '/api/crew-portal/status'
-      preLoaderRoute: typeof ApiCrewPortalStatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/crew-portal/verify-code': {
-      id: '/api/crew-portal/verify-code'
-      path: '/api/crew-portal/verify-code'
-      fullPath: '/api/crew-portal/verify-code'
-      preLoaderRoute: typeof ApiCrewPortalVerifyCodeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/h/$slug/': {
-      id: '/h/$slug/'
-      path: '/'
-      fullPath: '/h/$slug/'
-      preLoaderRoute: typeof HSlugIndexRouteImport
-      parentRoute: typeof HSlugRoute
-    }
-    '/m/client/$token': {
-      id: '/m/client/$token'
-      path: '/m/client/$token'
-      fullPath: '/m/client/$token'
-      preLoaderRoute: typeof MClientTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/m/driver/$token': {
-      id: '/m/driver/$token'
-      path: '/m/driver/$token'
-      fullPath: '/m/driver/$token'
-      preLoaderRoute: typeof MDriverTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/coordinator/portals/$id': {
-      id: '/_authenticated/coordinator/portals/$id'
-      path: '/$id'
-      fullPath: '/coordinator/portals/$id'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsIdRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorPortalsRoute
-    }
-    '/api/public/cron/ai-auto-coordinate': {
-      id: '/api/public/cron/ai-auto-coordinate'
-      path: '/api/public/cron/ai-auto-coordinate'
-      fullPath: '/api/public/cron/ai-auto-coordinate'
-      preLoaderRoute: typeof ApiPublicCronAiAutoCoordinateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/auto-forward': {
-      id: '/api/public/cron/auto-forward'
-      path: '/api/public/cron/auto-forward'
-      fullPath: '/api/public/cron/auto-forward'
-      preLoaderRoute: typeof ApiPublicCronAutoForwardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/flight-t30': {
-      id: '/api/public/cron/flight-t30'
-      path: '/api/public/cron/flight-t30'
-      fullPath: '/api/public/cron/flight-t30'
-      preLoaderRoute: typeof ApiPublicCronFlightT30RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/rollover-subscriptions': {
-      id: '/api/public/cron/rollover-subscriptions'
-      path: '/api/public/cron/rollover-subscriptions'
-      fullPath: '/api/public/cron/rollover-subscriptions'
-      preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/summarize-learning': {
-      id: '/api/public/hooks/summarize-learning'
-      path: '/api/public/hooks/summarize-learning'
-      fullPath: '/api/public/hooks/summarize-learning'
-      preLoaderRoute: typeof ApiPublicHooksSummarizeLearningRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/wait-thresholds': {
-      id: '/api/public/hooks/wait-thresholds'
-      path: '/api/public/hooks/wait-thresholds'
-      fullPath: '/api/public/hooks/wait-thresholds'
-      preLoaderRoute: typeof ApiPublicHooksWaitThresholdsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/h/$slug/r/$qr': {
-      id: '/h/$slug/r/$qr'
-      path: '/r/$qr'
-      fullPath: '/h/$slug/r/$qr'
-      preLoaderRoute: typeof HSlugRQrRouteImport
-      parentRoute: typeof HSlugRoute
-    }
-    '/lovable/email/queue/process': {
-      id: '/lovable/email/queue/process'
-      path: '/lovable/email/queue/process'
-      fullPath: '/lovable/email/queue/process'
-      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/m/driver/$token/': {
@@ -1877,25 +1814,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MDriverTokenSettingsRouteImport
       parentRoute: typeof MDriverTokenRoute
     }
-    '/api/public/b/$token/': {
-      id: '/api/public/b/$token/'
-      path: '/api/public/b/$token'
-      fullPath: '/api/public/b/$token/'
-      preLoaderRoute: typeof ApiPublicBTokenIndexRouteImport
+    '/lovable/email/queue/process': {
+      id: '/lovable/email/queue/process'
+      path: '/lovable/email/queue/process'
+      fullPath: '/lovable/email/queue/process'
+      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/b/$token/messages': {
-      id: '/api/public/b/$token/messages'
-      path: '/api/public/b/$token/messages'
-      fullPath: '/api/public/b/$token/messages'
-      preLoaderRoute: typeof ApiPublicBTokenMessagesRouteImport
+    '/h/$slug/r/$qr': {
+      id: '/h/$slug/r/$qr'
+      path: '/r/$qr'
+      fullPath: '/h/$slug/r/$qr'
+      preLoaderRoute: typeof HSlugRQrRouteImport
+      parentRoute: typeof HSlugRoute
+    }
+    '/api/public/hooks/wait-thresholds': {
+      id: '/api/public/hooks/wait-thresholds'
+      path: '/api/public/hooks/wait-thresholds'
+      fullPath: '/api/public/hooks/wait-thresholds'
+      preLoaderRoute: typeof ApiPublicHooksWaitThresholdsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/b/$token/submit': {
-      id: '/api/public/b/$token/submit'
-      path: '/api/public/b/$token/submit'
-      fullPath: '/api/public/b/$token/submit'
-      preLoaderRoute: typeof ApiPublicBTokenSubmitRouteImport
+    '/api/public/hooks/summarize-learning': {
+      id: '/api/public/hooks/summarize-learning'
+      path: '/api/public/hooks/summarize-learning'
+      fullPath: '/api/public/hooks/summarize-learning'
+      preLoaderRoute: typeof ApiPublicHooksSummarizeLearningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/rollover-subscriptions': {
+      id: '/api/public/cron/rollover-subscriptions'
+      path: '/api/public/cron/rollover-subscriptions'
+      fullPath: '/api/public/cron/rollover-subscriptions'
+      preLoaderRoute: typeof ApiPublicCronRolloverSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/flight-t30': {
+      id: '/api/public/cron/flight-t30'
+      path: '/api/public/cron/flight-t30'
+      fullPath: '/api/public/cron/flight-t30'
+      preLoaderRoute: typeof ApiPublicCronFlightT30RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/auto-forward': {
+      id: '/api/public/cron/auto-forward'
+      path: '/api/public/cron/auto-forward'
+      fullPath: '/api/public/cron/auto-forward'
+      preLoaderRoute: typeof ApiPublicCronAutoForwardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/ai-auto-coordinate': {
+      id: '/api/public/cron/ai-auto-coordinate'
+      path: '/api/public/cron/ai-auto-coordinate'
+      fullPath: '/api/public/cron/ai-auto-coordinate'
+      preLoaderRoute: typeof ApiPublicCronAiAutoCoordinateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/coordinator/portals/$id': {
+      id: '/_authenticated/coordinator/portals/$id'
+      path: '/$id'
+      fullPath: '/coordinator/portals/$id'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortalsIdRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorPortalsRoute
+    }
+    '/api/public/track/$token/': {
+      id: '/api/public/track/$token/'
+      path: '/api/public/track/$token'
+      fullPath: '/api/public/track/$token/'
+      preLoaderRoute: typeof ApiPublicTrackTokenIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/portal/$token/': {
@@ -1905,116 +1891,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalTokenIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/portal/$token/admin': {
-      id: '/api/public/portal/$token/admin'
-      path: '/api/public/portal/$token/admin'
-      fullPath: '/api/public/portal/$token/admin'
-      preLoaderRoute: typeof ApiPublicPortalTokenAdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/bookings': {
-      id: '/api/public/portal/$token/bookings'
-      path: '/api/public/portal/$token/bookings'
-      fullPath: '/api/public/portal/$token/bookings'
-      preLoaderRoute: typeof ApiPublicPortalTokenBookingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/change-requests': {
-      id: '/api/public/portal/$token/change-requests'
-      path: '/api/public/portal/$token/change-requests'
-      fullPath: '/api/public/portal/$token/change-requests'
-      preLoaderRoute: typeof ApiPublicPortalTokenChangeRequestsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/logo': {
-      id: '/api/public/portal/$token/logo'
-      path: '/api/public/portal/$token/logo'
-      fullPath: '/api/public/portal/$token/logo'
-      preLoaderRoute: typeof ApiPublicPortalTokenLogoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/messages': {
-      id: '/api/public/portal/$token/messages'
-      path: '/api/public/portal/$token/messages'
-      fullPath: '/api/public/portal/$token/messages'
-      preLoaderRoute: typeof ApiPublicPortalTokenMessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/pax-link': {
-      id: '/api/public/portal/$token/pax-link'
-      path: '/api/public/portal/$token/pax-link'
-      fullPath: '/api/public/portal/$token/pax-link'
-      preLoaderRoute: typeof ApiPublicPortalTokenPaxLinkRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/statement': {
-      id: '/api/public/portal/$token/statement'
-      path: '/api/public/portal/$token/statement'
-      fullPath: '/api/public/portal/$token/statement'
-      preLoaderRoute: typeof ApiPublicPortalTokenStatementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/$token/trip-location': {
-      id: '/api/public/portal/$token/trip-location'
-      path: '/api/public/portal/$token/trip-location'
-      fullPath: '/api/public/portal/$token/trip-location'
-      preLoaderRoute: typeof ApiPublicPortalTokenTripLocationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/portal/by-slug/$slug': {
-      id: '/api/public/portal/by-slug/$slug'
-      path: '/api/public/portal/by-slug/$slug'
-      fullPath: '/api/public/portal/by-slug/$slug'
-      preLoaderRoute: typeof ApiPublicPortalBySlugSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/': {
-      id: '/api/public/track/$token/'
-      path: '/api/public/track/$token'
-      fullPath: '/api/public/track/$token/'
-      preLoaderRoute: typeof ApiPublicTrackTokenIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/change-requests': {
-      id: '/api/public/track/$token/change-requests'
-      path: '/api/public/track/$token/change-requests'
-      fullPath: '/api/public/track/$token/change-requests'
-      preLoaderRoute: typeof ApiPublicTrackTokenChangeRequestsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/driver-messages': {
-      id: '/api/public/track/$token/driver-messages'
-      path: '/api/public/track/$token/driver-messages'
-      fullPath: '/api/public/track/$token/driver-messages'
-      preLoaderRoute: typeof ApiPublicTrackTokenDriverMessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/location': {
-      id: '/api/public/track/$token/location'
-      path: '/api/public/track/$token/location'
-      fullPath: '/api/public/track/$token/location'
-      preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/messages': {
-      id: '/api/public/track/$token/messages'
-      path: '/api/public/track/$token/messages'
-      fullPath: '/api/public/track/$token/messages'
-      preLoaderRoute: typeof ApiPublicTrackTokenMessagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/rebook': {
-      id: '/api/public/track/$token/rebook'
-      path: '/api/public/track/$token/rebook'
-      fullPath: '/api/public/track/$token/rebook'
-      preLoaderRoute: typeof ApiPublicTrackTokenRebookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/track/$token/verify': {
-      id: '/api/public/track/$token/verify'
-      path: '/api/public/track/$token/verify'
-      fullPath: '/api/public/track/$token/verify'
-      preLoaderRoute: typeof ApiPublicTrackTokenVerifyRouteImport
+    '/api/public/b/$token/': {
+      id: '/api/public/b/$token/'
+      path: '/api/public/b/$token'
+      fullPath: '/api/public/b/$token/'
+      preLoaderRoute: typeof ApiPublicBTokenIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/m/driver/$token/sign/$jobId': {
@@ -2024,18 +1905,123 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MDriverTokenSignJobIdRouteImport
       parentRoute: typeof MDriverTokenRoute
     }
-    '/api/public/portal/$token/crew/': {
-      id: '/api/public/portal/$token/crew/'
-      path: '/api/public/portal/$token/crew'
-      fullPath: '/api/public/portal/$token/crew/'
-      preLoaderRoute: typeof ApiPublicPortalTokenCrewIndexRouteImport
+    '/api/public/track/$token/verify': {
+      id: '/api/public/track/$token/verify'
+      path: '/api/public/track/$token/verify'
+      fullPath: '/api/public/track/$token/verify'
+      preLoaderRoute: typeof ApiPublicTrackTokenVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/portal/$token/crew/$crewId': {
-      id: '/api/public/portal/$token/crew/$crewId'
-      path: '/api/public/portal/$token/crew/$crewId'
-      fullPath: '/api/public/portal/$token/crew/$crewId'
-      preLoaderRoute: typeof ApiPublicPortalTokenCrewCrewIdRouteImport
+    '/api/public/track/$token/rebook': {
+      id: '/api/public/track/$token/rebook'
+      path: '/api/public/track/$token/rebook'
+      fullPath: '/api/public/track/$token/rebook'
+      preLoaderRoute: typeof ApiPublicTrackTokenRebookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/messages': {
+      id: '/api/public/track/$token/messages'
+      path: '/api/public/track/$token/messages'
+      fullPath: '/api/public/track/$token/messages'
+      preLoaderRoute: typeof ApiPublicTrackTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/location': {
+      id: '/api/public/track/$token/location'
+      path: '/api/public/track/$token/location'
+      fullPath: '/api/public/track/$token/location'
+      preLoaderRoute: typeof ApiPublicTrackTokenLocationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/driver-messages': {
+      id: '/api/public/track/$token/driver-messages'
+      path: '/api/public/track/$token/driver-messages'
+      fullPath: '/api/public/track/$token/driver-messages'
+      preLoaderRoute: typeof ApiPublicTrackTokenDriverMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/track/$token/change-requests': {
+      id: '/api/public/track/$token/change-requests'
+      path: '/api/public/track/$token/change-requests'
+      fullPath: '/api/public/track/$token/change-requests'
+      preLoaderRoute: typeof ApiPublicTrackTokenChangeRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/by-slug/$slug': {
+      id: '/api/public/portal/by-slug/$slug'
+      path: '/api/public/portal/by-slug/$slug'
+      fullPath: '/api/public/portal/by-slug/$slug'
+      preLoaderRoute: typeof ApiPublicPortalBySlugSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/trip-location': {
+      id: '/api/public/portal/$token/trip-location'
+      path: '/api/public/portal/$token/trip-location'
+      fullPath: '/api/public/portal/$token/trip-location'
+      preLoaderRoute: typeof ApiPublicPortalTokenTripLocationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/statement': {
+      id: '/api/public/portal/$token/statement'
+      path: '/api/public/portal/$token/statement'
+      fullPath: '/api/public/portal/$token/statement'
+      preLoaderRoute: typeof ApiPublicPortalTokenStatementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/pax-link': {
+      id: '/api/public/portal/$token/pax-link'
+      path: '/api/public/portal/$token/pax-link'
+      fullPath: '/api/public/portal/$token/pax-link'
+      preLoaderRoute: typeof ApiPublicPortalTokenPaxLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/messages': {
+      id: '/api/public/portal/$token/messages'
+      path: '/api/public/portal/$token/messages'
+      fullPath: '/api/public/portal/$token/messages'
+      preLoaderRoute: typeof ApiPublicPortalTokenMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/logo': {
+      id: '/api/public/portal/$token/logo'
+      path: '/api/public/portal/$token/logo'
+      fullPath: '/api/public/portal/$token/logo'
+      preLoaderRoute: typeof ApiPublicPortalTokenLogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/change-requests': {
+      id: '/api/public/portal/$token/change-requests'
+      path: '/api/public/portal/$token/change-requests'
+      fullPath: '/api/public/portal/$token/change-requests'
+      preLoaderRoute: typeof ApiPublicPortalTokenChangeRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/bookings': {
+      id: '/api/public/portal/$token/bookings'
+      path: '/api/public/portal/$token/bookings'
+      fullPath: '/api/public/portal/$token/bookings'
+      preLoaderRoute: typeof ApiPublicPortalTokenBookingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/admin': {
+      id: '/api/public/portal/$token/admin'
+      path: '/api/public/portal/$token/admin'
+      fullPath: '/api/public/portal/$token/admin'
+      preLoaderRoute: typeof ApiPublicPortalTokenAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/b/$token/submit': {
+      id: '/api/public/b/$token/submit'
+      path: '/api/public/b/$token/submit'
+      fullPath: '/api/public/b/$token/submit'
+      preLoaderRoute: typeof ApiPublicBTokenSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/b/$token/messages': {
+      id: '/api/public/b/$token/messages'
+      path: '/api/public/b/$token/messages'
+      fullPath: '/api/public/b/$token/messages'
+      preLoaderRoute: typeof ApiPublicBTokenMessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/portal/guest/$session/': {
@@ -2045,11 +2031,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalGuestSessionIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/$token/crew/': {
+      id: '/api/public/portal/$token/crew/'
+      path: '/api/public/portal/$token/crew'
+      fullPath: '/api/public/portal/$token/crew/'
+      preLoaderRoute: typeof ApiPublicPortalTokenCrewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/guest/room/$qr': {
       id: '/api/public/portal/guest/room/$qr'
       path: '/api/public/portal/guest/room/$qr'
       fullPath: '/api/public/portal/guest/room/$qr'
       preLoaderRoute: typeof ApiPublicPortalGuestRoomQrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/portal/$token/crew/$crewId': {
+      id: '/api/public/portal/$token/crew/$crewId'
+      path: '/api/public/portal/$token/crew/$crewId'
+      fullPath: '/api/public/portal/$token/crew/$crewId'
+      preLoaderRoute: typeof ApiPublicPortalTokenCrewCrewIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
