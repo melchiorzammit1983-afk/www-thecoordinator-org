@@ -58,17 +58,22 @@ async function getMyCompanyId(userId: string): Promise<string> {
   throw new Error("No company assigned to this user");
 }
 
-// datetime-local controls may include seconds, milliseconds, or an ISO offset
-// after server-function serialization. The operational model is minute-precise,
-// so retain the wall-clock minute selected in the form before converting Malta
-// wall time to UTC.
-const localEta = z
-  .string()
-  .regex(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/,
-    "Enter a valid ETA",
-  )
-  .transform((value) => value.slice(0, 16));
+// Server-function serialization can append seconds, milliseconds, or an ISO
+// offset to the native datetime-local value. Normalize that transport shape
+// once to the minute-precise Malta wall-clock representation used internally.
+const localEtaTransport =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::\d{2})?(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})?$/;
+const localEtaCanonical = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+function normalizeLocalEta(value: unknown) {
+  if (typeof value !== "string") return value;
+  return value.match(localEtaTransport)?.[1] ?? value;
+}
+
+const localEta = z.preprocess(
+  normalizeLocalEta,
+  z.string().regex(localEtaCanonical, "Enter a valid ETA"),
+);
 const shipEventInput = z.object({
   ship_name: z.string().trim().min(1, "Enter a ship name").max(200),
   eta: localEta,
