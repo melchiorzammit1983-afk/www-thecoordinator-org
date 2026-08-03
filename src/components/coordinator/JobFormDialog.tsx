@@ -526,6 +526,10 @@ function ManualForm({
     mutationFn: async () => {
       const effFrom = from || (fromFlight ? "Airport" : "");
       const effTo = to || (toFlight ? "Airport" : "");
+      // Guard client-side: the server requires both endpoints, and a raw Zod
+      // error here reads as a blank-screen crash instead of a fixable hint.
+      if (!effFrom.trim()) throw new Error("Add a pickup location before saving.");
+      if (!effTo.trim()) throw new Error("Add a drop-off location before saving.");
       const incompletePassengerIndex = passengers.findIndex((passenger) =>
         !passenger.name.trim() && (!!passenger.phone.trim() || !!passenger.note.trim()),
       );
