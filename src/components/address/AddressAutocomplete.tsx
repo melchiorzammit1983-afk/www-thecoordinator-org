@@ -21,6 +21,7 @@ export type AddressPick = {
   lat: number | null;
   lng: number | null;
   display_name?: string | null;
+  place_types?: string[];
 };
 
 type Suggestion = {
