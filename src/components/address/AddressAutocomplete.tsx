@@ -149,6 +149,7 @@ export function AddressAutocomplete({
         lat: det.lat,
         lng: det.lng,
         display_name: det.display_name ?? s.main ?? null,
+        place_types: det.place_types ?? [],
       });
     } catch {
       /* keep the optimistic pick — coords just aren't stored */
@@ -215,6 +216,7 @@ export function AddressAutocomplete({
                     lat: hit.lat ?? null,
                     lng: hit.lng ?? null,
                     display_name: hit.display_name ?? null,
+                    place_types: hit.place_types ?? [],
                   });
                 }
               } catch { /* best-effort */ }
