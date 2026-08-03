@@ -267,8 +267,8 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
         <Field label="Guest last name"><Input value={f.surname} onChange={(e) => setF({ ...f, surname: e.target.value })} /></Field>
         <Field label="Guest phone"><Input value={f.client_phone} onChange={(e) => setF({ ...f, client_phone: e.target.value })} /></Field>
         <Field label="Guest email"><Input type="email" value={f.client_email} onChange={(e) => setF({ ...f, client_email: e.target.value })} /></Field>
-        <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-        <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+        <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+        <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
         <Field label="Pickup date & time"><Input type="datetime-local" value={f.pickup_at} onChange={(e) => setF({ ...f, pickup_at: e.target.value })} /></Field>
         <Field label="Room"><Input value={f.room_number} onChange={(e) => setF({ ...f, room_number: e.target.value })} /></Field>
         <Field label="Flight">
@@ -487,8 +487,8 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
                 <Field label="Guest email"><Input value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
               </>
             )}
-            <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-            <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+            <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+            <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
             <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
             {isPending && (
               <>

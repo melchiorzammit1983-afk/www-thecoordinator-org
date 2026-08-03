@@ -175,7 +175,7 @@ export function OtgManageDialog({ open, onOpenChange, token, jobId, canDelete }:
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Add another pickup stop
           </div>
-          <AddressAutocomplete
+          <AddressAutocomplete publicToken={token}
             value={stopAddr}
             onChange={(pick) => {
               setStopAddr(pick.address);
@@ -198,7 +198,7 @@ export function OtgManageDialog({ open, onOpenChange, token, jobId, canDelete }:
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Set or update destination
           </div>
-          <AddressAutocomplete
+          <AddressAutocomplete publicToken={token}
             value={destAddr}
             onChange={(pick) => {
               setDestAddr(pick.address);

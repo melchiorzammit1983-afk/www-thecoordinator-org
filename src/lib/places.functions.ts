@@ -62,17 +62,20 @@ const BiasSchema = z
   .optional();
 
 export const placesAutocomplete = createServerFn({ method: "POST" })
-  /* public: driver signboard uses this without a supabase session */
+  /* auth: signed-in user OR a valid magic/portal/booking token (see maps-access.server) */
   .inputValidator((input: unknown) =>
     z
       .object({
         input: z.string().trim().min(1).max(200),
         session_token: z.string().trim().min(4).max(80).optional(),
+        public_token: z.string().trim().min(8).max(200).optional(),
         bias: BiasSchema,
       })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    const { requireMapsAccess } = await import("./maps-access.server");
+    await requireMapsAccess(data.public_token);
     const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
     const body = {
       input: data.input,
@@ -118,16 +121,19 @@ export const placesAutocomplete = createServerFn({ method: "POST" })
   });
 
 export const placesDetails = createServerFn({ method: "POST" })
-  /* public: driver signboard uses this without a supabase session */
+  /* auth: signed-in user OR a valid magic/portal/booking token (see maps-access.server) */
   .inputValidator((input: unknown) =>
     z
       .object({
         place_id: z.string().trim().min(4).max(200),
         session_token: z.string().trim().min(4).max(80).optional(),
+        public_token: z.string().trim().min(8).max(200).optional(),
       })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    const { requireMapsAccess } = await import("./maps-access.server");
+    await requireMapsAccess(data.public_token);
     const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
     const qs = data.session_token
       ? `?sessionToken=${encodeURIComponent(data.session_token)}`
@@ -168,7 +174,7 @@ export const placesDetails = createServerFn({ method: "POST" })
 // confident (single result, or first result's main text overlaps the input).
 // The caller decides whether to swap the text.
 export const resolveAddresses = createServerFn({ method: "POST" })
-  /* public: driver signboard uses this without a supabase session */
+  /* auth: signed-in user OR a valid magic/portal/booking token (see maps-access.server) */
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -181,11 +187,15 @@ export const resolveAddresses = createServerFn({ method: "POST" })
           )
           .min(1)
           .max(200),
+        public_token: z.string().trim().min(8).max(200).optional(),
         bias: BiasSchema,
       })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    const { requireMapsAccess } = await import("./maps-access.server");
+    // Batch resolve makes 2 paid calls per item — charge the bucket per item.
+    await requireMapsAccess(data.public_token, data.items.length);
     const { LOVABLE_API_KEY, GOOGLE_MAPS_API_KEY } = assertKeys();
     const bias = biasBody(data.bias);
 

@@ -316,8 +316,8 @@ function ClientChangeRequestForm({ token, jwt, boot, onDone }: { token: string; 
 
   return (
     <div className="space-y-2 border rounded p-3">
-      <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-      <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+      <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+      <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
       <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
       <div className="flex gap-2 justify-end">
         <Button size="sm" variant="ghost" className="text-destructive" onClick={cancelTrip} disabled={busy}>Cancel trip</Button>
@@ -357,8 +357,8 @@ function ClientRebookForm({ token, jwt, onDone }: { token: string; jwt: string; 
 
   return (
     <div className="space-y-2 border rounded p-3">
-      <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-      <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+      <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+      <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
       <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
       <Field label="Pax"><Input type="number" min={1} value={paxCount} onChange={(e) => setPaxCount(e.target.value)} /></Field>
       <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
