@@ -837,12 +837,13 @@ async function resolveScheduledTransportPickup(
   companyId: string,
   flightScheduleRecordId: string | null | undefined,
   shipEventId: string | null | undefined,
+  onwardFlightScheduleRecordId: string | null | undefined,
   requestedOffsetMinutes: number | null | undefined,
   fallbackDate: string,
   fallbackTime: string,
 ) {
   if (flightScheduleRecordId && shipEventId) throw new Error("Choose either a Flight or a Ship, not both.");
-  if (shipEventId) {
+  if (shipEventId && !onwardFlightScheduleRecordId) {
     const { data: ship, error } = await (supabaseAdmin as any).from("ship_events").select("eta, company_id").eq("id", shipEventId).maybeSingle();
     if (error) throw new Error(error.message);
     if (!ship || ship.company_id !== companyId) throw new Error("Choose a Ship from your company.");
@@ -852,7 +853,8 @@ async function resolveScheduledTransportPickup(
     const pickup_at = new Date(new Date(ship.eta).getTime() + offset_minutes * 60_000).toISOString();
     return { ...isoToMaltaDateTime(pickup_at), pickup_at, offset_minutes };
   }
-  if (!flightScheduleRecordId) {
+  const scheduleRecordId = onwardFlightScheduleRecordId ?? flightScheduleRecordId;
+  if (!scheduleRecordId) {
     return {
       date: fallbackDate,
       time: fallbackTime,
@@ -864,7 +866,7 @@ async function resolveScheduledTransportPickup(
   const { data: record, error: recordError } = await (supabaseAdmin as any)
     .from("flight_schedule_records")
     .select("scheduled_date, scheduled_time, direction")
-    .eq("id", flightScheduleRecordId)
+    .eq("id", scheduleRecordId)
     .maybeSingle();
   if (recordError) throw new Error(recordError.message);
   if (!record) throw new Error("The linked flight record no longer exists.");
@@ -1491,6 +1493,7 @@ export const createJob = createServerFn({ method: "POST" })
       c.id,
       data.flight_schedule_record_id,
       data.ship_event_id,
+      data.onward_flight_schedule_record_id,
       data.scheduled_transport_pickup_offset_minutes,
       data.date,
       data.time,
@@ -1544,7 +1547,7 @@ export const createJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
-    if (data.from_flight || data.to_flight) {
+    if (data.flight_schedule_record_id && (data.from_flight || data.to_flight)) {
       applyLiveStatusToJobBg(row.id as string);
     }
     // Auto-estimate the fare from company pricing + service areas. Route
@@ -1612,6 +1615,7 @@ export const updateJob = createServerFn({ method: "POST" })
       c.id,
       effectiveFlightId,
       effectiveShipId,
+      effectiveOnwardFlightId,
       data.scheduled_transport_pickup_offset_minutes === undefined
         ? ((existing as any).scheduled_transport_pickup_offset_minutes ?? null)
         : data.scheduled_transport_pickup_offset_minutes,

@@ -11,6 +11,8 @@ export type ShipEvent = {
   status: "scheduled";
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
+  archived_by?: string | null;
 };
 
 async function getAdmin() {
@@ -93,7 +95,7 @@ export const listShipEvents = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     const { data, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
       .eq("company_id", companyId)
       .order("eta", { ascending: true });
     if (error) throw new Error(error.message);
@@ -109,8 +111,9 @@ export const searchShipEvents = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     let query = shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
       .eq("company_id", companyId)
+      .is("archived_at", null)
       .order("eta", { ascending: true })
       .limit(20);
     const term = data.search?.replace(/[^a-zA-Z0-9 .'-]/g, " ").trim();
@@ -129,7 +132,7 @@ export const getLinkedShipEvent = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     const { data: event, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
       .eq("id", data.id)
       .eq("company_id", companyId)
       .maybeSingle();
@@ -180,5 +183,43 @@ export const updateShipEventEta = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const event = Array.isArray(result) ? result[0] : result;
     if (!event) throw new Error("Ship event not found");
+    return event as ShipEvent;
+  });
+
+export const archiveShipEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const { data: event, error } = await shipEventsTable(sb)
+      .from("ship_events")
+      .update({ archived_at: new Date().toISOString(), archived_by: context.userId, updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .is("archived_at", null)
+      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!event) throw new Error("Ship event not found or already archived.");
+    return event as ShipEvent;
+  });
+
+export const unarchiveShipEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const { data: event, error } = await shipEventsTable(sb)
+      .from("ship_events")
+      .update({ archived_at: null, archived_by: null, updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .not("archived_at", "is", null)
+      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!event) throw new Error("Archived ship event not found.");
     return event as ShipEvent;
   });

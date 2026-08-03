@@ -189,11 +189,13 @@ function ManualForm({
   const [fromDisplayName, setFromDisplayName] = useState<string | null>(job?.pickup_display_name ?? null);
   const [fromLat, setFromLat] = useState<number | null>(job?.pickup_lat ?? null);
   const [fromLng, setFromLng] = useState<number | null>(job?.pickup_lng ?? null);
+  const [autoFilledFromShipPort, setAutoFilledFromShipPort] = useState<string | null>(null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
   const [toPlaceId, setToPlaceId] = useState<string | null>(job?.dropoff_place_id ?? null);
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [toLat, setToLat] = useState<number | null>(job?.dropoff_lat ?? null);
   const [toLng, setToLng] = useState<number | null>(job?.dropoff_lng ?? null);
+  const [autoFilledToShipPort, setAutoFilledToShipPort] = useState<string | null>(null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
@@ -245,6 +247,31 @@ function ManualForm({
     } else {
       setToAutoEndpointType(endpoint);
       if (!isOverridden) setToEndpointType(endpoint);
+    }
+    setJourneyOverride(null);
+  }
+
+  function applyShipPort(port: string, side: "from" | "to") {
+    const value = port.trim();
+    if (!value) return;
+    if (side === "from") {
+      setFrom(value);
+      setFromDisplayName(value);
+      setFromPlaceId(null);
+      setFromLat(null);
+      setFromLng(null);
+      setFromAutoEndpointType("port");
+      if (!fromEndpointOverride) setFromEndpointType("port");
+      setAutoFilledFromShipPort(value);
+    } else {
+      setTo(value);
+      setToDisplayName(value);
+      setToPlaceId(null);
+      setToLat(null);
+      setToLng(null);
+      setToAutoEndpointType("port");
+      if (!toEndpointOverride) setToEndpointType("port");
+      setAutoFilledToShipPort(value);
     }
     setJourneyOverride(null);
   }
@@ -394,11 +421,28 @@ function ManualForm({
   const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: requiresShip && !!shipEventId });
   const { data: onwardShipMatches, isFetching: isSearchingOnwardShips } = useQuery({ queryKey: ["onward-ship-event-search", onwardShipSearch], queryFn: () => searchShipsFn({ data: { search: onwardShipSearch } }), enabled: allowsOnwardShip && onwardShipSearch.trim().length >= 2 });
   const { data: linkedOnwardShip } = useQuery({ queryKey: ["linked-onward-ship-event", onwardShipEventId], queryFn: () => linkedShipFn({ data: { id: onwardShipEventId! } }), enabled: !!onwardShipEventId });
+  useEffect(() => {
+    const primaryShipPort = linkedShip?.port;
+    const onwardShipPort = linkedOnwardShip?.port;
+    if (primaryShipPort && requiresShip) {
+      if (selectedJourney.journeyType === "ship_arrival" || selectedJourney.journeyType === "ship_to_flight") {
+        if (!from || from === autoFilledFromShipPort) applyShipPort(primaryShipPort, "from");
+      } else if (selectedJourney.journeyType === "ship_departure") {
+        if (!to || to === autoFilledToShipPort) applyShipPort(primaryShipPort, "to");
+      }
+    }
+    if (onwardShipPort && allowsOnwardShip && (!to || to === autoFilledToShipPort)) {
+      applyShipPort(onwardShipPort, "to");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedShip?.port, linkedOnwardShip?.port, requiresShip, allowsOnwardShip, selectedJourney.journeyType]);
   const createInlineShip = useMutation({
     mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, port: newShipPort.trim() } }),
     onSuccess: (ship) => {
       setShipEventId(ship.id);
       setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0);
+      if (selectedJourney.journeyType === "ship_departure") applyShipPort(ship.port, "to");
+      else if (selectedJourney.journeyType === "ship_arrival" || selectedJourney.journeyType === "ship_to_flight") applyShipPort(ship.port, "from");
       setShipSearch("");
       setNewShipEta("");
       setNewShipPort("");
@@ -409,8 +453,9 @@ function ManualForm({
   });
   const activeLinkedFlight = requiresFlight ? linkedFlight : null;
   const activeLinkedShip = requiresShip ? linkedShip : null;
-  const effectivePickupOffsetMinutes = activeLinkedFlight
-    ? (pickupOffsetMinutes ?? (activeLinkedFlight.direction === "departure"
+  const pickupReferenceFlight = activeLinkedFlight ?? (activeLinkedShip && linkedOnwardFlight ? linkedOnwardFlight : null);
+  const effectivePickupOffsetMinutes = pickupReferenceFlight
+    ? (pickupOffsetMinutes ?? (pickupReferenceFlight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0)))
     : activeLinkedShip
@@ -418,13 +463,13 @@ function ManualForm({
       : null;
   const calculatedPickup = useMemo(() => {
     if (effectivePickupOffsetMinutes == null || (!activeLinkedFlight && !activeLinkedShip)) return null;
-    const scheduledAt = activeLinkedFlight
-      ? maltaWallTimeToUtcIso(activeLinkedFlight.scheduled_date, activeLinkedFlight.scheduled_time)
+    const scheduledAt = pickupReferenceFlight
+      ? maltaWallTimeToUtcIso(pickupReferenceFlight.scheduled_date, pickupReferenceFlight.scheduled_time)
       : activeLinkedShip!.eta;
-    const adjustment = activeLinkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
+    const adjustment = pickupReferenceFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
     const pickupAt = new Date(new Date(scheduledAt).getTime() + adjustment * 60_000).toISOString();
     return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
-  }, [activeLinkedFlight, activeLinkedShip, effectivePickupOffsetMinutes]);
+  }, [pickupReferenceFlight, activeLinkedShip, effectivePickupOffsetMinutes]);
   useEffect(() => {
     if (!calculatedPickup) return;
     setDate(calculatedPickup.date);
@@ -444,13 +489,15 @@ function ManualForm({
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0));
   }
-  function selectOnwardFlight(flight: { id: string; direction: "arrival" | "departure" }) {
+  function selectOnwardFlight(flight: { id: string; direction: "arrival" | "departure"; flight_number?: string }) {
     if (flight.direction !== "departure") {
       toast.error("Choose a departure from the active schedule.");
       return;
     }
     setOnwardFlightScheduleRecordId(flight.id);
+    setToFlight(flight.flight_number ?? "");
     setOnwardFlightSearch("");
+    setPickupOffsetMinutes(myCompany?.default_departure_pickup_offset_minutes ?? 180);
   }
   function selectOnwardShip(ship: { id: string }) {
     setOnwardShipEventId(ship.id);
@@ -560,7 +607,7 @@ function ManualForm({
         to_location_type: toEndpointType,
         flightorship: requiresFlight ? (fromFlight || toFlight || "") : "",
         from_flight: requiresFlight ? fromFlight : "",
-        to_flight: requiresFlight ? toFlight : "",
+        to_flight: requiresFlight || allowsOnwardFlight ? toFlight : "",
         flight_schedule_record_id: requiresFlight ? flightScheduleRecordId : null,
         ship_event_id: requiresShip ? shipEventId : null,
         onward_flight_schedule_record_id: allowsOnwardFlight ? onwardFlightScheduleRecordId : null,
@@ -959,6 +1006,7 @@ function ManualForm({
                 placeId={fromPlaceId}
                 onChange={(v) => {
                   setFrom(v.address);
+                  setAutoFilledFromShipPort(null);
                   setFromPlaceId(v.place_id);
                   setFromDisplayName(v.display_name ?? null);
                   setFromLat(v.lat);
@@ -980,6 +1028,7 @@ function ManualForm({
                 placeId={toPlaceId}
                 onChange={(v) => {
                   setTo(v.address);
+                  setAutoFilledToShipPort(null);
                   setToPlaceId(v.place_id);
                   setToDisplayName(v.display_name ?? null);
                   setToLat(v.lat);
@@ -1074,13 +1123,13 @@ function ManualForm({
                 <div>
                   <Label htmlFor="onward-flight-search">Connecting flight (optional)</Label>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    Choose the passenger's onward departure from the active schedule. It does not change Ship tracking or the Ship pickup time.
+                    Choose the passenger's onward departure from the active schedule. Ship tracking remains separate; pickup defaults to 3 hours before this departure and can be adjusted.
                   </p>
                 </div>
                 {onwardFlightScheduleRecordId && linkedOnwardFlight ? (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
                     <span><b>{linkedOnwardFlight.flight_number}</b> · {linkedOnwardFlight.airline} · {linkedOnwardFlight.origin} → {linkedOnwardFlight.destination} · {linkedOnwardFlight.scheduled_date} {linkedOnwardFlight.scheduled_time?.slice(0, 5)}</span>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setOnwardFlightScheduleRecordId(null)}>Remove connecting flight</Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => { setOnwardFlightScheduleRecordId(null); setToFlight(""); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); }}>Remove connecting flight</Button>
                   </div>
                 ) : (
                   <>
@@ -1131,6 +1180,19 @@ function ManualForm({
                     ) : null}
                   </>
                 )}
+                {onwardFlightScheduleRecordId && linkedOnwardFlight ? (
+                  <div className="grid gap-2 rounded-md border bg-background px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div>
+                      <Label htmlFor="connecting-flight-offset">Connecting flight pickup offset</Label>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">Pickup is calculated before the connecting departure.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input id="connecting-flight-offset" type="number" min={0} max={1440} step={5} className="w-24" value={effectivePickupOffsetMinutes ?? 180} onChange={(event) => setPickupOffsetMinutes(Math.min(1440, Math.max(0, Number(event.target.value) || 0)))} aria-label="Connecting flight pickup offset in minutes" />
+                      <span className="text-muted-foreground">min</span>
+                    </div>
+                    {calculatedPickup ? <div className="rounded-md bg-muted/60 px-2.5 py-2 text-[11px] sm:col-span-2"><span className="font-medium text-foreground">Calculated pickup:</span> {formatMaltaDateTime(calculatedPickup.pickupAt, { dateStyle: "medium", timeStyle: "short" })}</div> : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

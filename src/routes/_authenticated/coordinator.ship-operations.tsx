@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Clock3, Pencil, Plus, Ship } from "lucide-react";
+import { Archive, Clock3, Pencil, Plus, Ship, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,8 @@ import {
   listShipEvents,
   type ShipEvent,
   updateShipEventEta,
+  archiveShipEvent,
+  unarchiveShipEvent,
 } from "@/lib/ship-events.functions";
 import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
 
@@ -35,6 +37,8 @@ function ShipOperationsPage() {
   const listFn = useServerFn(listShipEvents);
   const createFn = useServerFn(createShipEvent);
   const updateEtaFn = useServerFn(updateShipEventEta);
+  const archiveFn = useServerFn(archiveShipEvent);
+  const unarchiveFn = useServerFn(unarchiveShipEvent);
   const [shipName, setShipName] = useState("");
   const [eta, setEta] = useState("");
   const [port, setPort] = useState("");
@@ -69,6 +73,16 @@ function ShipOperationsPage() {
       refresh();
       toast.success("Ship ETA updated");
     },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
+  const archive = useMutation({
+    mutationFn: (id: string) => archiveFn({ data: { id } }),
+    onSuccess: () => { refresh(); toast.success("Ship event archived"); },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
+  const unarchive = useMutation({
+    mutationFn: (id: string) => unarchiveFn({ data: { id } }),
+    onSuccess: () => { refresh(); toast.success("Ship event restored"); },
     onError: (reason: Error) => toast.error(reason.message),
   });
 
@@ -146,7 +160,7 @@ function ShipOperationsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Scheduled ship events</CardTitle>
-          <CardDescription>Only your company can see and update these events.</CardDescription>
+          <CardDescription>Only your company can see and update these events. Archived events remain available for historical trips.</CardDescription>
         </CardHeader>
         <CardContent>
           {error ? (
@@ -174,7 +188,7 @@ function ShipOperationsPage() {
                       <Ship className="h-4 w-4 shrink-0 text-primary" />
                       <span className="truncate font-medium">{event.ship_name}</span>
                       <Badge variant="secondary" className="capitalize">
-                        {event.status}
+                        {event.archived_at ? "Archived" : event.status}
                       </Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -188,14 +202,20 @@ function ShipOperationsPage() {
                       </span>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEtaEditor(event)}
-                  >
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit ETA
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => openEtaEditor(event)} disabled={!!event.archived_at}>
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit ETA
+                    </Button>
+                    {event.archived_at ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => unarchive.mutate(event.id)} disabled={unarchive.isPending}>
+                        <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Restore
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="outline" size="sm" onClick={() => archive.mutate(event.id)} disabled={archive.isPending}>
+                        <Archive className="mr-1.5 h-3.5 w-3.5" /> Archive
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
