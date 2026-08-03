@@ -147,7 +147,7 @@ function PublicBookingPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-from">Pickup location</Label>
-                  <AddressAutocomplete
+                  <AddressAutocomplete publicToken={params.token}
                     id="b-from"
                     value={form.from_location}
                     placeId={fromPlaceId}
@@ -158,7 +158,7 @@ function PublicBookingPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-to">Drop-off location</Label>
-                  <AddressAutocomplete
+                  <AddressAutocomplete publicToken={params.token}
                     id="b-to"
                     value={form.to_location}
                     placeId={toPlaceId}
