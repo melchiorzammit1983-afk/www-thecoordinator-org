@@ -1471,6 +1471,9 @@ export const createJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     assertCompleteBookingEndpointTypes(data);
     const journey = resolveJourneyForBookingInput(data);
+    if (data.flight_schedule_record_id && data.ship_event_id) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
     const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
     if (data.flight_schedule_record_id) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
@@ -1592,6 +1595,9 @@ export const updateJob = createServerFn({ method: "POST" })
     const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
     const effectiveOnwardFlightId = data.onward_flight_schedule_record_id === undefined ? existingOnwardFlightId : data.onward_flight_schedule_record_id;
     const effectiveOnwardShipId = data.onward_ship_event_id === undefined ? existingOnwardShipId : data.onward_ship_event_id;
+    if (effectiveFlightId && effectiveShipId) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
     if (effectiveOnwardFlightId) {
       if (!effectiveShipId) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, effectiveOnwardFlightId);
@@ -4212,15 +4218,22 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // Never lookup for finished trips — they're archived, status is frozen.
     const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is attached, the trip
-    // isn't finished, and the last lookup is older than the free cache
-    // window — otherwise the provider cache returns the same answer and we'd
-    // burn refresh points.
-    const hasCode = !finished && !!(job as any).flight_schedule_record_id && !!((job as any).from_flight || (job as any).to_flight);
+    // Only meter when a Flight identifier is attached, the trip isn't
+    // finished, and the last lookup is older than the free cache window.
+    const linkedShipId = (job as any).ship_event_id as string | null;
+    const linkedFlightId = (job as any).flight_schedule_record_id as string | null;
+    const storedTrackingKind = (job as any).tracking_kind as "flight" | "vessel" | null;
+    const transportKind: "flight" | "vessel" | null = linkedShipId
+      ? "vessel"
+      : linkedFlightId
+        ? "flight"
+        : storedTrackingKind;
+    // Vessel refreshes read Ship Operations below. Only Flight journeys may
+    // enter the external Flight provider path or consume Flight refresh points.
+    const hasCode = !finished && transportKind === "flight" && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
     const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = liveStatusProviderEnabled() && hasCode && !flightFresh;
-    const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
@@ -4240,18 +4253,18 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         to_location: (job as any).to_location ?? undefined,
         date: (job as any).date ?? undefined,
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
-        from_flight: finished ? undefined : ((job as any).from_flight ?? undefined),
-        to_flight: finished ? undefined : ((job as any).to_flight ?? undefined),
-        tracking_kind: (job as any).ship_event_id ? "vessel" : (job as any).flight_schedule_record_id ? "flight" : undefined,
+        from_flight: finished || transportKind !== "flight" ? undefined : ((job as any).from_flight ?? undefined),
+        to_flight: finished || transportKind !== "flight" ? undefined : ((job as any).to_flight ?? undefined),
+        tracking_kind: transportKind === "flight" ? "flight" : undefined,
       });
     } catch (e) {
       throw e;
     }
-    if ((job as any).ship_event_id) {
+    if (linkedShipId) {
       const { data: ship, error: shipError } = await (supabaseAdmin as any)
         .from("ship_events")
         .select("eta, company_id")
-        .eq("id", (job as any).ship_event_id)
+        .eq("id", linkedShipId)
         .maybeSingle();
       if (shipError) throw new Error(shipError.message);
       if (!ship || ship.company_id !== c.id) throw new Error("Linked Ship Event not found.");

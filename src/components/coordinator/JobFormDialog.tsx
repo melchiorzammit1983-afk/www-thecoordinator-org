@@ -199,19 +199,33 @@ function ManualForm({
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
   const [shipEventId, setShipEventId] = useState<string | null>(job?.ship_event_id ?? null);
   const [onwardFlightScheduleRecordId, setOnwardFlightScheduleRecordId] = useState<string | null>(job?.onward_flight_schedule_record_id ?? null);
+  const [onwardShipEventId, setOnwardShipEventId] = useState<string | null>(job?.onward_ship_event_id ?? null);
   const [fromAutoEndpointType, setFromAutoEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
   const [toAutoEndpointType, setToAutoEndpointType] = useState<JourneyEndpoint>(job?.to_location_type ?? "local");
   const [fromEndpointType, setFromEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
   const [toEndpointType, setToEndpointType] = useState<JourneyEndpoint>(job?.to_location_type ?? "local");
   const [fromEndpointOverride, setFromEndpointOverride] = useState(false);
   const [toEndpointOverride, setToEndpointOverride] = useState(false);
-  const [journeyOverride, setJourneyOverride] = useState<JourneyType | null>(() =>
-    job?.onward_flight_schedule_record_id ? "ship_to_flight" : job?.ship_event_id ? "ship_arrival" : job?.flight_schedule_record_id ? "arrival_flight" : null,
-  );
+  const [journeyOverride, setJourneyOverride] = useState<JourneyType | null>(() => {
+    if (!job) return null;
+    const auto = resolveBookingJourney(job.from_location_type ?? "local", job.to_location_type ?? "local");
+    if (job.onward_ship_event_id) return auto.journeyType === "flight_to_ship" ? null : "flight_to_ship";
+    if (job.onward_flight_schedule_record_id) return auto.journeyType === "ship_to_flight" ? null : "ship_to_flight";
+    if (job.ship_event_id) {
+      if (auto.primaryTransport === "ship") return null;
+      return job.to_location_type === "port" ? "ship_departure" : "ship_arrival";
+    }
+    if (job.flight_schedule_record_id) {
+      if (auto.primaryTransport === "flight") return null;
+      return job.to_flight ? "departure_flight" : "arrival_flight";
+    }
+    return null;
+  });
   const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
   const [flightSearch, setFlightSearch] = useState("");
   const [shipSearch, setShipSearch] = useState("");
   const [onwardFlightSearch, setOnwardFlightSearch] = useState("");
+  const [onwardShipSearch, setOnwardShipSearch] = useState("");
   const [newShipEta, setNewShipEta] = useState("");
   const [newShipPort, setNewShipPort] = useState("");
   const autoJourney = useMemo(() => resolveBookingJourney(fromEndpointType, toEndpointType), [fromEndpointType, toEndpointType]);
@@ -219,6 +233,7 @@ function ManualForm({
   const requiresFlight = selectedJourney.primaryTransport === "flight";
   const requiresShip = selectedJourney.primaryTransport === "ship";
   const allowsOnwardFlight = selectedJourney.optionalConnection === "flight";
+  const allowsOnwardShip = selectedJourney.optionalConnection === "ship";
   const requiredFlightDirection = selectedJourney.journeyType === "departure_flight" ? "departure" : "arrival";
 
   function applyEndpointPick(side: "from" | "to", value: { place_types?: string[] }) {
@@ -251,12 +266,16 @@ function ManualForm({
       setOnwardFlightScheduleRecordId(null);
       setOnwardFlightSearch("");
     }
-  }, [requiresFlight, requiresShip, allowsOnwardFlight]);
+    if (!allowsOnwardShip) {
+      setOnwardShipEventId(null);
+      setOnwardShipSearch("");
+    }
+  }, [requiresFlight, requiresShip, allowsOnwardFlight, allowsOnwardShip]);
   // Transport tracking is determined by the explicit relationship, never by
   // location labels or identifiers. A Ship pickup can start anywhere.
-  const trackingKind: "flight" | "vessel" | null = shipEventId
+  const trackingKind: "flight" | "vessel" | null = requiresShip && shipEventId
     ? "vessel"
-    : flightScheduleRecordId
+    : requiresFlight && flightScheduleRecordId
       ? "flight"
       : null;
   const { routes: recentRoutes, recordRoute, toggleFavorite } = useRecentRoutes();
@@ -359,7 +378,7 @@ function ManualForm({
   const { data: linkedFlight } = useQuery({
     queryKey: ["linked-flight-schedule-record", flightScheduleRecordId],
     queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
-    enabled: !!flightScheduleRecordId,
+    enabled: requiresFlight && !!flightScheduleRecordId,
   });
   const { data: onwardFlightMatches, isFetching: isSearchingOnwardFlights } = useQuery({
     queryKey: ["onward-active-flight-schedule-search", onwardFlightSearch],
@@ -372,7 +391,9 @@ function ManualForm({
     enabled: !!onwardFlightScheduleRecordId,
   });
   const { data: shipMatches, isFetching: isSearchingShips } = useQuery({ queryKey: ["ship-event-search", shipSearch], queryFn: () => searchShipsFn({ data: { search: shipSearch } }), enabled: requiresShip && shipSearch.trim().length >= 2 });
-  const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: !!shipEventId });
+  const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: requiresShip && !!shipEventId });
+  const { data: onwardShipMatches, isFetching: isSearchingOnwardShips } = useQuery({ queryKey: ["onward-ship-event-search", onwardShipSearch], queryFn: () => searchShipsFn({ data: { search: onwardShipSearch } }), enabled: allowsOnwardShip && onwardShipSearch.trim().length >= 2 });
+  const { data: linkedOnwardShip } = useQuery({ queryKey: ["linked-onward-ship-event", onwardShipEventId], queryFn: () => linkedShipFn({ data: { id: onwardShipEventId! } }), enabled: !!onwardShipEventId });
   const createInlineShip = useMutation({
     mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, port: newShipPort.trim() } }),
     onSuccess: (ship) => {
@@ -386,22 +407,24 @@ function ManualForm({
     },
     onError: (error: Error) => toast.error(error.message),
   });
-  const effectivePickupOffsetMinutes = linkedFlight
-    ? (pickupOffsetMinutes ?? (linkedFlight.direction === "departure"
+  const activeLinkedFlight = requiresFlight ? linkedFlight : null;
+  const activeLinkedShip = requiresShip ? linkedShip : null;
+  const effectivePickupOffsetMinutes = activeLinkedFlight
+    ? (pickupOffsetMinutes ?? (activeLinkedFlight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0)))
-    : linkedShip
+    : activeLinkedShip
       ? (pickupOffsetMinutes ?? (myCompany?.default_arrival_pickup_offset_minutes ?? 0))
       : null;
   const calculatedPickup = useMemo(() => {
-    if (effectivePickupOffsetMinutes == null || (!linkedFlight && !linkedShip)) return null;
-    const scheduledAt = linkedFlight
-      ? maltaWallTimeToUtcIso(linkedFlight.scheduled_date, linkedFlight.scheduled_time)
-      : linkedShip!.eta;
-    const adjustment = linkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
+    if (effectivePickupOffsetMinutes == null || (!activeLinkedFlight && !activeLinkedShip)) return null;
+    const scheduledAt = activeLinkedFlight
+      ? maltaWallTimeToUtcIso(activeLinkedFlight.scheduled_date, activeLinkedFlight.scheduled_time)
+      : activeLinkedShip!.eta;
+    const adjustment = activeLinkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
     const pickupAt = new Date(new Date(scheduledAt).getTime() + adjustment * 60_000).toISOString();
     return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
-  }, [linkedFlight, effectivePickupOffsetMinutes]);
+  }, [activeLinkedFlight, activeLinkedShip, effectivePickupOffsetMinutes]);
   useEffect(() => {
     if (!calculatedPickup) return;
     setDate(calculatedPickup.date);
@@ -428,6 +451,10 @@ function ManualForm({
     }
     setOnwardFlightScheduleRecordId(flight.id);
     setOnwardFlightSearch("");
+  }
+  function selectOnwardShip(ship: { id: string }) {
+    setOnwardShipEventId(ship.id);
+    setOnwardShipSearch("");
   }
   useEffect(() => {
     if (!myCompany || operationsPhoneDirty) return;
@@ -527,12 +554,14 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         from_location_type: fromEndpointType,
         to_location_type: toEndpointType,
-        flightorship: fromFlight || toFlight || "",
-        from_flight: fromFlight, to_flight: toFlight,
-        flight_schedule_record_id: flightScheduleRecordId,
-        ship_event_id: shipEventId,
+        flightorship: requiresFlight ? (fromFlight || toFlight || "") : "",
+        from_flight: requiresFlight ? fromFlight : "",
+        to_flight: requiresFlight ? toFlight : "",
+        flight_schedule_record_id: requiresFlight ? flightScheduleRecordId : null,
+        ship_event_id: requiresShip ? shipEventId : null,
         onward_flight_schedule_record_id: allowsOnwardFlight ? onwardFlightScheduleRecordId : null,
-        scheduled_transport_pickup_offset_minutes: (flightScheduleRecordId || shipEventId) ? effectivePickupOffsetMinutes : null,
+        onward_ship_event_id: allowsOnwardShip ? onwardShipEventId : null,
+        scheduled_transport_pickup_offset_minutes: trackingKind ? effectivePickupOffsetMinutes : null,
         // The server accepts a supported tracker or an omitted value. Never
         // send null here: `tracking_kind` is an optional enum, not nullable.
         tracking_kind: trackingKind ?? undefined,
@@ -1068,6 +1097,38 @@ function ManualForm({
                 )}
               </div>
             ) : null}
+            {allowsOnwardShip && flightScheduleRecordId ? (
+              <div className="space-y-2 border-t pt-3">
+                <div>
+                  <Label htmlFor="onward-ship-search">Connecting ship (optional)</Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Choose the passenger&apos;s onward Ship Event. It does not change Flight tracking or the Flight pickup time.
+                  </p>
+                </div>
+                {onwardShipEventId && linkedOnwardShip ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+                    <span><b>{linkedOnwardShip.ship_name}</b> · {linkedOnwardShip.port} · ETA {formatMaltaDateTime(linkedOnwardShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedOnwardShip.status}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setOnwardShipEventId(null)}>Remove connecting ship</Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input id="onward-ship-search" value={onwardShipSearch} onChange={(event) => setOnwardShipSearch(event.target.value)} placeholder="Search ship name or port" />
+                    {onwardShipSearch.trim().length >= 2 ? (
+                      <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
+                        {isSearchingOnwardShips ? <p className="p-2 text-xs text-muted-foreground">Searching Ship Events…</p> : null}
+                        {!isSearchingOnwardShips && onwardShipMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No matching Ship Events found.</p> : null}
+                        {onwardShipMatches?.map((ship) => (
+                          <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectOnwardShip(ship)}>
+                            <span className="font-medium">{ship.ship_name} · {ship.port}</span>
+                            <span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
           {duplicateWarning && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
@@ -1213,7 +1274,15 @@ function ManualForm({
                 onClick={() => previewMut.mutate()}
               >
                 <RefreshCw className={`h-3.5 w-3.5 mr-1 ${previewMut.isPending ? "animate-spin" : ""}`} />
-                {previewMut.isPending ? "Checking…" : preview ? "Refresh" : "Check traffic & flight"}
+                {previewMut.isPending
+                  ? "Checking…"
+                  : preview
+                    ? "Refresh"
+                    : trackingKind === "flight"
+                      ? "Check traffic & flight"
+                      : trackingKind === "vessel"
+                        ? "Check traffic & Ship ETA"
+                        : "Check traffic"}
               </Button>
             </div>
             {!preview && !previewMut.isPending && (
@@ -1271,9 +1340,11 @@ function ManualForm({
                     </div>
                   )
                 ) : (
-                  (fromFlight || toFlight) ? null : (
-                    <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
-                  )
+                  trackingKind === "vessel" ? (
+                    <div className="text-[11px] text-muted-foreground">Ship ETA refresh is available after the trip is saved.</div>
+                  ) : trackingKind === "flight" && !(fromFlight || toFlight) ? (
+                    <div className="text-[11px] text-muted-foreground">Select a scheduled Flight to see live status.</div>
+                  ) : null
                 )}
               </div>
             )}
