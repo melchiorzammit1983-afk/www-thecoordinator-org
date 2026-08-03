@@ -6705,6 +6705,48 @@ export type Database = {
           },
         ]
       }
+      transport_conflict_reviews: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          job_id: string
+          reviewed_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          job_id: string
+          reviewed_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          reviewed_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transport_conflict_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transport_conflict_reviews_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_audit_log: {
         Row: {
           actor_label: string | null
