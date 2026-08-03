@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
-import { resolveBookingJourney } from "@/lib/journey-resolver";
+import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
 
 const BookingInput = z.object({
   from_location: z.string().min(1).max(200),
@@ -67,6 +67,18 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
           }
         }).safeParse(body);
         if (!bulk.success && !single.success) return Response.json({ error: "bad_input" }, { status: 400 });
+        // Bulk imports predate endpoint classifications. A completely absent
+        // pair is safely local/local; a partial pair is invalid rather than
+        // being guessed, and must remain a client error (not a server 500).
+        if (bulk.success) {
+          try {
+            bulk.data.bookings.forEach((booking) => {
+              normalizeBookingEndpointTypes(booking, { defaultMissingToLocal: true });
+            });
+          } catch {
+            return Response.json({ error: "bad_input" }, { status: 400 });
+          }
+        }
 
         const admin = await getAdmin();
 
@@ -88,16 +100,25 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
         }
 
         const rows = bulk.success
-          ? bulk.data.bookings.map((b) => ({
-              portal_company_id: r.portal.id,
-              payload: b,
-              agreed_price: b.agreed_price ?? null,
-              currency: b.currency ?? "EUR",
-              created_by_email: bulk.data.created_by_email ?? null,
-              created_by_name: bulk.data.created_by_name ?? null,
-              status: "pending" as const,
-              batch_id: batchId,
-            }))
+          ? bulk.data.bookings.map((b) => {
+              const endpointTypes = normalizeBookingEndpointTypes(b, { defaultMissingToLocal: true });
+              const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
+              return {
+                portal_company_id: r.portal.id,
+                payload: {
+                  ...b,
+                  from_location_type: endpointTypes.fromLocationType,
+                  to_location_type: endpointTypes.toLocationType,
+                  journey_type: journey.journeyType,
+                },
+                agreed_price: b.agreed_price ?? null,
+                currency: b.currency ?? "EUR",
+                created_by_email: bulk.data.created_by_email ?? null,
+                created_by_name: bulk.data.created_by_name ?? null,
+                status: "pending" as const,
+                batch_id: batchId,
+              };
+            })
           : (() => {
               const booking = single.data!;
               const journey = resolveBookingJourney(booking.from_location_type!, booking.to_location_type!);

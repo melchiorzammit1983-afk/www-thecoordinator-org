@@ -1449,6 +1449,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       operation_name: operationName.trim() || undefined,
       trips: valid.map((t) => ({
         from_location: t.from_location, to_location: t.to_location,
+        // Bulk imports have no trusted endpoint metadata. Their established
+        // free-text contract is therefore explicitly classified as local.
+        from_location_type: "local" as const, to_location_type: "local" as const,
         date: t.date, time: t.time,
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,

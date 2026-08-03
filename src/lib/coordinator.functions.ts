@@ -5,7 +5,7 @@ import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaDateTime, formatM
 import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
-import { resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
+import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
 
 type Ctx = { supabase: any; userId: string };
 type CompanyRecord = {
@@ -3140,6 +3140,8 @@ const bulkTripInput = z.object({
       z.object({
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
+        from_location_type: bookingEndpointTypeInput.optional(),
+        to_location_type: bookingEndpointTypeInput.optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
         flightorship: z.string().trim().max(120).optional().default(""),
@@ -3206,6 +3208,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const created: string[] = [];
     for (const t of data.trips) {
+      const endpointTypes = normalizeBookingEndpointTypes(t, { defaultMissingToLocal: true });
+      const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
@@ -3214,6 +3218,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           company_id: c.id,
           from_location: t.from_location,
           to_location: t.to_location,
+          from_location_type: endpointTypes.fromLocationType,
+          to_location_type: endpointTypes.toLocationType,
           date: t.date,
           time,
           pickup_at,
@@ -3228,7 +3234,9 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           vehicle: t.vehicle || null,
           notes: t.notes || null,
           driver_id: null,
-          tracking_kind: t.tracking_kind ?? "flight",
+          // Explicit legacy tracking values still win. Unclassified bulk
+          // rows are deterministically local/local and therefore untracked.
+          tracking_kind: t.tracking_kind ?? journey.trackingKind,
         })
         .select("id")
         .single();

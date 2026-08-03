@@ -19,6 +19,29 @@ export type JourneyDecision = {
   trackingKind: "flight" | "vessel" | null;
 };
 
+/**
+ * Validates the authoritative endpoint pair before it is passed to the pure
+ * resolver. Legacy import/API contracts may opt into the explicit
+ * local/local default, but a partial pair is never guessed.
+ */
+export function normalizeBookingEndpointTypes(
+  input: { from_location_type?: JourneyEndpoint | null; to_location_type?: JourneyEndpoint | null },
+  options: { defaultMissingToLocal?: boolean } = {},
+): { fromLocationType: JourneyEndpoint; toLocationType: JourneyEndpoint } {
+  const from = input.from_location_type ?? undefined;
+  const to = input.to_location_type ?? undefined;
+  if (from === undefined && to === undefined) {
+    if (options.defaultMissingToLocal) {
+      return { fromLocationType: "local", toLocationType: "local" };
+    }
+    throw new Error("Both endpoint types are required.");
+  }
+  if (from === undefined || to === undefined) {
+    throw new Error("Both endpoint types are required.");
+  }
+  return { fromLocationType: from, toLocationType: to };
+}
+
 /** Converts provider-supplied categories only; free text is never examined. */
 export function classifyProviderEndpoint(placeTypes?: readonly string[] | null): JourneyEndpoint {
   const types = new Set(placeTypes ?? []);

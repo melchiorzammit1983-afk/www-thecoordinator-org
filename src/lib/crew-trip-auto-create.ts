@@ -1,5 +1,6 @@
 import { maltaWallTimeToUtcIso } from "@/lib/time";
 import { isMaltaLocation } from "@/lib/parse-crew";
+import { resolveBookingJourney } from "@/lib/journey-resolver";
 
 /**
  * Phase 3: when HR saves a crew itinerary leg that lands in Malta, auto-create
@@ -96,6 +97,10 @@ export async function autoCreateOrGroupCrewTrip(
   }
   const normTime = normalizeTime(leg.arrival_time);
   const flightNo = (leg.flight_number || "").trim().toUpperCase() || null;
+  // This importer has an explicit arrival-leg semantic; this is not inferred
+  // from free-text locations. The shared resolver therefore remains the
+  // authority for the generated journey and tracking classification.
+  const journey = resolveBookingJourney("airport", "local");
 
   // Group crew on the same flight/date/time/destination into one trip.
   let existingQ = admin
@@ -126,11 +131,14 @@ export async function autoCreateOrGroupCrewTrip(
         executor_company_id: coordinatorCompanyId,
         from_location: leg.from_location || leg.to_location,
         to_location: leg.to_location,
+        from_location_type: "airport",
+        to_location_type: "local",
         date: leg.arrival_date,
         time: normTime,
         pickup_at: pickupAt,
         flightorship: flightNo,
         from_flight: flightNo,
+        tracking_kind: journey.trackingKind,
         clientcompanyname: `${portal.name} — crew change`,
         status: "pending",
         needs_review: true,
