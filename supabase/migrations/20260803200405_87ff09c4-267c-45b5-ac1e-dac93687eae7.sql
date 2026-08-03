@@ -1,0 +1,1 @@
+ALTER TABLE public.ship_events ADD COLUMN IF NOT EXISTS archived_by uuid REFERENCES auth.users(id) ON DELETE SET NULL;

@@ -6508,6 +6508,7 @@ export type Database = {
       ship_events: {
         Row: {
           archived_at: string | null
+          archived_by: string | null
           company_id: string
           created_at: string
           created_by: string | null
@@ -6520,6 +6521,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          archived_by?: string | null
           company_id: string
           created_at?: string
           created_by?: string | null
@@ -6532,6 +6534,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          archived_by?: string | null
           company_id?: string
           created_at?: string
           created_by?: string | null
@@ -7771,6 +7774,7 @@ export type Database = {
         }
         Returns: {
           archived_at: string | null
+          archived_by: string | null
           company_id: string
           created_at: string
           created_by: string | null
