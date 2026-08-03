@@ -46,7 +46,7 @@ import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
-import { Clock, AlertTriangle } from "lucide-react";
+import { Clock, AlertTriangle, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
 import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
 import { RoutePinsMap } from "@/components/coordinator/RoutePinsMap";
