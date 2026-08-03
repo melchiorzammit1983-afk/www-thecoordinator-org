@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
+import { classifyProviderEndpoint } from "@/lib/journey-resolver";
 import { flightFormatWarning } from "@/lib/flight-code";
 import { AlertTriangle, Download } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
@@ -236,11 +237,13 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       vehicle: f.vehicle.trim() || null,
       notes: f.notes.trim() || null,
       from_location: fromPick.address,
+      from_location_type: classifyProviderEndpoint(fromPick.place_types),
       from_place_id: fromPick.place_id,
       from_lat: fromPick.lat,
       from_lng: fromPick.lng,
       from_display_name: fromPick.display_name ?? null,
       to_location: toPick.address,
+      to_location_type: classifyProviderEndpoint(toPick.place_types),
       to_place_id: toPick.place_id,
       to_lat: toPick.lat,
       to_lng: toPick.lng,

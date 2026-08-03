@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { resolveBookingJourney } from "./journey-resolver";
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -33,6 +34,8 @@ export const submitClientBooking = createServerFn({ method: "POST" })
         room_number: z.string().trim().max(40).optional().or(z.literal("")),
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
+        from_location_type: z.enum(["airport", "port", "local"]),
+        to_location_type: z.enum(["airport", "port", "local"]),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM"),
         from_flight: z.string().trim().max(40).optional().or(z.literal("")),
@@ -43,6 +46,7 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    const journey = resolveBookingJourney(data.from_location_type, data.to_location_type);
     const supabaseAdmin = await getAdminClient();
     const { data: company, error: cErr } = await supabaseAdmin
       .from("companies")
@@ -77,5 +81,5 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       promo_note: data.promo_note ? data.promo_note.trim() : null,
     } as any);
     if (error) throw new Error(error.message);
-    return { ok: true };
+    return { ok: true, journey };
   });

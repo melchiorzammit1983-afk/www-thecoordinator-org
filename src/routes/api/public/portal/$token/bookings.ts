@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
+import { resolveBookingJourney } from "@/lib/journey-resolver";
 
 const BookingInput = z.object({
   from_location: z.string().min(1).max(200),
   to_location: z.string().min(1).max(200),
+  from_location_type: z.enum(["airport", "port", "local"]).optional(),
+  to_location_type: z.enum(["airport", "port", "local"]).optional(),
   from_place_id: z.string().max(200).nullable().optional(),
   from_lat: z.number().nullable().optional(),
   from_lng: z.number().nullable().optional(),
@@ -55,6 +58,13 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
           created_by_email: z.string().email().optional(),
           created_by_name: z.string().max(120).optional(),
           batch_id: z.string().uuid().optional(),
+        }).superRefine((booking, ctx) => {
+          if ((booking.from_location_type === undefined) !== (booking.to_location_type === undefined)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Both endpoint types are required.", path: ["to_location_type"] });
+          }
+          if (booking.from_location_type === undefined || booking.to_location_type === undefined) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Endpoint types are required for a single booking.", path: ["from_location_type"] });
+          }
         }).safeParse(body);
         if (!bulk.success && !single.success) return Response.json({ error: "bad_input" }, { status: 400 });
 
@@ -88,16 +98,20 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
               status: "pending" as const,
               batch_id: batchId,
             }))
-          : [{
-              portal_company_id: r.portal.id,
-              payload: single.data!,
-              agreed_price: single.data!.agreed_price ?? null,
-              currency: single.data!.currency ?? "EUR",
-              created_by_email: single.data!.created_by_email ?? null,
-              created_by_name: single.data!.created_by_name ?? null,
-              status: "pending" as const,
-              batch_id: batchId,
-            }];
+          : (() => {
+              const booking = single.data!;
+              const journey = resolveBookingJourney(booking.from_location_type!, booking.to_location_type!);
+              return [{
+                portal_company_id: r.portal.id,
+                payload: { ...booking, journey_type: journey.journeyType },
+                agreed_price: booking.agreed_price ?? null,
+                currency: booking.currency ?? "EUR",
+                created_by_email: booking.created_by_email ?? null,
+                created_by_name: booking.created_by_name ?? null,
+                status: "pending" as const,
+                batch_id: batchId,
+              }];
+            })();
 
         const { data, error } = await admin.from("portal_bookings" as any).insert(rows as any).select("id");
         if (error) return Response.json({ error: error.message }, { status: 500 });

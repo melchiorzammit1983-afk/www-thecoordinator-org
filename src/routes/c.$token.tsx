@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 
 export const Route = createFileRoute("/c/$token")({
   head: ({ loaderData }) => {
@@ -70,10 +71,14 @@ function PublicBookingPage() {
   });
   const [fromPlaceId, setFromPlaceId] = useState<string | null>(null);
   const [toPlaceId, setToPlaceId] = useState<string | null>(null);
+  const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
+  const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
 
   const mut = useMutation({
     mutationFn: () => submitFn({ data: {
       token: params.token, ...form,
+      from_location_type: fromLocationType,
+      to_location_type: toLocationType,
       pax_count: Math.max(1, Math.min(200, Number(form.pax_count) || 1)),
       promo_note: promo || undefined,
     } as any }),
@@ -121,7 +126,7 @@ function PublicBookingPage() {
               <div className="py-8 text-center">
                 <div className="text-emerald-600 font-medium">Submitted</div>
                 <p className="text-sm text-muted-foreground mt-2">We'll be in touch shortly.</p>
-                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", date:"", time:"", from_flight:"", pax_count:"1", notes:"" }); }}>
+                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", date:"", time:"", from_flight:"", pax_count:"1", notes:"" }); setFromLocationType("local"); setToLocationType("local"); }}>
                   Submit another
                 </Button>
               </div>
@@ -151,7 +156,7 @@ function PublicBookingPage() {
                     id="b-from"
                     value={form.from_location}
                     placeId={fromPlaceId}
-                    onChange={(v) => { update("from_location", v.address); setFromPlaceId(v.place_id); }}
+                    onChange={(v) => { update("from_location", v.address); setFromPlaceId(v.place_id); setFromLocationType(classifyProviderEndpoint(v.place_types)); }}
                     required
                     placeholder="Hotel, address, port…"
                   />
@@ -162,7 +167,7 @@ function PublicBookingPage() {
                     id="b-to"
                     value={form.to_location}
                     placeId={toPlaceId}
-                    onChange={(v) => { update("to_location", v.address); setToPlaceId(v.place_id); }}
+                    onChange={(v) => { update("to_location", v.address); setToPlaceId(v.place_id); setToLocationType(classifyProviderEndpoint(v.place_types)); }}
                     required
                     placeholder="Airport, hotel, address…"
                   />

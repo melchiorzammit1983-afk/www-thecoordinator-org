@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 
 type Boot = {
   portal: { id: string; name: string; slug: string | null; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string | null; currency: string | null; pricing_mode: string };
@@ -90,6 +92,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
   const [paxTier, setPaxTier] = useState<string>("1-3");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
+  const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
   const [pickup, setPickup] = useState("");
   const [pax, setPax] = useState("1");
   const [paxNames, setPaxNames] = useState("");
@@ -118,6 +122,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
     setBusy(true);
     const body: any = {
       from_location: from.trim(), to_location: to.trim(),
+      from_location_type: fromLocationType,
+      to_location_type: toLocationType,
       pickup_at: new Date(pickup).toISOString(),
       pax_count: Number(pax) || 1,
       pax_names: parsedPaxNames.length ? parsedPaxNames : undefined,
@@ -133,7 +139,7 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
     setBusy(false);
     if (!r.ok) { toast.error("Could not submit — please try again."); return; }
     toast.success("Booking sent to reception & dispatch");
-    setFrom(""); setTo(""); setPickup(""); setPax("1"); setPaxNames(""); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
+    setFrom(""); setTo(""); setFromLocationType("local"); setToLocationType("local"); setPickup(""); setPax("1"); setPaxNames(""); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
     onCreated();
   }
 
@@ -172,8 +178,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       )}
 
       <div className="rounded-xl border p-3 bg-card grid grid-cols-1 gap-2">
-        <div><Label className="text-xs">From</Label><Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Hotel / your address" /></div>
-        <div><Label className="text-xs">To</Label><Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Airport, restaurant, …" /></div>
+        <div><Label className="text-xs">From</Label><AddressAutocomplete value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
+        <div><Label className="text-xs">To</Label><AddressAutocomplete value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
         <div className="grid grid-cols-2 gap-2">
           <div><Label className="text-xs">Pickup time</Label><Input type="datetime-local" value={pickup} onChange={(e) => setPickup(e.target.value)} /></div>
           <div><Label className="text-xs">Pax</Label><Input type="number" min={1} value={pax} onChange={(e) => setPax(e.target.value)} /></div>
