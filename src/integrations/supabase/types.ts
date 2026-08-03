@@ -4265,6 +4265,7 @@ export type Database = {
           forward_tried_company_ids: string[]
           from_flight: string | null
           from_location: string
+          from_location_type: string | null
           group_id: string | null
           group_name: string | null
           group_note: string | null
@@ -4279,6 +4280,7 @@ export type Database = {
           needs_review: boolean
           notes: string | null
           onward_flight_schedule_record_id: string | null
+          onward_ship_event_id: string | null
           operation_id: string
           origin_company_id: string | null
           paid_amount: number | null
@@ -4319,6 +4321,7 @@ export type Database = {
           time: string
           to_flight: string | null
           to_location: string
+          to_location_type: string | null
           tracking_enabled: boolean
           tracking_kind: string | null
           traffic_delay_minutes: number | null
@@ -4409,6 +4412,7 @@ export type Database = {
           forward_tried_company_ids?: string[]
           from_flight?: string | null
           from_location: string
+          from_location_type?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
@@ -4423,6 +4427,7 @@ export type Database = {
           needs_review?: boolean
           notes?: string | null
           onward_flight_schedule_record_id?: string | null
+          onward_ship_event_id?: string | null
           operation_id: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4463,6 +4468,7 @@ export type Database = {
           time: string
           to_flight?: string | null
           to_location: string
+          to_location_type?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4553,6 +4559,7 @@ export type Database = {
           forward_tried_company_ids?: string[]
           from_flight?: string | null
           from_location?: string
+          from_location_type?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
@@ -4567,6 +4574,7 @@ export type Database = {
           needs_review?: boolean
           notes?: string | null
           onward_flight_schedule_record_id?: string | null
+          onward_ship_event_id?: string | null
           operation_id?: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4607,6 +4615,7 @@ export type Database = {
           time?: string
           to_flight?: string | null
           to_location?: string
+          to_location_type?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4650,6 +4659,13 @@ export type Database = {
             columns: ["onward_flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_onward_ship_event_id_fkey"
+            columns: ["onward_ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
             referencedColumns: ["id"]
           },
           {
