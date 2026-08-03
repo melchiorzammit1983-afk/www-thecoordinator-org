@@ -488,7 +488,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -664,6 +664,7 @@ const jobInput = z.object({
   flight_schedule_record_id: z.string().uuid().nullable().optional(),
   ship_event_id: z.string().uuid().nullable().optional(),
   onward_flight_schedule_record_id: z.string().uuid().nullable().optional(),
+  onward_ship_event_id: z.string().uuid().nullable().optional(),
   scheduled_transport_pickup_offset_minutes: pickupOffsetMinutesInput.nullable().optional(),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
@@ -819,6 +820,16 @@ async function assertActiveDepartureFlightScheduleRecord(supabaseAdmin: any, rec
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Choose a departure from the active schedule.");
+}
+
+async function assertCompanyShipEvent(supabaseAdmin: any, companyId: string, eventId: string) {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("ship_events")
+    .select("id, company_id")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.company_id !== companyId) throw new Error("Choose a Ship from your company.");
 }
 
 async function resolveScheduledTransportPickup(
@@ -1468,6 +1479,10 @@ export const createJob = createServerFn({ method: "POST" })
       if (!data.ship_event_id) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, data.onward_flight_schedule_record_id);
     }
+    if (data.onward_ship_event_id) {
+      if (!data.flight_schedule_record_id) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, data.onward_ship_event_id);
+    }
     const scheduledPickup = await resolveScheduledTransportPickup(
       supabaseAdmin,
       c.id,
@@ -1494,6 +1509,7 @@ export const createJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id ?? null,
         ship_event_id: data.ship_event_id ?? null,
         onward_flight_schedule_record_id: data.onward_flight_schedule_record_id ?? null,
+        onward_ship_event_id: data.onward_ship_event_id ?? null,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
@@ -1550,7 +1566,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, from_location_type, to_location_type, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, from_location_type, to_location_type, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
@@ -1560,6 +1576,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
     const existingShipId = (existing as any).ship_event_id as string | null;
     const existingOnwardFlightId = (existing as any).onward_flight_schedule_record_id as string | null;
+    const existingOnwardShipId = (existing as any).onward_ship_event_id as string | null;
     const existingFromEndpointType = (existing as any).from_location_type as JourneyEndpoint | null;
     const existingToEndpointType = (existing as any).to_location_type as JourneyEndpoint | null;
     const effectiveFromEndpointType = data.from_location_type === undefined ? existingFromEndpointType : data.from_location_type;
@@ -1574,9 +1591,14 @@ export const updateJob = createServerFn({ method: "POST" })
     const effectiveFlightId = data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id;
     const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
     const effectiveOnwardFlightId = data.onward_flight_schedule_record_id === undefined ? existingOnwardFlightId : data.onward_flight_schedule_record_id;
+    const effectiveOnwardShipId = data.onward_ship_event_id === undefined ? existingOnwardShipId : data.onward_ship_event_id;
     if (effectiveOnwardFlightId) {
       if (!effectiveShipId) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, effectiveOnwardFlightId);
+    }
+    if (effectiveOnwardShipId) {
+      if (!effectiveFlightId) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, effectiveOnwardShipId);
     }
     const transportTrackingKind = effectiveShipId ? "vessel" : effectiveFlightId ? "flight" : null;
     const scheduledPickup = await resolveScheduledTransportPickup(
@@ -1618,6 +1640,7 @@ export const updateJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id,
         ship_event_id: data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
         onward_flight_schedule_record_id: effectiveOnwardFlightId,
+        onward_ship_event_id: effectiveOnwardShipId,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
@@ -1682,6 +1705,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
     if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     if (data.onward_flight_schedule_record_id !== undefined) patch.onward_flight_schedule_record_id = data.onward_flight_schedule_record_id;
+    if (data.onward_ship_event_id !== undefined) patch.onward_ship_event_id = data.onward_ship_event_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
     if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;

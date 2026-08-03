@@ -69,6 +69,7 @@ type Job = {
   flight_schedule_record_id?: string | null;
   ship_event_id?: string | null;
   onward_flight_schedule_record_id?: string | null;
+  onward_ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
