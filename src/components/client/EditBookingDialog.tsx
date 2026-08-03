@@ -64,7 +64,7 @@ export function EditBookingDialog({
         <div className="grid gap-3">
           <div className="grid gap-1.5">
             <Label>From</Label>
-            <AddressAutocomplete
+            <AddressAutocomplete publicToken={token}
               value={from}
               placeId={fromPlaceId}
               onChange={(v) => { setFrom(v.address); setFromPlaceId(v.place_id); }}
@@ -73,7 +73,7 @@ export function EditBookingDialog({
           </div>
           <div className="grid gap-1.5">
             <Label>To</Label>
-            <AddressAutocomplete
+            <AddressAutocomplete publicToken={token}
               value={to}
               placeId={toPlaceId}
               onChange={(v) => { setTo(v.address); setToPlaceId(v.place_id); }}

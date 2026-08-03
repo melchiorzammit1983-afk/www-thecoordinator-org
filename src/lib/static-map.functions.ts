@@ -29,10 +29,13 @@ export const getRouteThumb = createServerFn({ method: "POST" })
         width: z.number().int().min(80).max(400).default(192),
         height: z.number().int().min(60).max(300).default(112),
         scale: z.union([z.literal(1), z.literal(2)]).default(2),
+        public_token: z.string().trim().min(8).max(200).optional(),
       })
       .parse(i),
   )
   .handler(async ({ data }) => {
+    const { requireMapsAccess } = await import("./maps-access.server");
+    await requireMapsAccess(data.public_token);
     const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
     const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
     if (!LOVABLE_API_KEY || !GOOGLE_MAPS_API_KEY) {

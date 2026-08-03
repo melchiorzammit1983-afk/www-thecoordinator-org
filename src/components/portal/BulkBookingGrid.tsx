@@ -344,7 +344,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                     {COLUMN_KEYS.map((key, ci) => (
                       <TableCell key={key} className="p-1 align-top" onPaste={(e) => handlePaste(e, ri, ci)}>
                         {key === "from" && (
-                          <AddressAutocomplete
+                          <AddressAutocomplete publicToken={token}
                             value={row.from}
                             placeId={row.fromPlaceId}
                             onChange={(v) => updateRow(ri, { from: v.address, fromLocationType: classifyProviderEndpoint(v.place_types), fromPlaceId: v.place_id, fromLat: v.lat, fromLng: v.lng })}
@@ -353,7 +353,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                           />
                         )}
                         {key === "to" && (
-                          <AddressAutocomplete
+                          <AddressAutocomplete publicToken={token}
                             value={row.to}
                             placeId={row.toPlaceId}
                             onChange={(v) => updateRow(ri, { to: v.address, toLocationType: classifyProviderEndpoint(v.place_types), toPlaceId: v.place_id, toLat: v.lat, toLng: v.lng })}
