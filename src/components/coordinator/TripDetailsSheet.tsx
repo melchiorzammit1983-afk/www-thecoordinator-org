@@ -81,6 +81,7 @@ export type DetailsJob = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
   flight_schedule_record_id?: string | null;
+  ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
@@ -151,6 +152,13 @@ export function TripDetailsSheet({
     try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightCode = job.from_flight || job.to_flight;
+  const transportKind: "flight" | "vessel" | null = job.ship_event_id
+    ? "vessel"
+    : job.flight_schedule_record_id
+      ? "flight"
+      : flightCode && (job.tracking_kind === "flight" || job.tracking_kind === "vessel")
+        ? job.tracking_kind
+        : null;
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
   const paid = job.payment_status === "paid";
 
@@ -844,19 +852,19 @@ export function TripDetailsSheet({
           </section>
 
           {/* Live flight tracking */}
-          {(job.from_flight || job.to_flight) && (
+          {transportKind && (
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                  {job.tracking_kind === "vessel" ? "Vessel" : "Flight"}
+                  {transportKind === "vessel" ? "Vessel" : "Flight"}
                 </div>
                 <RefreshLiveStatusButton jobId={job.id} label="Refresh" />
               </div>
               <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
-                    {job.from_flight && <div>From: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.from_flight}</b></div>}
-                    {job.to_flight && <div>To: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.to_flight}</b></div>}
+                    {job.from_flight && <div>From: <b>{transportKind === "vessel" ? "🚢" : "✈"} {job.from_flight}</b></div>}
+                    {job.to_flight && <div>To: <b>{transportKind === "vessel" ? "🚢" : "✈"} {job.to_flight}</b></div>}
                   </div>
                   <FlightStatusPill status={job.flight_status} />
                 </div>
@@ -879,7 +887,7 @@ export function TripDetailsSheet({
                       ? `Updated ${formatMaltaTime(job.flight_status_updated_at)}`
                       : "Not checked yet"}
                   </span>
-                  {job.tracking_kind !== "vessel" && (
+                  {transportKind === "flight" && (
                     <div className="flex items-center gap-2">
                       <a
                         href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
@@ -892,7 +900,7 @@ export function TripDetailsSheet({
                   )}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  Automatic live updates are temporarily unavailable. Check the {job.tracking_kind === "vessel" ? "port" : "airport"} board before dispatch.
+                  Automatic live updates are temporarily unavailable. Check the {transportKind === "vessel" ? "port" : "airport"} board before dispatch.
                 </p>
               </div>
             </section>

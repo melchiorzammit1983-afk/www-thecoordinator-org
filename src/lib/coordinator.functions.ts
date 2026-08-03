@@ -5,6 +5,7 @@ import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaDateTime, formatM
 import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
+import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
 
 type Ctx = { supabase: any; userId: string };
 type CompanyRecord = {
@@ -487,7 +488,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -648,9 +649,13 @@ const passengerInput = z.object({
 
 type PassengerInput = z.infer<typeof passengerInput>;
 
+const bookingEndpointTypeInput = z.enum(["airport", "port", "local"]);
+
 const jobInput = z.object({
   from_location: z.string().trim().min(1).max(255),
   to_location: z.string().trim().min(1).max(255),
+  from_location_type: bookingEndpointTypeInput.optional(),
+  to_location_type: bookingEndpointTypeInput.optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   flightorship: z.string().trim().max(120).optional().or(z.literal("")),
@@ -659,6 +664,7 @@ const jobInput = z.object({
   flight_schedule_record_id: z.string().uuid().nullable().optional(),
   ship_event_id: z.string().uuid().nullable().optional(),
   onward_flight_schedule_record_id: z.string().uuid().nullable().optional(),
+  onward_ship_event_id: z.string().uuid().nullable().optional(),
   scheduled_transport_pickup_offset_minutes: pickupOffsetMinutesInput.nullable().optional(),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
@@ -693,6 +699,23 @@ const jobInput = z.object({
 const createJobInput = jobInput.extend({
   passengers: z.array(passengerInput).max(200).optional(),
 });
+
+function resolveJourneyForBookingInput(data: {
+  from_location_type?: JourneyEndpoint;
+  to_location_type?: JourneyEndpoint;
+}) {
+  if (!data.from_location_type || !data.to_location_type) return null;
+  return resolveBookingJourney(data.from_location_type, data.to_location_type);
+}
+
+function assertCompleteBookingEndpointTypes(data: {
+  from_location_type?: JourneyEndpoint;
+  to_location_type?: JourneyEndpoint;
+}) {
+  if ((data.from_location_type === undefined) !== (data.to_location_type === undefined)) {
+    throw new Error("Both endpoint types are required when providing journey classification.");
+  }
+}
 
 type LinkedFlightScheduleRecord = {
   id: string;
@@ -797,6 +820,16 @@ async function assertActiveDepartureFlightScheduleRecord(supabaseAdmin: any, rec
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Choose a departure from the active schedule.");
+}
+
+async function assertCompanyShipEvent(supabaseAdmin: any, companyId: string, eventId: string) {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("ship_events")
+    .select("id, company_id")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.company_id !== companyId) throw new Error("Choose a Ship from your company.");
 }
 
 async function resolveScheduledTransportPickup(
@@ -1436,6 +1469,11 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    assertCompleteBookingEndpointTypes(data);
+    const journey = resolveJourneyForBookingInput(data);
+    if (data.flight_schedule_record_id && data.ship_event_id) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
     const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
     if (data.flight_schedule_record_id) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
@@ -1443,6 +1481,10 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.onward_flight_schedule_record_id) {
       if (!data.ship_event_id) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, data.onward_flight_schedule_record_id);
+    }
+    if (data.onward_ship_event_id) {
+      if (!data.flight_schedule_record_id) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, data.onward_ship_event_id);
     }
     const scheduledPickup = await resolveScheduledTransportPickup(
       supabaseAdmin,
@@ -1459,6 +1501,8 @@ export const createJob = createServerFn({ method: "POST" })
         company_id: c.id,
         from_location: data.from_location,
         to_location: data.to_location,
+        from_location_type: data.from_location_type ?? null,
+        to_location_type: data.to_location_type ?? null,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         pickup_at: scheduledPickup.pickup_at,
@@ -1468,6 +1512,7 @@ export const createJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id ?? null,
         ship_event_id: data.ship_event_id ?? null,
         onward_flight_schedule_record_id: data.onward_flight_schedule_record_id ?? null,
+        onward_ship_event_id: data.onward_ship_event_id ?? null,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
@@ -1506,7 +1551,7 @@ export const createJob = createServerFn({ method: "POST" })
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(row.id);
-    return row;
+    return { ...row, journey };
   });
 
 export const updateJob = createServerFn({ method: "POST" })
@@ -1520,10 +1565,11 @@ export const updateJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    assertCompleteBookingEndpointTypes(data);
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, from_location_type, to_location_type, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
@@ -1533,15 +1579,32 @@ export const updateJob = createServerFn({ method: "POST" })
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
     const existingShipId = (existing as any).ship_event_id as string | null;
     const existingOnwardFlightId = (existing as any).onward_flight_schedule_record_id as string | null;
+    const existingOnwardShipId = (existing as any).onward_ship_event_id as string | null;
+    const existingFromEndpointType = (existing as any).from_location_type as JourneyEndpoint | null;
+    const existingToEndpointType = (existing as any).to_location_type as JourneyEndpoint | null;
+    const effectiveFromEndpointType = data.from_location_type === undefined ? existingFromEndpointType : data.from_location_type;
+    const effectiveToEndpointType = data.to_location_type === undefined ? existingToEndpointType : data.to_location_type;
+    const journey = resolveJourneyForBookingInput({
+      from_location_type: effectiveFromEndpointType ?? undefined,
+      to_location_type: effectiveToEndpointType ?? undefined,
+    });
     if (selectedFlightId && selectedFlightId !== existingFlightId) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, selectedFlightId);
     }
     const effectiveFlightId = data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id;
     const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
     const effectiveOnwardFlightId = data.onward_flight_schedule_record_id === undefined ? existingOnwardFlightId : data.onward_flight_schedule_record_id;
+    const effectiveOnwardShipId = data.onward_ship_event_id === undefined ? existingOnwardShipId : data.onward_ship_event_id;
+    if (effectiveFlightId && effectiveShipId) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
     if (effectiveOnwardFlightId) {
       if (!effectiveShipId) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, effectiveOnwardFlightId);
+    }
+    if (effectiveOnwardShipId) {
+      if (!effectiveFlightId) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, effectiveOnwardShipId);
     }
     const transportTrackingKind = effectiveShipId ? "vessel" : effectiveFlightId ? "flight" : null;
     const scheduledPickup = await resolveScheduledTransportPickup(
@@ -1571,6 +1634,8 @@ export const updateJob = createServerFn({ method: "POST" })
       const proposed: Record<string, unknown> = {
         from_location: data.from_location,
         to_location: data.to_location,
+        from_location_type: effectiveFromEndpointType,
+        to_location_type: effectiveToEndpointType,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         vehicle: data.vehicle || null,
@@ -1581,6 +1646,7 @@ export const updateJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id,
         ship_event_id: data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
         onward_flight_schedule_record_id: effectiveOnwardFlightId,
+        onward_ship_event_id: effectiveOnwardShipId,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
@@ -1598,7 +1664,7 @@ export const updateJob = createServerFn({ method: "POST" })
       if (Object.keys(diff).length === 0) {
         await syncJobPax(data.id, passengerNamesOnly(data.pax));
         await syncJobLabels(context, c.id, data.id, data.label_ids);
-        return { ok: true };
+        return { ok: true, journey };
       }
       const res = await createChangeRequest({
         jobId: data.id,
@@ -1611,7 +1677,7 @@ export const updateJob = createServerFn({ method: "POST" })
       // Labels can still be updated immediately (coordinator-only metadata).
       await syncJobPax(data.id, passengerNamesOnly(data.pax));
       await syncJobLabels(context, c.id, data.id, data.label_ids);
-      return { ok: true, ...res };
+      return { ok: true, journey, ...res };
     }
 
     // If the address changed, invalidate cached name + ETA so we recompute.
@@ -1636,6 +1702,8 @@ export const updateJob = createServerFn({ method: "POST" })
     };
     if (data.pickup_place_id !== undefined) patch.pickup_place_id = data.pickup_place_id || null;
     if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
+    if (data.from_location_type !== undefined) patch.from_location_type = data.from_location_type;
+    if (data.to_location_type !== undefined) patch.to_location_type = data.to_location_type;
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
     patch.tracking_kind = transportTrackingKind;
@@ -1643,6 +1711,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
     if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     if (data.onward_flight_schedule_record_id !== undefined) patch.onward_flight_schedule_record_id = data.onward_flight_schedule_record_id;
+    if (data.onward_ship_event_id !== undefined) patch.onward_ship_event_id = data.onward_ship_event_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
     if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;
@@ -1723,7 +1792,7 @@ export const updateJob = createServerFn({ method: "POST" })
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(data.id);
-    return { ok: true };
+    return { ok: true, journey };
   });
 
 export const rescheduleJobToFlight = createServerFn({ method: "POST" })
@@ -3101,6 +3170,8 @@ const bulkTripInput = z.object({
       z.object({
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
+        from_location_type: bookingEndpointTypeInput.optional(),
+        to_location_type: bookingEndpointTypeInput.optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
         flightorship: z.string().trim().max(120).optional().default(""),
@@ -3167,6 +3238,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const created: string[] = [];
     for (const t of data.trips) {
+      const endpointTypes = normalizeBookingEndpointTypes(t, { defaultMissingToLocal: true });
+      const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
@@ -3175,6 +3248,8 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           company_id: c.id,
           from_location: t.from_location,
           to_location: t.to_location,
+          from_location_type: endpointTypes.fromLocationType,
+          to_location_type: endpointTypes.toLocationType,
           date: t.date,
           time,
           pickup_at,
@@ -3189,7 +3264,9 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           vehicle: t.vehicle || null,
           notes: t.notes || null,
           driver_id: null,
-          tracking_kind: t.tracking_kind ?? "flight",
+          // Explicit legacy tracking values still win. Unclassified bulk
+          // rows are deterministically local/local and therefore untracked.
+          tracking_kind: t.tracking_kind ?? journey.trackingKind,
         })
         .select("id")
         .single();
@@ -4141,15 +4218,22 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // Never lookup for finished trips — they're archived, status is frozen.
     const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is attached, the trip
-    // isn't finished, and the last lookup is older than the free cache
-    // window — otherwise the provider cache returns the same answer and we'd
-    // burn refresh points.
-    const hasCode = !finished && !!(job as any).flight_schedule_record_id && !!((job as any).from_flight || (job as any).to_flight);
+    // Only meter when a Flight identifier is attached, the trip isn't
+    // finished, and the last lookup is older than the free cache window.
+    const linkedShipId = (job as any).ship_event_id as string | null;
+    const linkedFlightId = (job as any).flight_schedule_record_id as string | null;
+    const storedTrackingKind = (job as any).tracking_kind as "flight" | "vessel" | null;
+    const transportKind: "flight" | "vessel" | null = linkedShipId
+      ? "vessel"
+      : linkedFlightId
+        ? "flight"
+        : storedTrackingKind;
+    // Vessel refreshes read Ship Operations below. Only Flight journeys may
+    // enter the external Flight provider path or consume Flight refresh points.
+    const hasCode = !finished && transportKind === "flight" && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
     const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = liveStatusProviderEnabled() && hasCode && !flightFresh;
-    const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
@@ -4169,18 +4253,18 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         to_location: (job as any).to_location ?? undefined,
         date: (job as any).date ?? undefined,
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
-        from_flight: finished ? undefined : ((job as any).from_flight ?? undefined),
-        to_flight: finished ? undefined : ((job as any).to_flight ?? undefined),
-        tracking_kind: (job as any).ship_event_id ? "vessel" : (job as any).flight_schedule_record_id ? "flight" : undefined,
+        from_flight: finished || transportKind !== "flight" ? undefined : ((job as any).from_flight ?? undefined),
+        to_flight: finished || transportKind !== "flight" ? undefined : ((job as any).to_flight ?? undefined),
+        tracking_kind: transportKind === "flight" ? "flight" : undefined,
       });
     } catch (e) {
       throw e;
     }
-    if ((job as any).ship_event_id) {
+    if (linkedShipId) {
       const { data: ship, error: shipError } = await (supabaseAdmin as any)
         .from("ship_events")
         .select("eta, company_id")
-        .eq("id", (job as any).ship_event_id)
+        .eq("id", linkedShipId)
         .maybeSingle();
       if (shipError) throw new Error(shipError.message);
       if (!ship || ship.company_id !== c.id) throw new Error("Linked Ship Event not found.");

@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { getAdmin } from "./portal-token.server";
+import { resolveBookingJourney } from "./journey-resolver";
 
 // ---------- Schemas ----------
 export const RoomInput = z.object({
@@ -241,6 +242,8 @@ export const GuestBookingInput = z.object({
   pax_tier: z.string().max(20).optional(),
   from_location: z.string().min(1).max(200),
   to_location: z.string().min(1).max(200),
+  from_location_type: z.enum(["airport", "port", "local"]),
+  to_location_type: z.enum(["airport", "port", "local"]),
   pickup_at: z.string().datetime(),
   pax_count: z.number().int().min(1).max(20).default(1),
   pax_names: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
@@ -253,6 +256,7 @@ export const GuestBookingInput = z.object({
 export async function createGuestBooking(sessionToken: string, input: z.infer<typeof GuestBookingInput>) {
   const r = await resolveGuestSession(sessionToken);
   if (!r.ok) return r;
+  const journey = resolveBookingJourney(input.from_location_type, input.to_location_type);
   const admin = await getAdmin();
   const s: any = r.session;
   const p: any = r.portal;
@@ -327,6 +331,9 @@ export async function createGuestBooking(sessionToken: string, input: z.infer<ty
     room_number: s.room_id ? undefined : null,
     from_location: input.from_location,
     to_location: input.to_location,
+    from_location_type: input.from_location_type,
+    to_location_type: input.to_location_type,
+    journey_type: journey.journeyType,
     pickup_at: input.pickup_at,
     pax_count: input.pax_count,
     pax_names: (input.pax_names ?? []).map((n) => n.trim()).filter(Boolean),

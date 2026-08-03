@@ -1,55 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Plane as PlaneIcon, Ship as ShipIcon, Building2, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
-import { parseFlightCode, looksLikeVessel } from "@/lib/flight-code";
+import { classifyProviderEndpoint, resolveBookingJourney, resolveJourneyOverride, type JourneyEndpoint, type JourneyType } from "@/lib/journey-resolver";
 
-type EndpointKind = "airport" | "seaport" | "hotel" | "custom";
+const JOURNEY_LABELS: Record<JourneyType, string> = {
+  arrival_flight: "Arrival Flight",
+  departure_flight: "Departure Flight",
+  ship_arrival: "Ship Arrival",
+  ship_departure: "Ship Departure",
+  ship_to_flight: "Ship + Connecting Flight",
+  flight_to_ship: "Arrival Flight + Connecting Ship",
+  road_transfer: "Road Transfer",
+};
 
-function inferEndpointKind(loc: string, flightOrShip: string): EndpointKind {
-  const l = (loc ?? "").toLowerCase();
-  const f = (flightOrShip ?? "").trim();
-  if (f) {
-    if (looksLikeVessel(f)) return "seaport";
-    if (parseFlightCode(f).ok) return "airport";
-    if (/\b(ship|vessel|berth|port|cruise|freeport|marina)\b/i.test(l)) return "seaport";
-    if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
-    return "custom";
-  }
-  if (/\bairport\b|\bairfield\b|\bmla\b/i.test(l)) return "airport";
-  if (/\b(seaport|berth|terminal|marina|freeport|cruise|vessel|ship)\b/i.test(l)) return "seaport";
-  if (/\b(hotel|inn|resort|hilton|marriott|radisson|hyatt|sheraton|westin|holiday inn|palace|suites|apartments|apart[- ]?hotel)\b/i.test(l)) return "hotel";
-  return "custom";
-}
-
-function placeholderForKind(kind: EndpointKind, hasCode: string): string {
-  if (kind === "airport") return hasCode ? "Airport (auto)" : "Airport / terminal";
-  if (kind === "seaport") return "Port, berth, terminal…";
-  if (kind === "hotel") return "Hotel or venue name";
-  return "Address or place";
-}
-
-function EndpointKindChips({ value, onChange }: { value: EndpointKind; onChange: (k: EndpointKind) => void }) {
-  const opts: { k: EndpointKind; label: string; Icon: typeof PlaneIcon }[] = [
-    { k: "airport", label: "Airport", Icon: PlaneIcon },
-    { k: "seaport", label: "Seaport", Icon: ShipIcon },
-    { k: "hotel",   label: "Hotel",   Icon: Building2 },
-    { k: "custom",  label: "Other",   Icon: MapPin },
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {opts.map(({ k, label, Icon }) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => onChange(k)}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] ${value === k ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"}`}
-        >
-          <Icon className="h-3 w-3" /> {label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const JOURNEY_OPTIONS = Object.entries(JOURNEY_LABELS) as Array<[JourneyType, string]>;
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -97,6 +60,8 @@ type Driver = { id: string; name: string; vehicle: string | null };
 type Job = {
   id: string;
   from_location: string; to_location: string;
+  from_location_type?: JourneyEndpoint | null;
+  to_location_type?: JourneyEndpoint | null;
   date: string; time: string;
   flightorship: string | null;
   from_flight: string | null;
@@ -104,6 +69,7 @@ type Job = {
   flight_schedule_record_id?: string | null;
   ship_event_id?: string | null;
   onward_flight_schedule_record_id?: string | null;
+  onward_ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
@@ -233,24 +199,83 @@ function ManualForm({
   const [flightScheduleRecordId, setFlightScheduleRecordId] = useState<string | null>(job?.flight_schedule_record_id ?? null);
   const [shipEventId, setShipEventId] = useState<string | null>(job?.ship_event_id ?? null);
   const [onwardFlightScheduleRecordId, setOnwardFlightScheduleRecordId] = useState<string | null>(job?.onward_flight_schedule_record_id ?? null);
-  const [transportType, setTransportType] = useState<"none" | "flight" | "ship">(job?.ship_event_id ? "ship" : job?.flight_schedule_record_id ? "flight" : "none");
+  const [onwardShipEventId, setOnwardShipEventId] = useState<string | null>(job?.onward_ship_event_id ?? null);
+  const [fromAutoEndpointType, setFromAutoEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
+  const [toAutoEndpointType, setToAutoEndpointType] = useState<JourneyEndpoint>(job?.to_location_type ?? "local");
+  const [fromEndpointType, setFromEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
+  const [toEndpointType, setToEndpointType] = useState<JourneyEndpoint>(job?.to_location_type ?? "local");
+  const [fromEndpointOverride, setFromEndpointOverride] = useState(false);
+  const [toEndpointOverride, setToEndpointOverride] = useState(false);
+  const [journeyOverride, setJourneyOverride] = useState<JourneyType | null>(() => {
+    if (!job) return null;
+    const auto = resolveBookingJourney(job.from_location_type ?? "local", job.to_location_type ?? "local");
+    if (job.onward_ship_event_id) return auto.journeyType === "flight_to_ship" ? null : "flight_to_ship";
+    if (job.onward_flight_schedule_record_id) return auto.journeyType === "ship_to_flight" ? null : "ship_to_flight";
+    if (job.ship_event_id) {
+      if (auto.primaryTransport === "ship") return null;
+      return job.to_location_type === "port" ? "ship_departure" : "ship_arrival";
+    }
+    if (job.flight_schedule_record_id) {
+      if (auto.primaryTransport === "flight") return null;
+      return job.to_flight ? "departure_flight" : "arrival_flight";
+    }
+    return null;
+  });
   const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
   const [flightSearch, setFlightSearch] = useState("");
   const [shipSearch, setShipSearch] = useState("");
   const [onwardFlightSearch, setOnwardFlightSearch] = useState("");
+  const [onwardShipSearch, setOnwardShipSearch] = useState("");
   const [newShipEta, setNewShipEta] = useState("");
   const [newShipPort, setNewShipPort] = useState("");
-  const [fromKind, setFromKind] = useState<EndpointKind>(() =>
-    inferEndpointKind(job?.from_location ?? prefill?.from_location ?? "", job?.from_flight ?? prefill?.from_flight ?? ""),
-  );
-  const [toKind, setToKind] = useState<EndpointKind>(() =>
-    inferEndpointKind(job?.to_location ?? prefill?.to_location ?? "", job?.to_flight ?? prefill?.to_flight ?? ""),
-  );
+  const autoJourney = useMemo(() => resolveBookingJourney(fromEndpointType, toEndpointType), [fromEndpointType, toEndpointType]);
+  const selectedJourney = journeyOverride ? resolveJourneyOverride(journeyOverride) : autoJourney;
+  const requiresFlight = selectedJourney.primaryTransport === "flight";
+  const requiresShip = selectedJourney.primaryTransport === "ship";
+  const allowsOnwardFlight = selectedJourney.optionalConnection === "flight";
+  const allowsOnwardShip = selectedJourney.optionalConnection === "ship";
+  const requiredFlightDirection = selectedJourney.journeyType === "departure_flight" ? "departure" : "arrival";
+
+  function applyEndpointPick(side: "from" | "to", value: { place_types?: string[] }) {
+    const isOverridden = side === "from" ? fromEndpointOverride : toEndpointOverride;
+    const endpoint = classifyProviderEndpoint(value.place_types);
+    if (side === "from") {
+      setFromAutoEndpointType(endpoint);
+      if (!isOverridden) setFromEndpointType(endpoint);
+    } else {
+      setToAutoEndpointType(endpoint);
+      if (!isOverridden) setToEndpointType(endpoint);
+    }
+    setJourneyOverride(null);
+  }
+
+  useEffect(() => {
+    if (!requiresFlight) {
+      setFlightScheduleRecordId(null);
+      setFlightSearch("");
+      setFromFlight("");
+      setToFlight("");
+      setPickupOffsetMinutes(null);
+    }
+    if (!requiresShip) {
+      setShipEventId(null);
+      setShipSearch("");
+      setPickupOffsetMinutes(null);
+    }
+    if (!allowsOnwardFlight) {
+      setOnwardFlightScheduleRecordId(null);
+      setOnwardFlightSearch("");
+    }
+    if (!allowsOnwardShip) {
+      setOnwardShipEventId(null);
+      setOnwardShipSearch("");
+    }
+  }, [requiresFlight, requiresShip, allowsOnwardFlight, allowsOnwardShip]);
   // Transport tracking is determined by the explicit relationship, never by
   // location labels or identifiers. A Ship pickup can start anywhere.
-  const trackingKind: "flight" | "vessel" | null = shipEventId
+  const trackingKind: "flight" | "vessel" | null = requiresShip && shipEventId
     ? "vessel"
-    : flightScheduleRecordId
+    : requiresFlight && flightScheduleRecordId
       ? "flight"
       : null;
   const { routes: recentRoutes, recordRoute, toggleFavorite } = useRecentRoutes();
@@ -274,7 +299,6 @@ function ManualForm({
   const [showPassengerPaste, setShowPassengerPaste] = useState(false);
   const [passengerPasteText, setPassengerPasteText] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>(job?.labels?.map((l) => l.id) ?? []);
-  const [flightHint, setFlightHint] = useState<{ side: "from" | "to"; msg: string } | null>(null);
 
   const duplicatePassengerNames = useMemo(() => {
     const counts = new Map<string, number>();
@@ -333,54 +357,6 @@ function ManualForm({
   }, [otgTargets, coordCompanyId]);
 
 
-  // Detect a flight code in any format (KM 643 / km-0643 / flight KM643 / #KM643)
-  // and return the normalized code plus the remaining text with the match removed.
-  const FLIGHT_RE = /(?:^|\s|#|✈|\bflight\b|\bflt\b)\s*([A-Za-z]{2})\s*-?\s*(\d{1,4})(?=$|\s|[,.;])/i;
-  function extractFlightCode(text: string): { code: string | null; rest: string } {
-    const raw = (text ?? "").trim();
-    if (!raw) return { code: null, rest: "" };
-    const m = FLIGHT_RE.exec(raw);
-    if (!m) return { code: null, rest: raw };
-    const code = `${m[1].toUpperCase()}${m[2]}`;
-    const rest = (raw.slice(0, m.index) + " " + raw.slice(m.index + m[0].length))
-      .replace(/\b(flight|flt)\b/gi, "")
-      .replace(/[#✈]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    return { code, rest };
-  }
-  function showHint(side: "from" | "to", msg: string) {
-    setFlightHint({ side, msg });
-    setTimeout(() => setFlightHint((h) => (h && h.side === side && h.msg === msg ? null : h)), 3000);
-  }
-  function handleLocationBlur(side: "from" | "to") {
-    const value = side === "from" ? from : to;
-    const currentFlight = side === "from" ? fromFlight : toFlight;
-    const setLoc = side === "from" ? setFrom : setTo;
-    const setFlight = side === "from" ? setFromFlight : setToFlight;
-    const { code, rest } = extractFlightCode(value);
-    if (!code) return;
-    if (currentFlight && currentFlight.toUpperCase() !== code) {
-      setLoc(rest || "Airport");
-      showHint(side, `Kept existing flight ${currentFlight}`);
-      return;
-    }
-    setFlight(code);
-    setLoc(rest || "Airport");
-    showHint(side, `Moved ${code} to flight`);
-  }
-  function handleFlightBlur(side: "from" | "to") {
-    const value = side === "from" ? fromFlight : toFlight;
-    const loc = side === "from" ? from : to;
-    const setLoc = side === "from" ? setFrom : setTo;
-    const setFlight = side === "from" ? setFromFlight : setToFlight;
-    const { code } = extractFlightCode(value);
-    if (code) {
-      if (code !== value.trim().toUpperCase()) setFlight(code);
-      if (!loc.trim()) setLoc("Airport");
-    }
-  }
-
   const qc = useQueryClient();
   const { data: myCompany } = useMyCompany();
   const saveOperationsPhoneFn = useServerFn(updateMyOperationsPhone);
@@ -397,25 +373,27 @@ function ManualForm({
   const { data: activeFlightMatches, isFetching: isSearchingFlights } = useQuery({
     queryKey: ["active-flight-schedule-search", flightSearch],
     queryFn: () => searchActiveFlightsFn({ data: { search: flightSearch } }),
-    enabled: flightSearch.trim().length >= 2,
+    enabled: requiresFlight && flightSearch.trim().length >= 2,
   });
   const { data: linkedFlight } = useQuery({
     queryKey: ["linked-flight-schedule-record", flightScheduleRecordId],
     queryFn: () => linkedFlightFn({ data: { id: flightScheduleRecordId! } }),
-    enabled: !!flightScheduleRecordId,
+    enabled: requiresFlight && !!flightScheduleRecordId,
   });
   const { data: onwardFlightMatches, isFetching: isSearchingOnwardFlights } = useQuery({
     queryKey: ["onward-active-flight-schedule-search", onwardFlightSearch],
     queryFn: () => searchActiveFlightsFn({ data: { search: onwardFlightSearch } }),
-    enabled: transportType === "ship" && onwardFlightSearch.trim().length >= 2,
+    enabled: allowsOnwardFlight && onwardFlightSearch.trim().length >= 2,
   });
   const { data: linkedOnwardFlight } = useQuery({
     queryKey: ["linked-onward-flight-schedule-record", onwardFlightScheduleRecordId],
     queryFn: () => linkedFlightFn({ data: { id: onwardFlightScheduleRecordId! } }),
     enabled: !!onwardFlightScheduleRecordId,
   });
-  const { data: shipMatches, isFetching: isSearchingShips } = useQuery({ queryKey: ["ship-event-search", shipSearch], queryFn: () => searchShipsFn({ data: { search: shipSearch } }), enabled: transportType === "ship" && shipSearch.trim().length >= 2 });
-  const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: !!shipEventId });
+  const { data: shipMatches, isFetching: isSearchingShips } = useQuery({ queryKey: ["ship-event-search", shipSearch], queryFn: () => searchShipsFn({ data: { search: shipSearch } }), enabled: requiresShip && shipSearch.trim().length >= 2 });
+  const { data: linkedShip } = useQuery({ queryKey: ["linked-ship-event", shipEventId], queryFn: () => linkedShipFn({ data: { id: shipEventId! } }), enabled: requiresShip && !!shipEventId });
+  const { data: onwardShipMatches, isFetching: isSearchingOnwardShips } = useQuery({ queryKey: ["onward-ship-event-search", onwardShipSearch], queryFn: () => searchShipsFn({ data: { search: onwardShipSearch } }), enabled: allowsOnwardShip && onwardShipSearch.trim().length >= 2 });
+  const { data: linkedOnwardShip } = useQuery({ queryKey: ["linked-onward-ship-event", onwardShipEventId], queryFn: () => linkedShipFn({ data: { id: onwardShipEventId! } }), enabled: !!onwardShipEventId });
   const createInlineShip = useMutation({
     mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, port: newShipPort.trim() } }),
     onSuccess: (ship) => {
@@ -429,30 +407,39 @@ function ManualForm({
     },
     onError: (error: Error) => toast.error(error.message),
   });
-  const effectivePickupOffsetMinutes = linkedFlight
-    ? (pickupOffsetMinutes ?? (linkedFlight.direction === "departure"
+  const activeLinkedFlight = requiresFlight ? linkedFlight : null;
+  const activeLinkedShip = requiresShip ? linkedShip : null;
+  const effectivePickupOffsetMinutes = activeLinkedFlight
+    ? (pickupOffsetMinutes ?? (activeLinkedFlight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0)))
-    : linkedShip
+    : activeLinkedShip
       ? (pickupOffsetMinutes ?? (myCompany?.default_arrival_pickup_offset_minutes ?? 0))
       : null;
   const calculatedPickup = useMemo(() => {
-    if (effectivePickupOffsetMinutes == null || (!linkedFlight && !linkedShip)) return null;
-    const scheduledAt = linkedFlight
-      ? maltaWallTimeToUtcIso(linkedFlight.scheduled_date, linkedFlight.scheduled_time)
-      : linkedShip!.eta;
-    const adjustment = linkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
+    if (effectivePickupOffsetMinutes == null || (!activeLinkedFlight && !activeLinkedShip)) return null;
+    const scheduledAt = activeLinkedFlight
+      ? maltaWallTimeToUtcIso(activeLinkedFlight.scheduled_date, activeLinkedFlight.scheduled_time)
+      : activeLinkedShip!.eta;
+    const adjustment = activeLinkedFlight?.direction === "departure" ? -effectivePickupOffsetMinutes : effectivePickupOffsetMinutes;
     const pickupAt = new Date(new Date(scheduledAt).getTime() + adjustment * 60_000).toISOString();
     return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
-  }, [linkedFlight, effectivePickupOffsetMinutes]);
+  }, [activeLinkedFlight, activeLinkedShip, effectivePickupOffsetMinutes]);
   useEffect(() => {
     if (!calculatedPickup) return;
     setDate(calculatedPickup.date);
     setTime(calculatedPickup.time);
   }, [calculatedPickup]);
-  function selectScheduledFlight(flight: { id: string; direction: "arrival" | "departure" }) {
+  function selectScheduledFlight(flight: { id: string; direction: "arrival" | "departure"; flight_number: string }) {
     setFlightScheduleRecordId(flight.id);
     setFlightSearch("");
+    if (flight.direction === "departure") {
+      setToFlight(flight.flight_number);
+      setFromFlight("");
+    } else {
+      setFromFlight(flight.flight_number);
+      setToFlight("");
+    }
     setPickupOffsetMinutes(flight.direction === "departure"
       ? (myCompany?.default_departure_pickup_offset_minutes ?? 180)
       : (myCompany?.default_arrival_pickup_offset_minutes ?? 0));
@@ -464,6 +451,10 @@ function ManualForm({
     }
     setOnwardFlightScheduleRecordId(flight.id);
     setOnwardFlightSearch("");
+  }
+  function selectOnwardShip(ship: { id: string }) {
+    setOnwardShipEventId(ship.id);
+    setOnwardShipSearch("");
   }
   useEffect(() => {
     if (!myCompany || operationsPhoneDirty) return;
@@ -561,12 +552,16 @@ function ManualForm({
 
       const payload = {
         from_location: effFrom, to_location: effTo, date, time,
-        flightorship: fromFlight || toFlight || "",
-        from_flight: fromFlight, to_flight: toFlight,
-        flight_schedule_record_id: flightScheduleRecordId,
-        ship_event_id: shipEventId,
-        onward_flight_schedule_record_id: transportType === "ship" ? onwardFlightScheduleRecordId : null,
-        scheduled_transport_pickup_offset_minutes: (flightScheduleRecordId || shipEventId) ? effectivePickupOffsetMinutes : null,
+        from_location_type: fromEndpointType,
+        to_location_type: toEndpointType,
+        flightorship: requiresFlight ? (fromFlight || toFlight || "") : "",
+        from_flight: requiresFlight ? fromFlight : "",
+        to_flight: requiresFlight ? toFlight : "",
+        flight_schedule_record_id: requiresFlight ? flightScheduleRecordId : null,
+        ship_event_id: requiresShip ? shipEventId : null,
+        onward_flight_schedule_record_id: allowsOnwardFlight ? onwardFlightScheduleRecordId : null,
+        onward_ship_event_id: allowsOnwardShip ? onwardShipEventId : null,
+        scheduled_transport_pickup_offset_minutes: trackingKind ? effectivePickupOffsetMinutes : null,
         // The server accepts a supported tracker or an omitted value. Never
         // send null here: `tracking_kind` is an optional enum, not nullable.
         tracking_kind: trackingKind ?? undefined,
@@ -929,8 +924,10 @@ function ManualForm({
                     setFromLat(r.fromLat); setFromLng(r.fromLng);
                     setTo(r.to); setToPlaceId(r.toPlaceId); setToDisplayName(r.toDisplayName);
                     setToLat(r.toLat); setToLng(r.toLng);
-                    setFromKind(inferEndpointKind(r.from, ""));
-                    setToKind(inferEndpointKind(r.to, ""));
+                    setFromAutoEndpointType("local"); setToAutoEndpointType("local");
+                    setFromEndpointType("local"); setToEndpointType("local");
+                    setFromEndpointOverride(false); setToEndpointOverride(false);
+                    setJourneyOverride(null);
                   }}
                   className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-[11px] hover:bg-accent"
                   title={`${r.from} → ${r.to}`}
@@ -952,8 +949,7 @@ function ManualForm({
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 min-w-0">
-              <Label>From {!from && !fromFlight && <span className="text-destructive">*</span>}</Label>
-              <EndpointKindChips value={fromKind} onChange={setFromKind} />
+              <Label>From {!from && <span className="text-destructive">*</span>}</Label>
               <AddressAutocomplete
                 value={from}
                 placeId={fromPlaceId}
@@ -963,31 +959,18 @@ function ManualForm({
                   setFromDisplayName(v.display_name ?? null);
                   setFromLat(v.lat);
                   setFromLng(v.lng);
+                  applyEndpointPick("from", v);
                 }}
-                onBlur={() => handleLocationBlur("from")}
-                placeholder={placeholderForKind(fromKind, fromFlight)}
+                placeholder="Address, airport, or port"
               />
-              {fromKind !== "hotel" && (
-                <Input
-                  value={fromFlight}
-                  onChange={(e) => {
-                    const v = e.target.value.toUpperCase();
-                    setFromFlight(v);
-                    const detected = inferEndpointKind(from, v);
-                    if (detected === "airport" || detected === "seaport") setFromKind(detected);
-                  }}
-                  onBlur={() => handleFlightBlur("from")}
-                  placeholder={fromKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
-                  className="text-xs"
-                />
-              )}
-              {flightHint?.side === "from" && (
-                <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
-              )}
+              <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                <span>{fromEndpointOverride ? "Override" : "Auto"}: {fromEndpointType}</span>
+                <Button type="button" size="sm" variant="ghost" className="h-6 px-2" onClick={() => { if (fromEndpointOverride) setFromEndpointType(fromAutoEndpointType); setFromEndpointOverride((current) => !current); }}>{fromEndpointOverride ? "Use auto" : "Change"}</Button>
+              </div>
+              {fromEndpointOverride ? <Select value={fromEndpointType} onValueChange={(value: JourneyEndpoint) => { setFromEndpointType(value); setJourneyOverride(null); }}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="local">Local</SelectItem><SelectItem value="airport">Airport</SelectItem><SelectItem value="port">Port</SelectItem></SelectContent></Select> : null}
             </div>
             <div className="space-y-1.5 min-w-0">
-              <Label>To {!to && !toFlight && <span className="text-destructive">*</span>}</Label>
-              <EndpointKindChips value={toKind} onChange={setToKind} />
+              <Label>To {!to && <span className="text-destructive">*</span>}</Label>
               <AddressAutocomplete
                 value={to}
                 placeId={toPlaceId}
@@ -997,38 +980,29 @@ function ManualForm({
                   setToDisplayName(v.display_name ?? null);
                   setToLat(v.lat);
                   setToLng(v.lng);
+                  applyEndpointPick("to", v);
                 }}
-                onBlur={() => handleLocationBlur("to")}
-                placeholder={placeholderForKind(toKind, toFlight)}
+                placeholder="Address, airport, or port"
               />
-              {toKind !== "hotel" && (
-                <Input
-                  value={toFlight}
-                  onChange={(e) => {
-                    const v = e.target.value.toUpperCase();
-                    setToFlight(v);
-                    const detected = inferEndpointKind(to, v);
-                    if (detected === "airport" || detected === "seaport") setToKind(detected);
-                  }}
-                  onBlur={() => handleFlightBlur("to")}
-                  placeholder={toKind === "seaport" ? "Vessel name (e.g. Asso Venticinque)" : "Flight code (e.g. EK109)"}
-                  className="text-xs"
-                />
-              )}
-              {flightHint?.side === "to" && (
-                <div className="text-[10px] text-emerald-600">{flightHint.msg}</div>
-              )}
+              <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                <span>{toEndpointOverride ? "Override" : "Auto"}: {toEndpointType}</span>
+                <Button type="button" size="sm" variant="ghost" className="h-6 px-2" onClick={() => { if (toEndpointOverride) setToEndpointType(toAutoEndpointType); setToEndpointOverride((current) => !current); }}>{toEndpointOverride ? "Use auto" : "Change"}</Button>
+              </div>
+              {toEndpointOverride ? <Select value={toEndpointType} onValueChange={(value: JourneyEndpoint) => { setToEndpointType(value); setJourneyOverride(null); }}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="local">Local</SelectItem><SelectItem value="airport">Airport</SelectItem><SelectItem value="port">Port</SelectItem></SelectContent></Select> : null}
             </div>
           </div>
           <div className="space-y-2 rounded-md border bg-muted/20 p-3">
             <div className="space-y-1">
-              <Label>Transport type</Label>
-              <Select value={transportType} onValueChange={(value: "none" | "flight" | "ship") => { setTransportType(value); if (value !== "flight") { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); } if (value !== "ship") { setShipEventId(null); setOnwardFlightScheduleRecordId(null); setOnwardFlightSearch(""); } }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="none">None</SelectItem><SelectItem value="flight">Flight</SelectItem><SelectItem value="ship">Ship</SelectItem></SelectContent>
-              </Select>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Label>Journey Type</Label>
+                  <p className="text-[11px] text-muted-foreground">{journeyOverride ? "Override" : "Auto"}: {JOURNEY_LABELS[selectedJourney.journeyType]}</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setJourneyOverride((current) => current ? null : autoJourney.journeyType)}>{journeyOverride ? "Use auto" : "Override"}</Button>
+              </div>
+              {journeyOverride ? <Select value={journeyOverride} onValueChange={(value: JourneyType) => setJourneyOverride(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{JOURNEY_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select> : null}
             </div>
-            {transportType === "flight" ? <>
+            {requiresFlight ? <>
             <div>
               <Label htmlFor="active-flight-search">Linked schedule flight</Label>
               <p className="mt-0.5 text-[11px] text-muted-foreground">Search the active schedule. This stores a reference only and never changes an existing link automatically.</p>
@@ -1037,7 +1011,7 @@ function ManualForm({
               <div className="space-y-3 rounded-md border bg-background px-3 py-2 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                 <span><b>{linkedFlight.flight_number}</b> · {linkedFlight.airline} · {linkedFlight.origin} → {linkedFlight.destination} · {linkedFlight.scheduled_date} {linkedFlight.scheduled_time?.slice(0, 5)}</span>
-                <Button type="button" size="sm" variant="outline" onClick={() => { setFlightScheduleRecordId(null); setPickupOffsetMinutes(null); }}>Remove link</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => { setFlightScheduleRecordId(null); setFromFlight(""); setToFlight(""); setPickupOffsetMinutes(null); }}>Remove link</Button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                   <div className="space-y-1">
@@ -1075,8 +1049,8 @@ function ManualForm({
                 {flightSearch.trim().length >= 2 ? (
                   <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
                     {isSearchingFlights ? <p className="p-2 text-xs text-muted-foreground">Searching active schedule…</p> : null}
-                    {!isSearchingFlights && activeFlightMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No active-schedule flights found.</p> : null}
-                    {activeFlightMatches?.map((flight) => (
+                    {!isSearchingFlights && activeFlightMatches?.filter((flight) => flight.direction === requiredFlightDirection).length === 0 ? <p className="p-2 text-xs text-muted-foreground">No matching active-schedule flights found.</p> : null}
+                    {activeFlightMatches?.filter((flight) => flight.direction === requiredFlightDirection).map((flight) => (
                       <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectScheduledFlight(flight)}>
                         <span className="font-medium">{flight.flight_number} · {flight.airline}</span>
                         <span className="text-muted-foreground">{flight.origin} → {flight.destination} · {flight.scheduled_date} {flight.scheduled_time?.slice(0, 5)} · {flight.direction}</span>
@@ -1087,11 +1061,11 @@ function ManualForm({
               </>
             )}
             </> : null}
-            {transportType === "ship" ? <div className="space-y-2">
+            {requiresShip ? <div className="space-y-2">
               <Label htmlFor="ship-event-search">Linked ship event</Label>
               {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
             </div> : null}
-            {transportType === "ship" && shipEventId ? (
+            {allowsOnwardFlight && shipEventId ? (
               <div className="space-y-2 border-t pt-3">
                 <div>
                   <Label htmlFor="onward-flight-search">Connecting flight (optional)</Label>
@@ -1115,6 +1089,38 @@ function ManualForm({
                           <button key={flight.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectOnwardFlight(flight)}>
                             <span className="font-medium">{flight.flight_number} · {flight.airline}</span>
                             <span className="text-muted-foreground">{flight.origin} → {flight.destination} · {flight.scheduled_date} {flight.scheduled_time?.slice(0, 5)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+            {allowsOnwardShip && flightScheduleRecordId ? (
+              <div className="space-y-2 border-t pt-3">
+                <div>
+                  <Label htmlFor="onward-ship-search">Connecting ship (optional)</Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Choose the passenger&apos;s onward Ship Event. It does not change Flight tracking or the Flight pickup time.
+                  </p>
+                </div>
+                {onwardShipEventId && linkedOnwardShip ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+                    <span><b>{linkedOnwardShip.ship_name}</b> · {linkedOnwardShip.port} · ETA {formatMaltaDateTime(linkedOnwardShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedOnwardShip.status}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setOnwardShipEventId(null)}>Remove connecting ship</Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input id="onward-ship-search" value={onwardShipSearch} onChange={(event) => setOnwardShipSearch(event.target.value)} placeholder="Search ship name or port" />
+                    {onwardShipSearch.trim().length >= 2 ? (
+                      <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
+                        {isSearchingOnwardShips ? <p className="p-2 text-xs text-muted-foreground">Searching Ship Events…</p> : null}
+                        {!isSearchingOnwardShips && onwardShipMatches?.length === 0 ? <p className="p-2 text-xs text-muted-foreground">No matching Ship Events found.</p> : null}
+                        {onwardShipMatches?.map((ship) => (
+                          <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => selectOnwardShip(ship)}>
+                            <span className="font-medium">{ship.ship_name} · {ship.port}</span>
+                            <span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span>
                           </button>
                         ))}
                       </div>
@@ -1268,7 +1274,15 @@ function ManualForm({
                 onClick={() => previewMut.mutate()}
               >
                 <RefreshCw className={`h-3.5 w-3.5 mr-1 ${previewMut.isPending ? "animate-spin" : ""}`} />
-                {previewMut.isPending ? "Checking…" : preview ? "Refresh" : "Check traffic & flight"}
+                {previewMut.isPending
+                  ? "Checking…"
+                  : preview
+                    ? "Refresh"
+                    : trackingKind === "flight"
+                      ? "Check traffic & flight"
+                      : trackingKind === "vessel"
+                        ? "Check traffic & Ship ETA"
+                        : "Check traffic"}
               </Button>
             </div>
             {!preview && !previewMut.isPending && (
@@ -1326,9 +1340,11 @@ function ManualForm({
                     </div>
                   )
                 ) : (
-                  (fromFlight || toFlight) ? null : (
-                    <div className="text-[11px] text-muted-foreground">Add a {trackingKind === "vessel" ? "vessel name" : "flight code"} to see live status.</div>
-                  )
+                  trackingKind === "vessel" ? (
+                    <div className="text-[11px] text-muted-foreground">Ship ETA refresh is available after the trip is saved.</div>
+                  ) : trackingKind === "flight" && !(fromFlight || toFlight) ? (
+                    <div className="text-[11px] text-muted-foreground">Select a scheduled Flight to see live status.</div>
+                  ) : null
                 )}
               </div>
             )}
@@ -1505,6 +1521,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       operation_name: operationName.trim() || undefined,
       trips: valid.map((t) => ({
         from_location: t.from_location, to_location: t.to_location,
+        // Bulk imports have no trusted endpoint metadata. Their established
+        // free-text contract is therefore explicitly classified as local.
+        from_location_type: "local" as const, to_location_type: "local" as const,
         date: t.date, time: t.time,
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,

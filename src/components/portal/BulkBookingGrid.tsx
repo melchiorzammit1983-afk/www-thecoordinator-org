@@ -12,16 +12,19 @@ import { flightFormatWarning } from "@/lib/flight-code";
 import { fileToSheetTsv } from "@/lib/sheet-template";
 import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
+import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 
 type GridRow = {
   name: string;
   phone: string;
   email: string;
   from: string;
+  fromLocationType: JourneyEndpoint;
   fromPlaceId: string | null;
   fromLat: number | null;
   fromLng: number | null;
   to: string;
+  toLocationType: JourneyEndpoint;
   toPlaceId: string | null;
   toLat: number | null;
   toLng: number | null;
@@ -40,8 +43,8 @@ type GridRow = {
 function emptyRow(): GridRow {
   return {
     name: "", phone: "", email: "",
-    from: "", fromPlaceId: null, fromLat: null, fromLng: null,
-    to: "", toPlaceId: null, toLat: null, toLng: null,
+    from: "", fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null,
+    to: "", toLocationType: "local", toPlaceId: null, toLat: null, toLng: null,
     pickupAt: "", room: "", flight: "", vehicle: "", pax: "1", notes: "", selected: false,
   };
 }
@@ -90,8 +93,8 @@ function parsePastedDateTime(raw: string): string {
 function applyCellValue(row: GridRow, key: ColumnKey, raw: string): GridRow {
   const v = raw.trim();
   switch (key) {
-    case "from": return { ...row, from: v, fromPlaceId: null, fromLat: null, fromLng: null };
-    case "to": return { ...row, to: v, toPlaceId: null, toLat: null, toLng: null };
+    case "from": return { ...row, from: v, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null };
+    case "to": return { ...row, to: v, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null };
     case "pickupAt": return { ...row, pickupAt: parsePastedDateTime(v) };
     case "pax": return { ...row, pax: v.replace(/[^0-9]/g, "") || "1" };
     default: return { ...row, [key]: v };
@@ -121,8 +124,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       if (!parsed.length) { toast.error("Couldn't find any rows in that file"); return; }
       const newRows: GridRow[] = parsed.map((p) => ({
         name: p.name, phone: p.phone, email: p.email,
-        from: p.from, fromPlaceId: null, fromLat: null, fromLng: null,
-        to: p.to, toPlaceId: null, toLat: null, toLng: null,
+        from: p.from, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null,
+        to: p.to, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null,
         pickupAt: p.pickupAt, room: p.room, flight: p.flight, vehicle: p.vehicle, pax: p.pax, notes: p.notes,
         selected: false,
       }));
@@ -229,10 +232,12 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           client_phone: r.phone.trim() || null,
           client_email: r.email.trim() || null,
           from_location: r.from.trim(),
+          from_location_type: r.fromLocationType,
           from_place_id: r.fromPlaceId,
           from_lat: r.fromLat,
           from_lng: r.fromLng,
           to_location: r.to.trim(),
+          to_location_type: r.toLocationType,
           to_place_id: r.toPlaceId,
           to_lat: r.toLat,
           to_lng: r.toLng,
@@ -342,7 +347,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                           <AddressAutocomplete publicToken={token}
                             value={row.from}
                             placeId={row.fromPlaceId}
-                            onChange={(v) => updateRow(ri, { from: v.address, fromPlaceId: v.place_id, fromLat: v.lat, fromLng: v.lng })}
+                            onChange={(v) => updateRow(ri, { from: v.address, fromLocationType: classifyProviderEndpoint(v.place_types), fromPlaceId: v.place_id, fromLat: v.lat, fromLng: v.lng })}
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />
@@ -351,7 +356,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                           <AddressAutocomplete publicToken={token}
                             value={row.to}
                             placeId={row.toPlaceId}
-                            onChange={(v) => updateRow(ri, { to: v.address, toPlaceId: v.place_id, toLat: v.lat, toLng: v.lng })}
+                            onChange={(v) => updateRow(ri, { to: v.address, toLocationType: classifyProviderEndpoint(v.place_types), toPlaceId: v.place_id, toLat: v.lat, toLng: v.lng })}
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />

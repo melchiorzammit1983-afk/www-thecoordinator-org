@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isoToMaltaDateTime } from "@/lib/time";
+import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
 
 
 /**
@@ -240,6 +241,8 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if ((b as any).status !== "pending") throw new Error("not_pending");
 
     const payload = (b as any).payload ?? {};
+    const endpointTypes = normalizeBookingEndpointTypes(payload, { defaultMissingToLocal: true });
+    const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
     // create a job
     const { data: job, error: jerr } = await a.from("jobs").insert({
@@ -248,6 +251,8 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       executor_company_id: cid,
       from_location: payload.from_location,
       to_location: payload.to_location,
+      from_location_type: endpointTypes.fromLocationType,
+      to_location_type: endpointTypes.toLocationType,
       pickup_lat: payload.from_lat ?? null,
       pickup_lng: payload.from_lng ?? null,
       pickup_display_name: payload.from_display_name || payload.from_location || null,
@@ -343,7 +348,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       const { autoPriceJobBg } = await import("./auto-price.server");
       autoPriceJobBg((job as any).id);
     }
-    return { ok: true, job_id: (job as any).id };
+    return { ok: true, job_id: (job as any).id, journey };
   });
 
 export const rejectPortalBooking = createServerFn({ method: "POST" })

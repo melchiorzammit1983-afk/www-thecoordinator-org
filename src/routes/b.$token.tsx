@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 import { Loader2, Send, MessageCircle, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { PastTripsCard } from "@/components/client/PastTripsCard";
 
@@ -69,6 +70,8 @@ function PublicBookingPage() {
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [flight, setFlight] = useState("");
+  const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
+  const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
 
   useEffect(() => {
     const v = getVisitorId(token);
@@ -105,6 +108,8 @@ function PublicBookingPage() {
           visitor_id: visitorId,
           from_location: from,
           to_location: to,
+          from_location_type: fromLocationType,
+          to_location_type: toLocationType,
           pickup_at, date, time,
           name: name || null,
           client_phone: phone || null,
@@ -119,6 +124,7 @@ function PublicBookingPage() {
       toast.success(`Request sent — ref #${json.ref}`);
       setFrom(""); setTo(""); setDate(""); setTime(""); setName(""); setPhone("");
       setEmail(""); setNotes(""); setFlight(""); setPax("1");
+      setFromLocationType("local"); setToLocationType("local");
       void loadBootstrap(visitorId);
     } catch (e: any) {
       toast.error(e?.message ?? "Submit failed");
@@ -155,11 +161,11 @@ function PublicBookingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Pickup</Label>
-              <AddressAutocomplete publicToken={token} value={from} onChange={(v) => setFrom(v.address)} placeholder="Hotel, airport, address…" />
+              <AddressAutocomplete publicToken={token} value={from} onChange={(v) => { setFrom(v.address); setFromLocationType(classifyProviderEndpoint(v.place_types)); }} placeholder="Hotel, airport, address…" />
             </div>
             <div className="space-y-1.5">
               <Label>Drop-off</Label>
-              <AddressAutocomplete publicToken={token} value={to} onChange={(v) => setTo(v.address)} placeholder="Destination" />
+              <AddressAutocomplete publicToken={token} value={to} onChange={(v) => { setTo(v.address); setToLocationType(classifyProviderEndpoint(v.place_types)); }} placeholder="Destination" />
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>

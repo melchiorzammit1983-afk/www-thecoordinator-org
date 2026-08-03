@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { checkRateLimit, getAdmin } from "@/lib/portal-token.server";
+import { resolveBookingJourney } from "@/lib/journey-resolver";
 import { resolvePublicPortal } from "./index";
 
 const Input = z.object({
   visitor_id: z.string().min(8).max(80),
   from_location: z.string().min(1).max(200),
   to_location: z.string().min(1).max(200),
+  from_location_type: z.enum(["airport", "port", "local"]),
+  to_location_type: z.enum(["airport", "port", "local"]),
   pickup_at: z.string().datetime().nullable().optional(),
   date: z.string().nullable().optional(),
   time: z.string().nullable().optional(),
@@ -33,13 +36,14 @@ export const Route = createFileRoute("/api/public/b/$token/submit")({
         const parsed = Input.safeParse(body);
         if (!parsed.success) return Response.json({ error: "bad_input" }, { status: 400 });
         const { visitor_id, ...payload } = parsed.data;
+        const journey = resolveBookingJourney(payload.from_location_type, payload.to_location_type);
         const admin = await getAdmin();
         const { data, error } = await admin
           .from("public_booking_requests" as any)
           .insert({
             portal_id: r.portal.id,
             visitor_id,
-            payload,
+            payload: { ...payload, journey_type: journey.journeyType },
             status: "pending",
           } as any)
           .select("id")

@@ -145,7 +145,7 @@ export const placesDetails = createServerFn({ method: "POST" })
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
-          "X-Goog-FieldMask": "id,formattedAddress,displayName,location",
+          "X-Goog-FieldMask": "id,formattedAddress,displayName,location,types",
         },
       },
     );
@@ -159,6 +159,7 @@ export const placesDetails = createServerFn({ method: "POST" })
       formattedAddress?: string;
       displayName?: { text?: string };
       location?: { latitude?: number; longitude?: number };
+      types?: string[];
     };
     return {
       place_id: json.id ?? data.place_id,
@@ -166,6 +167,7 @@ export const placesDetails = createServerFn({ method: "POST" })
       display_name: json.displayName?.text ?? null,
       lat: json.location?.latitude ?? null,
       lng: json.location?.longitude ?? null,
+      place_types: json.types ?? [],
     };
   });
 

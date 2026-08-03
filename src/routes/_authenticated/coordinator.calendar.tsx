@@ -3714,7 +3714,19 @@ function DispatchTripList({
               ? formatMaltaTime(String(job.pickup_at))
               : job.time?.slice(0, 5) ?? null;
           const paxCount = job.pax?.length ?? 0;
-          const flight = job.from_flight || job.to_flight;
+          const legacyTransportCode = job.from_flight || job.to_flight;
+          const transportKind: "flight" | "vessel" | null = job.ship_event_id
+            ? "vessel"
+            : job.flight_schedule_record_id
+              ? "flight"
+              : legacyTransportCode && (job.tracking_kind === "flight" || job.tracking_kind === "vessel")
+                ? job.tracking_kind
+                : null;
+          const transportLabel = transportKind === "vessel"
+            ? "Ship ETA"
+            : transportKind === "flight"
+              ? (legacyTransportCode || "Scheduled flight")
+              : null;
           const driverName = job.drivers?.name ?? job.external_driver_name ?? null;
           const isOpen = expandedId === job.id;
 
@@ -3776,10 +3788,10 @@ function DispatchTripList({
                         {paxCount}
                       </span>
                     )}
-                    {flight && (
+                    {transportLabel && transportKind && (
                       <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
-                        {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
-                        {flight}
+                        {transportKind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
+                        {transportLabel}
                       </span>
                     )}
                   </div>
@@ -3850,15 +3862,15 @@ function DispatchTripList({
 
                       {/* Actions */}
                       <div className="flex flex-col gap-2">
-                        {flight && (
+                        {transportLabel && transportKind && (
                           <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
                             <span className="inline-flex items-center gap-1 truncate text-muted-foreground">
-                              {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
-                              <span className="truncate">{flight}</span>
+                              {transportKind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
+                              <span className="truncate">{transportLabel}</span>
                             </span>
                             <RefreshFlightButton
                               jobId={job.id}
-                              kind={job.tracking_kind === "vessel" ? "vessel" : "flight"}
+                              kind={transportKind}
                             />
                           </div>
                         )}
