@@ -12,14 +12,17 @@ export type ShipEvent = {
   berth_id?: string | null;
   ports?: { name: string; address: string } | null;
   berths?: { name: string } | null;
-  status: "scheduled";
+  status: "scheduled" | "arrived" | "departed" | "archived" | "cancelled";
+  expected_departure: string | null;
+  actual_arrival: string | null;
+  actual_departure: string | null;
   created_at: string;
   updated_at: string;
   archived_at?: string | null;
   archived_by?: string | null;
 };
 
-const shipEventSelect = "id, ship_name, eta, port, port_id, berth_id, status, created_at, updated_at, archived_at, archived_by, ports(name, address), berths(name)";
+const shipEventSelect = "id, ship_name, eta, port, port_id, berth_id, status, expected_departure, actual_arrival, actual_departure, created_at, updated_at, archived_at, archived_by, ports(name, address), berths(name)";
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -82,9 +85,14 @@ const localEta = z.preprocess(
   normalizeLocalEta,
   z.string().regex(localEtaCanonical, "Enter a valid ETA"),
 );
+const optionalLocalEta = z.preprocess(
+  (value) => value === "" || value === null || value === undefined ? null : normalizeLocalEta(value),
+  z.string().regex(localEtaCanonical, "Enter a valid date and time").nullable(),
+);
 const shipEventInput = z.object({
   ship_name: z.string().trim().min(1, "Enter a ship name").max(200),
   eta: localEta,
+  expected_departure: localEta,
   port: z.string().trim().min(1, "Enter a port").max(160),
   port_id: z.string().uuid().nullable().optional(),
   berth_id: z.string().uuid().nullable().optional(),
@@ -93,6 +101,10 @@ const shipEventInput = z.object({
 function etaToIso(eta: string) {
   const [date, time] = eta.split("T");
   return maltaWallTimeToUtcIso(date, time);
+}
+
+function optionalEtaToIso(eta: string | null | undefined) {
+  return eta ? etaToIso(eta) : null;
 }
 
 /** Company-private manual ship events. No trip link or shared data is involved. */
@@ -184,6 +196,7 @@ export const createShipEvent = createServerFn({ method: "POST" })
         company_id: companyId,
         ship_name: data.ship_name,
         eta: etaToIso(data.eta),
+        expected_departure: etaToIso(data.expected_departure),
         port: portName,
         port_id: data.port_id ?? null,
         berth_id: data.berth_id ?? null,
@@ -219,6 +232,57 @@ export const updateShipEventEta = createServerFn({ method: "POST" })
     return event as ShipEvent;
   });
 
+export const updateShipEventLifecycle = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({
+    id: z.string().uuid(),
+    expected_departure: optionalLocalEta.optional(),
+    actual_arrival: optionalLocalEta.optional(),
+    actual_departure: optionalLocalEta.optional(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const status = data.actual_departure ? "departed" : data.actual_arrival ? "arrived" : "scheduled";
+    const { data: event, error } = await shipEventsTable(sb)
+      .from("ship_events")
+      .update({
+        expected_departure: optionalEtaToIso(data.expected_departure),
+        actual_arrival: optionalEtaToIso(data.actual_arrival),
+        actual_departure: optionalEtaToIso(data.actual_departure),
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .is("archived_at", null)
+      .neq("status", "cancelled")
+      .select(shipEventSelect)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!event) throw new Error("Ship event not found or unavailable.");
+    return event as ShipEvent;
+  });
+
+export const cancelShipEvent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const { data: event, error } = await shipEventsTable(sb)
+      .from("ship_events")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .is("archived_at", null)
+      .select(shipEventSelect)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!event) throw new Error("Ship event not found or already archived.");
+    return event as ShipEvent;
+  });
+
 export const archiveShipEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
@@ -227,7 +291,7 @@ export const archiveShipEvent = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     const { data: event, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .update({ archived_at: new Date().toISOString(), archived_by: context.userId, updated_at: new Date().toISOString() })
+      .update({ archived_at: new Date().toISOString(), archived_by: context.userId, status: "archived", updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("company_id", companyId)
       .is("archived_at", null)
@@ -246,7 +310,7 @@ export const unarchiveShipEvent = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     const { data: event, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .update({ archived_at: null, archived_by: null, updated_at: new Date().toISOString() })
+      .update({ archived_at: null, archived_by: null, status: "scheduled", updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("company_id", companyId)
       .not("archived_at", "is", null)
