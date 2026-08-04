@@ -178,8 +178,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       )}
 
       <div className="rounded-xl border p-3 bg-card grid grid-cols-1 gap-2">
-        <div><Label className="text-xs">From</Label><AddressAutocomplete value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
-        <div><Label className="text-xs">To</Label><AddressAutocomplete value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
+        <div><Label className="text-xs">From</Label><AddressAutocomplete publicToken={session} value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
+        <div><Label className="text-xs">To</Label><AddressAutocomplete publicToken={session} value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
         <div className="grid grid-cols-2 gap-2">
           <div><Label className="text-xs">Pickup time</Label><Input type="datetime-local" value={pickup} onChange={(e) => setPickup(e.target.value)} /></div>
           <div><Label className="text-xs">Pax</Label><Input type="number" min={1} value={pax} onChange={(e) => setPax(e.target.value)} /></div>
