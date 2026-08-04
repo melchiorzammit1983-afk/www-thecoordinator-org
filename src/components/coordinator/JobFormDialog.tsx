@@ -134,6 +134,7 @@ type Job = {
   onward_flight_schedule_record_id?: string | null;
   onward_ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
+  immigration_required?: "yes" | "no" | "unknown" | null;
   tracking_kind?: string | null;
   flight_status_confidence?: string | null;
   tracking_enabled: boolean; qr_strict_mode: boolean;
@@ -164,6 +165,7 @@ type Prefill = Partial<{
   clientcompanyname: string;
   vehicle: string;
   notes: string;
+  immigration_required?: "yes" | "no" | "unknown";
   passengers: string[];
 }>;
 
@@ -203,6 +205,7 @@ export function JobFormDialog({
       clientcompanyname: t.clientcompanyname,
       vehicle: t.vehicle,
       notes: t.notes,
+      immigration_required: t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown"),
       passengers: t.pax,
     });
     setTab("manual");
@@ -291,6 +294,7 @@ function ManualForm({
     return null;
   });
   const [pickupOffsetMinutes, setPickupOffsetMinutes] = useState<number | null>(job?.scheduled_transport_pickup_offset_minutes ?? null);
+  const [immigrationRequired, setImmigrationRequired] = useState<"yes" | "no" | "unknown">(job?.immigration_required ?? prefill?.immigration_required ?? "unknown");
   const [flightSearch, setFlightSearch] = useState("");
   const [shipSearch, setShipSearch] = useState("");
   const [onwardFlightSearch, setOnwardFlightSearch] = useState("");
@@ -686,6 +690,7 @@ function ManualForm({
         onward_flight_schedule_record_id: allowsOnwardFlight ? onwardFlightScheduleRecordId : null,
         onward_ship_event_id: allowsOnwardShip ? onwardShipEventId : null,
         scheduled_transport_pickup_offset_minutes: trackingKind ? effectivePickupOffsetMinutes : null,
+        immigration_required: immigrationRequired,
         // The server accepts a supported tracker or an omitted value. Never
         // send null here: `tracking_kind` is an optional enum, not nullable.
         tracking_kind: trackingKind ?? undefined,
@@ -1134,6 +1139,20 @@ function ManualForm({
               </div>
               {journeyOverride ? <Select value={journeyOverride} onValueChange={(value: JourneyType) => setJourneyOverride(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{JOURNEY_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select> : null}
             </div>
+            {(selectedJourney.journeyType === "ship_arrival" || selectedJourney.journeyType === "ship_to_flight") ? (
+              <div className="space-y-1.5 border-t pt-3">
+                <Label htmlFor="immigration-required">Immigration required</Label>
+                <Select value={immigrationRequired} onValueChange={(value: "yes" | "no" | "unknown") => setImmigrationRequired(value)}>
+                  <SelectTrigger id="immigration-required"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Yes</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                    <SelectItem value="unknown">Unknown — coordinator review</SelectItem>
+                  </SelectContent>
+                </Select>
+                {immigrationRequired === "unknown" ? <p className="text-[11px] text-muted-foreground">No stop is added until the coordinator confirms this requirement.</p> : null}
+              </div>
+            ) : null}
             {requiresFlight ? <>
             <div>
               <Label htmlFor="active-flight-search">Linked schedule flight</Label>
@@ -1679,6 +1698,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         email: t.email,
         vehicle: t.vehicle,
         notes: t.notes,
+        immigration_required: t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown"),
         immigration_needed: t.immigration_needed,
         pax: t.pax,
       })),
@@ -1964,12 +1984,19 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       placeholder="Optional note for this trip"
                       onChange={(e) => patch({ notes: e.target.value })} />
                   </label>
-                  <label className="space-y-1 col-span-2 flex flex-row items-center gap-2">
-                    <input type="checkbox" checked={t.immigration_needed}
-                      onChange={(e) => patch({ immigration_needed: e.target.checked })} />
-                    <span className="text-[10px] text-muted-foreground">
-                      Immigration needed — adds an "Immigration Office, Valletta" stop (skipped automatically if Pickup is the Freeport)
-                    </span>
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-[10px] text-muted-foreground">Immigration required</span>
+                    <Select
+                      value={t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown")}
+                      onValueChange={(value: "yes" | "no" | "unknown") => patch({ immigration_required: value, immigration_needed: value === "yes" })}
+                    >
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="yes">Yes</SelectItem>
+                        <SelectItem value="no">No</SelectItem>
+                        <SelectItem value="unknown">Unknown — coordinator review</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </label>
                   <div className="space-y-1 col-span-2 rounded-md border bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
                     <div className="font-medium text-foreground">Passengers</div>

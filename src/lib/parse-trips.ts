@@ -17,6 +17,7 @@ export type ParsedTrip = {
   notes: string;
   email: string;
   immigration_needed: boolean;
+  immigration_required?: "yes" | "no" | "unknown";
   pax: string[];
   contact_phone: string;
   errors: string[];

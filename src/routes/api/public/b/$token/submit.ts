@@ -15,6 +15,7 @@ const Input = z.object({
   from_berth_id: z.string().uuid().nullable().optional(),
   to_port_id: z.string().uuid().nullable().optional(),
   to_berth_id: z.string().uuid().nullable().optional(),
+  immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
   pickup_at: z.string().datetime().nullable().optional(),
   date: z.string().nullable().optional(),
   time: z.string().nullable().optional(),

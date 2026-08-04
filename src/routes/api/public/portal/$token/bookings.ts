@@ -13,6 +13,7 @@ const BookingInput = z.object({
   from_berth_id: z.string().uuid().nullable().optional(),
   to_port_id: z.string().uuid().nullable().optional(),
   to_berth_id: z.string().uuid().nullable().optional(),
+  immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
   from_place_id: z.string().max(200).nullable().optional(),
   from_lat: z.number().nullable().optional(),
   from_lng: z.number().nullable().optional(),
