@@ -51,6 +51,7 @@ import { Route as AuthenticatedCoordinatorShipOperationsRouteImport } from './ro
 import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
 import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
 import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
+import { Route as AuthenticatedCoordinatorPortsRouteImport } from './routes/_authenticated/coordinator.ports'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorOperationsRouteImport } from './routes/_authenticated/coordinator.operations'
@@ -327,6 +328,12 @@ const AuthenticatedCoordinatorPortalsRoute =
   AuthenticatedCoordinatorPortalsRouteImport.update({
     id: '/portals',
     path: '/portals',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPortsRoute =
+  AuthenticatedCoordinatorPortsRouteImport.update({
+    id: '/ports',
+    path: '/ports',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorPortalLinksRoute =
@@ -727,6 +734,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/coordinator/ports': typeof AuthenticatedCoordinatorPortsRoute
   '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/ship-operations': typeof AuthenticatedCoordinatorShipOperationsRoute
@@ -825,6 +833,7 @@ export interface FileRoutesByTo {
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/coordinator/ports': typeof AuthenticatedCoordinatorPortsRoute
   '/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/coordinator/ship-operations': typeof AuthenticatedCoordinatorShipOperationsRoute
@@ -928,6 +937,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/_authenticated/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  '/_authenticated/coordinator/ports': typeof AuthenticatedCoordinatorPortsRoute
   '/_authenticated/coordinator/pricing': typeof AuthenticatedCoordinatorPricingRoute
   '/_authenticated/coordinator/refer': typeof AuthenticatedCoordinatorReferRoute
   '/_authenticated/coordinator/ship-operations': typeof AuthenticatedCoordinatorShipOperationsRoute
@@ -1032,6 +1042,7 @@ export interface FileRouteTypes {
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
+    | '/coordinator/ports'
     | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/ship-operations'
@@ -1130,6 +1141,7 @@ export interface FileRouteTypes {
     | '/coordinator/pending'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
+    | '/coordinator/ports'
     | '/coordinator/pricing'
     | '/coordinator/refer'
     | '/coordinator/ship-operations'
@@ -1232,6 +1244,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/pending'
     | '/_authenticated/coordinator/portal-links'
     | '/_authenticated/coordinator/portals'
+    | '/_authenticated/coordinator/ports'
     | '/_authenticated/coordinator/pricing'
     | '/_authenticated/coordinator/refer'
     | '/_authenticated/coordinator/ship-operations'
@@ -1619,6 +1632,13 @@ declare module '@tanstack/react-router' {
       path: '/ship-operations'
       fullPath: '/coordinator/ship-operations'
       preLoaderRoute: typeof AuthenticatedCoordinatorShipOperationsRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/ports': {
+      id: '/_authenticated/coordinator/ports'
+      path: '/ports'
+      fullPath: '/coordinator/ports'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/refer': {
@@ -2113,6 +2133,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
   AuthenticatedCoordinatorPortalsRoute: typeof AuthenticatedCoordinatorPortalsRouteWithChildren
+  AuthenticatedCoordinatorPortsRoute: typeof AuthenticatedCoordinatorPortsRoute
   AuthenticatedCoordinatorPricingRoute: typeof AuthenticatedCoordinatorPricingRoute
   AuthenticatedCoordinatorReferRoute: typeof AuthenticatedCoordinatorReferRoute
   AuthenticatedCoordinatorShipOperationsRoute: typeof AuthenticatedCoordinatorShipOperationsRoute
@@ -2151,6 +2172,7 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
       AuthenticatedCoordinatorPortalLinksRoute,
     AuthenticatedCoordinatorPortalsRoute:
       AuthenticatedCoordinatorPortalsRouteWithChildren,
+    AuthenticatedCoordinatorPortsRoute: AuthenticatedCoordinatorPortsRoute,
     AuthenticatedCoordinatorPricingRoute: AuthenticatedCoordinatorPricingRoute,
     AuthenticatedCoordinatorReferRoute: AuthenticatedCoordinatorReferRoute,
     AuthenticatedCoordinatorShipOperationsRoute:

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-type PortRow = {
+export type PortDirectoryPort = {
   id: string;
   company_id: string;
   name: string;
@@ -16,7 +16,7 @@ type PortRow = {
   updated_at: string;
 };
 
-type BerthRow = {
+export type PortDirectoryBerth = {
   id: string;
   port_id: string;
   name: string;
@@ -113,14 +113,14 @@ function mutationError(error: { code?: string | null; message: string }, noun: s
   throw new Error(error.message);
 }
 
-async function requirePort(sb: any, portId: string, companyId: string): Promise<PortRow> {
+async function requirePort(sb: any, portId: string, companyId: string): Promise<PortDirectoryPort> {
   const { data, error } = await sb.from("ports").select("*").eq("id", portId).eq("company_id", companyId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Port not found");
-  return data as PortRow;
+  return data as PortDirectoryPort;
 }
 
-async function requireBerth(sb: any, berthId: string, companyId: string): Promise<BerthRow> {
+async function requireBerth(sb: any, berthId: string, companyId: string): Promise<PortDirectoryBerth> {
   const { data, error } = await sb
     .from("berths")
     .select("*")
@@ -129,7 +129,7 @@ async function requireBerth(sb: any, berthId: string, companyId: string): Promis
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Berth not found");
   await requirePort(sb, data.port_id as string, companyId);
-  return data as BerthRow;
+  return data as PortDirectoryBerth;
 }
 
 export const listActivePorts = createServerFn({ method: "GET" })
@@ -144,24 +144,45 @@ export const listActivePorts = createServerFn({ method: "GET" })
       .eq("active", true)
       .order("name", { ascending: true });
     if (error) throw new Error(error.message);
-    return (data ?? []) as Omit<PortRow, "company_id">[];
+    return (data ?? []) as Omit<PortDirectoryPort, "company_id">[];
+  });
+
+/** Lists the directory, including inactive records when requested for management. */
+export const listPorts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ include_inactive: z.boolean().optional() }).parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    let query = portsTable(sb)
+      .from("ports")
+      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .eq("company_id", companyId)
+      .order("active", { ascending: false })
+      .order("name", { ascending: true });
+    if (!data.include_inactive) query = query.eq("active", true);
+    const { data: ports, error } = await query;
+    if (error) throw new Error(error.message);
+    return (ports ?? []) as Omit<PortDirectoryPort, "company_id">[];
   });
 
 export const getPortWithActiveBerths = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => idInput.parse(input))
+  .inputValidator((input: unknown) => idInput.extend({ include_inactive: z.boolean().optional() }).parse(input))
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
     const port = await requirePort(sb, data.id, companyId);
-    const { data: berths, error } = await portsTable(sb)
+    let query = portsTable(sb)
       .from("berths")
       .select("id, port_id, name, address_override, latitude_override, longitude_override, active, created_at, updated_at")
       .eq("port_id", port.id)
-      .eq("active", true)
+      .order("active", { ascending: false })
       .order("name", { ascending: true });
+    if (!data.include_inactive) query = query.eq("active", true);
+    const { data: berths, error } = await query;
     if (error) throw new Error(error.message);
-    return { ...port, berths: (berths ?? []) as BerthRow[] };
+    return { ...port, berths: (berths ?? []) as PortDirectoryBerth[] };
   });
 
 export const createPort = createServerFn({ method: "POST" })
@@ -176,7 +197,7 @@ export const createPort = createServerFn({ method: "POST" })
       .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
-    return port as Omit<PortRow, "company_id">;
+    return port as Omit<PortDirectoryPort, "company_id">;
   });
 
 export const updatePort = createServerFn({ method: "POST" })
@@ -195,7 +216,7 @@ export const updatePort = createServerFn({ method: "POST" })
       .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
-    return port as Omit<PortRow, "company_id">;
+    return port as Omit<PortDirectoryPort, "company_id">;
   });
 
 export const createBerth = createServerFn({ method: "POST" })
@@ -211,7 +232,7 @@ export const createBerth = createServerFn({ method: "POST" })
       .select("id, port_id, name, address_override, latitude_override, longitude_override, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "berth");
-    return berth as BerthRow;
+    return berth as PortDirectoryBerth;
   });
 
 export const updateBerth = createServerFn({ method: "POST" })
@@ -229,7 +250,7 @@ export const updateBerth = createServerFn({ method: "POST" })
       .select("id, port_id, name, address_override, latitude_override, longitude_override, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "berth");
-    return berth as BerthRow;
+    return berth as PortDirectoryBerth;
   });
 
 export const setPortActive = createServerFn({ method: "POST" })
@@ -247,7 +268,7 @@ export const setPortActive = createServerFn({ method: "POST" })
       .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
-    return port as Omit<PortRow, "company_id">;
+    return port as Omit<PortDirectoryPort, "company_id">;
   });
 
 export const setBerthActive = createServerFn({ method: "POST" })
@@ -264,5 +285,5 @@ export const setBerthActive = createServerFn({ method: "POST" })
       .select("id, port_id, name, address_override, latitude_override, longitude_override, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "berth");
-    return berth as BerthRow;
+    return berth as PortDirectoryBerth;
   });
