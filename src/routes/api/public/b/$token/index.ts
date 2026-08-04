@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getAdmin } from "@/lib/portal-token.server";
+import { listTokenScopedPorts } from "@/lib/port-directory-token.server";
 
 async function resolvePublicPortal(token: string) {
   if (!token || token.length < 20 || token.length > 128) {
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/api/public/b/$token/")({
         const url = new URL(request.url);
         const visitorId = url.searchParams.get("visitor_id") ?? "";
         const admin = await getAdmin();
+        const ports = await listTokenScopedPorts(admin, r.portal.coordinator_company_id);
         let requests: any[] = [];
         let messages: any[] = [];
         let jobs: any[] = [];
@@ -79,6 +81,7 @@ export const Route = createFileRoute("/api/public/b/$token/")({
           messages,
           jobs,
           history: past,
+          ports,
         });
       },
     },

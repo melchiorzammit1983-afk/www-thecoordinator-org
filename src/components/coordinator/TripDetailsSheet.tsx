@@ -19,7 +19,7 @@ import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
 import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
-import { displayLocation, formatEta } from "@/lib/trip-display";
+import { displayJobLocation, displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
@@ -67,6 +67,8 @@ export type DetailsJob = {
   id: string;
   trip_no?: number | null;
   from_location: string; to_location: string;
+  from_port?: { name: string } | null; from_berth?: { name: string } | null;
+  to_port?: { name: string } | null; to_berth?: { name: string } | null;
   date: string; time: string; pickup_at: string | null;
   status: string;
   vehicle: string | null;
@@ -398,7 +400,7 @@ export function TripDetailsSheet({
               )}
             </div>
             <SheetTitle className="text-base leading-tight">
-              {displayLocation(job.from_location, job.pickup_display_name)} → {displayLocation(job.to_location, job.dropoff_display_name)}
+              {displayJobLocation(job.from_location, job.pickup_display_name, job.from_port, job.from_berth)} → {displayJobLocation(job.to_location, job.dropoff_display_name, job.to_port, job.to_berth)}
             </SheetTitle>
             {(job.route_duration_sec ?? 0) > 0 && (
               <div className="text-[11px] text-muted-foreground">

@@ -25,6 +25,7 @@ import {
   archiveShipEvent,
   unarchiveShipEvent,
 } from "@/lib/ship-events.functions";
+import { getPortWithActiveBerths, listPorts, type PortDirectoryBerth, type PortDirectoryPort } from "@/lib/port-directory.functions";
 import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ship-operations")({
@@ -39,11 +40,24 @@ function ShipOperationsPage() {
   const updateEtaFn = useServerFn(updateShipEventEta);
   const archiveFn = useServerFn(archiveShipEvent);
   const unarchiveFn = useServerFn(unarchiveShipEvent);
+  const listPortsFn = useServerFn(listPorts);
+  const portDetailFn = useServerFn(getPortWithActiveBerths);
   const [shipName, setShipName] = useState("");
   const [eta, setEta] = useState("");
   const [port, setPort] = useState("");
+  const [portId, setPortId] = useState<string | null>(null);
+  const [berthId, setBerthId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShipEvent | null>(null);
   const [editedEta, setEditedEta] = useState("");
+  const { data: ports = [] } = useQuery({
+    queryKey: ["port-directory-active-for-ships"],
+    queryFn: () => listPortsFn({ data: {} }) as Promise<Omit<PortDirectoryPort, "company_id">[]>,
+  });
+  const { data: selectedPort } = useQuery({
+    queryKey: ["port-directory-ship-berths", portId],
+    queryFn: () => portDetailFn({ data: { id: portId!, include_inactive: false } }),
+    enabled: !!portId,
+  });
 
   const {
     data: events = [],
@@ -56,11 +70,13 @@ function ShipOperationsPage() {
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["ship-events"] });
   const create = useMutation({
-    mutationFn: () => createFn({ data: { ship_name: shipName, eta, port } }),
+    mutationFn: () => createFn({ data: { ship_name: shipName, eta, port, port_id: portId, berth_id: berthId } }),
     onSuccess: () => {
       setShipName("");
       setEta("");
       setPort("");
+      setPortId(null);
+      setBerthId(null);
       refresh();
       toast.success("Ship event created");
     },
@@ -115,7 +131,7 @@ function ShipOperationsPage() {
         </CardHeader>
         <CardContent>
           <form
-            className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end"
+            className="grid gap-3 md:grid-cols-[1.2fr_1fr_1.2fr_1.2fr_auto] md:items-end"
             onSubmit={(event) => {
               event.preventDefault();
               create.mutate();
@@ -141,16 +157,19 @@ function ShipOperationsPage() {
               />
             </Field>
             <Field label="Port" htmlFor="ship-port">
-              <Input
-                id="ship-port"
-                value={port}
-                onChange={(event) => setPort(event.target.value)}
-                maxLength={160}
-                required
-                placeholder="e.g. Valletta"
-              />
+              <select id="ship-port" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={portId ?? ""} onChange={(event) => { const next = event.target.value || null; setPortId(next); setBerthId(null); setPort(ports.find((item) => item.id === next)?.name ?? ""); }} required>
+                <option value="">Select a port</option>
+                {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
+              </select>
             </Field>
-            <Button type="submit" disabled={create.isPending}>
+            <Field label="Berth (optional)" htmlFor="ship-berth">
+              <select id="ship-berth" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={berthId ?? ""} onChange={(event) => setBerthId(event.target.value || null)} disabled={!portId}>
+                <option value="">No berth selected</option>
+                {(selectedPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              {selectedPort ? <span className="text-xs text-muted-foreground">{selectedPort.address}</span> : null}
+            </Field>
+            <Button type="submit" disabled={create.isPending || !portId}>
               <Plus className="mr-1.5 h-4 w-4" /> {create.isPending ? "Creating…" : "Create"}
             </Button>
           </form>
@@ -192,7 +211,7 @@ function ShipOperationsPage() {
                       </Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span>{event.port}</span>
+                      <span>{event.ports?.name ?? event.port}{event.berths?.name ? ` · ${event.berths.name}` : ""}</span>
                       <span className="inline-flex items-center gap-1">
                         <Clock3 className="h-3 w-3" /> ETA{" "}
                         {formatMaltaDateTime(event.eta, {

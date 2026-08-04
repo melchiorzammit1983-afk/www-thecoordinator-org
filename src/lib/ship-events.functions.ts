@@ -8,12 +8,18 @@ export type ShipEvent = {
   ship_name: string;
   eta: string;
   port: string;
+  port_id?: string | null;
+  berth_id?: string | null;
+  ports?: { name: string; address: string } | null;
+  berths?: { name: string } | null;
   status: "scheduled";
   created_at: string;
   updated_at: string;
   archived_at?: string | null;
   archived_by?: string | null;
 };
+
+const shipEventSelect = "id, ship_name, eta, port, port_id, berth_id, status, created_at, updated_at, archived_at, archived_by, ports(name, address), berths(name)";
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -80,6 +86,8 @@ const shipEventInput = z.object({
   ship_name: z.string().trim().min(1, "Enter a ship name").max(200),
   eta: localEta,
   port: z.string().trim().min(1, "Enter a port").max(160),
+  port_id: z.string().uuid().nullable().optional(),
+  berth_id: z.string().uuid().nullable().optional(),
 });
 
 function etaToIso(eta: string) {
@@ -95,7 +103,7 @@ export const listShipEvents = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     const { data, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .select(shipEventSelect)
       .eq("company_id", companyId)
       .order("eta", { ascending: true });
     if (error) throw new Error(error.message);
@@ -111,7 +119,7 @@ export const searchShipEvents = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     let query = shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .select(shipEventSelect)
       .eq("company_id", companyId)
       .is("archived_at", null)
       .order("eta", { ascending: true })
@@ -132,7 +140,7 @@ export const getLinkedShipEvent = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     const { data: event, error } = await shipEventsTable(sb)
       .from("ship_events")
-      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .select(shipEventSelect)
       .eq("id", data.id)
       .eq("company_id", companyId)
       .maybeSingle();
@@ -147,17 +155,42 @@ export const createShipEvent = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
+    let portName = data.port;
+    if (data.berth_id && !data.port_id) throw new Error("A berth must belong to a selected port.");
+    if (data.port_id) {
+      const { data: selectedPort, error: portError } = await shipEventsTable(sb)
+        .from("ports")
+        .select("id, name")
+        .eq("id", data.port_id)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (portError) throw new Error(portError.message);
+      if (!selectedPort) throw new Error("Port not found for this company.");
+      portName = selectedPort.name as string;
+      if (data.berth_id) {
+        const { data: selectedBerth, error: berthError } = await shipEventsTable(sb)
+          .from("berths")
+          .select("id")
+          .eq("id", data.berth_id)
+          .eq("port_id", data.port_id)
+          .maybeSingle();
+        if (berthError) throw new Error(berthError.message);
+        if (!selectedBerth) throw new Error("Berth not found for the selected port.");
+      }
+    }
     const { data: event, error } = await shipEventsTable(sb)
       .from("ship_events")
       .insert({
         company_id: companyId,
         ship_name: data.ship_name,
         eta: etaToIso(data.eta),
-        port: data.port,
+        port: portName,
+        port_id: data.port_id ?? null,
+        berth_id: data.berth_id ?? null,
         status: "scheduled",
         created_by: context.userId,
       })
-      .select("id, ship_name, eta, port, status, created_at, updated_at")
+      .select(shipEventSelect)
       .single();
     if (error) throw new Error(error.message);
     return event as ShipEvent;
@@ -198,7 +231,7 @@ export const archiveShipEvent = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .eq("company_id", companyId)
       .is("archived_at", null)
-      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .select(shipEventSelect)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!event) throw new Error("Ship event not found or already archived.");
@@ -217,7 +250,7 @@ export const unarchiveShipEvent = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .eq("company_id", companyId)
       .not("archived_at", "is", null)
-      .select("id, ship_name, eta, port, status, created_at, updated_at, archived_at, archived_by")
+      .select(shipEventSelect)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!event) throw new Error("Archived ship event not found.");

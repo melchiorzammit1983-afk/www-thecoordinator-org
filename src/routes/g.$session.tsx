@@ -19,11 +19,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
+import { TokenPortPicker } from "@/components/address/TokenPortPicker";
 
 type Boot = {
   portal: { id: string; name: string; slug: string | null; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string | null; currency: string | null; pricing_mode: string };
   guest: { name: string; email: string | null; phone: string | null; expires_at: string };
-  zones: any[]; fares: any[]; addons: any[]; offers: any[]; bookings: any[];
+  zones: any[]; fares: any[]; addons: any[]; offers: any[]; bookings: any[]; ports?: any[];
 };
 
 export const Route = createFileRoute("/g/$session")({
@@ -94,6 +95,10 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
   const [to, setTo] = useState("");
   const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
   const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
+  const [fromPortId, setFromPortId] = useState<string | null>(null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(null);
+  const [toPortId, setToPortId] = useState<string | null>(null);
+  const [toBerthId, setToBerthId] = useState<string | null>(null);
   const [pickup, setPickup] = useState("");
   const [pax, setPax] = useState("1");
   const [paxNames, setPaxNames] = useState("");
@@ -124,6 +129,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       from_location: from.trim(), to_location: to.trim(),
       from_location_type: fromLocationType,
       to_location_type: toLocationType,
+      from_port_id: fromPortId, from_berth_id: fromBerthId,
+      to_port_id: toPortId, to_berth_id: toBerthId,
       pickup_at: new Date(pickup).toISOString(),
       pax_count: Number(pax) || 1,
       pax_names: parsedPaxNames.length ? parsedPaxNames : undefined,
@@ -139,7 +146,7 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
     setBusy(false);
     if (!r.ok) { toast.error("Could not submit — please try again."); return; }
     toast.success("Booking sent to reception & dispatch");
-    setFrom(""); setTo(""); setFromLocationType("local"); setToLocationType("local"); setPickup(""); setPax("1"); setPaxNames(""); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
+    setFrom(""); setTo(""); setFromLocationType("local"); setToLocationType("local"); setFromPortId(null); setFromBerthId(null); setToPortId(null); setToBerthId(null); setPickup(""); setPax("1"); setPaxNames(""); setFlight(""); setNotes(""); setPromo(""); setSelectedAddons(new Set()); setZoneId("");
     onCreated();
   }
 
@@ -180,6 +187,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       <div className="rounded-xl border p-3 bg-card grid grid-cols-1 gap-2">
         <div><Label className="text-xs">From</Label><AddressAutocomplete publicToken={session} value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
         <div><Label className="text-xs">To</Label><AddressAutocomplete publicToken={session} value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
+        <TokenPortPicker ports={boot.ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); setFromLocationType(portId ? "port" : "local"); if (address) setFrom(address); }} />
+        <TokenPortPicker ports={boot.ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); setToLocationType(portId ? "port" : "local"); if (address) setTo(address); }} />
         <div className="grid grid-cols-2 gap-2">
           <div><Label className="text-xs">Pickup time</Label><Input type="datetime-local" value={pickup} onChange={(e) => setPickup(e.target.value)} /></div>
           <div><Label className="text-xs">Pax</Label><Input type="number" min={1} value={pax} onChange={(e) => setPax(e.target.value)} /></div>

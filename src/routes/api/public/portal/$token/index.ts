@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
+import { listTokenScopedPorts } from "@/lib/port-directory-token.server";
 
 /**
  * GET /api/public/portal/$token  — returns the hotel dashboard bootstrap
@@ -13,6 +14,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
         const r = await resolvePortalByToken(params.token);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const admin = await getAdmin();
+        const ports = await listTokenScopedPorts(admin, r.portal.coordinator_company_id);
         const { data: bookings } = await admin
           .from("portal_bookings" as any)
           .select("id, status, payload, agreed_price, currency, created_at, accepted_at, job_id, batch_id")
@@ -42,6 +44,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
           },
           bookings: bookings ?? [],
           jobs,
+          ports,
         });
       },
       POST: async ({ params, request }) => {

@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
+import { TokenPortPicker } from "@/components/address/TokenPortPicker";
 
 export const Route = createFileRoute("/c/$token")({
   head: ({ loaderData }) => {
@@ -73,12 +74,20 @@ function PublicBookingPage() {
   const [toPlaceId, setToPlaceId] = useState<string | null>(null);
   const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
   const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
+  const [fromPortId, setFromPortId] = useState<string | null>(null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(null);
+  const [toPortId, setToPortId] = useState<string | null>(null);
+  const [toBerthId, setToBerthId] = useState<string | null>(null);
 
   const mut = useMutation({
     mutationFn: () => submitFn({ data: {
       token: params.token, ...form,
       from_location_type: fromLocationType,
       to_location_type: toLocationType,
+      from_port_id: fromPortId,
+      from_berth_id: fromBerthId,
+      to_port_id: toPortId,
+      to_berth_id: toBerthId,
       pax_count: Math.max(1, Math.min(200, Number(form.pax_count) || 1)),
       promo_note: promo || undefined,
     } as any }),
@@ -160,6 +169,7 @@ function PublicBookingPage() {
                     required
                     placeholder="Hotel, address, port…"
                   />
+                  <TokenPortPicker ports={(company as any).ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); setFromLocationType(portId ? "port" : "local"); if (address) update("from_location", address); }} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-to">Drop-off location</Label>
@@ -171,6 +181,7 @@ function PublicBookingPage() {
                     required
                     placeholder="Airport, hotel, address…"
                   />
+                  <TokenPortPicker ports={(company as any).ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); setToLocationType(portId ? "port" : "local"); if (address) update("to_location", address); }} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">

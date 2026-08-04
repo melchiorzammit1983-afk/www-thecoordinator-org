@@ -18,6 +18,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking, getLinkedFlightScheduleRecord, searchActiveFlightScheduleRecords } from "@/lib/coordinator.functions";
 import { createShipEvent, getLinkedShipEvent, searchShipEvents } from "@/lib/ship-events.functions";
+import { listActivePorts, getPortWithActiveBerths, type PortDirectoryPort, type PortDirectoryBerth } from "@/lib/port-directory.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
 import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
@@ -57,6 +58,64 @@ import { formatMaltaDateTime, isoToMaltaDateTime, maltaWallTimeToUtcIso } from "
 
 type Driver = { id: string; name: string; vehicle: string | null };
 
+type PortWithBerths = Omit<PortDirectoryPort, "company_id"> & { berths: PortDirectoryBerth[] };
+
+function PortDirectoryPicker({
+  portId, berthId, onChange,
+}: {
+  portId: string | null;
+  berthId: string | null;
+  onChange: (value: { portId: string | null; berthId: string | null; address?: string }) => void;
+}) {
+  const listFn = useServerFn(listActivePorts);
+  const detailFn = useServerFn(getPortWithActiveBerths);
+  const { data: ports = [] } = useQuery({
+    queryKey: ["active-port-directory"],
+    queryFn: () => listFn(),
+    staleTime: 60_000,
+  });
+  const { data: selected } = useQuery({
+    queryKey: ["active-port-directory-detail", portId],
+    queryFn: () => detailFn({ data: { id: portId! } }) as Promise<PortWithBerths>,
+    enabled: !!portId,
+    staleTime: 60_000,
+  });
+  const activePort = (ports as Array<Omit<PortDirectoryPort, "company_id">>).find((port) => port.id === portId);
+  const port = selected ?? activePort;
+  const berths = selected?.berths ?? [];
+  const selectedBerth = berths.find((berth) => berth.id === berthId);
+  return (
+    <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-2">
+      <Label className="text-xs">Port Directory</Label>
+      <Select value={portId ?? "__none__"} onValueChange={(value) => {
+        if (value === "__none__") { onChange({ portId: null, berthId: null }); return; }
+        const next = (ports as Array<Omit<PortDirectoryPort, "company_id">>).find((item) => item.id === value);
+        onChange({ portId: value, berthId: null, address: next?.address });
+      }}>
+        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select a port" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Choose port…</SelectItem>
+          {(ports as Array<Omit<PortDirectoryPort, "company_id">>).map((item) => (
+            <SelectItem key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {portId ? <Select value={berthId ?? "__none__"} onValueChange={(value) => {
+        if (value === "__none__") { onChange({ portId, berthId: null, address: port?.address }); return; }
+        const next = berths.find((item) => item.id === value);
+        onChange({ portId, berthId: value, address: next?.address_override ?? port?.address });
+      }}>
+        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Optional berth" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">No berth selected</SelectItem>
+          {berths.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+        </SelectContent>
+      </Select> : null}
+      {port ? <p className="text-[11px] text-muted-foreground">{selectedBerth?.address_override ?? port.address}</p> : null}
+    </div>
+  );
+}
+
 type Job = {
   id: string;
   from_location: string; to_location: string;
@@ -68,6 +127,10 @@ type Job = {
   to_flight: string | null;
   flight_schedule_record_id?: string | null;
   ship_event_id?: string | null;
+  from_port_id?: string | null;
+  from_berth_id?: string | null;
+  to_port_id?: string | null;
+  to_berth_id?: string | null;
   onward_flight_schedule_record_id?: string | null;
   onward_ship_event_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
@@ -189,12 +252,16 @@ function ManualForm({
   const [fromDisplayName, setFromDisplayName] = useState<string | null>(job?.pickup_display_name ?? null);
   const [fromLat, setFromLat] = useState<number | null>(job?.pickup_lat ?? null);
   const [fromLng, setFromLng] = useState<number | null>(job?.pickup_lng ?? null);
+  const [fromPortId, setFromPortId] = useState<string | null>(job?.from_port_id ?? null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(job?.from_berth_id ?? null);
   const [autoFilledFromShipPort, setAutoFilledFromShipPort] = useState<string | null>(null);
   const [to, setTo] = useState(job?.to_location ?? prefill?.to_location ?? "");
   const [toPlaceId, setToPlaceId] = useState<string | null>(job?.dropoff_place_id ?? null);
   const [toDisplayName, setToDisplayName] = useState<string | null>(job?.dropoff_display_name ?? null);
   const [toLat, setToLat] = useState<number | null>(job?.dropoff_lat ?? null);
   const [toLng, setToLng] = useState<number | null>(job?.dropoff_lng ?? null);
+  const [toPortId, setToPortId] = useState<string | null>(job?.to_port_id ?? null);
+  const [toBerthId, setToBerthId] = useState<string | null>(job?.to_berth_id ?? null);
   const [autoFilledToShipPort, setAutoFilledToShipPort] = useState<string | null>(null);
   const [fromFlight, setFromFlight] = useState(job?.from_flight ?? prefill?.from_flight ?? "");
   const [toFlight, setToFlight] = useState(job?.to_flight ?? prefill?.to_flight ?? "");
@@ -297,7 +364,9 @@ function ManualForm({
       setOnwardShipEventId(null);
       setOnwardShipSearch("");
     }
-  }, [requiresFlight, requiresShip, allowsOnwardFlight, allowsOnwardShip]);
+    if (fromEndpointType !== "port") { setFromPortId(null); setFromBerthId(null); }
+    if (toEndpointType !== "port") { setToPortId(null); setToBerthId(null); }
+  }, [requiresFlight, requiresShip, allowsOnwardFlight, allowsOnwardShip, fromEndpointType, toEndpointType]);
   // Transport tracking is determined by the explicit relationship, never by
   // location labels or identifiers. A Ship pickup can start anywhere.
   const trackingKind: "flight" | "vessel" | null = requiresShip && shipEventId
@@ -605,6 +674,10 @@ function ManualForm({
         from_location: effFrom, to_location: effTo, date, time,
         from_location_type: fromEndpointType,
         to_location_type: toEndpointType,
+        from_port_id: fromEndpointType === "port" ? fromPortId : null,
+        from_berth_id: fromEndpointType === "port" ? fromBerthId : null,
+        to_port_id: toEndpointType === "port" ? toPortId : null,
+        to_berth_id: toEndpointType === "port" ? toBerthId : null,
         flightorship: requiresFlight ? (fromFlight || toFlight || "") : "",
         from_flight: requiresFlight ? fromFlight : "",
         to_flight: requiresFlight || allowsOnwardFlight ? toFlight : "",
@@ -1001,6 +1074,9 @@ function ManualForm({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 min-w-0">
               <Label>From {!from && <span className="text-destructive">*</span>}</Label>
+              {fromEndpointType === "port" ? <PortDirectoryPicker portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => {
+                setFromPortId(portId); setFromBerthId(berthId); if (address) { setFrom(address); setFromDisplayName(address); setFromPlaceId(null); setFromLat(null); setFromLng(null); }
+              }} /> : null}
               <AddressAutocomplete
                 value={from}
                 placeId={fromPlaceId}
@@ -1023,6 +1099,9 @@ function ManualForm({
             </div>
             <div className="space-y-1.5 min-w-0">
               <Label>To {!to && <span className="text-destructive">*</span>}</Label>
+              {toEndpointType === "port" ? <PortDirectoryPicker portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => {
+                setToPortId(portId); setToBerthId(berthId); if (address) { setTo(address); setToDisplayName(address); setToPlaceId(null); setToLat(null); setToLng(null); }
+              }} /> : null}
               <AddressAutocomplete
                 value={to}
                 placeId={toPlaceId}
@@ -1589,7 +1668,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         from_location: t.from_location, to_location: t.to_location,
         // Bulk imports have no trusted endpoint metadata. Their established
         // free-text contract is therefore explicitly classified as local.
-        from_location_type: "local" as const, to_location_type: "local" as const,
+        from_location_type: t.from_location_type ?? "local", to_location_type: t.to_location_type ?? "local",
+        from_port_id: t.from_port_id ?? null, from_berth_id: t.from_berth_id ?? null,
+        to_port_id: t.to_port_id ?? null, to_berth_id: t.to_berth_id ?? null,
         date: t.date, time: t.time,
         flightorship: t.flightorship, clientcompanyname: t.clientcompanyname,
         from_flight: t.from_flight, to_flight: t.to_flight,
@@ -1775,6 +1856,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       placeholder="Pickup address"
                       inputClassName="h-8 text-xs"
                     />
+                    <PortDirectoryPicker portId={t.from_port_id ?? null} berthId={t.from_berth_id ?? null} onChange={({ portId, berthId, address }) => patch({ from_location_type: "port", from_port_id: portId, from_berth_id: berthId, ...(address ? { from_location: address, from_place_id: null, from_lat: null, from_lng: null } : {}) })} />
                   </div>
                   <div className="space-y-1 col-span-2">
                     <div className="flex items-center justify-between gap-2">
@@ -1808,6 +1890,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                       placeholder="Delivery address"
                       inputClassName="h-8 text-xs"
                     />
+                    <PortDirectoryPicker portId={t.to_port_id ?? null} berthId={t.to_berth_id ?? null} onChange={({ portId, berthId, address }) => patch({ to_location_type: "port", to_port_id: portId, to_berth_id: berthId, ...(address ? { to_location: address, to_place_id: null, to_lat: null, to_lng: null } : {}) })} />
                   </div>
                   <label className="space-y-1">
                     <span className="text-[10px] text-muted-foreground">Company</span>
