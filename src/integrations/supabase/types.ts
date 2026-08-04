@@ -6690,6 +6690,8 @@ export type Database = {
       }
       ship_events: {
         Row: {
+          actual_arrival: string | null
+          actual_departure: string | null
           archived_at: string | null
           archived_by: string | null
           berth_id: string | null
@@ -6697,6 +6699,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           eta: string
+          expected_departure: string | null
           id: string
           port: string
           port_id: string | null
@@ -6705,6 +6708,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
           archived_at?: string | null
           archived_by?: string | null
           berth_id?: string | null
@@ -6712,6 +6717,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           eta: string
+          expected_departure?: string | null
           id?: string
           port: string
           port_id?: string | null
@@ -6720,6 +6726,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
           archived_at?: string | null
           archived_by?: string | null
           berth_id?: string | null
@@ -6727,6 +6735,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           eta?: string
+          expected_departure?: string | null
           id?: string
           port?: string
           port_id?: string | null
@@ -8016,6 +8025,8 @@ export type Database = {
           p_ship_event_id: string
         }
         Returns: {
+          actual_arrival: string | null
+          actual_departure: string | null
           archived_at: string | null
           archived_by: string | null
           berth_id: string | null
@@ -8023,6 +8034,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           eta: string
+          expected_departure: string | null
           id: string
           port: string
           port_id: string | null
