@@ -31,12 +31,20 @@ import {
 import { getPortWithActiveBerths, listPorts, type PortDirectoryBerth, type PortDirectoryPort } from "@/lib/port-directory.functions";
 import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
 
+type ShipStatusFilter = "active" | "arrived" | "departed" | "archived" | "all";
+
 export const Route = createFileRoute("/_authenticated/coordinator/ship-operations")({
   head: () => ({ meta: [{ title: "Ship Operations — Coordinator" }] }),
   component: ShipOperationsPage,
 });
 
 function ShipOperationsPage() {
+  const [filter, setFilter] = useState<ShipStatusFilter>(() => {
+    if (typeof window === "undefined") return "active";
+    const saved = window.localStorage.getItem("ship-operations-filter");
+    return saved === "arrived" || saved === "departed" || saved === "archived" || saved === "all" ? saved : "active";
+  });
+  useEffect(() => { window.localStorage.setItem("ship-operations-filter", filter); }, [filter]);
   const queryClient = useQueryClient();
   const listFn = useServerFn(listShipEvents);
   const createFn = useServerFn(createShipEvent);
@@ -84,8 +92,8 @@ function ShipOperationsPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["ship-events"],
-    queryFn: () => listFn(),
+    queryKey: ["ship-events", filter],
+    queryFn: () => listFn({ data: { filter } }),
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["ship-events"] });
   const create = useMutation({
@@ -233,9 +241,25 @@ function ShipOperationsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Scheduled ship events</CardTitle>
-          <CardDescription>Only your company can see and update these events. Archived events remain available for historical trips.</CardDescription>
+        <CardHeader className="gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CardTitle className="text-base">Scheduled ship events</CardTitle>
+            <CardDescription>Only your company can see and update these events. Archived events remain available for historical trips.</CardDescription>
+          </div>
+          <Field label="View" htmlFor="ship-status-filter">
+            <select
+              id="ship-status-filter"
+              className="flex h-10 min-w-36 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as ShipStatusFilter)}
+            >
+              <option value="active">Active</option>
+              <option value="arrived">Arrived</option>
+              <option value="departed">Departed</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </Field>
         </CardHeader>
         <CardContent>
           {error ? (

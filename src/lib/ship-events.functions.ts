@@ -35,6 +35,57 @@ function shipEventsTable(sb: Awaited<ReturnType<typeof getAdmin>>) {
   return sb as any;
 }
 
+type ShipEventListFilter = "active" | "arrived" | "departed" | "archived" | "all";
+
+/** Archives only departed events whose current linked work and reviews are closed. */
+async function autoArchiveCompletedShipEvents(sb: Awaited<ReturnType<typeof getAdmin>>, companyId: string, archivedBy: string) {
+  const tables = shipEventsTable(sb);
+  const jobScope = `company_id.eq.${companyId},executor_company_id.eq.${companyId},origin_company_id.eq.${companyId},dispatch_chain_company_ids.cs.{${companyId}}`;
+  const [eventsResult, jobsResult, portReviewsResult, etaHistoryResult, etaCompletionsResult, readinessResult] = await Promise.all([
+    tables.from("ship_events").select("id, actual_departure, status, archived_at").eq("company_id", companyId).is("archived_at", null).limit(10_000),
+    tables.from("jobs").select("id, ship_event_id, status, needs_review").or(jobScope).not("ship_event_id", "is", null).limit(10_000),
+    tables.from("ship_event_port_change_reviews").select("ship_event_id").eq("company_id", companyId).limit(10_000),
+    tables.from("ship_event_eta_history").select("id, ship_event_id, changed_at, ship_events!inner(company_id)").eq("ship_events.company_id", companyId).order("changed_at", { ascending: false }).limit(10_000),
+    tables.from("ship_eta_review_completions").select("eta_history_id").eq("company_id", companyId).limit(10_000),
+    tables.from("ship_departure_readiness_warnings").select("ship_event_id").eq("company_id", companyId).eq("active", true).limit(10_000),
+  ]);
+  for (const result of [eventsResult, jobsResult, portReviewsResult, etaHistoryResult, etaCompletionsResult, readinessResult]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+  const openJobsByShip = new Map<string, number>();
+  const linkedJobsByShip = new Map<string, number>();
+  const pendingReviewByShip = new Map<string, number>();
+  for (const job of (jobsResult.data ?? []) as Array<{ ship_event_id: string | null; status: string | null; needs_review: boolean | null }>) {
+    if (job.ship_event_id) linkedJobsByShip.set(job.ship_event_id, (linkedJobsByShip.get(job.ship_event_id) ?? 0) + 1);
+    if (job.ship_event_id && job.needs_review === true) pendingReviewByShip.set(job.ship_event_id, (pendingReviewByShip.get(job.ship_event_id) ?? 0) + 1);
+    if (!job.ship_event_id || !["completed", "cancelled", "no_show"].includes((job.status ?? "").toLowerCase())) {
+      if (job.ship_event_id) openJobsByShip.set(job.ship_event_id, (openJobsByShip.get(job.ship_event_id) ?? 0) + 1);
+    }
+  }
+  const portReviewShipIds = new Set(((portReviewsResult.data ?? []) as Array<{ ship_event_id: string }>).map((row) => row.ship_event_id));
+  const completedEtaHistoryIds = new Set(((etaCompletionsResult.data ?? []) as Array<{ eta_history_id: string }>).map((row) => row.eta_history_id));
+  const latestEtaHistoryByShip = new Map<string, string>();
+  for (const row of (etaHistoryResult.data ?? []) as Array<{ id: string; ship_event_id: string }>) {
+    if (!latestEtaHistoryByShip.has(row.ship_event_id)) latestEtaHistoryByShip.set(row.ship_event_id, row.id);
+  }
+  const readinessShipIds = new Set(((readinessResult.data ?? []) as Array<{ ship_event_id: string }>).map((row) => row.ship_event_id));
+  for (const event of (eventsResult.data ?? []) as Array<{ id: string; actual_departure: string | null; status: string | null; archived_at: string | null }>) {
+    if (!event.actual_departure || event.archived_at || event.status === "cancelled") continue;
+    if ((openJobsByShip.get(event.id) ?? 0) > 0) continue;
+    if ((portReviewShipIds.has(event.id) && (pendingReviewByShip.get(event.id) ?? 0) > 0) || readinessShipIds.has(event.id)) continue;
+    const latestEtaHistoryId = latestEtaHistoryByShip.get(event.id);
+    if (latestEtaHistoryId && (linkedJobsByShip.get(event.id) ?? 0) > 0 && !completedEtaHistoryIds.has(latestEtaHistoryId)) continue;
+    const { error } = await tables
+      .from("ship_events")
+      .update({ archived_at: new Date().toISOString(), archived_by: archivedBy, status: "archived", updated_at: new Date().toISOString() })
+      .eq("id", event.id)
+      .eq("company_id", companyId)
+      .is("archived_at", null)
+      .eq("actual_departure", event.actual_departure);
+    if (error) throw new Error(error.message);
+  }
+}
+
 async function getMyCompanyId(userId: string): Promise<string> {
   const sb = await getAdmin();
   const { data: byOwner, error: ownerError } = await sb
@@ -110,16 +161,24 @@ function optionalEtaToIso(eta: string | null | undefined) {
 /** Company-private manual ship events. No trip link or shared data is involved. */
 export const listShipEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: unknown) => z.object({ filter: z.enum(["active", "arrived", "departed", "archived", "all"]).default("active") }).parse(input ?? {}))
+  .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
-    const { data, error } = await shipEventsTable(sb)
+    await autoArchiveCompletedShipEvents(sb, companyId, context.userId);
+    const filter = data.filter as ShipEventListFilter;
+    const query = shipEventsTable(sb)
       .from("ship_events")
       .select(shipEventSelect)
       .eq("company_id", companyId)
       .order("eta", { ascending: true });
-    if (error) throw new Error(error.message);
-    return (data ?? []) as ShipEvent[];
+    if (filter === "active") query.in("status", ["scheduled", "arrived", "departed"]).is("archived_at", null);
+    if (filter === "arrived") query.eq("status", "arrived").is("archived_at", null);
+    if (filter === "departed") query.eq("status", "departed").is("archived_at", null);
+    if (filter === "archived") query.eq("status", "archived");
+    const result = await query;
+    if (result.error) throw new Error(result.error.message);
+    return (result.data ?? []) as ShipEvent[];
   });
 
 /** Company-private choices for linking a job to a manually managed ship event. */
