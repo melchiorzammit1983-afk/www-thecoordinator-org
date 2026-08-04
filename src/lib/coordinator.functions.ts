@@ -846,7 +846,7 @@ async function assertCompanyPortSelection(
   if (!portId) return null;
   const { data: port, error: portError } = await supabaseAdmin
     .from("ports")
-    .select("id, name, address, active")
+    .select("id, name, address, immigration_available, active")
     .eq("id", portId)
     .eq("company_id", companyId)
     .eq("active", true)
@@ -866,6 +866,65 @@ async function assertCompanyPortSelection(
     return { ...port, address: berth.address_override || port.address };
   }
   return port;
+}
+
+const VALLETTA_IMMIGRATION_STOP = "Immigration Office, Valletta";
+
+/** Add the immigration stop once for a Ship Arrival route when the selected
+ * port does not handle immigration. The existing stop editor remains the
+ * coordinator's override: removing or editing this stop is never undone on
+ * later saves. */
+async function ensureShipArrivalImmigrationStop(
+  supabaseAdmin: any,
+  jobId: string,
+  journey: { journeyType: string } | null,
+  fromPort: { immigration_available?: boolean } | null,
+) {
+  if (!fromPort || fromPort.immigration_available || !journey) return;
+  if (journey.journeyType !== "ship_arrival" && journey.journeyType !== "ship_to_flight") return;
+  const { data: group, error: groupError } = await supabaseAdmin
+    .from("groups")
+    .select("id")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (groupError) throw new Error(groupError.message);
+  let groupId = group?.id as string | undefined;
+  if (!groupId) {
+    const { data: created, error } = await supabaseAdmin
+      .from("groups")
+      .insert({ job_id: jobId, name: "Trip stops", status: "pending" })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    groupId = created.id as string;
+  }
+  const { data: existingStop, error: stopLookupError } = await supabaseAdmin
+    .from("group_stops")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("address", VALLETTA_IMMIGRATION_STOP)
+    .maybeSingle();
+  if (stopLookupError) throw new Error(stopLookupError.message);
+  if (existingStop) return;
+  const { data: stops, error: stopsError } = await supabaseAdmin
+    .from("group_stops")
+    .select("id, stop_index")
+    .eq("group_id", groupId)
+    .order("stop_index", { ascending: true });
+  if (stopsError) throw new Error(stopsError.message);
+  for (const stop of (stops ?? []) as Array<{ id: string; stop_index: number }>) {
+    const { error } = await supabaseAdmin
+      .from("group_stops")
+      .update({ stop_index: stop.stop_index + 1 })
+      .eq("id", stop.id);
+    if (error) throw new Error(error.message);
+  }
+  const { error: insertError } = await supabaseAdmin
+    .from("group_stops")
+    .insert({ group_id: groupId, stop_index: 0, address: VALLETTA_IMMIGRATION_STOP, lat: null, lng: null, place_id: null });
+  if (insertError) throw new Error(insertError.message);
 }
 
 async function resolveScheduledTransportPickup(
@@ -1581,6 +1640,7 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
+    await ensureShipArrivalImmigrationStop(supabaseAdmin, row.id, journey, fromPort);
     // If the caller didn't send explicit passenger names, try to auto-fill
     // from the client/company field (e.g. "MV Ocean Pioneer (John, Jane)").
     let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
@@ -1625,6 +1685,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const selectedFlightId = data.flight_schedule_record_id;
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
     const existingShipId = (existing as any).ship_event_id as string | null;
+    const existingFromPortId = (existing as any).from_port_id as string | null;
     const existingOnwardFlightId = (existing as any).onward_flight_schedule_record_id as string | null;
     const existingOnwardShipId = (existing as any).onward_ship_event_id as string | null;
     const existingFromEndpointType = (existing as any).from_location_type as JourneyEndpoint | null;
@@ -1838,6 +1899,12 @@ export const updateJob = createServerFn({ method: "POST" })
         );
       }
       throw new Error(error.message);
+    }
+    // A newly selected arrival port gets the automatic immigration stop once.
+    // If the coordinator later removes or edits that stop, unchanged saves do
+    // not recreate it.
+    if (effectiveFromPortId !== existingFromPortId) {
+      await ensureShipArrivalImmigrationStop(supabaseAdmin, data.id, journey, fromPort);
     }
     // Auto-fill from client/company parentheses only when caller passed
     // no explicit pax array AND the trip has no existing passenger rows.
@@ -3361,6 +3428,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
         .single();
       if (error) throw new Error(error.message);
       created.push((job as { id: string }).id);
+      await ensureShipArrivalImmigrationStop(supabaseAdmin, job.id, journey, fromPort);
       if (t.pax.length) {
         // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
         const rows = t.pax.map((name) => ({ job_id: job.id, name }));
@@ -3369,7 +3437,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       }
       // Immigration Needed rule: skip when the pickup is the Freeport — it
       // never requires the immigration-office stop, regardless of the flag.
-      if (t.immigration_needed && !/freeport/i.test(t.from_location)) {
+      if (!fromPort && t.immigration_needed && !/freeport/i.test(t.from_location)) {
         const { data: group, error: gErr } = await supabaseAdmin
           .from("groups")
           .insert({ job_id: job.id, name: "Trip stops", status: "pending" } as any)

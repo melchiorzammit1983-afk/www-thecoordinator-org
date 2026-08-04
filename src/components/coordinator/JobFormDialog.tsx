@@ -65,7 +65,7 @@ function PortDirectoryPicker({
 }: {
   portId: string | null;
   berthId: string | null;
-  onChange: (value: { portId: string | null; berthId: string | null; address?: string }) => void;
+  onChange: (value: { portId: string | null; berthId: string | null; address?: string; immigrationAvailable?: boolean }) => void;
 }) {
   const listFn = useServerFn(listActivePorts);
   const detailFn = useServerFn(getPortWithActiveBerths);
@@ -90,7 +90,7 @@ function PortDirectoryPicker({
       <Select value={portId ?? "__none__"} onValueChange={(value) => {
         if (value === "__none__") { onChange({ portId: null, berthId: null }); return; }
         const next = (ports as Array<Omit<PortDirectoryPort, "company_id">>).find((item) => item.id === value);
-        onChange({ portId: value, berthId: null, address: next?.address });
+        onChange({ portId: value, berthId: null, address: next?.address, immigrationAvailable: next?.immigration_available });
       }}>
         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select a port" /></SelectTrigger>
         <SelectContent>
@@ -111,7 +111,7 @@ function PortDirectoryPicker({
           {berths.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
         </SelectContent>
       </Select> : null}
-      {port ? <p className="text-[11px] text-muted-foreground">{selectedBerth?.address_override ?? port.address}</p> : null}
+      {port ? <><p className="text-[11px] text-muted-foreground">{selectedBerth?.address_override ?? port.address}</p><p className="text-[11px] text-muted-foreground">{port.immigration_available ? "Immigration handled at this port" : "Immigration stop: Valletta office"}</p></> : null}
     </div>
   );
 }
