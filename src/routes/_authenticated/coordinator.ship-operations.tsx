@@ -22,11 +22,16 @@ import {
   listShipEvents,
   type ShipEvent,
   updateShipEventEta,
+  updateShipEventLifecycle,
+  updateShipEventPort,
+  cancelShipEvent,
   archiveShipEvent,
   unarchiveShipEvent,
 } from "@/lib/ship-events.functions";
 import { getPortWithActiveBerths, listPorts, type PortDirectoryBerth, type PortDirectoryPort } from "@/lib/port-directory.functions";
 import { formatMaltaDateTime, isoToMaltaDateTime } from "@/lib/time";
+
+type ShipStatusFilter = "active" | "arrived" | "departed" | "archived" | "all";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ship-operations")({
   head: () => ({ meta: [{ title: "Ship Operations — Coordinator" }] }),
@@ -34,21 +39,38 @@ export const Route = createFileRoute("/_authenticated/coordinator/ship-operation
 });
 
 function ShipOperationsPage() {
+  const [filter, setFilter] = useState<ShipStatusFilter>(() => {
+    if (typeof window === "undefined") return "active";
+    const saved = window.localStorage.getItem("ship-operations-filter");
+    return saved === "arrived" || saved === "departed" || saved === "archived" || saved === "all" ? saved : "active";
+  });
+  useEffect(() => { window.localStorage.setItem("ship-operations-filter", filter); }, [filter]);
   const queryClient = useQueryClient();
   const listFn = useServerFn(listShipEvents);
   const createFn = useServerFn(createShipEvent);
   const updateEtaFn = useServerFn(updateShipEventEta);
+  const updateLifecycleFn = useServerFn(updateShipEventLifecycle);
+  const updatePortFn = useServerFn(updateShipEventPort);
+  const cancelFn = useServerFn(cancelShipEvent);
   const archiveFn = useServerFn(archiveShipEvent);
   const unarchiveFn = useServerFn(unarchiveShipEvent);
   const listPortsFn = useServerFn(listPorts);
   const portDetailFn = useServerFn(getPortWithActiveBerths);
   const [shipName, setShipName] = useState("");
   const [eta, setEta] = useState("");
+  const [expectedDeparture, setExpectedDeparture] = useState("");
   const [port, setPort] = useState("");
   const [portId, setPortId] = useState<string | null>(null);
   const [berthId, setBerthId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShipEvent | null>(null);
   const [editedEta, setEditedEta] = useState("");
+  const [lifecycleEditing, setLifecycleEditing] = useState<ShipEvent | null>(null);
+  const [editedExpectedDeparture, setEditedExpectedDeparture] = useState("");
+  const [editedActualArrival, setEditedActualArrival] = useState("");
+  const [editedActualDeparture, setEditedActualDeparture] = useState("");
+  const [portEditing, setPortEditing] = useState<ShipEvent | null>(null);
+  const [editedPortId, setEditedPortId] = useState("");
+  const [editedBerthId, setEditedBerthId] = useState("");
   const { data: ports = [] } = useQuery({
     queryKey: ["port-directory-active-for-ships"],
     queryFn: () => listPortsFn({ data: {} }) as Promise<Omit<PortDirectoryPort, "company_id">[]>,
@@ -58,6 +80,11 @@ function ShipOperationsPage() {
     queryFn: () => portDetailFn({ data: { id: portId!, include_inactive: false } }),
     enabled: !!portId,
   });
+  const { data: editingPort } = useQuery({
+    queryKey: ["port-directory-edit-ship-berths", editedPortId],
+    queryFn: () => portDetailFn({ data: { id: editedPortId, include_inactive: false } }),
+    enabled: !!editedPortId,
+  });
 
   const {
     data: events = [],
@@ -65,15 +92,16 @@ function ShipOperationsPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["ship-events"],
-    queryFn: () => listFn(),
+    queryKey: ["ship-events", filter],
+    queryFn: () => listFn({ data: { filter } }),
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["ship-events"] });
   const create = useMutation({
-    mutationFn: () => createFn({ data: { ship_name: shipName, eta, port, port_id: portId, berth_id: berthId } }),
+    mutationFn: () => createFn({ data: { ship_name: shipName, eta, expected_departure: expectedDeparture, port, port_id: portId, berth_id: berthId } }),
     onSuccess: () => {
       setShipName("");
       setEta("");
+      setExpectedDeparture("");
       setPort("");
       setPortId(null);
       setBerthId(null);
@@ -91,6 +119,26 @@ function ShipOperationsPage() {
     },
     onError: (reason: Error) => toast.error(reason.message),
   });
+  const updateLifecycle = useMutation({
+    mutationFn: () => updateLifecycleFn({ data: {
+      id: lifecycleEditing!.id,
+      expected_departure: editedExpectedDeparture || null,
+      actual_arrival: editedActualArrival || null,
+      actual_departure: editedActualDeparture || null,
+    } }),
+    onSuccess: () => { setLifecycleEditing(null); refresh(); toast.success("Ship lifecycle updated"); },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
+  const updatePort = useMutation({
+    mutationFn: () => updatePortFn({ data: { id: portEditing!.id, port_id: editedPortId, berth_id: editedBerthId || null } }),
+    onSuccess: (result) => { setPortEditing(null); refresh(); toast.success(result.changed ? "Ship Port/Berth updated" : "No Port/Berth change detected"); },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
+  const cancel = useMutation({
+    mutationFn: (id: string) => cancelFn({ data: { id } }),
+    onSuccess: () => { refresh(); toast.success("Ship event cancelled"); },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
   const archive = useMutation({
     mutationFn: (id: string) => archiveFn({ data: { id } }),
     onSuccess: () => { refresh(); toast.success("Ship event archived"); },
@@ -106,6 +154,19 @@ function ShipOperationsPage() {
     const { date, time } = isoToMaltaDateTime(event.eta);
     setEditing(event);
     setEditedEta(`${date}T${time}`);
+  }
+
+  function openLifecycleEditor(event: ShipEvent) {
+    setLifecycleEditing(event);
+    setEditedExpectedDeparture(event.expected_departure ? `${isoToMaltaDateTime(event.expected_departure).date}T${isoToMaltaDateTime(event.expected_departure).time}` : "");
+    setEditedActualArrival(event.actual_arrival ? `${isoToMaltaDateTime(event.actual_arrival).date}T${isoToMaltaDateTime(event.actual_arrival).time}` : "");
+    setEditedActualDeparture(event.actual_departure ? `${isoToMaltaDateTime(event.actual_departure).date}T${isoToMaltaDateTime(event.actual_departure).time}` : "");
+  }
+
+  function openPortEditor(event: ShipEvent) {
+    setPortEditing(event);
+    setEditedPortId(event.port_id ?? "");
+    setEditedBerthId(event.berth_id ?? "");
   }
 
   return (
@@ -156,6 +217,9 @@ function ShipOperationsPage() {
                 required
               />
             </Field>
+            <Field label="Expected departure" htmlFor="ship-expected-departure">
+              <Input id="ship-expected-departure" type="datetime-local" value={expectedDeparture} onChange={(event) => setExpectedDeparture(event.target.value)} required />
+            </Field>
             <Field label="Port" htmlFor="ship-port">
               <select id="ship-port" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={portId ?? ""} onChange={(event) => { const next = event.target.value || null; setPortId(next); setBerthId(null); setPort(ports.find((item) => item.id === next)?.name ?? ""); }} required>
                 <option value="">Select a port</option>
@@ -177,9 +241,25 @@ function ShipOperationsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Scheduled ship events</CardTitle>
-          <CardDescription>Only your company can see and update these events. Archived events remain available for historical trips.</CardDescription>
+        <CardHeader className="gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CardTitle className="text-base">Scheduled ship events</CardTitle>
+            <CardDescription>Only your company can see and update these events. Archived events remain available for historical trips.</CardDescription>
+          </div>
+          <Field label="View" htmlFor="ship-status-filter">
+            <select
+              id="ship-status-filter"
+              className="flex h-10 min-w-36 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as ShipStatusFilter)}
+            >
+              <option value="active">Active</option>
+              <option value="arrived">Arrived</option>
+              <option value="departed">Departed</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </Field>
         </CardHeader>
         <CardContent>
           {error ? (
@@ -219,12 +299,18 @@ function ShipOperationsPage() {
                           timeStyle: "short",
                         })}
                       </span>
+                      <span>Stay {formatStayDuration(event)}</span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => openEtaEditor(event)} disabled={!!event.archived_at}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit ETA
                     </Button>
+                    {!event.archived_at && event.status !== "cancelled" ? <>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openPortEditor(event)}>Port / Berth</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openLifecycleEditor(event)}>Lifecycle</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => cancel.mutate(event.id)} disabled={cancel.isPending}>Cancel</Button>
+                    </> : null}
                     {event.archived_at ? (
                       <Button type="button" variant="outline" size="sm" onClick={() => unarchive.mutate(event.id)} disabled={unarchive.isPending}>
                         <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Restore
@@ -241,6 +327,57 @@ function ShipOperationsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(portEditing)} onOpenChange={(open) => !open && setPortEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit ship Port / Berth</DialogTitle>
+            <DialogDescription>{portEditing?.ship_name ?? "Ship event"} — changes create a review item when linked trips exist.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); updatePort.mutate(); }} className="space-y-4">
+            <Field label="Port" htmlFor="edit-ship-port">
+              <select id="edit-ship-port" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editedPortId} onChange={(event) => { setEditedPortId(event.target.value); setEditedBerthId(""); }} required>
+                <option value="">Select a port</option>
+                {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
+              </select>
+            </Field>
+            <Field label="Berth (optional)" htmlFor="edit-ship-berth">
+              <select id="edit-ship-berth" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editedBerthId} onChange={(event) => setEditedBerthId(event.target.value)} disabled={!editedPortId}>
+                <option value="">No berth selected</option>
+                {(editingPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPortEditing(null)}>Cancel</Button>
+              <Button type="submit" disabled={updatePort.isPending || !editedPortId}>{updatePort.isPending ? "Saving…" : "Save Port / Berth"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(lifecycleEditing)} onOpenChange={(open) => !open && setLifecycleEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit ship lifecycle</DialogTitle>
+            <DialogDescription>{lifecycleEditing?.ship_name ?? "Ship event"} — mark arrival/departure without changing ETA history.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); updateLifecycle.mutate(); }} className="space-y-4">
+            <Field label="Expected departure" htmlFor="edit-ship-expected-departure">
+              <Input id="edit-ship-expected-departure" type="datetime-local" value={editedExpectedDeparture} onChange={(event) => setEditedExpectedDeparture(event.target.value)} required />
+            </Field>
+            <Field label="Actual arrival (optional)" htmlFor="edit-ship-actual-arrival">
+              <Input id="edit-ship-actual-arrival" type="datetime-local" value={editedActualArrival} onChange={(event) => setEditedActualArrival(event.target.value)} />
+            </Field>
+            <Field label="Actual departure (optional)" htmlFor="edit-ship-actual-departure">
+              <Input id="edit-ship-actual-departure" type="datetime-local" value={editedActualDeparture} onChange={(event) => setEditedActualDeparture(event.target.value)} />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setLifecycleEditing(null)}>Cancel</Button>
+              <Button type="submit" disabled={updateLifecycle.isPending}>{updateLifecycle.isPending ? "Saving…" : "Save lifecycle"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
@@ -296,4 +433,15 @@ function Field({
       {children}
     </div>
   );
+}
+
+function formatStayDuration(event: ShipEvent) {
+  const start = event.actual_arrival ?? event.eta;
+  const end = event.actual_departure ?? event.expected_departure;
+  if (!start || !end) return "—";
+  const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 0) return "—";
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours}h ${remainder}m`;
 }

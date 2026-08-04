@@ -300,6 +300,7 @@ function ManualForm({
   const [onwardFlightSearch, setOnwardFlightSearch] = useState("");
   const [onwardShipSearch, setOnwardShipSearch] = useState("");
   const [newShipEta, setNewShipEta] = useState("");
+  const [newShipExpectedDeparture, setNewShipExpectedDeparture] = useState("");
   const [newShipPort, setNewShipPort] = useState("");
   const autoJourney = useMemo(() => resolveBookingJourney(fromEndpointType, toEndpointType), [fromEndpointType, toEndpointType]);
   const selectedJourney = journeyOverride ? resolveJourneyOverride(journeyOverride) : autoJourney;
@@ -510,7 +511,7 @@ function ManualForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedShip?.port, linkedOnwardShip?.port, requiresShip, allowsOnwardShip, selectedJourney.journeyType]);
   const createInlineShip = useMutation({
-    mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, port: newShipPort.trim() } }),
+    mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, expected_departure: newShipExpectedDeparture || newShipEta, port: newShipPort.trim() } }),
     onSuccess: (ship) => {
       setShipEventId(ship.id);
       setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0);
@@ -518,6 +519,7 @@ function ManualForm({
       else if (selectedJourney.journeyType === "ship_arrival" || selectedJourney.journeyType === "ship_to_flight") applyShipPort(ship.port, "from");
       setShipSearch("");
       setNewShipEta("");
+      setNewShipExpectedDeparture("");
       setNewShipPort("");
       qc.invalidateQueries({ queryKey: ["ship-events"] });
       toast.success("Ship event created and linked");
@@ -1214,7 +1216,7 @@ function ManualForm({
             </> : null}
             {requiresShip ? <div className="space-y-2">
               <Label htmlFor="ship-event-search">Linked ship event</Label>
-              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
+              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipExpectedDeparture} onChange={(event) => setNewShipExpectedDeparture(event.target.value)} type="datetime-local" aria-label="New Ship Expected Departure" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
             </div> : null}
             {allowsOnwardFlight && shipEventId ? (
               <div className="space-y-2 border-t pt-3">
