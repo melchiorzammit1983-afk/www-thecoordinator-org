@@ -71,6 +71,7 @@ import {
 } from "@/lib/portal.functions";
 import {
   displayLocation,
+  displayJobLocation,
   formatEta,
   formatEtaMinutes,
   formatFriendlyDateTime,
@@ -2580,9 +2581,9 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               </span>
             </div>
             <div className="text-sm font-semibold truncate mt-0.5">
-              {displayLocation(job.from_location, job.pickup_display_name)}{" "}
+                  {displayJobLocation(job.from_location, job.pickup_display_name, job.from_port, job.from_berth)}{" "}
               <span className="text-muted-foreground">→</span>{" "}
-              {displayLocation(job.to_location, job.dropoff_display_name)}
+              {displayJobLocation(job.to_location, job.dropoff_display_name, job.to_port, job.to_berth)}
             </div>
             {job.ship_event_id && job.onward_flight_schedule_record_id && job.to_flight && (
               <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300 border border-sky-500/40 bg-sky-500/10 truncate max-w-full">

@@ -46,6 +46,16 @@ export function displayLocation(
   return raw;
 }
 
+export function displayJobLocation(
+  address: string | null | undefined,
+  displayName?: string | null,
+  port?: { name: string } | null,
+  berth?: { name: string } | null,
+): string {
+  if (port?.name) return `Port: ${port.name}${berth?.name ? ` · Berth: ${berth.name}` : ""}`;
+  return displayLocation(address, displayName);
+}
+
 // Human-readable pickup date/time for compact cards, e.g. "Thu 30 Jul, 09:49".
 // Always rendered in Malta wall-clock time regardless of device timezone.
 export function formatFriendlyDateTime(iso: string | null | undefined): string {

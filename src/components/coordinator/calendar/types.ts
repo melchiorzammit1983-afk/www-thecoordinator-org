@@ -15,6 +15,10 @@ export type Job = {
   trip_no?: number | null;
   from_location: string;
   to_location: string;
+  from_port?: { name: string } | null;
+  from_berth?: { name: string } | null;
+  to_port?: { name: string } | null;
+  to_berth?: { name: string } | null;
   date: string;
   time: string;
   pickup_at: string | null;
