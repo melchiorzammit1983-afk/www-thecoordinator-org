@@ -9,6 +9,7 @@ export type PortDirectoryPort = {
   code: string | null;
   country: string;
   address: string;
+  immigration_available: boolean;
   latitude: number | null;
   longitude: number | null;
   active: boolean;
@@ -78,6 +79,7 @@ const portFields = {
   code: z.string().trim().min(1).max(32).nullable().optional(),
   country: z.string().trim().min(1).max(120),
   address: z.string().trim().min(1).max(300),
+  immigration_available: z.boolean().optional().default(false),
   latitude: coordinate.min(-90).max(90).nullable().optional(),
   longitude: coordinate.min(-180).max(180).nullable().optional(),
 };
@@ -95,6 +97,7 @@ const portUpdateInput = idInput.extend(portFields).partial({
   address: true,
   latitude: true,
   longitude: true,
+  immigration_available: true,
 }).refine((value) => Object.keys(value).some((key) => key !== "id"), "At least one field is required");
 const berthCreateInput = idInput.extend(berthFields).omit({ id: true });
 const berthUpdateInput = idInput.extend(berthFields).partial({
@@ -139,7 +142,7 @@ export const listActivePorts = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     const { data, error } = await portsTable(sb)
       .from("ports")
-      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .select("id, name, code, country, address, latitude, longitude, immigration_available, active, created_at, updated_at")
       .eq("company_id", companyId)
       .eq("active", true)
       .order("name", { ascending: true });
@@ -156,7 +159,7 @@ export const listPorts = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     let query = portsTable(sb)
       .from("ports")
-      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .select("id, name, code, country, address, latitude, longitude, immigration_available, active, created_at, updated_at")
       .eq("company_id", companyId)
       .order("active", { ascending: false })
       .order("name", { ascending: true });
@@ -194,7 +197,7 @@ export const createPort = createServerFn({ method: "POST" })
     const { data: port, error } = await portsTable(sb)
       .from("ports")
       .insert({ company_id: companyId, ...data })
-      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .select("id, name, code, country, address, latitude, longitude, immigration_available, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
     return port as Omit<PortDirectoryPort, "company_id">;
@@ -213,7 +216,7 @@ export const updatePort = createServerFn({ method: "POST" })
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("company_id", companyId)
-      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .select("id, name, code, country, address, latitude, longitude, immigration_available, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
     return port as Omit<PortDirectoryPort, "company_id">;
@@ -265,7 +268,7 @@ export const setPortActive = createServerFn({ method: "POST" })
       .update({ active: data.active, updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("company_id", companyId)
-      .select("id, name, code, country, address, latitude, longitude, active, created_at, updated_at")
+      .select("id, name, code, country, address, latitude, longitude, immigration_available, active, created_at, updated_at")
       .single();
     if (error) mutationError(error, "port");
     return port as Omit<PortDirectoryPort, "company_id">;
