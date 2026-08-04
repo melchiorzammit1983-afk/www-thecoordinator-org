@@ -50,8 +50,8 @@ import { Route as AuthenticatedCoordinatorStatementsRouteImport } from './routes
 import { Route as AuthenticatedCoordinatorShipOperationsRouteImport } from './routes/_authenticated/coordinator.ship-operations'
 import { Route as AuthenticatedCoordinatorReferRouteImport } from './routes/_authenticated/coordinator.refer'
 import { Route as AuthenticatedCoordinatorPricingRouteImport } from './routes/_authenticated/coordinator.pricing'
-import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
 import { Route as AuthenticatedCoordinatorPortsRouteImport } from './routes/_authenticated/coordinator.ports'
+import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_authenticated/coordinator.portals'
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
 import { Route as AuthenticatedCoordinatorOperationsRouteImport } from './routes/_authenticated/coordinator.operations'
@@ -324,16 +324,16 @@ const AuthenticatedCoordinatorPricingRoute =
     path: '/pricing',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
-const AuthenticatedCoordinatorPortalsRoute =
-  AuthenticatedCoordinatorPortalsRouteImport.update({
-    id: '/portals',
-    path: '/portals',
-    getParentRoute: () => AuthenticatedCoordinatorRoute,
-  } as any)
 const AuthenticatedCoordinatorPortsRoute =
   AuthenticatedCoordinatorPortsRouteImport.update({
     id: '/ports',
     path: '/ports',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPortalsRoute =
+  AuthenticatedCoordinatorPortalsRouteImport.update({
+    id: '/portals',
+    path: '/portals',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorPortalLinksRoute =
@@ -1634,13 +1634,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorShipOperationsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
-    '/_authenticated/coordinator/ports': {
-      id: '/_authenticated/coordinator/ports'
-      path: '/ports'
-      fullPath: '/coordinator/ports'
-      preLoaderRoute: typeof AuthenticatedCoordinatorPortsRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorRoute
-    }
     '/_authenticated/coordinator/refer': {
       id: '/_authenticated/coordinator/refer'
       path: '/refer'
@@ -1653,6 +1646,13 @@ declare module '@tanstack/react-router' {
       path: '/pricing'
       fullPath: '/coordinator/pricing'
       preLoaderRoute: typeof AuthenticatedCoordinatorPricingRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/coordinator/ports': {
+      id: '/_authenticated/coordinator/ports'
+      path: '/ports'
+      fullPath: '/coordinator/ports'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPortsRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
     '/_authenticated/coordinator/portals': {
