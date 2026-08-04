@@ -6688,6 +6688,140 @@ export type Database = {
           },
         ]
       }
+      ship_event_port_change_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          id: string
+          new_berth_id: string | null
+          new_berth_name: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id: string | null
+          previous_berth_name: string | null
+          previous_port_id: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id?: string
+          new_port_name?: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_new_port_id_fkey"
+            columns: ["new_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_port_change_reviews: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          history_id: string
+          id: string
+          new_berth_name: string | null
+          new_port_name: string
+          previous_berth_name: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          changed_at: string
+          changed_by?: string | null
+          company_id: string
+          history_id: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          history_id?: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name?: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_history_id_fkey"
+            columns: ["history_id"]
+            isOneToOne: false
+            referencedRelation: "ship_event_port_change_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_events: {
         Row: {
           actual_arrival: string | null
@@ -8048,6 +8182,16 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      update_ship_event_port_with_review: {
+        Args: {
+          p_berth_id: string
+          p_changed_by: string
+          p_company_id: string
+          p_port_id: string
+          p_ship_event_id: string
+        }
+        Returns: Json
       }
       verify_trip_audit_chain: {
         Args: { _job_id: string }
