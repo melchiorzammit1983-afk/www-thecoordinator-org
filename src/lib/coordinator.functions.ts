@@ -656,6 +656,10 @@ const jobInput = z.object({
   to_location: z.string().trim().min(1).max(255),
   from_location_type: bookingEndpointTypeInput.optional(),
   to_location_type: bookingEndpointTypeInput.optional(),
+  from_port_id: z.string().uuid().nullable().optional(),
+  from_berth_id: z.string().uuid().nullable().optional(),
+  to_port_id: z.string().uuid().nullable().optional(),
+  to_berth_id: z.string().uuid().nullable().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   flightorship: z.string().trim().max(120).optional().or(z.literal("")),
@@ -830,6 +834,38 @@ async function assertCompanyShipEvent(supabaseAdmin: any, companyId: string, eve
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data || data.company_id !== companyId) throw new Error("Choose a Ship from your company.");
+}
+
+async function assertCompanyPortSelection(
+  supabaseAdmin: any,
+  companyId: string,
+  portId: string | null | undefined,
+  berthId: string | null | undefined,
+) {
+  if (berthId && !portId) throw new Error("A berth must belong to a selected Port.");
+  if (!portId) return null;
+  const { data: port, error: portError } = await supabaseAdmin
+    .from("ports")
+    .select("id, name, address, active")
+    .eq("id", portId)
+    .eq("company_id", companyId)
+    .eq("active", true)
+    .maybeSingle();
+  if (portError) throw new Error(portError.message);
+  if (!port) throw new Error("Choose an active Port from your company.");
+  if (berthId) {
+    const { data: berth, error: berthError } = await supabaseAdmin
+      .from("berths")
+      .select("id, address_override, active")
+      .eq("id", berthId)
+      .eq("port_id", portId)
+      .eq("active", true)
+      .maybeSingle();
+    if (berthError) throw new Error(berthError.message);
+    if (!berth) throw new Error("Choose an active Berth belonging to the selected Port.");
+    return { ...port, address: berth.address_override || port.address };
+  }
+  return port;
 }
 
 async function resolveScheduledTransportPickup(
@@ -1473,6 +1509,10 @@ export const createJob = createServerFn({ method: "POST" })
     const supabaseAdmin = await getAdminClient();
     assertCompleteBookingEndpointTypes(data);
     const journey = resolveJourneyForBookingInput(data);
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, data.from_port_id, data.from_berth_id);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, data.to_port_id, data.to_berth_id);
+    if (fromPort && data.from_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (toPort && data.to_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
     if (data.flight_schedule_record_id && data.ship_event_id) {
       throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
     }
@@ -1502,10 +1542,14 @@ export const createJob = createServerFn({ method: "POST" })
       .from("jobs")
       .insert({
         company_id: c.id,
-        from_location: data.from_location,
-        to_location: data.to_location,
+        from_location: fromPort?.address ?? data.from_location,
+        to_location: toPort?.address ?? data.to_location,
         from_location_type: data.from_location_type ?? null,
         to_location_type: data.to_location_type ?? null,
+        from_port_id: data.from_port_id ?? null,
+        from_berth_id: data.from_berth_id ?? null,
+        to_port_id: data.to_port_id ?? null,
+        to_berth_id: data.to_berth_id ?? null,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         pickup_at: scheduledPickup.pickup_at,
@@ -1572,7 +1616,7 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, from_location_type, to_location_type, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
@@ -1598,6 +1642,16 @@ export const updateJob = createServerFn({ method: "POST" })
     const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
     const effectiveOnwardFlightId = data.onward_flight_schedule_record_id === undefined ? existingOnwardFlightId : data.onward_flight_schedule_record_id;
     const effectiveOnwardShipId = data.onward_ship_event_id === undefined ? existingOnwardShipId : data.onward_ship_event_id;
+    const effectiveFromPortId = data.from_port_id === undefined ? (existing as any).from_port_id : data.from_port_id;
+    const effectiveFromBerthId = data.from_berth_id === undefined ? (existing as any).from_berth_id : data.from_berth_id;
+    const effectiveToPortId = data.to_port_id === undefined ? (existing as any).to_port_id : data.to_port_id;
+    const effectiveToBerthId = data.to_berth_id === undefined ? (existing as any).to_berth_id : data.to_berth_id;
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, effectiveFromPortId, effectiveFromBerthId);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, effectiveToPortId, effectiveToBerthId);
+    const nextFromLocation = fromPort?.address ?? data.from_location;
+    const nextToLocation = toPort?.address ?? data.to_location;
+    if (fromPort && effectiveFromEndpointType !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (toPort && effectiveToEndpointType !== "port") throw new Error("A Port location must use endpoint type Port.");
     if (effectiveFlightId && effectiveShipId) {
       throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
     }
@@ -1636,10 +1690,14 @@ export const updateJob = createServerFn({ method: "POST" })
     if (!c.isAdmin && isJobLocked(lockable)) {
       // Compare and stage only actually changed fields.
       const proposed: Record<string, unknown> = {
-        from_location: data.from_location,
-        to_location: data.to_location,
+        from_location: nextFromLocation,
+        to_location: nextToLocation,
         from_location_type: effectiveFromEndpointType,
         to_location_type: effectiveToEndpointType,
+        from_port_id: effectiveFromPortId,
+        from_berth_id: effectiveFromBerthId,
+        to_port_id: effectiveToPortId,
+        to_berth_id: effectiveToBerthId,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         vehicle: data.vehicle || null,
@@ -1685,11 +1743,11 @@ export const updateJob = createServerFn({ method: "POST" })
     }
 
     // If the address changed, invalidate cached name + ETA so we recompute.
-    const fromChanged = (existing as any).from_location !== data.from_location;
-    const toChanged = (existing as any).to_location !== data.to_location;
+    const fromChanged = (existing as any).from_location !== nextFromLocation;
+    const toChanged = (existing as any).to_location !== nextToLocation;
     const patch: Record<string, any> = {
-      from_location: data.from_location,
-      to_location: data.to_location,
+      from_location: nextFromLocation,
+      to_location: nextToLocation,
       date: scheduledPickup.date,
       time: scheduledPickup.time,
       pickup_at: scheduledPickup.pickup_at,
@@ -1703,6 +1761,10 @@ export const updateJob = createServerFn({ method: "POST" })
       notes: data.notes || null,
       contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
+      from_port_id: effectiveFromPortId,
+      from_berth_id: effectiveFromBerthId,
+      to_port_id: effectiveToPortId,
+      to_berth_id: effectiveToBerthId,
     };
     if (data.pickup_place_id !== undefined) patch.pickup_place_id = data.pickup_place_id || null;
     if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
@@ -3176,6 +3238,10 @@ const bulkTripInput = z.object({
         to_location: z.string().trim().min(1).max(255),
         from_location_type: bookingEndpointTypeInput.optional(),
         to_location_type: bookingEndpointTypeInput.optional(),
+        from_port_id: z.string().uuid().nullable().optional(),
+        from_berth_id: z.string().uuid().nullable().optional(),
+        to_port_id: z.string().uuid().nullable().optional(),
+        to_berth_id: z.string().uuid().nullable().optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
         flightorship: z.string().trim().max(120).optional().default(""),
@@ -3244,16 +3310,24 @@ export const createJobsBulk = createServerFn({ method: "POST" })
     for (const t of data.trips) {
       const endpointTypes = normalizeBookingEndpointTypes(t, { defaultMissingToLocal: true });
       const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
+      const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, t.from_port_id, t.from_berth_id);
+      const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, t.to_port_id, t.to_berth_id);
+      if (fromPort && endpointTypes.fromLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
+      if (toPort && endpointTypes.toLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")
         .insert({
           company_id: c.id,
-          from_location: t.from_location,
-          to_location: t.to_location,
+          from_location: fromPort?.address ?? t.from_location,
+          to_location: toPort?.address ?? t.to_location,
           from_location_type: endpointTypes.fromLocationType,
           to_location_type: endpointTypes.toLocationType,
+          from_port_id: t.from_port_id ?? null,
+          from_berth_id: t.from_berth_id ?? null,
+          to_port_id: t.to_port_id ?? null,
+          to_berth_id: t.to_berth_id ?? null,
           date: t.date,
           time,
           pickup_at,
