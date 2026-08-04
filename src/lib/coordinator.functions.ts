@@ -807,6 +807,175 @@ type OperationsInboxShipPortChange = {
   ship_events: { ship_name: string; company_id: string } | null;
 };
 
+type OperationsInboxShipDepartureWarning = {
+  id: string;
+  ship_event_id: string;
+  expected_departure: string;
+  incomplete_trip_count: number;
+  unresolved_status_count: number;
+  trips_needing_review_count: number;
+  ship_event: { ship_name: string } | null;
+};
+
+const READINESS_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Reconciles the one current departure-readiness warning per ship. This is a
+ * warning-only side effect: it never changes jobs, trips, passengers, or ship
+ * lifecycle state. The immutable audit records each transition.
+ */
+async function refreshShipDepartureReadinessWarnings(
+  tables: any,
+  companyId: string,
+  jobScope: string,
+): Promise<OperationsInboxShipDepartureWarning[]> {
+  const [eventsResult, jobsResult, paxResult, warningsResult] = await Promise.all([
+    tables
+      .from("ship_events")
+      .select("id, expected_departure, status, archived_at, ship_name")
+      .eq("company_id", companyId)
+      .limit(10_000),
+    tables
+      .from("jobs")
+      .select("id, ship_event_id, status, needs_review")
+      .or(jobScope)
+      .not("ship_event_id", "is", null)
+      .limit(10_000),
+    tables.from("pax").select("id, job_id, status").limit(10_000),
+    tables
+      .from("ship_departure_readiness_warnings")
+      .select("id, company_id, ship_event_id, active, expected_departure, incomplete_trip_count, unresolved_status_count, trips_needing_review_count")
+      .eq("company_id", companyId)
+      .limit(10_000),
+  ]);
+  for (const result of [eventsResult, jobsResult, paxResult, warningsResult]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  const jobs = (jobsResult.data ?? []) as Array<{ id: string; ship_event_id: string; status: string | null; needs_review: boolean | null }>;
+  const jobIds = new Set(jobs.map((job) => job.id));
+  const pax = ((paxResult.data ?? []) as Array<{ id: string; job_id: string; status: string | null }>).filter((row) => jobIds.has(row.job_id));
+  const jobsByShip = new Map<string, typeof jobs>();
+  for (const job of jobs) {
+    const current = jobsByShip.get(job.ship_event_id) ?? [];
+    current.push(job);
+    jobsByShip.set(job.ship_event_id, current);
+  }
+  const paxByJob = new Map<string, typeof pax>();
+  for (const row of pax) {
+    const current = paxByJob.get(row.job_id) ?? [];
+    current.push(row);
+    paxByJob.set(row.job_id, current);
+  }
+  const existingByShip = new Map<string, any>(
+    ((warningsResult.data ?? []) as any[]).map((warning) => [warning.ship_event_id, warning]),
+  );
+  const now = Date.now();
+
+  for (const event of (eventsResult.data ?? []) as Array<{ id: string; expected_departure: string | null; status: string | null; archived_at: string | null; ship_name: string }>) {
+    const existing = existingByShip.get(event.id);
+    const linkedJobs = jobsByShip.get(event.id) ?? [];
+    const incompleteJobs = linkedJobs.filter((job) => !["completed", "cancelled"].includes((job.status ?? "").toLowerCase()));
+    const needsReview = linkedJobs.filter((job) => job.needs_review === true).length;
+    const unresolvedStatuses = incompleteJobs.reduce((count, job) => count + (paxByJob.get(job.id) ?? []).filter((row) => !["completed", "cancelled"].includes((row.status ?? "").toLowerCase())).length, 0);
+    const departureMs = event.expected_departure ? new Date(event.expected_departure).getTime() : NaN;
+    const remainingMs = departureMs - now;
+    const scheduleChanged = !!existing && event.expected_departure !== existing.expected_departure;
+    const withinWindow = Number.isFinite(departureMs) && remainingMs >= 0 && remainingMs <= READINESS_WINDOW_MS;
+    const previousWarningStillRelevant = existing?.active === true && !scheduleChanged && Number.isFinite(departureMs) && remainingMs < 0;
+    const lifecycleClosed = !!event.archived_at || ["cancelled", "departed", "archived"].includes((event.status ?? "").toLowerCase());
+    const shouldWarn = !lifecycleClosed && incompleteJobs.length > 0 && (withinWindow || previousWarningStillRelevant);
+
+    if (shouldWarn && existing?.active === true) {
+      const { error } = await tables
+        .from("ship_departure_readiness_warnings")
+        .update({
+          expected_departure: event.expected_departure,
+          incomplete_trip_count: incompleteJobs.length,
+          unresolved_status_count: unresolvedStatuses,
+          trips_needing_review_count: needsReview,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .eq("company_id", companyId);
+      if (error) throw new Error(error.message);
+    } else if (shouldWarn && (!existing || existing.active === false)) {
+      let warningId = existing?.id as string | undefined;
+      if (warningId) {
+        const { error } = await tables
+          .from("ship_departure_readiness_warnings")
+          .update({
+            active: true,
+            expected_departure: event.expected_departure,
+            incomplete_trip_count: incompleteJobs.length,
+            unresolved_status_count: unresolvedStatuses,
+            trips_needing_review_count: needsReview,
+            updated_at: new Date().toISOString(),
+            resolved_at: null,
+          })
+          .eq("id", warningId)
+          .eq("company_id", companyId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { data: warning, error } = await tables
+          .from("ship_departure_readiness_warnings")
+          .insert({
+            company_id: companyId,
+            ship_event_id: event.id,
+            expected_departure: event.expected_departure,
+            incomplete_trip_count: incompleteJobs.length,
+            unresolved_status_count: unresolvedStatuses,
+            trips_needing_review_count: needsReview,
+          })
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        warningId = warning.id as string;
+      }
+      const { error } = await tables.from("ship_departure_readiness_warning_audit").insert({
+        company_id: companyId,
+        warning_id: warningId,
+        ship_event_id: event.id,
+        event_type: "created",
+        expected_departure: event.expected_departure,
+        incomplete_trip_count: incompleteJobs.length,
+        unresolved_status_count: unresolvedStatuses,
+        trips_needing_review_count: needsReview,
+      });
+      if (error) throw new Error(error.message);
+    } else if (existing?.active === true) {
+      const { error } = await tables
+        .from("ship_departure_readiness_warnings")
+        .update({ active: false, updated_at: new Date().toISOString(), resolved_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .eq("company_id", companyId);
+      if (error) throw new Error(error.message);
+      const { error: auditError } = await tables.from("ship_departure_readiness_warning_audit").insert({
+        company_id: companyId,
+        warning_id: existing.id,
+        ship_event_id: event.id,
+        event_type: "resolved",
+        expected_departure: existing.expected_departure,
+        incomplete_trip_count: incompleteJobs.length,
+        unresolved_status_count: unresolvedStatuses,
+        trips_needing_review_count: needsReview,
+      });
+      if (auditError) throw new Error(auditError.message);
+    }
+  }
+
+  const { data: activeWarnings, error: activeError } = await tables
+    .from("ship_departure_readiness_warnings")
+    .select("id, ship_event_id, expected_departure, incomplete_trip_count, unresolved_status_count, trips_needing_review_count, ship_event:ship_events!inner(ship_name, company_id)")
+    .eq("company_id", companyId)
+    .eq("active", true)
+    .eq("ship_events.company_id", companyId)
+    .order("expected_departure", { ascending: true })
+    .limit(10_000);
+  if (activeError) throw new Error(activeError.message);
+  return (activeWarnings ?? []) as OperationsInboxShipDepartureWarning[];
+}
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -1202,6 +1371,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
 
     const isAdmin = await getIsAdmin(context.userId);
+    const shipDepartureWarnings = await refreshShipDepartureReadinessWarnings(tables, c.id, jobScope);
     const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult, shipPortChangeReviewsResult, allShipJobsResult] = await Promise.all([
       tables
         .from("flight_schedule_records")
@@ -1415,6 +1585,26 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         };
       });
 
+    const departureReadinessItems = shipDepartureWarnings.map((warning) => {
+      const remainingMinutes = Math.max(0, Math.ceil((new Date(warning.expected_departure).getTime() - Date.now()) / 60_000));
+      const hours = Math.floor(remainingMinutes / 60);
+      const minutes = remainingMinutes % 60;
+      const remaining = hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+      return {
+        id: `ship-departure-readiness-${warning.id}`,
+        type: "Ship departure readiness warning" as const,
+        priority: "high" as const,
+        transport: warning.ship_event?.ship_name ?? "Ship event",
+        detail: `Expected departure ${formatMaltaDateTime(warning.expected_departure, { dateStyle: "medium", timeStyle: "short" })} · ${remaining} remaining · ${warning.incomplete_trip_count} incomplete trip${warning.incomplete_trip_count === 1 ? "" : "s"} · ${warning.unresolved_status_count} unresolved passenger/crew status${warning.unresolved_status_count === 1 ? "" : "es"} · ${warning.trips_needing_review_count} needing review`,
+        affectedTrips: warning.incomplete_trip_count,
+        action: "Review trip(s)",
+        href: "/coordinator/calendar",
+        reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
+      };
+    });
+
     const reviewedConflictJobIds = new Set(
       ((transportConflictReviewsResult.data ?? []) as Array<{ job_id: string }>).map((review) => review.job_id),
     );
@@ -1439,8 +1629,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       }));
 
     return {
-      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + shipPortChanges.length + transportConflicts.length,
-      items: [...transportConflicts, ...shipPortChanges, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + shipPortChanges.length + departureReadinessItems.length + transportConflicts.length,
+      items: [...transportConflicts, ...departureReadinessItems, ...shipPortChanges, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 
