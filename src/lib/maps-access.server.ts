@@ -69,6 +69,15 @@ async function subjectForToken(token: string): Promise<string | null> {
     .maybeSingle();
   if (company && company.status === "approved") return `company:${company.id}`;
 
+  const { data: guest } = await sb
+    .from("portal_guest_sessions" as any)
+    .select("id, expires_at")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (guest && (!(guest as any).expires_at || new Date((guest as any).expires_at).getTime() > Date.now())) {
+    return `guest:${(guest as any).id}`;
+  }
+
   const { data: job } = await sb
     .from("jobs")
     .select("id")

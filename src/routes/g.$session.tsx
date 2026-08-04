@@ -185,8 +185,8 @@ function BookingForm({ boot, session, onCreated }: { boot: Boot; session: string
       )}
 
       <div className="rounded-xl border p-3 bg-card grid grid-cols-1 gap-2">
-        <div><Label className="text-xs">From</Label><AddressAutocomplete value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
-        <div><Label className="text-xs">To</Label><AddressAutocomplete value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
+        <div><Label className="text-xs">From</Label><AddressAutocomplete publicToken={session} value={from} onChange={(value) => { setFrom(value.address); setFromLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Hotel / your address" /></div>
+        <div><Label className="text-xs">To</Label><AddressAutocomplete publicToken={session} value={to} onChange={(value) => { setTo(value.address); setToLocationType(classifyProviderEndpoint(value.place_types)); }} placeholder="Airport, restaurant, …" /></div>
         <TokenPortPicker ports={boot.ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); setFromLocationType(portId ? "port" : "local"); if (address) setFrom(address); }} />
         <TokenPortPicker ports={boot.ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); setToLocationType(portId ? "port" : "local"); if (address) setTo(address); }} />
         <div className="grid grid-cols-2 gap-2">

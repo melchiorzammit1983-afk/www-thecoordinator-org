@@ -47,7 +47,7 @@ import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { resolveAddresses, estimateRouteEta } from "@/lib/places.functions";
 import { useAddressSettings, toBias } from "@/hooks/use-address-settings";
 import { formatEta } from "@/lib/trip-display";
-import { Clock, AlertTriangle } from "lucide-react";
+import { Clock, AlertTriangle, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { previewAssignmentConflicts, suggestAlternativeDrivers, type ConflictPair } from "@/lib/scheduling.functions";
 import { ConflictTimelineDialog } from "@/components/coordinator/ConflictTimelineDialog";
 import { RoutePinsMap } from "@/components/coordinator/RoutePinsMap";
@@ -642,6 +642,10 @@ function ManualForm({
     mutationFn: async () => {
       const effFrom = from || (fromFlight ? "Airport" : "");
       const effTo = to || (toFlight ? "Airport" : "");
+      // Guard client-side: the server requires both endpoints, and a raw Zod
+      // error here reads as a blank-screen crash instead of a fixable hint.
+      if (!effFrom.trim()) throw new Error("Add a pickup location before saving.");
+      if (!effTo.trim()) throw new Error("Add a drop-off location before saving.");
       const incompletePassengerIndex = passengers.findIndex((passenger) =>
         !passenger.name.trim() && (!!passenger.phone.trim() || !!passenger.note.trim()),
       );
