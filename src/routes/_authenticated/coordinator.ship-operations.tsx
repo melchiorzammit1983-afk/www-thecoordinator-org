@@ -23,6 +23,7 @@ import {
   type ShipEvent,
   updateShipEventEta,
   updateShipEventLifecycle,
+  updateShipEventPort,
   cancelShipEvent,
   archiveShipEvent,
   unarchiveShipEvent,
@@ -41,6 +42,7 @@ function ShipOperationsPage() {
   const createFn = useServerFn(createShipEvent);
   const updateEtaFn = useServerFn(updateShipEventEta);
   const updateLifecycleFn = useServerFn(updateShipEventLifecycle);
+  const updatePortFn = useServerFn(updateShipEventPort);
   const cancelFn = useServerFn(cancelShipEvent);
   const archiveFn = useServerFn(archiveShipEvent);
   const unarchiveFn = useServerFn(unarchiveShipEvent);
@@ -58,6 +60,9 @@ function ShipOperationsPage() {
   const [editedExpectedDeparture, setEditedExpectedDeparture] = useState("");
   const [editedActualArrival, setEditedActualArrival] = useState("");
   const [editedActualDeparture, setEditedActualDeparture] = useState("");
+  const [portEditing, setPortEditing] = useState<ShipEvent | null>(null);
+  const [editedPortId, setEditedPortId] = useState("");
+  const [editedBerthId, setEditedBerthId] = useState("");
   const { data: ports = [] } = useQuery({
     queryKey: ["port-directory-active-for-ships"],
     queryFn: () => listPortsFn({ data: {} }) as Promise<Omit<PortDirectoryPort, "company_id">[]>,
@@ -66,6 +71,11 @@ function ShipOperationsPage() {
     queryKey: ["port-directory-ship-berths", portId],
     queryFn: () => portDetailFn({ data: { id: portId!, include_inactive: false } }),
     enabled: !!portId,
+  });
+  const { data: editingPort } = useQuery({
+    queryKey: ["port-directory-edit-ship-berths", editedPortId],
+    queryFn: () => portDetailFn({ data: { id: editedPortId, include_inactive: false } }),
+    enabled: !!editedPortId,
   });
 
   const {
@@ -111,6 +121,11 @@ function ShipOperationsPage() {
     onSuccess: () => { setLifecycleEditing(null); refresh(); toast.success("Ship lifecycle updated"); },
     onError: (reason: Error) => toast.error(reason.message),
   });
+  const updatePort = useMutation({
+    mutationFn: () => updatePortFn({ data: { id: portEditing!.id, port_id: editedPortId, berth_id: editedBerthId || null } }),
+    onSuccess: (result) => { setPortEditing(null); refresh(); toast.success(result.changed ? "Ship Port/Berth updated" : "No Port/Berth change detected"); },
+    onError: (reason: Error) => toast.error(reason.message),
+  });
   const cancel = useMutation({
     mutationFn: (id: string) => cancelFn({ data: { id } }),
     onSuccess: () => { refresh(); toast.success("Ship event cancelled"); },
@@ -138,6 +153,12 @@ function ShipOperationsPage() {
     setEditedExpectedDeparture(event.expected_departure ? `${isoToMaltaDateTime(event.expected_departure).date}T${isoToMaltaDateTime(event.expected_departure).time}` : "");
     setEditedActualArrival(event.actual_arrival ? `${isoToMaltaDateTime(event.actual_arrival).date}T${isoToMaltaDateTime(event.actual_arrival).time}` : "");
     setEditedActualDeparture(event.actual_departure ? `${isoToMaltaDateTime(event.actual_departure).date}T${isoToMaltaDateTime(event.actual_departure).time}` : "");
+  }
+
+  function openPortEditor(event: ShipEvent) {
+    setPortEditing(event);
+    setEditedPortId(event.port_id ?? "");
+    setEditedBerthId(event.berth_id ?? "");
   }
 
   return (
@@ -262,6 +283,7 @@ function ShipOperationsPage() {
                       <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit ETA
                     </Button>
                     {!event.archived_at && event.status !== "cancelled" ? <>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openPortEditor(event)}>Port / Berth</Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => openLifecycleEditor(event)}>Lifecycle</Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => cancel.mutate(event.id)} disabled={cancel.isPending}>Cancel</Button>
                     </> : null}
@@ -281,6 +303,33 @@ function ShipOperationsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(portEditing)} onOpenChange={(open) => !open && setPortEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit ship Port / Berth</DialogTitle>
+            <DialogDescription>{portEditing?.ship_name ?? "Ship event"} — changes create a review item when linked trips exist.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); updatePort.mutate(); }} className="space-y-4">
+            <Field label="Port" htmlFor="edit-ship-port">
+              <select id="edit-ship-port" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editedPortId} onChange={(event) => { setEditedPortId(event.target.value); setEditedBerthId(""); }} required>
+                <option value="">Select a port</option>
+                {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
+              </select>
+            </Field>
+            <Field label="Berth (optional)" htmlFor="edit-ship-berth">
+              <select id="edit-ship-berth" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editedBerthId} onChange={(event) => setEditedBerthId(event.target.value)} disabled={!editedPortId}>
+                <option value="">No berth selected</option>
+                {(editingPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPortEditing(null)}>Cancel</Button>
+              <Button type="submit" disabled={updatePort.isPending || !editedPortId}>{updatePort.isPending ? "Saving…" : "Save Port / Berth"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(lifecycleEditing)} onOpenChange={(open) => !open && setLifecycleEditing(null)}>
         <DialogContent>

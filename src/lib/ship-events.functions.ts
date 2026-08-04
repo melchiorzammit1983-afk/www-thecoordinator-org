@@ -264,6 +264,35 @@ export const updateShipEventLifecycle = createServerFn({ method: "POST" })
     return event as ShipEvent;
   });
 
+export const updateShipEventPort = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({
+    id: z.string().uuid(),
+    port_id: z.string().uuid(),
+    berth_id: z.string().uuid().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    const { data: result, error } = await shipEventsTable(sb).rpc("update_ship_event_port_with_review", {
+      p_ship_event_id: data.id,
+      p_company_id: companyId,
+      p_port_id: data.port_id,
+      p_berth_id: data.berth_id ?? null,
+      p_changed_by: context.userId,
+    });
+    if (error) throw new Error(error.message);
+    const changed = Boolean((result as { changed?: boolean } | null)?.changed);
+    const { data: event, error: eventError } = await shipEventsTable(sb)
+      .from("ship_events")
+      .select(shipEventSelect)
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .single();
+    if (eventError) throw new Error(eventError.message);
+    return { changed, event: event as ShipEvent };
+  });
+
 export const cancelShipEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))

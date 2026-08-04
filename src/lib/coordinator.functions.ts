@@ -796,6 +796,17 @@ type OperationsInboxShipEtaChange = {
   } | null;
 };
 
+type OperationsInboxShipPortChange = {
+  id: string;
+  ship_event_id: string;
+  previous_port_name: string | null;
+  previous_berth_name: string | null;
+  new_port_name: string;
+  new_berth_name: string | null;
+  changed_at: string;
+  ship_events: { ship_name: string; company_id: string } | null;
+};
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -1191,7 +1202,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
 
     const isAdmin = await getIsAdmin(context.userId);
-    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult] = await Promise.all([
+    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult, shipPortChangeReviewsResult, allShipJobsResult] = await Promise.all([
       tables
         .from("flight_schedule_records")
         .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
@@ -1236,8 +1247,20 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         .limit(10_000),
       tables.from("companies").select("minimum_connection_buffer_minutes").eq("id", c.id).single(),
       tables.from("transport_conflict_reviews").select("job_id").eq("company_id", c.id).limit(10_000),
+      tables
+        .from("ship_event_port_change_reviews")
+        .select("id, ship_event_id, previous_port_name, previous_berth_name, new_port_name, new_berth_name, changed_at, ship_events!inner(ship_name, company_id)")
+        .eq("ship_events.company_id", c.id)
+        .order("changed_at", { ascending: false })
+        .limit(10_000),
+      tables
+        .from("jobs")
+        .select("id, ship_event_id")
+        .or(jobScope)
+        .not("ship_event_id", "is", null)
+        .limit(10_000),
     ]);
-    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult]) {
+    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult, shipPortChangeReviewsResult, allShipJobsResult]) {
       if (result.error) throw new Error(result.error.message);
     }
 
@@ -1248,6 +1271,11 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     for (const job of jobs) {
       if (!job.ship_event_id) continue;
       linkedTripCountByShipId.set(job.ship_event_id, (linkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
+    }
+    const allLinkedTripCountByShipId = new Map<string, number>();
+    for (const job of (allShipJobsResult.data ?? []) as Array<{ ship_event_id: string | null }>) {
+      if (!job.ship_event_id) continue;
+      allLinkedTripCountByShipId.set(job.ship_event_id, (allLinkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
     }
     const activeFlights = (activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>;
     const flightsById = new Map(activeFlights.map((flight) => [flight.id, flight]));
@@ -1359,6 +1387,34 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         };
       });
 
+    const reviewedPortShipIds = new Set<string>();
+    const shipPortChanges = ((shipPortChangeReviewsResult.data ?? []) as OperationsInboxShipPortChange[])
+      .filter((change) => (allLinkedTripCountByShipId.get(change.ship_event_id) ?? 0) > 0)
+      .filter((change) => {
+        if (reviewedPortShipIds.has(change.ship_event_id)) return false;
+        reviewedPortShipIds.add(change.ship_event_id);
+        return true;
+      })
+      .map((change) => {
+        const linkedTrips = allLinkedTripCountByShipId.get(change.ship_event_id) ?? 0;
+        const ship = change.ship_events;
+        const previous = `${change.previous_port_name ?? "—"}${change.previous_berth_name ? ` · ${change.previous_berth_name}` : ""}`;
+        const current = `${change.new_port_name}${change.new_berth_name ? ` · ${change.new_berth_name}` : ""}`;
+        return {
+          id: `ship-port-${change.id}`,
+          type: "Ship Port/Berth changed" as const,
+          priority: "high" as const,
+          transport: ship?.ship_name ?? "Ship event",
+          detail: `Previous ${previous} · Current ${current} · Changed ${formatMaltaDateTime(change.changed_at, { dateStyle: "medium", timeStyle: "short" })}`,
+          affectedTrips: linkedTrips,
+          action: "Review trip(s)",
+          href: "/coordinator/calendar",
+          reviewHistoryId: change.id,
+          reviewKind: null,
+          reviewTargetId: null,
+        };
+      });
+
     const reviewedConflictJobIds = new Set(
       ((transportConflictReviewsResult.data ?? []) as Array<{ job_id: string }>).map((review) => review.job_id),
     );
@@ -1383,8 +1439,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       }));
 
     return {
-      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + transportConflicts.length,
-      items: [...transportConflicts, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + shipPortChanges.length + transportConflicts.length,
+      items: [...transportConflicts, ...shipPortChanges, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 
