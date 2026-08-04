@@ -59,6 +59,7 @@ function ShipOperationsPage() {
   const [shipName, setShipName] = useState("");
   const [eta, setEta] = useState("");
   const [expectedDeparture, setExpectedDeparture] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const [port, setPort] = useState("");
   const [portId, setPortId] = useState<string | null>(null);
   const [berthId, setBerthId] = useState<string | null>(null);
@@ -97,8 +98,9 @@ function ShipOperationsPage() {
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["ship-events"] });
   const create = useMutation({
-    mutationFn: () => createFn({ data: { ship_name: shipName, eta, expected_departure: expectedDeparture, port, port_id: portId, berth_id: berthId } }),
+    mutationFn: (payload: { ship_name: string; eta: string; expected_departure: string; port: string; port_id: string | null; berth_id: string | null }) => createFn({ data: payload }),
     onSuccess: () => {
+      setCreateError(null);
       setShipName("");
       setEta("");
       setExpectedDeparture("");
@@ -108,7 +110,11 @@ function ShipOperationsPage() {
       refresh();
       toast.success("Ship event created");
     },
-    onError: (reason: Error) => toast.error(reason.message),
+    onError: (reason: Error) => {
+      const message = reason?.message || "Ship event could not be created.";
+      setCreateError(message);
+      toast.error(message);
+    },
   });
   const updateEta = useMutation({
     mutationFn: () => updateEtaFn({ data: { id: editing!.id, eta: editedEta } }),
@@ -195,12 +201,21 @@ function ShipOperationsPage() {
             className="grid gap-3 md:grid-cols-[1.2fr_1fr_1.2fr_1.2fr_auto] md:items-end"
             onSubmit={(event) => {
               event.preventDefault();
-              create.mutate();
+              const formData = new FormData(event.currentTarget);
+              create.mutate({
+                ship_name: String(formData.get("ship_name") ?? ""),
+                eta: String(formData.get("eta") ?? ""),
+                expected_departure: String(formData.get("expected_departure") ?? ""),
+                port,
+                port_id: String(formData.get("port_id") ?? "") || null,
+                berth_id: String(formData.get("berth_id") ?? "") || null,
+              });
             }}
           >
             <Field label="Ship name" htmlFor="ship-name">
               <Input
                 id="ship-name"
+                name="ship_name"
                 value={shipName}
                 onChange={(event) => setShipName(event.target.value)}
                 maxLength={200}
@@ -211,6 +226,7 @@ function ShipOperationsPage() {
             <Field label="ETA" htmlFor="ship-eta">
               <Input
                 id="ship-eta"
+                name="eta"
                 type="datetime-local"
                 value={eta}
                 onChange={(event) => setEta(event.target.value)}
@@ -218,16 +234,16 @@ function ShipOperationsPage() {
               />
             </Field>
             <Field label="Expected departure" htmlFor="ship-expected-departure">
-              <Input id="ship-expected-departure" type="datetime-local" value={expectedDeparture} onChange={(event) => setExpectedDeparture(event.target.value)} required />
+              <Input id="ship-expected-departure" name="expected_departure" type="datetime-local" value={expectedDeparture} onChange={(event) => setExpectedDeparture(event.target.value)} required />
             </Field>
             <Field label="Port" htmlFor="ship-port">
-              <select id="ship-port" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={portId ?? ""} onChange={(event) => { const next = event.target.value || null; setPortId(next); setBerthId(null); setPort(ports.find((item) => item.id === next)?.name ?? ""); }} required>
+              <select id="ship-port" name="port_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={portId ?? ""} onChange={(event) => { const next = event.target.value || null; setPortId(next); setBerthId(null); setPort(ports.find((item) => item.id === next)?.name ?? ""); }} required>
                 <option value="">Select a port</option>
                 {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
               </select>
             </Field>
             <Field label="Berth (optional)" htmlFor="ship-berth">
-              <select id="ship-berth" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={berthId ?? ""} onChange={(event) => setBerthId(event.target.value || null)} disabled={!portId}>
+              <select id="ship-berth" name="berth_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={berthId ?? ""} onChange={(event) => setBerthId(event.target.value || null)} disabled={!portId}>
                 <option value="">No berth selected</option>
                 {(selectedPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
@@ -236,6 +252,7 @@ function ShipOperationsPage() {
             <Button type="submit" disabled={create.isPending || !portId}>
               <Plus className="mr-1.5 h-4 w-4" /> {create.isPending ? "Creating…" : "Create"}
             </Button>
+            {createError ? <p role="alert" className="text-sm text-destructive md:col-span-full">{createError}</p> : null}
           </form>
         </CardContent>
       </Card>
