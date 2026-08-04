@@ -2,12 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
 import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
+import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 
 const BookingInput = z.object({
   from_location: z.string().min(1).max(200),
   to_location: z.string().min(1).max(200),
   from_location_type: z.enum(["airport", "port", "local"]).optional(),
   to_location_type: z.enum(["airport", "port", "local"]).optional(),
+  from_port_id: z.string().uuid().nullable().optional(),
+  from_berth_id: z.string().uuid().nullable().optional(),
+  to_port_id: z.string().uuid().nullable().optional(),
+  to_berth_id: z.string().uuid().nullable().optional(),
   from_place_id: z.string().max(200).nullable().optional(),
   from_lat: z.number().nullable().optional(),
   from_lng: z.number().nullable().optional(),
@@ -100,9 +105,14 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
         }
 
         const rows = bulk.success
-          ? bulk.data.bookings.map((b) => {
+          ? await Promise.all(bulk.data.bookings.map(async (b) => {
               const endpointTypes = normalizeBookingEndpointTypes(b, { defaultMissingToLocal: true });
               const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
+              const fromPort = await assertTokenPortSelection(admin, r.portal.coordinator_company_id, b.from_port_id, b.from_berth_id);
+              const toPort = await assertTokenPortSelection(admin, r.portal.coordinator_company_id, b.to_port_id, b.to_berth_id);
+              if ((fromPort && endpointTypes.fromLocationType !== "port") || (toPort && endpointTypes.toLocationType !== "port")) {
+                throw new Error("port_endpoint_type_required");
+              }
               return {
                 portal_company_id: r.portal.id,
                 payload: {
@@ -110,6 +120,8 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
                   from_location_type: endpointTypes.fromLocationType,
                   to_location_type: endpointTypes.toLocationType,
                   journey_type: journey.journeyType,
+                  from_location: fromPort?.address ?? b.from_location,
+                  to_location: toPort?.address ?? b.to_location,
                 },
                 agreed_price: b.agreed_price ?? null,
                 currency: b.currency ?? "EUR",
@@ -118,13 +130,18 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
                 status: "pending" as const,
                 batch_id: batchId,
               };
-            })
-          : (() => {
+            }))
+          : await (async () => {
               const booking = single.data!;
               const journey = resolveBookingJourney(booking.from_location_type!, booking.to_location_type!);
+              const fromPort = await assertTokenPortSelection(admin, r.portal.coordinator_company_id, booking.from_port_id, booking.from_berth_id);
+              const toPort = await assertTokenPortSelection(admin, r.portal.coordinator_company_id, booking.to_port_id, booking.to_berth_id);
+              if ((fromPort && booking.from_location_type !== "port") || (toPort && booking.to_location_type !== "port")) {
+                throw new Error("port_endpoint_type_required");
+              }
               return [{
                 portal_company_id: r.portal.id,
-                payload: { ...booking, journey_type: journey.journeyType },
+                payload: { ...booking, from_location: fromPort?.address ?? booking.from_location, to_location: toPort?.address ?? booking.to_location, journey_type: journey.journeyType },
                 agreed_price: booking.agreed_price ?? null,
                 currency: booking.currency ?? "EUR",
                 created_by_email: booking.created_by_email ?? null,

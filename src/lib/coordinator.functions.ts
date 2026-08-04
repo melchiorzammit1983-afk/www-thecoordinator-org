@@ -2940,12 +2940,23 @@ export const approveBooking = createServerFn({ method: "POST" })
     if (error || !b) throw new Error("Booking not found");
     const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
     const fromFlight = ((b as any).from_flight || "").toUpperCase() || null;
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, (b as any).from_port_id, (b as any).from_berth_id);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, (b as any).to_port_id, (b as any).to_berth_id);
+    const fromLocationType = (b as any).from_location_type ?? (fromPort ? "port" : null);
+    const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
+    if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
         company_id: c.id,
-        from_location: b.from_location,
-        to_location: b.to_location,
+        from_location: fromPort?.address ?? b.from_location,
+        to_location: toPort?.address ?? b.to_location,
+        from_location_type: fromLocationType,
+        to_location_type: toLocationType,
+        from_port_id: (b as any).from_port_id ?? null,
+        from_berth_id: (b as any).from_berth_id ?? null,
+        to_port_id: (b as any).to_port_id ?? null,
+        to_berth_id: (b as any).to_berth_id ?? null,
         date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
         time: b.time,
         pickup_at,

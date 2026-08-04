@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { getAdmin } from "./portal-token.server";
 import { resolveBookingJourney } from "./journey-resolver";
+import { assertTokenPortSelection, listTokenScopedPorts } from "./port-directory-token.server";
 
 // ---------- Schemas ----------
 export const RoomInput = z.object({
@@ -221,12 +222,14 @@ export async function resolveGuestSession(sessionToken: string) {
 
 export async function loadGuestBootstrap(portalId: string, sessionId: string) {
   const admin = await getAdmin();
-  const [zones, fares, addons, offers, bookings] = await Promise.all([
+  const { data: portalCompany } = await admin.from("portal_companies" as any).select("coordinator_company_id").eq("id", portalId).maybeSingle();
+  const [zones, fares, addons, offers, bookings, ports] = await Promise.all([
     admin.from("portal_zones" as any).select("*").eq("portal_company_id", portalId).eq("active", true).order("sort_order"),
     admin.from("portal_zone_fares" as any).select("*, portal_zones!inner(portal_company_id)").eq("portal_zones.portal_company_id", portalId),
     admin.from("portal_addons" as any).select("*").eq("portal_company_id", portalId).eq("active", true).order("sort_order"),
     admin.from("portal_offers" as any).select("*").eq("portal_company_id", portalId).eq("active", true).order("sort_order"),
     admin.from("portal_bookings" as any).select("id, status, payload, agreed_price, currency, created_at, job_id, jobs(id, status, pickup_at, driver_id, drivers(name, car_make_model, plate))").eq("guest_session_id", sessionId).order("created_at", { ascending: false }).limit(50),
+    listTokenScopedPorts(admin, (portalCompany as any)?.coordinator_company_id ?? ""),
   ]);
   return {
     zones: zones.data ?? [],
@@ -234,6 +237,7 @@ export async function loadGuestBootstrap(portalId: string, sessionId: string) {
     addons: addons.data ?? [],
     offers: offers.data ?? [],
     bookings: bookings.data ?? [],
+    ports,
   };
 }
 
@@ -244,6 +248,10 @@ export const GuestBookingInput = z.object({
   to_location: z.string().min(1).max(200),
   from_location_type: z.enum(["airport", "port", "local"]),
   to_location_type: z.enum(["airport", "port", "local"]),
+  from_port_id: z.string().uuid().nullable().optional(),
+  from_berth_id: z.string().uuid().nullable().optional(),
+  to_port_id: z.string().uuid().nullable().optional(),
+  to_berth_id: z.string().uuid().nullable().optional(),
   pickup_at: z.string().datetime(),
   pax_count: z.number().int().min(1).max(20).default(1),
   pax_names: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
@@ -256,10 +264,15 @@ export const GuestBookingInput = z.object({
 export async function createGuestBooking(sessionToken: string, input: z.infer<typeof GuestBookingInput>) {
   const r = await resolveGuestSession(sessionToken);
   if (!r.ok) return r;
-  const journey = resolveBookingJourney(input.from_location_type, input.to_location_type);
   const admin = await getAdmin();
   const s: any = r.session;
   const p: any = r.portal;
+  const fromPort = await assertTokenPortSelection(admin, p.coordinator_company_id, input.from_port_id, input.from_berth_id);
+  const toPort = await assertTokenPortSelection(admin, p.coordinator_company_id, input.to_port_id, input.to_berth_id);
+  if ((fromPort && input.from_location_type !== "port") || (toPort && input.to_location_type !== "port")) {
+    return { ok: false as const, status: 400, error: "port_endpoint_type_required" };
+  }
+  const journey = resolveBookingJourney(input.from_location_type, input.to_location_type);
 
   // Resolve fare
   let base_price: number | null = null;
@@ -329,10 +342,14 @@ export async function createGuestBooking(sessionToken: string, input: z.infer<ty
     client_phone: s.phone ?? null,
     client_email: s.email ?? null,
     room_number: s.room_id ? undefined : null,
-    from_location: input.from_location,
-    to_location: input.to_location,
+    from_location: fromPort?.address ?? input.from_location,
+    to_location: toPort?.address ?? input.to_location,
     from_location_type: input.from_location_type,
     to_location_type: input.to_location_type,
+    from_port_id: input.from_port_id ?? null,
+    from_berth_id: input.from_berth_id ?? null,
+    to_port_id: input.to_port_id ?? null,
+    to_berth_id: input.to_berth_id ?? null,
     journey_type: journey.journeyType,
     pickup_at: input.pickup_at,
     pax_count: input.pax_count,

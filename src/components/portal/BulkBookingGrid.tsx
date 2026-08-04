@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { fileToSheetTsv } from "@/lib/sheet-template";
 import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
+import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
 
 type GridRow = {
   name: string;
@@ -23,11 +24,15 @@ type GridRow = {
   fromPlaceId: string | null;
   fromLat: number | null;
   fromLng: number | null;
+  fromPortId: string | null;
+  fromBerthId: string | null;
   to: string;
   toLocationType: JourneyEndpoint;
   toPlaceId: string | null;
   toLat: number | null;
   toLng: number | null;
+  toPortId: string | null;
+  toBerthId: string | null;
   pickupAt: string; // datetime-local value
   room: string;
   flight: string;
@@ -43,8 +48,8 @@ type GridRow = {
 function emptyRow(): GridRow {
   return {
     name: "", phone: "", email: "",
-    from: "", fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null,
-    to: "", toLocationType: "local", toPlaceId: null, toLat: null, toLng: null,
+    from: "", fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
+    to: "", toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
     pickupAt: "", room: "", flight: "", vehicle: "", pax: "1", notes: "", selected: false,
   };
 }
@@ -93,8 +98,8 @@ function parsePastedDateTime(raw: string): string {
 function applyCellValue(row: GridRow, key: ColumnKey, raw: string): GridRow {
   const v = raw.trim();
   switch (key) {
-    case "from": return { ...row, from: v, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null };
-    case "to": return { ...row, to: v, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null };
+    case "from": return { ...row, from: v, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null };
+    case "to": return { ...row, to: v, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null };
     case "pickupAt": return { ...row, pickupAt: parsePastedDateTime(v) };
     case "pax": return { ...row, pax: v.replace(/[^0-9]/g, "") || "1" };
     default: return { ...row, [key]: v };
@@ -112,6 +117,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   // fresh batch if this one's already been touched by the coordinator).
   const [batchId, setBatchId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [ports, setPorts] = useState<TokenPort[]>([]);
+  useEffect(() => { fetch(`/api/public/portal/${token}/`).then((r) => r.json()).then((data) => setPorts(data.ports ?? [])).catch(() => undefined); }, [token]);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -124,8 +131,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       if (!parsed.length) { toast.error("Couldn't find any rows in that file"); return; }
       const newRows: GridRow[] = parsed.map((p) => ({
         name: p.name, phone: p.phone, email: p.email,
-        from: p.from, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null,
-        to: p.to, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null,
+        from: p.from, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
+        to: p.to, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
         pickupAt: p.pickupAt, room: p.room, flight: p.flight, vehicle: p.vehicle, pax: p.pax, notes: p.notes,
         selected: false,
       }));
@@ -233,11 +240,15 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           client_email: r.email.trim() || null,
           from_location: r.from.trim(),
           from_location_type: r.fromLocationType,
+          from_port_id: r.fromPortId,
+          from_berth_id: r.fromBerthId,
           from_place_id: r.fromPlaceId,
           from_lat: r.fromLat,
           from_lng: r.fromLng,
           to_location: r.to.trim(),
           to_location_type: r.toLocationType,
+          to_port_id: r.toPortId,
+          to_berth_id: r.toBerthId,
           to_place_id: r.toPlaceId,
           to_lat: r.toLat,
           to_lng: r.toLng,
@@ -343,7 +354,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                     </TableCell>
                     {COLUMN_KEYS.map((key, ci) => (
                       <TableCell key={key} className="p-1 align-top" onPaste={(e) => handlePaste(e, ri, ci)}>
-                        {key === "from" && (
+                        {key === "from" && (<>
                           <AddressAutocomplete publicToken={token}
                             value={row.from}
                             placeId={row.fromPlaceId}
@@ -351,8 +362,9 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />
-                        )}
-                        {key === "to" && (
+                          <TokenPortPicker ports={ports} portId={row.fromPortId} berthId={row.fromBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { fromPortId: portId, fromBerthId: berthId, fromLocationType: portId ? "port" : "local", ...(address ? { from: address, fromPlaceId: null, fromLat: null, fromLng: null } : {}) })} />
+                        </>)}
+                        {key === "to" && (<>
                           <AddressAutocomplete publicToken={token}
                             value={row.to}
                             placeId={row.toPlaceId}
@@ -360,7 +372,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />
-                        )}
+                          <TokenPortPicker ports={ports} portId={row.toPortId} berthId={row.toBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { toPortId: portId, toBerthId: berthId, toLocationType: portId ? "port" : "local", ...(address ? { to: address, toPlaceId: null, toLat: null, toLng: null } : {}) })} />
+                        </>)}
                         {key === "pickupAt" && (
                           <Input type="datetime-local" className="h-8 text-xs" value={row.pickupAt}
                             onChange={(e) => updateRow(ri, { pickupAt: e.target.value })} />
