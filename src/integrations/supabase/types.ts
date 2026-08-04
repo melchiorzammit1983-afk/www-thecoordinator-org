@@ -6614,6 +6614,124 @@ export type Database = {
           },
         ]
       }
+      ship_departure_readiness_warning_audit: {
+        Row: {
+          company_id: string
+          event_at: string
+          event_type: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          warning_id: string
+        }
+        Insert: {
+          company_id: string
+          event_at?: string
+          event_type: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id: string
+        }
+        Update: {
+          company_id?: string
+          event_at?: string
+          event_type?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_warning_id_fkey"
+            columns: ["warning_id"]
+            isOneToOne: false
+            referencedRelation: "ship_departure_readiness_warnings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_departure_readiness_warnings: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          resolved_at: string | null
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_eta_review_completions: {
         Row: {
           company_id: string
