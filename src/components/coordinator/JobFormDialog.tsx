@@ -409,6 +409,11 @@ function ManualForm({
   const { routes: recentRoutes, recordRoute, toggleFavorite } = useRecentRoutes();
   const [date, setDate] = useState(job?.date ?? prefill?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(job?.time?.slice(0, 5) ?? prefill?.time ?? "09:00");
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
+  // A linked transport may provide the initial pickup suggestion, but a
+  // coordinator's explicit date/time edit is authoritative after that.
+  const scheduleInputDirtyRef = useRef(!!job);
   const [client, setClient] = useState(job?.clientcompanyname ?? prefill?.clientcompanyname ?? "");
   const [operationsPhone, setOperationsPhone] = useState("");
   const [operationsPhoneDirty, setOperationsPhoneDirty] = useState(false);
@@ -541,6 +546,7 @@ function ManualForm({
     mutationFn: () => createShipEventFn({ data: { ship_name: shipSearch.trim(), eta: newShipEta, expected_departure: newShipExpectedDeparture || newShipEta, port: newShipPort.trim() } }),
     onSuccess: (ship) => {
       setShipEventId(ship.id);
+      scheduleInputDirtyRef.current = false;
       setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0);
       if (selectedJourney.journeyType === "ship_departure") applyShipPort(ship.port, "to");
       else if (selectedJourney.journeyType === "ship_arrival" || selectedJourney.journeyType === "ship_to_flight") applyShipPort(ship.port, "from");
@@ -573,11 +579,12 @@ function ManualForm({
     return { pickupAt, ...isoToMaltaDateTime(pickupAt) };
   }, [pickupReferenceFlight, activeLinkedShip, effectivePickupOffsetMinutes]);
   useEffect(() => {
-    if (!calculatedPickup) return;
+    if (!calculatedPickup || scheduleInputDirtyRef.current) return;
     setDate(calculatedPickup.date);
     setTime(calculatedPickup.time);
   }, [calculatedPickup]);
   function selectScheduledFlight(flight: { id: string; direction: "arrival" | "departure"; flight_number: string }) {
+    scheduleInputDirtyRef.current = false;
     setFlightScheduleRecordId(flight.id);
     setFlightSearch("");
     if (flight.direction === "departure") {
@@ -596,6 +603,7 @@ function ManualForm({
       toast.error("Choose a departure from the active schedule.");
       return;
     }
+    scheduleInputDirtyRef.current = false;
     setOnwardFlightScheduleRecordId(flight.id);
     setToFlight(flight.flight_number ?? "");
     setOnwardFlightSearch("");
@@ -703,8 +711,12 @@ function ManualForm({
         setOperationsPhoneDirty(false);
       }
 
+      const submittedDate = dateInputRef.current?.value || date;
+      const submittedTime = timeInputRef.current?.value || time;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(submittedDate)) throw new Error("Enter a valid pickup date.");
+      if (!/^\d{2}:\d{2}(:\d{2})?$/.test(submittedTime)) throw new Error("Enter a valid pickup time.");
       const payload = {
-        from_location: effFrom, to_location: effTo, date, time,
+        from_location: effFrom, to_location: effTo, date: submittedDate, time: submittedTime,
         from_location_type: fromEndpointType,
         to_location_type: toEndpointType,
         from_port_id: fromEndpointType === "port" ? fromPortId : null,
@@ -751,10 +763,10 @@ function ManualForm({
           editPayload.company_id = coordCompanyId;
         }
         await updateFn({ data: editPayload });
-        return { date, jobId: job.id, isNew: false };
+        return { date: submittedDate, jobId: job.id, isNew: false };
       }
       const row: any = await createFn({ data: { ...payload, passengers: passengerPayload } });
-      return { date, jobId: row?.id as string | undefined, isNew: true };
+      return { date: submittedDate, jobId: row?.id as string | undefined, isNew: true };
     },
     onSuccess: (res) => {
       toast.success(job ? "Trip updated" : "Trip created");
@@ -1245,7 +1257,7 @@ function ManualForm({
             </> : null}
             {requiresShip ? <div className="space-y-2">
               <Label htmlFor="ship-event-search">Linked ship event</Label>
-              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipExpectedDeparture} onChange={(event) => setNewShipExpectedDeparture(event.target.value)} type="datetime-local" aria-label="New Ship Expected Departure" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
+              {shipEventId && linkedShip ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"><span><b>{linkedShip.ship_name}</b> · {linkedShip.port} · ETA {formatMaltaDateTime(linkedShip.eta, { dateStyle: "medium", timeStyle: "short" })} · {linkedShip.status}</span><Button type="button" size="sm" variant="outline" onClick={() => setShipEventId(null)}>Remove link</Button></div> : <><Input id="ship-event-search" value={shipSearch} onChange={(event) => setShipSearch(event.target.value)} placeholder="Search ship name or port" />{shipSearch.trim().length >= 2 ? <div className="max-h-44 overflow-y-auto rounded-md border bg-background">{isSearchingShips ? <p className="p-2 text-xs text-muted-foreground">Searching ship events…</p> : null}{!isSearchingShips && shipMatches?.length === 0 ? <div className="space-y-2 p-2"><p className="text-xs text-muted-foreground">No ship events found.</p><p className="text-xs font-medium">Create Ship Event</p><Input value={newShipEta} onChange={(event) => setNewShipEta(event.target.value)} type="datetime-local" aria-label="New Ship ETA" /><Input value={newShipExpectedDeparture} onChange={(event) => setNewShipExpectedDeparture(event.target.value)} type="datetime-local" aria-label="New Ship Expected Departure" /><Input value={newShipPort} onChange={(event) => setNewShipPort(event.target.value)} placeholder="Port" aria-label="New Ship port" /><Button type="button" size="sm" onClick={() => createInlineShip.mutate()} disabled={!shipSearch.trim() || !newShipEta || !newShipPort.trim() || createInlineShip.isPending}>+ {createInlineShip.isPending ? "Creating…" : "Create Ship Event"}</Button></div> : null}{shipMatches?.map((ship) => <button key={ship.id} type="button" className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent" onClick={() => { scheduleInputDirtyRef.current = false; setShipEventId(ship.id); setPickupOffsetMinutes(myCompany?.default_arrival_pickup_offset_minutes ?? 0); setShipSearch(""); }}><span className="font-medium">{ship.ship_name} · {ship.port}</span><span className="text-muted-foreground">ETA {formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} · {ship.status}</span></button>)}</div> : null}</>}
             </div> : null}
             {allowsOnwardFlight && shipEventId ? (
               <div className="space-y-2 border-t pt-3">
@@ -1374,11 +1386,11 @@ function ManualForm({
         {/* STEP 3 — WHEN */}
         <section data-step="3" className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={date} onInput={(e) => setDate(e.currentTarget.value)} onChange={(e) => setDate(e.target.value)} required /></div>
+            <div className="space-y-1.5"><Label>Date</Label><Input ref={dateInputRef} type="date" value={date} onChange={(e) => { scheduleInputDirtyRef.current = true; setDate(e.currentTarget.value); }} required /></div>
             <div className="space-y-1.5">
               <Label>Time</Label>
               <div className="flex items-center gap-1.5">
-                <Input type="time" value={time} onInput={(e) => setTime(e.currentTarget.value)} onChange={(e) => setTime(e.target.value)} required className="flex-1" />
+                <Input ref={timeInputRef} type="time" value={time} onChange={(e) => { scheduleInputDirtyRef.current = true; setTime(e.currentTarget.value); }} required className="flex-1" />
                 <div className="flex items-center gap-0.5">
                   {[-15, -5, 5, 15].map((delta) => (
                     <Button
@@ -1387,7 +1399,7 @@ function ManualForm({
                       variant="outline"
                       size="sm"
                       className="h-8 px-1.5 text-[10px] font-mono tabular-nums"
-                      onClick={() => setTime(shiftTime(time, delta))}
+                      onClick={() => { scheduleInputDirtyRef.current = true; setTime(shiftTime(time, delta)); }}
                       disabled={!time}
                       title={`Shift ${delta > 0 ? "+" : ""}${delta} min`}
                     >
