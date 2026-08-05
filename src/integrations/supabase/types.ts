@@ -1175,6 +1175,50 @@ export type Database = {
           },
         ]
       }
+      berths: {
+        Row: {
+          active: boolean
+          address_override: string | null
+          created_at: string
+          id: string
+          latitude_override: number | null
+          longitude_override: number | null
+          name: string
+          port_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address_override?: string | null
+          created_at?: string
+          id?: string
+          latitude_override?: number | null
+          longitude_override?: number | null
+          name: string
+          port_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address_override?: string | null
+          created_at?: string
+          id?: string
+          latitude_override?: number | null
+          longitude_override?: number | null
+          name?: string
+          port_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "berths_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_booking_modifications: {
         Row: {
           acknowledged_at: string | null
@@ -1248,8 +1292,11 @@ export type Database = {
           created_at: string
           created_via: string | null
           date: string | null
+          from_berth_id: string | null
           from_location: string
+          from_port_id: string | null
           id: string
+          immigration_required: string | null
           job_id: string | null
           name: string
           parent_job_id: string | null
@@ -1259,7 +1306,9 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           surname: string
           time: string
+          to_berth_id: string | null
           to_location: string
+          to_port_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1269,8 +1318,11 @@ export type Database = {
           created_at?: string
           created_via?: string | null
           date?: string | null
+          from_berth_id?: string | null
           from_location: string
+          from_port_id?: string | null
           id?: string
+          immigration_required?: string | null
           job_id?: string | null
           name: string
           parent_job_id?: string | null
@@ -1280,7 +1332,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           surname: string
           time: string
+          to_berth_id?: string | null
           to_location: string
+          to_port_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1290,8 +1344,11 @@ export type Database = {
           created_at?: string
           created_via?: string | null
           date?: string | null
+          from_berth_id?: string | null
           from_location?: string
+          from_port_id?: string | null
           id?: string
+          immigration_required?: string | null
           job_id?: string | null
           name?: string
           parent_job_id?: string | null
@@ -1301,7 +1358,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           surname?: string
           time?: string
+          to_berth_id?: string | null
           to_location?: string
+          to_port_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1310,6 +1369,20 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
           {
@@ -1324,6 +1397,20 @@ export type Database = {
             columns: ["parent_job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -4263,15 +4350,18 @@ export type Database = {
           forward_after: string | null
           forward_hop_count: number
           forward_tried_company_ids: string[]
+          from_berth_id: string | null
           from_flight: string | null
           from_location: string
           from_location_type: string | null
+          from_port_id: string | null
           group_id: string | null
           group_name: string | null
           group_note: string | null
           grouped_at: string | null
           grouped_count: number | null
           id: string
+          immigration_required: string | null
           leave_by_at: string | null
           live_eta_from_lat: number | null
           live_eta_from_lng: number | null
@@ -4319,9 +4409,11 @@ export type Database = {
           source: string
           status: Database["public"]["Enums"]["job_status"]
           time: string
+          to_berth_id: string | null
           to_flight: string | null
           to_location: string
           to_location_type: string | null
+          to_port_id: string | null
           tracking_enabled: boolean
           tracking_kind: string | null
           traffic_delay_minutes: number | null
@@ -4410,15 +4502,18 @@ export type Database = {
           forward_after?: string | null
           forward_hop_count?: number
           forward_tried_company_ids?: string[]
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location: string
           from_location_type?: string | null
+          from_port_id?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          immigration_required?: string | null
           leave_by_at?: string | null
           live_eta_from_lat?: number | null
           live_eta_from_lng?: number | null
@@ -4466,9 +4561,11 @@ export type Database = {
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location: string
           to_location_type?: string | null
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4557,15 +4654,18 @@ export type Database = {
           forward_after?: string | null
           forward_hop_count?: number
           forward_tried_company_ids?: string[]
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location?: string
           from_location_type?: string | null
+          from_port_id?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          immigration_required?: string | null
           leave_by_at?: string | null
           live_eta_from_lat?: number | null
           live_eta_from_lng?: number | null
@@ -4613,9 +4713,11 @@ export type Database = {
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location?: string
           to_location_type?: string | null
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4652,6 +4754,20 @@ export type Database = {
             columns: ["flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
           {
@@ -4694,6 +4810,20 @@ export type Database = {
             columns: ["ship_event_id"]
             isOneToOne: false
             referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -6155,6 +6285,59 @@ export type Database = {
           },
         ]
       }
+      ports: {
+        Row: {
+          active: boolean
+          address: string
+          code: string | null
+          company_id: string
+          country: string
+          created_at: string
+          id: string
+          immigration_available: boolean
+          latitude: number | null
+          longitude: number | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address: string
+          code?: string | null
+          company_id: string
+          country: string
+          created_at?: string
+          id?: string
+          immigration_available?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string
+          code?: string | null
+          company_id?: string
+          country?: string
+          created_at?: string
+          id?: string
+          immigration_available?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       public_ai_daily_counters: {
         Row: {
           count: number
@@ -6431,6 +6614,124 @@ export type Database = {
           },
         ]
       }
+      ship_departure_readiness_warning_audit: {
+        Row: {
+          company_id: string
+          event_at: string
+          event_type: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          warning_id: string
+        }
+        Insert: {
+          company_id: string
+          event_at?: string
+          event_type: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id: string
+        }
+        Update: {
+          company_id?: string
+          event_at?: string
+          event_type?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_warning_id_fkey"
+            columns: ["warning_id"]
+            isOneToOne: false
+            referencedRelation: "ship_departure_readiness_warnings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_departure_readiness_warnings: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          resolved_at: string | null
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_eta_review_completions: {
         Row: {
           company_id: string
@@ -6505,52 +6806,215 @@ export type Database = {
           },
         ]
       }
+      ship_event_port_change_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          id: string
+          new_berth_id: string | null
+          new_berth_name: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id: string | null
+          previous_berth_name: string | null
+          previous_port_id: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id?: string
+          new_port_name?: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_new_port_id_fkey"
+            columns: ["new_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_port_change_reviews: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          history_id: string
+          id: string
+          new_berth_name: string | null
+          new_port_name: string
+          previous_berth_name: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          changed_at: string
+          changed_by?: string | null
+          company_id: string
+          history_id: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          history_id?: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name?: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_history_id_fkey"
+            columns: ["history_id"]
+            isOneToOne: false
+            referencedRelation: "ship_event_port_change_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_events: {
         Row: {
+          actual_arrival: string | null
+          actual_departure: string | null
           archived_at: string | null
           archived_by: string | null
+          berth_id: string | null
           company_id: string
           created_at: string
           created_by: string | null
           eta: string
+          expected_departure: string | null
           id: string
           port: string
+          port_id: string | null
           ship_name: string
           status: string
           updated_at: string
         }
         Insert: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
           archived_at?: string | null
           archived_by?: string | null
+          berth_id?: string | null
           company_id: string
           created_at?: string
           created_by?: string | null
           eta: string
+          expected_departure?: string | null
           id?: string
           port: string
+          port_id?: string | null
           ship_name: string
           status?: string
           updated_at?: string
         }
         Update: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
           archived_at?: string | null
           archived_by?: string | null
+          berth_id?: string | null
           company_id?: string
           created_at?: string
           created_by?: string | null
           eta?: string
+          expected_departure?: string | null
           id?: string
           port?: string
+          port_id?: string | null
           ship_name?: string
           status?: string
           updated_at?: string
         }
         Relationships: [
           {
+            foreignKeyName: "ship_events_berth_id_fkey"
+            columns: ["berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ship_events_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_events_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -7122,8 +7586,10 @@ export type Database = {
           flight_status_note: string | null
           flight_status_updated_at: string | null
           flightorship: string | null
+          from_berth_id: string | null
           from_flight: string | null
           from_location: string
+          from_port_id: string | null
           group_name: string | null
           group_note: string | null
           grouped_at: string | null
@@ -7151,8 +7617,10 @@ export type Database = {
           source: string
           status: Database["public"]["Enums"]["trip_status_v2"]
           time: string
+          to_berth_id: string | null
           to_flight: string | null
           to_location: string
+          to_port_id: string | null
           tracking_enabled: boolean
           tracking_kind: string | null
           traffic_delay_minutes: number | null
@@ -7180,8 +7648,10 @@ export type Database = {
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location: string
+          from_port_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
@@ -7209,8 +7679,10 @@ export type Database = {
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location: string
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -7238,8 +7710,10 @@ export type Database = {
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location?: string
+          from_port_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
@@ -7267,8 +7741,10 @@ export type Database = {
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time?: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location?: string
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -7297,6 +7773,20 @@ export type Database = {
             columns: ["flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
           {
@@ -7332,6 +7822,20 @@ export type Database = {
             columns: ["ship_event_id"]
             isOneToOne: false
             referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -7773,14 +8277,19 @@ export type Database = {
           p_ship_event_id: string
         }
         Returns: {
+          actual_arrival: string | null
+          actual_departure: string | null
           archived_at: string | null
           archived_by: string | null
+          berth_id: string | null
           company_id: string
           created_at: string
           created_by: string | null
           eta: string
+          expected_departure: string | null
           id: string
           port: string
+          port_id: string | null
           ship_name: string
           status: string
           updated_at: string
@@ -7791,6 +8300,16 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      update_ship_event_port_with_review: {
+        Args: {
+          p_berth_id: string
+          p_changed_by: string
+          p_company_id: string
+          p_port_id: string
+          p_ship_event_id: string
+        }
+        Returns: Json
       }
       verify_trip_audit_chain: {
         Args: { _job_id: string }
