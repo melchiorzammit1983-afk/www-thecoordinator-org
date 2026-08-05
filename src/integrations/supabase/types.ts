@@ -4371,6 +4371,7 @@ export type Database = {
           notes: string | null
           onward_flight_schedule_record_id: string | null
           onward_ship_event_id: string | null
+          operation_group_id: string | null
           operation_id: string
           origin_company_id: string | null
           paid_amount: number | null
@@ -4523,6 +4524,7 @@ export type Database = {
           notes?: string | null
           onward_flight_schedule_record_id?: string | null
           onward_ship_event_id?: string | null
+          operation_group_id?: string | null
           operation_id: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4675,6 +4677,7 @@ export type Database = {
           notes?: string | null
           onward_flight_schedule_record_id?: string | null
           onward_ship_event_id?: string | null
+          operation_group_id?: string | null
           operation_id?: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4782,6 +4785,13 @@ export type Database = {
             columns: ["onward_ship_event_id"]
             isOneToOne: false
             referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
             referencedColumns: ["id"]
           },
           {
@@ -4988,6 +4998,151 @@ export type Database = {
           waiting?: boolean
         }
         Relationships: []
+      }
+      operation_group_flight_records: {
+        Row: {
+          company_id: string
+          created_at: string
+          flight_schedule_record_id: string
+          id: string
+          operation_group_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          flight_schedule_record_id: string
+          id?: string
+          operation_group_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          flight_schedule_record_id?: string
+          id?: string
+          operation_group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_group_flight_records_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_flight_records_flight_schedule_record_id_fkey"
+            columns: ["flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_flight_records_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_group_ship_events: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          operation_group_id: string
+          ship_event_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          operation_group_id: string
+          ship_event_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          operation_group_id?: string
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_group_ship_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_ship_events_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_ship_events_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_groups: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          id: string
+          name: string
+          notes: string | null
+          reference: string
+          start_date: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          reference: string
+          start_date?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          reference?: string
+          start_date?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_groups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       operations: {
         Row: {
@@ -7602,6 +7757,7 @@ export type Database = {
           metadata: Json
           needs_review: boolean
           onward_flight_schedule_record_id: string | null
+          operation_group_id: string | null
           operation_id: string
           parent_trip_id: string | null
           pickup_at: string | null
@@ -7664,6 +7820,7 @@ export type Database = {
           metadata?: Json
           needs_review?: boolean
           onward_flight_schedule_record_id?: string | null
+          operation_group_id?: string | null
           operation_id: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7726,6 +7883,7 @@ export type Database = {
           metadata?: Json
           needs_review?: boolean
           onward_flight_schedule_record_id?: string | null
+          operation_group_id?: string | null
           operation_id?: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7801,6 +7959,13 @@ export type Database = {
             columns: ["onward_flight_schedule_record_id"]
             isOneToOne: false
             referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
             referencedColumns: ["id"]
           },
           {
