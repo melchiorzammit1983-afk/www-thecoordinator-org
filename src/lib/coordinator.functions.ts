@@ -1136,8 +1136,10 @@ async function resolveScheduledTransportPickup(
     const { data: company, error: companyError } = await (supabaseAdmin as any).from("companies").select("default_arrival_pickup_offset_minutes").eq("id", companyId).single();
     if (companyError) throw new Error(companyError.message);
     const offset_minutes = requestedOffsetMinutes ?? (company?.default_arrival_pickup_offset_minutes ?? 0);
-    const pickup_at = new Date(new Date(ship.eta).getTime() + offset_minutes * 60_000).toISOString();
-    return { ...isoToMaltaDateTime(pickup_at), pickup_at, offset_minutes };
+    // The client applies the offset as an initial suggestion. An explicit
+    // coordinator date/time is authoritative during persistence.
+    const pickup_at = makePickupIso(fallbackDate, fallbackTime);
+    return { date: fallbackDate, time: fallbackTime, pickup_at, offset_minutes };
   }
   const scheduleRecordId = onwardFlightScheduleRecordId ?? flightScheduleRecordId;
   if (!scheduleRecordId) {
@@ -1169,11 +1171,10 @@ async function resolveScheduledTransportPickup(
     ? (company?.default_departure_pickup_offset_minutes ?? 180)
     : (company?.default_arrival_pickup_offset_minutes ?? 0);
   const offset_minutes = requestedOffsetMinutes ?? defaultOffset;
-  const scheduledAt = makePickupIso(record.scheduled_date, record.scheduled_time);
-  const adjustmentMinutes = isDeparture ? -offset_minutes : offset_minutes;
-  const pickup_at = new Date(new Date(scheduledAt).getTime() + adjustmentMinutes * 60_000).toISOString();
-  const { date, time } = isoToMaltaDateTime(pickup_at);
-  return { date, time, pickup_at, offset_minutes };
+  // The client applies the offset as an initial suggestion. An explicit
+  // coordinator date/time is authoritative during persistence.
+  const pickup_at = makePickupIso(fallbackDate, fallbackTime);
+  return { date: fallbackDate, time: fallbackTime, pickup_at, offset_minutes };
 }
 
 /** Shared schedule reference records available to authenticated coordinators. */
