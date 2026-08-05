@@ -678,6 +678,7 @@ const jobInput = z.object({
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
+  operation_group_id: z.string().uuid().nullable().optional(),
   operation_name: z.string().trim().max(200).optional().or(z.literal("")),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
   // From Google Places pick — persisted so we can render the hotel/business
@@ -720,6 +721,14 @@ function assertCompleteBookingEndpointTypes(data: {
   if ((data.from_location_type === undefined) !== (data.to_location_type === undefined)) {
     throw new Error("Both endpoint types are required when providing journey classification.");
   }
+}
+
+async function validateOperationGroupAssignment(supabaseAdmin: any, companyId: string, operationGroupId: string | null | undefined) {
+  if (operationGroupId === undefined || operationGroupId === null) return;
+  const { data, error } = await supabaseAdmin.from("operation_groups").select("id, status").eq("id", operationGroupId).eq("company_id", companyId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Operation Group not found.");
+  if (data.status === "completed" || data.status === "cancelled") throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
 }
 
 type LinkedFlightScheduleRecord = {
@@ -1815,6 +1824,7 @@ export const createJob = createServerFn({ method: "POST" })
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
     assertCompleteBookingEndpointTypes(data);
+    await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
     const journey = resolveJourneyForBookingInput(data);
     const immigrationRequired = data.immigration_required ?? "unknown";
     const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, data.from_port_id, data.from_berth_id);
@@ -1877,6 +1887,7 @@ export const createJob = createServerFn({ method: "POST" })
         notes: data.notes || null,
         contact_phone: data.contact_phone || null,
         driver_id: data.driver_id || null,
+        operation_group_id: data.operation_group_id ?? null,
         pickup_place_id: data.pickup_place_id || null,
         dropoff_place_id: data.dropoff_place_id || null,
         pickup_display_name: data.pickup_display_name || null,
@@ -1926,12 +1937,13 @@ export const updateJob = createServerFn({ method: "POST" })
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, scheduled_transport_pickup_offset_minutes, immigration_required, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, scheduled_transport_pickup_offset_minutes, immigration_required, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
+    if (data.operation_group_id !== undefined && data.operation_group_id !== (existing as any).operation_group_id) await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
     const selectedFlightId = data.flight_schedule_record_id;
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
     const existingShipId = (existing as any).ship_event_id as string | null;
@@ -2024,6 +2036,7 @@ export const updateJob = createServerFn({ method: "POST" })
         ship_event_id: data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
         onward_flight_schedule_record_id: effectiveOnwardFlightId,
         onward_ship_event_id: effectiveOnwardShipId,
+        operation_group_id: data.operation_group_id === undefined ? (existing as any).operation_group_id : data.operation_group_id,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
@@ -2093,6 +2106,7 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     if (data.onward_flight_schedule_record_id !== undefined) patch.onward_flight_schedule_record_id = data.onward_flight_schedule_record_id;
     if (data.onward_ship_event_id !== undefined) patch.onward_ship_event_id = data.onward_ship_event_id;
+    if (data.operation_group_id !== undefined) patch.operation_group_id = data.operation_group_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;
     patch.immigration_required = effectiveImmigrationRequired;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
@@ -3564,6 +3578,7 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
 
 const bulkTripInput = z.object({
   operation_name: z.string().trim().max(200).optional().or(z.literal("")),
+  operation_group_id: z.string().uuid().nullable().optional(),
   trips: z
     .array(
       z.object({
@@ -3588,6 +3603,7 @@ const bulkTripInput = z.object({
         immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
         immigration_needed: z.boolean().optional().default(false),
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
+        operation_group_id: z.string().uuid().nullable().optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
       }),
     )
@@ -3639,10 +3655,12 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
+    await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
 
     const created: string[] = [];
     for (const t of data.trips) {
       const endpointTypes = normalizeBookingEndpointTypes(t, { defaultMissingToLocal: true });
+      await validateOperationGroupAssignment(supabaseAdmin, c.id, t.operation_group_id ?? data.operation_group_id);
       const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
       const immigrationRequired = t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown");
       const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, t.from_port_id, t.from_berth_id);
@@ -3681,6 +3699,7 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           // rows are deterministically local/local and therefore untracked.
           tracking_kind: t.tracking_kind ?? journey.trackingKind,
           immigration_required: immigrationRequired,
+          operation_group_id: t.operation_group_id ?? data.operation_group_id ?? null,
         })
         .select("id")
         .single();
