@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Layers3, Pencil, Plus, Search } from "lucide-react";
+import { Layers3, Pencil, Plus, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,11 @@ import {
   operationGroupStatuses,
   operationGroupTypes,
   updateOperationGroup,
+  linkShipEventToOperationGroup,
+  unlinkShipEventFromOperationGroup,
   type OperationGroup,
 } from "@/lib/operation-groups.functions";
+import { searchShipEvents, type ShipEvent } from "@/lib/ship-events.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operation-groups")({
   head: () => ({ meta: [{ title: "Operation Groups — Coordinator" }] }),
@@ -75,6 +78,10 @@ const emptyForm = {
   end_date: "",
   notes: "",
 };
+
+function formatOperationGroupError(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
 
 function OperationGroupsPage() {
   const queryClient = useQueryClient();
@@ -395,6 +402,11 @@ function OperationGroupsPage() {
                   <Summary label="Departure warnings" value={detailQuery.data!.alert_counts?.departure_warnings ?? 0} />
                   <Summary label="Immigration reviews" value={detailQuery.data!.alert_counts?.immigration_reviews ?? 0} />
                 </div>
+                <ShipLinkSection
+                  operationGroupId={detailQuery.data.id}
+                  links={detailQuery.data.ship_events}
+                  onChanged={refresh}
+                />
                 <div className="flex flex-wrap gap-2 border-t pt-5">
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Jobs / Trips</Link></Button>
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Ship Events</Link></Button>
@@ -454,6 +466,95 @@ function OperationGroupsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+type ShipLink = GroupDetails["ship_events"][number];
+
+function ShipLinkSection({
+  operationGroupId,
+  links,
+  onChanged,
+}: {
+  operationGroupId: string;
+  links: ShipLink[];
+  onChanged: () => void;
+}) {
+  const searchFn = useServerFn(searchShipEvents);
+  const linkFn = useServerFn(linkShipEventToOperationGroup);
+  const unlinkFn = useServerFn(unlinkShipEventFromOperationGroup);
+  const [search, setSearch] = useState("");
+  const linked = links[0]?.ship_events;
+  const linkedId = links[0]?.ship_event_id ?? null;
+  const searchQuery = useQuery({
+    queryKey: ["operation-group-ship-search", search],
+    queryFn: () => searchFn({ data: { search: search.trim() } }) as Promise<ShipEvent[]>,
+    enabled: search.trim().length >= 2,
+  });
+  const mutation = useMutation({
+    mutationFn: async (nextShipId: string | null) => {
+      if (nextShipId === linkedId) return;
+      if (linkedId) {
+        await unlinkFn({ data: { operation_group_id: operationGroupId, ship_event_id: linkedId } });
+      }
+      if (nextShipId) {
+        await linkFn({ data: { operation_group_id: operationGroupId, ship_event_id: nextShipId } });
+      }
+    },
+    onSuccess: () => {
+      setSearch("");
+      onChanged();
+      toast.success("Linked Ship updated");
+    },
+    onError: (error) => toast.error(formatOperationGroupError(error)),
+  });
+  return (
+    <section className="space-y-3 border-t pt-5">
+      <div className="flex items-center gap-2">
+        <Ship className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Linked Ship (optional)</h3>
+      </div>
+      {linked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+          <div>
+            <p className="font-medium">{linked.ship_name}</p>
+            <p className="text-xs text-muted-foreground">{linked.port} · ETA {linked.eta} · {linked.status ?? "Scheduled"}</p>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={() => mutation.mutate(null)} disabled={mutation.isPending}>
+            <X className="mr-1.5 h-3.5 w-3.5" /> Remove Ship
+          </Button>
+        </div>
+      ) : (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No Ship linked</p>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="operation-group-ship-search">{linked ? "Change Ship" : "Select Ship"}</Label>
+        <Input
+          id="operation-group-ship-search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search active Ship Events"
+        />
+        {search.trim().length >= 2 ? (
+          <div className="max-h-44 overflow-y-auto rounded-md border bg-background">
+            {searchQuery.isFetching ? <p className="p-3 text-xs text-muted-foreground">Searching Ship Events…</p> : null}
+            {!searchQuery.isFetching && (searchQuery.data ?? []).length === 0 ? <p className="p-3 text-xs text-muted-foreground">No active Ship Events found.</p> : null}
+            {(searchQuery.data ?? []).map((ship) => (
+              <button
+                key={ship.id}
+                type="button"
+                className="flex w-full flex-col border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-accent"
+                onClick={() => mutation.mutate(ship.id)}
+                disabled={mutation.isPending}
+              >
+                <span className="font-medium">{ship.ship_name} · {ship.port}</span>
+                <span className="text-muted-foreground">ETA {ship.eta} · {ship.status}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
