@@ -147,20 +147,20 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'operation_groups' AND policyname = 'Company owners manage operation groups') THEN
     CREATE POLICY "Company owners manage operation groups"
       ON public.operation_groups FOR ALL TO authenticated
-      USING (public.is_company_owner(auth.uid(), company_id) OR public.is_admin(auth.uid()))
-      WITH CHECK (public.is_company_owner(auth.uid(), company_id) OR public.is_admin(auth.uid()));
+      USING (private.is_company_owner(auth.uid(), company_id) OR private.is_admin(auth.uid()))
+      WITH CHECK (private.is_company_owner(auth.uid(), company_id) OR private.is_admin(auth.uid()));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'operation_group_ship_events' AND policyname = 'Company owners manage operation group ships') THEN
     CREATE POLICY "Company owners manage operation group ships"
       ON public.operation_group_ship_events FOR ALL TO authenticated
-      USING (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (public.is_company_owner(auth.uid(), g.company_id) OR public.is_admin(auth.uid()))))
-      WITH CHECK (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (public.is_company_owner(auth.uid(), g.company_id) OR public.is_admin(auth.uid()))));
+      USING (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (private.is_company_owner(auth.uid(), g.company_id) OR private.is_admin(auth.uid()))))
+      WITH CHECK (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (private.is_company_owner(auth.uid(), g.company_id) OR private.is_admin(auth.uid()))));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'operation_group_flight_records' AND policyname = 'Company owners manage operation group flights') THEN
     CREATE POLICY "Company owners manage operation group flights"
       ON public.operation_group_flight_records FOR ALL TO authenticated
-      USING (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (public.is_company_owner(auth.uid(), g.company_id) OR public.is_admin(auth.uid()))))
-      WITH CHECK (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (public.is_company_owner(auth.uid(), g.company_id) OR public.is_admin(auth.uid()))));
+      USING (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (private.is_company_owner(auth.uid(), g.company_id) OR private.is_admin(auth.uid()))))
+      WITH CHECK (EXISTS (SELECT 1 FROM public.operation_groups g WHERE g.id = operation_group_id AND (private.is_company_owner(auth.uid(), g.company_id) OR private.is_admin(auth.uid()))));
   END IF;
 END
 $$;
