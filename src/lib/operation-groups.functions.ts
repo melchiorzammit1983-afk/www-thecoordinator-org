@@ -174,10 +174,28 @@ export const getOperationGroup = createServerFn({ method: "POST" })
     const [ships, flights, jobs] = await Promise.all([
       groupsTable(sb).from("operation_group_ship_events").select("ship_event_id, ship_events(id, ship_name, eta, port, berth_id)").eq("operation_group_id", group.id).eq("company_id", companyId),
       groupsTable(sb).from("operation_group_flight_records").select("flight_schedule_record_id, flight_schedule_records(id, flight_number, airline, origin, destination, scheduled_date, scheduled_time, direction)").eq("operation_group_id", group.id).eq("company_id", companyId),
-      groupsTable(sb).from("jobs").select("id, date, time, from_location, to_location, status, operation_group_id").eq("operation_group_id", group.id).eq("company_id", companyId),
+      groupsTable(sb).from("jobs").select("id, date, time, from_location, to_location, status, operation_group_id, driver_id, tracking_kind, flight_schedule_record_id, ship_event_id, from_location_type, to_location_type, needs_review, immigration_required, pax(id, status)").eq("operation_group_id", group.id).eq("company_id", companyId),
     ]);
     for (const result of [ships, flights, jobs]) if (result.error) throw new Error(result.error.message);
-    return { ...group, ship_events: ships.data ?? [], flight_records: flights.data ?? [], jobs: jobs.data ?? [] };
+    const shipIds = (ships.data ?? []).map((row: any) => row.ship_event_id).filter(Boolean);
+    const [etaHistory, portReviews, departureWarnings] = shipIds.length ? await Promise.all([
+      groupsTable(sb).from("ship_event_eta_history").select("ship_event_id").in("ship_event_id", shipIds),
+      groupsTable(sb).from("ship_event_port_change_reviews").select("ship_event_id").in("ship_event_id", shipIds),
+      groupsTable(sb).from("ship_departure_readiness_warnings").select("ship_event_id").in("ship_event_id", shipIds).eq("active", true),
+    ]) : [{ data: [] }, { data: [] }, { data: [] }];
+    for (const result of [etaHistory, portReviews, departureWarnings]) if (result.error) throw new Error(result.error.message);
+    return {
+      ...group,
+      ship_events: ships.data ?? [],
+      flight_records: flights.data ?? [],
+      jobs: jobs.data ?? [],
+      alert_counts: {
+        eta_reviews: new Set((etaHistory.data ?? []).map((row: any) => row.ship_event_id)).size,
+        port_reviews: new Set((portReviews.data ?? []).map((row: any) => row.ship_event_id)).size,
+        departure_warnings: new Set((departureWarnings.data ?? []).map((row: any) => row.ship_event_id)).size,
+        immigration_reviews: (jobs.data ?? []).filter((job: any) => job.immigration_required === "unknown").length,
+      },
+    };
   });
 
 export const createOperationGroup = createServerFn({ method: "POST" })

@@ -51,7 +51,19 @@ type GroupDetails = OperationGroup & {
     to_location: string;
     status: string;
     operation_group_id: string;
+    driver_id?: string | null;
+    tracking_kind?: string | null;
+    from_location_type?: string | null;
+    to_location_type?: string | null;
+    immigration_required?: string | null;
+    pax?: Array<{ id: string; status?: string | null }>;
   }>;
+  alert_counts: {
+    eta_reviews: number;
+    port_reviews: number;
+    departure_warnings: number;
+    immigration_reviews: number;
+  };
 };
 
 const emptyForm = {
@@ -154,6 +166,23 @@ function OperationGroupsPage() {
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const selected = detailQuery.data;
+  const selectedJobs = selected?.jobs ?? [];
+  const passengerCount = selectedJobs.reduce((total, job: any) => total + (job.pax?.length ?? 0), 0);
+  const driverCount = new Set(selectedJobs.map((job: any) => job.driver_id).filter(Boolean)).size;
+  const progress = {
+    completed: selectedJobs.filter((job: any) => job.status === "completed").length,
+    cancelled: selectedJobs.filter((job: any) => job.status === "cancelled").length,
+    active: selectedJobs.filter((job: any) => !["completed", "cancelled", "pending"].includes(job.status)).length,
+    pending: selectedJobs.filter((job: any) => job.status === "pending").length,
+  };
+  const journey = {
+    flightArrivals: selectedJobs.filter((job: any) => job.tracking_kind === "flight" && job.from_location_type === "airport").length,
+    flightDepartures: selectedJobs.filter((job: any) => job.tracking_kind === "flight" && job.to_location_type === "airport").length,
+    shipArrivals: selectedJobs.filter((job: any) => job.tracking_kind === "vessel" && job.from_location_type === "port").length,
+    shipDepartures: selectedJobs.filter((job: any) => job.tracking_kind === "vessel" && job.to_location_type === "port").length,
+    roadTransfers: selectedJobs.filter((job: any) => !job.tracking_kind).length,
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 pb-24 md:px-8 md:py-8 md:pb-8">
@@ -341,9 +370,35 @@ function OperationGroupsPage() {
                     </div>
                   </>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Summary label="Jobs" value={detailQuery.data.jobs.length} />
-                  <Summary label="Trips" value={detailQuery.data.jobs.length} />
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Summary label="Jobs" value={selectedJobs.length} />
+                  <Summary label="Trips" value={selectedJobs.length} />
+                  <Summary label="Passengers" value={passengerCount} />
+                  <Summary label="Drivers assigned" value={driverCount} />
+                </div>
+                <div className="grid gap-3 border-t pt-5 sm:grid-cols-2 lg:grid-cols-4">
+                  <Summary label="Completed" value={progress.completed} />
+                  <Summary label="Active" value={progress.active} />
+                  <Summary label="Pending" value={progress.pending} />
+                  <Summary label="Cancelled" value={progress.cancelled} />
+                </div>
+                <div className="grid gap-3 border-t pt-5 sm:grid-cols-2 lg:grid-cols-5">
+                  <Summary label="Flight arrivals" value={journey.flightArrivals} />
+                  <Summary label="Flight departures" value={journey.flightDepartures} />
+                  <Summary label="Ship arrivals" value={journey.shipArrivals} />
+                  <Summary label="Ship departures" value={journey.shipDepartures} />
+                  <Summary label="Road transfers" value={journey.roadTransfers} />
+                </div>
+                <div className="grid gap-3 border-t pt-5 sm:grid-cols-2 lg:grid-cols-4">
+                  <Summary label="ETA reviews" value={detailQuery.data!.alert_counts?.eta_reviews ?? 0} />
+                  <Summary label="Port reviews" value={detailQuery.data!.alert_counts?.port_reviews ?? 0} />
+                  <Summary label="Departure warnings" value={detailQuery.data!.alert_counts?.departure_warnings ?? 0} />
+                  <Summary label="Immigration reviews" value={detailQuery.data!.alert_counts?.immigration_reviews ?? 0} />
+                </div>
+                <div className="flex flex-wrap gap-2 border-t pt-5">
+                  <Button asChild size="sm" variant="outline"><a href="/coordinator/calendar">Jobs / Trips</a></Button>
+                  <Button asChild size="sm" variant="outline"><a href="/coordinator/ship-operations">Ship Events</a></Button>
+                  <Button asChild size="sm" variant="outline"><a href="/admin/flight-schedule">Flights</a></Button>
                 </div>
                 <div className="grid gap-6 border-t pt-5 md:grid-cols-2">
                   <LinkedList
@@ -362,8 +417,19 @@ function OperationGroupsPage() {
                 item.flight_schedule_records
                   ? `${item.flight_schedule_records.flight_number} · ${item.flight_schedule_records.airline} · ${item.flight_schedule_records.origin} → ${item.flight_schedule_records.destination}`
                         : item.flight_schedule_record_id,
-                    )}
-                  />
+                      )}
+                    />
+                  <div className="md:col-span-2">
+                    <LinkedList
+                      title="Linked Ports"
+                      empty="No linked Ports found"
+                      items={Array.from(new Set([
+                        ...detailQuery.data.ship_events.map((item) => item.ship_events?.port).filter(Boolean),
+                        ...selectedJobs.filter((job: any) => job.from_location_type === "port").map((job: any) => job.from_location),
+                        ...selectedJobs.filter((job: any) => job.to_location_type === "port").map((job: any) => job.to_location),
+                      ])) as string[]}
+                    />
+                  </div>
                 </div>
               </CardContent>
             </>
