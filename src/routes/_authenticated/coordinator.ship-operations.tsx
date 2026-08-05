@@ -65,6 +65,7 @@ function ShipOperationsPage() {
   const [berthId, setBerthId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShipEvent | null>(null);
   const [editedEta, setEditedEta] = useState("");
+  const [etaEditError, setEtaEditError] = useState<string | null>(null);
   const [lifecycleEditing, setLifecycleEditing] = useState<ShipEvent | null>(null);
   const [editedExpectedDeparture, setEditedExpectedDeparture] = useState("");
   const [editedActualArrival, setEditedActualArrival] = useState("");
@@ -117,13 +118,18 @@ function ShipOperationsPage() {
     },
   });
   const updateEta = useMutation({
-    mutationFn: () => updateEtaFn({ data: { id: editing!.id, eta: editedEta } }),
+    mutationFn: (payload: { id: string; eta: string }) => updateEtaFn({ data: payload }),
     onSuccess: () => {
+      setEtaEditError(null);
       setEditing(null);
       refresh();
       toast.success("Ship ETA updated");
     },
-    onError: (reason: Error) => toast.error(reason.message),
+    onError: (reason: Error) => {
+      const message = reason?.message || "Ship ETA could not be updated.";
+      setEtaEditError(message);
+      toast.error(message);
+    },
   });
   const updateLifecycle = useMutation({
     mutationFn: () => updateLifecycleFn({ data: {
@@ -158,6 +164,7 @@ function ShipOperationsPage() {
 
   function openEtaEditor(event: ShipEvent) {
     const { date, time } = isoToMaltaDateTime(event.eta);
+    setEtaEditError(null);
     setEditing(event);
     setEditedEta(`${date}T${time}`);
   }
@@ -407,13 +414,23 @@ function ShipOperationsPage() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              updateEta.mutate();
+              const formData = new FormData(event.currentTarget);
+              const eta = String(formData.get("eta") ?? "").trim();
+              if (!eta || !editing) {
+                const message = "Enter a valid ETA.";
+                setEtaEditError(message);
+                toast.error(message);
+                return;
+              }
+              updateEta.mutate({ id: editing.id, eta });
             }}
             className="space-y-4"
           >
+            {etaEditError ? <p role="alert" className="text-sm text-destructive">{etaEditError}</p> : null}
             <Field label="ETA" htmlFor="edit-ship-eta">
               <Input
                 id="edit-ship-eta"
+                name="eta"
                 type="datetime-local"
                 value={editedEta}
                 onChange={(event) => setEditedEta(event.target.value)}
