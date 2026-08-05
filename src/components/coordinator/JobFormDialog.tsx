@@ -18,6 +18,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking, getLinkedFlightScheduleRecord, searchActiveFlightScheduleRecords } from "@/lib/coordinator.functions";
 import { createShipEvent, getLinkedShipEvent, searchShipEvents } from "@/lib/ship-events.functions";
+import { listOperationGroups, createOperationGroup, type OperationGroup } from "@/lib/operation-groups.functions";
 import { listActivePorts, getPortWithActiveBerths, type PortDirectoryPort, type PortDirectoryBerth } from "@/lib/port-directory.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
@@ -116,6 +117,30 @@ function PortDirectoryPicker({
   );
 }
 
+function OperationGroupPicker({ value, onChange }: { value: string | null; onChange: (value: string | null) => void }) {
+  const listFn = useServerFn(listOperationGroups);
+  const createFn = useServerFn(createOperationGroup);
+  const query = useQuery({ queryKey: ["operation-groups", "booking"], queryFn: () => listFn() as Promise<OperationGroup[]> });
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [reference, setReference] = useState("");
+  const [name, setName] = useState("");
+  const createMutation = useMutation({
+    mutationFn: () => createFn({ data: { reference: reference.trim(), name: name.trim(), type: "other", status: "draft", start_date: null, end_date: null, notes: null } }),
+    onSuccess: (group) => { onChange(group.id); setReference(""); setName(""); setCreating(false); qc.invalidateQueries({ queryKey: ["operation-groups", "booking"] }); toast.success("Operation Group created"); },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const groups = (query.data ?? []).filter((group) => group.status === "draft" || group.status === "active" || group.id === value);
+  return <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+    <Label>Operation Group (optional)</Label>
+    <Select value={value ?? "__none__"} onValueChange={(next) => onChange(next === "__none__" ? null : next)}>
+      <SelectTrigger><SelectValue placeholder="Leave ungrouped" /></SelectTrigger>
+      <SelectContent><SelectItem value="__none__">Leave ungrouped</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</SelectItem>)}</SelectContent>
+    </Select>
+    {!creating ? <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}><Plus className="mr-1 h-3 w-3" />Create Operation Group</Button> : <div className="space-y-2 rounded border bg-background p-2"><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reference" /><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" /><div className="flex gap-2"><Button type="button" size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !reference.trim() || !name.trim()}>Create</Button><Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button></div></div>}
+  </div>;
+}
+
 type Job = {
   id: string;
   from_location: string; to_location: string;
@@ -133,6 +158,7 @@ type Job = {
   to_berth_id?: string | null;
   onward_flight_schedule_record_id?: string | null;
   onward_ship_event_id?: string | null;
+  operation_group_id?: string | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   immigration_required?: "yes" | "no" | "unknown" | null;
   tracking_kind?: string | null;
@@ -272,6 +298,7 @@ function ManualForm({
   const [shipEventId, setShipEventId] = useState<string | null>(job?.ship_event_id ?? null);
   const [onwardFlightScheduleRecordId, setOnwardFlightScheduleRecordId] = useState<string | null>(job?.onward_flight_schedule_record_id ?? null);
   const [onwardShipEventId, setOnwardShipEventId] = useState<string | null>(job?.onward_ship_event_id ?? null);
+  const [operationGroupId, setOperationGroupId] = useState<string | null>((job as Job | undefined)?.operation_group_id ?? null);
   const [fromAutoEndpointType, setFromAutoEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
   const [toAutoEndpointType, setToAutoEndpointType] = useState<JourneyEndpoint>(job?.to_location_type ?? "local");
   const [fromEndpointType, setFromEndpointType] = useState<JourneyEndpoint>(job?.from_location_type ?? "local");
@@ -691,6 +718,7 @@ function ManualForm({
         ship_event_id: requiresShip ? shipEventId : null,
         onward_flight_schedule_record_id: allowsOnwardFlight ? onwardFlightScheduleRecordId : null,
         onward_ship_event_id: allowsOnwardShip ? onwardShipEventId : null,
+        operation_group_id: operationGroupId,
         scheduled_transport_pickup_offset_minutes: trackingKind ? effectivePickupOffsetMinutes : null,
         immigration_required: immigrationRequired,
         // The server accepts a supported tracker or an omitted value. Never
@@ -946,6 +974,7 @@ function ManualForm({
               </p>
             </div>
           </div>
+          <OperationGroupPicker value={operationGroupId} onChange={setOperationGroupId} />
           {!job && (
             <div className="space-y-2 rounded-lg border bg-muted/10 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1583,6 +1612,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
     return values.every((value) => value === first) ? first : "";
   }, [parsed]);
   const [operationName, setOperationName] = useState("");
+  const [operationGroupId, setOperationGroupId] = useState<string | null>(null);
   useEffect(() => {
     setOperationName((current) => (current.trim() ? current : inferredOperationName));
   }, [inferredOperationName]);
@@ -1685,6 +1715,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const mut = useMutation({
     mutationFn: () => bulkFn({ data: {
       operation_name: operationName.trim() || undefined,
+      operation_group_id: operationGroupId,
       trips: valid.map((t) => ({
         from_location: t.from_location, to_location: t.to_location,
         // Bulk imports have no trusted endpoint metadata. Their established
@@ -1761,6 +1792,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
             </Button>
           </div>
         </div>
+        <OperationGroupPicker value={operationGroupId} onChange={setOperationGroupId} />
 
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Operation name (optional)</Label>
