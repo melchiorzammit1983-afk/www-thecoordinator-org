@@ -22,6 +22,7 @@ import {
   type OperationGroup,
 } from "@/lib/operation-groups.functions";
 import { searchShipEvents, type ShipEvent } from "@/lib/ship-events.functions";
+import { operationGroupColours, operationGroupColourDotClasses, operationGroupColourLabels, normaliseOperationGroupColour, type OperationGroupColour } from "@/lib/operation-group-colours";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operation-groups")({
   head: () => ({ meta: [{ title: "Operation Groups — Coordinator" }] }),
@@ -77,6 +78,7 @@ const emptyForm = {
   start_date: "",
   end_date: "",
   notes: "",
+  colour: "slate" as OperationGroupColour,
 };
 
 function formatOperationGroupError(error: unknown) {
@@ -91,7 +93,8 @@ function OperationGroupsPage() {
   const updateFn = useServerFn(updateOperationGroup);
   const statusFn = useServerFn(changeOperationGroupStatus);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all">("all");
+  const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all" | "live">("live");
+  const [typeFilter, setTypeFilter] = useState<(typeof operationGroupTypes)[number] | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newForm, setNewForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState(emptyForm);
@@ -111,12 +114,13 @@ function OperationGroupsPage() {
     const term = search.trim().toLowerCase();
     return groups.filter(
       (group) =>
-        (filter === "all" || group.status === filter) &&
+        (filter === "all" || (filter === "live" ? ["draft", "active"].includes(group.status) : group.status === filter)) &&
+        (typeFilter === "all" || group.type === typeFilter) &&
         (!term ||
           group.reference.toLowerCase().includes(term) ||
           group.name.toLowerCase().includes(term)),
     );
-  }, [filter, groups, search]);
+  }, [filter, groups, search, typeFilter]);
 
   useEffect(() => {
     const group = detailQuery.data;
@@ -129,6 +133,7 @@ function OperationGroupsPage() {
       start_date: group.start_date ?? "",
       end_date: group.end_date ?? "",
       notes: group.notes ?? "",
+      colour: normaliseOperationGroupColour(group.colour),
     });
   }, [detailQuery.data, editing]);
 
@@ -243,17 +248,18 @@ function OperationGroupsPage() {
               />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", ...operationGroupStatuses] as const).map((status) => (
+              {(["live", "all", ...operationGroupStatuses] as const).map((status) => (
                 <Button
                   key={status}
                   size="sm"
                   variant={filter === status ? "default" : "outline"}
                   onClick={() => setFilter(status)}
                 >
-                  {status === "all" ? "All" : labelStatus(status)}
+                  {status === "all" ? "All" : status === "live" ? "Draft + Active" : labelStatus(status)}
                 </Button>
               ))}
             </div>
+            <select className="mt-2 h-9 w-full rounded-md border bg-background px-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} aria-label="Operation Group type filter"><option value="all">All group types</option>{operationGroupTypes.map((type) => <option key={type} value={type}>{labelType(type)}</option>)}</select>
           </CardHeader>
           <CardContent className="space-y-2">
             {groupsQuery.isLoading ? (
@@ -275,10 +281,13 @@ function OperationGroupsPage() {
                   }}
                   className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition hover:bg-accent ${selectedId === group.id ? "border-primary bg-primary/5" : ""}`}
                 >
-                  <span className="min-w-0">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className={`h-3 w-3 shrink-0 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} aria-label={`${operationGroupColourLabels[normaliseOperationGroupColour(group.colour)]} group colour`} />
+                    <span className="min-w-0">
                     <span className="block truncate font-medium">{group.reference}</span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {group.name}
+                    </span>
                     </span>
                   </span>
                   <Badge variant={group.status === "active" ? "secondary" : "outline"}>
@@ -306,7 +315,7 @@ function OperationGroupsPage() {
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">{detailQuery.data.reference}</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base"><span className={`h-3 w-3 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(detailQuery.data.colour)]}`} />{detailQuery.data.reference}</CardTitle>
                     <CardDescription>{detailQuery.data.name}</CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -352,6 +361,7 @@ function OperationGroupsPage() {
                 ) : (
                   <>
                     <div className="grid gap-3 text-sm sm:grid-cols-2">
+                      <Info label="Colour" value={operationGroupColourLabels[normaliseOperationGroupColour(detailQuery.data.colour)]} />
                       <Info label="Type" value={labelType(detailQuery.data.type)} />
                       <Info
                         label="Dates"
@@ -616,6 +626,16 @@ function GroupFields({
               {labelStatus(status)}
             </option>
           ))}
+        </select>
+      </Field>
+      <Field label="Colour" htmlFor={`${prefix}-colour`}>
+        <select
+          id={`${prefix}-colour`}
+          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          value={normaliseOperationGroupColour(value.colour)}
+          onChange={(event) => onChange({ ...value, colour: event.target.value as OperationGroupColour })}
+        >
+          {operationGroupColours.map((colour) => <option key={colour} value={colour}>{operationGroupColourLabels[colour]}</option>)}
         </select>
       </Field>
       <Field label="Start date" htmlFor={`${prefix}-start`}>

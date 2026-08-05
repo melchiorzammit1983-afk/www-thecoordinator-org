@@ -488,7 +488,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, operation_groups(reference,name,type,status), scheduled_transport_pickup_offset_minutes, immigration_required, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color)), from_port:ports!jobs_from_port_id_fkey(name), from_berth:berths!jobs_from_berth_id_fkey(name), to_port:ports!jobs_to_port_id_fkey(name), to_berth:berths!jobs_to_berth_id_fkey(name)";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, operation_groups(reference,name,type,status,colour), scheduled_transport_pickup_offset_minutes, immigration_required, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color)), from_port:ports!jobs_from_port_id_fkey(name), from_berth:berths!jobs_from_berth_id_fkey(name), to_port:ports!jobs_to_port_id_fkey(name), to_berth:berths!jobs_to_berth_id_fkey(name)";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -1699,6 +1699,70 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
     });
     if (completionError && completionError.code !== "23505") throw new Error(completionError.message);
     return { completed: completionError?.code !== "23505", alreadyCompleted: completionError?.code === "23505" };
+  });
+
+/** Returns the latest actionable ETA change for one linked ship trip. */
+export const getShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs")
+      .select("id, company_id, ship_event_id, pickup_at, date, time, driver_id, driver_accepted_at, status")
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) return null;
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history")
+      .select("id, previous_eta, new_eta, changed_at")
+      .eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    if (!history || history.previous_eta === history.new_eta) return null;
+    const { data: completion, error: completionError } = await tables.from("ship_eta_review_completions")
+      .select("id").eq("eta_history_id", history.id).maybeSingle();
+    if (completionError) throw new Error(completionError.message);
+    if (completion) return null;
+    const deltaMs = new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime();
+    const currentPickupMs = job.pickup_at ? new Date(job.pickup_at).getTime() : NaN;
+    const suggestedPickupMs = Number.isFinite(currentPickupMs) ? currentPickupMs + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    return { job_id: job.id, history_id: history.id, previous_eta: history.previous_eta, new_eta: history.new_eta, changed_at: history.changed_at, current_pickup_at: job.pickup_at, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) };
+  });
+
+/** Applies or keeps a reviewed ETA suggestion; locked trips use the existing driver approval path. */
+export const resolveShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid(), action: z.enum(["apply", "keep"]) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs").select("id, company_id, ship_event_id, pickup_at, driver_id, driver_accepted_at, status").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) throw new Error("No active Ship ETA review was found.");
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history").select("id, previous_eta, new_eta, changed_at").eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    const { data: completion, error: completionError } = history ? await tables.from("ship_eta_review_completions").select("id").eq("eta_history_id", history.id).maybeSingle() : { data: null, error: null };
+    if (completionError) throw new Error(completionError.message);
+    const deltaMs = history ? new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime() : NaN;
+    const suggestedPickupMs = history && job.pickup_at ? new Date(job.pickup_at).getTime() + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    const review = history && !completion && history.previous_eta !== history.new_eta ? { job_id: job.id, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) } : null;
+    if (!review) throw new Error("No active Ship ETA review was found.");
+    if (data.action === "apply" && review.driver_locked) {
+      const job = await loadLockableJob(data.job_id, c.id);
+      return createChangeRequest({ jobId: data.job_id, companyId: c.id, requestedBy: context.userId, kind: "edit", requestedChanges: { date: review.suggested_date, time: review.suggested_time, pickup_at: review.suggested_date && review.suggested_time ? maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time) : null }, driverId: job?.driver_id }).then((result) => ({ ...result, pending: true as const }));
+    }
+    if (data.action === "apply") {
+      if (!review.suggested_date || !review.suggested_time) throw new Error("Suggested pickup time is unavailable.");
+      const { error } = await tables.from("jobs").update({ date: review.suggested_date, time: review.suggested_time, pickup_at: maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time), needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await tables.from("jobs").update({ needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true, pending: false };
   });
 
 /**

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { completeShipEtaReview, completeTransportConflictReview, getOperationsInbox, listJobs } from "@/lib/coordinator.functions";
 import { listOperationGroups, getOperationGroup } from "@/lib/operation-groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operations")({
@@ -24,6 +25,13 @@ function OperationsCentrePage() {
   const groupDetailFn = useServerFn(getOperationGroup);
   const [groupFilter, setGroupFilter] = useState<"all" | "grouped" | "ungrouped">("all");
   const [groupSearch, setGroupSearch] = useState("");
+  const [groupStatus, setGroupStatus] = useState("live");
+  const [groupType, setGroupType] = useState("all");
+  const [transportFilter, setTransportFilter] = useState("all");
+  const [tripStatus, setTripStatus] = useState("all");
+  const [needsAttention, setNeedsAttention] = useState(false);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["operations-inbox"],
@@ -40,9 +48,15 @@ function OperationsCentrePage() {
       const group = job.operation_groups;
       const matchesFilter = groupFilter === "all" || (groupFilter === "grouped" ? grouped : !grouped);
       const matchesSearch = !term || `${group?.reference ?? ""} ${group?.name ?? ""}`.toLowerCase().includes(term);
-      return matchesFilter && matchesSearch;
+      const matchesGroupStatus = groupStatus === "all" || (groupStatus === "live" ? ["draft", "active"].includes(group?.status ?? "") : group?.status === groupStatus);
+      const matchesGroupType = groupType === "all" || group?.type === groupType;
+      const matchesTransport = transportFilter === "all" || (transportFilter === "flight" ? Boolean(job.flight_schedule_record_id) : transportFilter === "ship" ? Boolean(job.ship_event_id) : !job.flight_schedule_record_id && !job.ship_event_id);
+      const matchesTripStatus = tripStatus === "all" || job.status === tripStatus;
+      const matchesAttention = !needsAttention || Boolean(job.needs_review) || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase());
+      const matchesDate = (!fromDate || String(job.date ?? "") >= fromDate) && (!toDate || String(job.date ?? "") <= toDate);
+      return matchesFilter && matchesSearch && matchesGroupStatus && matchesGroupType && matchesTransport && matchesTripStatus && matchesAttention && matchesDate;
     });
-  }, [groupFilter, groupSearch, jobsQuery.data]);
+  }, [fromDate, groupFilter, groupSearch, groupStatus, groupType, jobsQuery.data, needsAttention, toDate, transportFilter, tripStatus]);
   const completeReview = useMutation({
     mutationFn: ({ kind, id }: { kind: "ship_eta" | "transport_conflict"; id: string }) => kind === "ship_eta"
       ? completeShipEtaReviewFn({ data: { eta_history_id: id } })
@@ -143,11 +157,20 @@ function OperationsCentrePage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Operation Groups</CardTitle>
           <CardDescription>Work grouped explicitly by the coordinator. Existing ordering and calculations are unchanged.</CardDescription>
-          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row">
             <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm" value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder="Search group reference or name" />
             <div className="flex flex-wrap gap-2">
               {(["all", "grouped", "ungrouped"] as const).map((value) => <Button key={value} type="button" size="sm" variant={groupFilter === value ? "default" : "outline"} onClick={() => setGroupFilter(value)}>{value[0].toUpperCase() + value.slice(1)}</Button>)}
             </div>
+          <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={groupStatus} onChange={(event) => setGroupStatus(event.target.value)} aria-label="Group status filter"><option value="live">Draft + Active</option><option value="all">All group statuses</option><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={groupType} onChange={(event) => setGroupType(event.target.value)} aria-label="Group type filter"><option value="all">All group types</option>{["crew_change", "conference", "event", "charter", "hotel_operation", "airport_operation", "vip_movement", "other"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={transportFilter} onChange={(event) => setTransportFilter(event.target.value)} aria-label="Transport filter"><option value="all">All transport</option><option value="flight">Flight</option><option value="ship">Ship</option><option value="road">Road / none</option></select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={tripStatus} onChange={(event) => setTripStatus(event.target.value)} aria-label="Trip status filter"><option value="all">All trip statuses</option><option value="pending">Pending</option><option value="assigned">Assigned</option><option value="en_route">En route</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={needsAttention} onChange={(event) => setNeedsAttention(event.target.checked)} />Needs attention</label>
+            <input className="h-9 rounded-md border bg-background px-2 text-sm" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} aria-label="From date" />
+            <input className="h-9 rounded-md border bg-background px-2 text-sm" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} aria-label="To date" />
+          </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -155,7 +178,7 @@ function OperationsCentrePage() {
             const group = job.operation_groups;
             return <div key={job.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0"><p className="truncate text-sm">{job.from_location} → {job.to_location}</p><p className="text-xs text-muted-foreground">{job.date} {String(job.time ?? "").slice(0, 5)} · {job.status ?? "scheduled"}</p></div>
-              {group ? <Link className="shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent" to="/coordinator/operation-groups" onClick={() => setSelectedGroupId(job.operation_group_id)}>{group.reference} · {group.name}</Link> : <span className="text-xs text-muted-foreground">Ungrouped</span>}
+              {group ? <Link className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:opacity-90 ${operationGroupColourClasses[normaliseOperationGroupColour(group.colour)]}`} to="/coordinator/operation-groups" onClick={() => setSelectedGroupId(job.operation_group_id)}><span className={`h-2 w-2 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</Link> : <span className="text-xs text-muted-foreground">Ungrouped</span>}
             </div>;
           })}
         </CardContent>
@@ -165,7 +188,7 @@ function OperationsCentrePage() {
           const jobs = (jobsQuery.data ?? []).filter((job: any) => job.operation_group_id === group.id);
           const detail = selectedGroupQuery.data?.id === group.id ? selectedGroupQuery.data : null;
           return <Card key={group.id}>
-            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between gap-2 text-base"><span>{group.reference} · {group.name}</span><Badge variant="outline">{group.status}</Badge></CardTitle><CardDescription>{group.type.replaceAll("_", " ")}</CardDescription></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between gap-2 text-base"><span className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</span><Badge variant="outline">{group.status}</Badge></CardTitle><CardDescription>{group.type.replaceAll("_", " ")}</CardDescription></CardHeader>
             <CardContent className="space-y-2 text-sm"><div className="grid grid-cols-2 gap-2"><Summary label="Jobs" value={jobs.length} /><Summary label="Trips" value={jobs.length} /></div>{detail ? <><p className="text-xs text-muted-foreground">Ships: {detail.ship_events?.map((item: any) => item.ship_events?.ship_name).filter(Boolean).join(", ") || "None"}</p><p className="text-xs text-muted-foreground">Flights: {detail.flight_records?.map((item: any) => item.flight_schedule_records?.flight_number).filter(Boolean).join(", ") || "None"}</p></> : null}<Button asChild type="button" size="sm" variant="outline" onClick={() => setSelectedGroupId(group.id)}><Link to="/coordinator/operation-groups">Open Operation Group</Link></Button></CardContent>
           </Card>;
         })}
