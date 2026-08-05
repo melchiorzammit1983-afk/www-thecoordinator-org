@@ -638,6 +638,37 @@ export const listJobs = createServerFn({ method: "GET" })
       }
     }
 
+    // A linked schedule record is authoritative for the flight code and
+    // scheduled time.  Fill the legacy display fields when they are absent so
+    // cards remain recognisable even for older rows created before those
+    // denormalised values were populated.
+    const linkedFlightIds = Array.from(
+      new Set(combined.map((row) => row.flight_schedule_record_id).filter(Boolean)),
+    ) as string[];
+    if (linkedFlightIds.length) {
+      const { data: scheduleRecords } = await supabaseAdmin
+        .from("flight_schedule_records")
+        .select("id, scheduled_date, scheduled_time, direction, flight_number")
+        .in("id", linkedFlightIds);
+      const scheduleById = new Map((scheduleRecords ?? []).map((record: any) => [record.id, record]));
+      for (const row of combined) {
+        const record = scheduleById.get(row.flight_schedule_record_id);
+        if (!record) continue;
+        const code = record.flight_number ? String(record.flight_number).trim() : null;
+        if (code) {
+          if (record.direction === "arrival" && !row.from_flight) row.from_flight = code;
+          if (record.direction === "departure" && !row.to_flight) row.to_flight = code;
+        }
+        if (!row.flight_scheduled_at && record.scheduled_date && record.scheduled_time) {
+          try {
+            row.flight_scheduled_at = maltaWallTimeToUtcIso(record.scheduled_date, record.scheduled_time);
+          } catch {
+            // Keep the card usable if a legacy schedule has malformed time data.
+          }
+        }
+      }
+    }
+
     return combined;
   });
 
@@ -4208,6 +4239,31 @@ async function fetchLiveStatus(
   return r;
 }
 
+/**
+ * A scheduled flight record is the source of truth for a linked flight.  The
+ * copied from/to code fields are retained for backwards compatibility, but
+ * tracking must not reject a valid schedule just because those legacy fields
+ * are stale or empty.
+ */
+async function resolveLinkedFlightForTracking(
+  supabaseAdmin: any,
+  job: { flight_schedule_record_id?: string | null; from_flight?: string | null; to_flight?: string | null },
+): Promise<{ code: string | null; side: FlightSide | undefined }> {
+  let code = job.from_flight?.trim() || job.to_flight?.trim() || null;
+  let side: FlightSide | undefined = job.from_flight ? "arr" : job.to_flight ? "dep" : undefined;
+  if (!job.flight_schedule_record_id) return { code, side };
+
+  const { data: record } = await supabaseAdmin
+    .from("flight_schedule_records")
+    .select("flight_number, direction")
+    .eq("id", job.flight_schedule_record_id)
+    .maybeSingle();
+  if (record?.flight_number) code = String(record.flight_number).trim();
+  if (record?.direction === "arrival") side = "arr";
+  if (record?.direction === "departure") side = "dep";
+  return { code, side };
+}
+
 
 // Persist the live status onto a job row, applying the 15-min
 // "time_mismatch" override when the scheduled time drifts from the pickup.
@@ -4238,15 +4294,15 @@ export async function applyLiveStatusToJob(
     return notTracked(`Ship ETA ${formatMaltaTime(ship.eta)}`);
   }
   if (!job.flight_schedule_record_id) return notTracked("No transport linked");
-  const code = job.from_flight || job.to_flight;
+  const linkedFlight = await resolveLinkedFlightForTracking(supabaseAdmin, job);
+  const code = linkedFlight.code;
   if (!code) return { ok: false, reason: "no_code" };
   if (!liveStatusProviderEnabled()) {
     return { ok: false, reason: "provider_unavailable" };
   }
   const kind: "flight" = "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
-  const side: FlightSide | undefined =
-    kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
+  const side: FlightSide | undefined = kind === "flight" ? linkedFlight.side : undefined;
   const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
 
   if (!result.ok) {
