@@ -2743,8 +2743,8 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 </Badge>
               )}
               {job.needs_review && (
-                <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/15">
-                  {job.auto_created_from_crew_itinerary
+                <Badge className={`text-[10px] border ${job.ship_event_id ? "bg-destructive/15 text-destructive border-destructive/40 hover:bg-destructive/15" : "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/15"}`}>
+                  {job.ship_event_id ? "Ship ETA review" : job.auto_created_from_crew_itinerary
                     ? "Auto-created from crew · needs review"
                     : job.created_by_driver
                       ? "Driver trip · needs review"

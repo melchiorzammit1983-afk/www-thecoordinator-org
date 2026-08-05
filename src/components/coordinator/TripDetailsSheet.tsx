@@ -17,7 +17,7 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
+import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord, getShipEtaTripReview, resolveShipEtaTripReview } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayJobLocation, displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
@@ -169,6 +169,8 @@ export function TripDetailsSheet({
 
   const qc = useQueryClient();
   const normalizeFn = useServerFn(normalizeJobData);
+  const shipEtaReviewFn = useServerFn(getShipEtaTripReview);
+  const resolveShipEtaReviewFn = useServerFn(resolveShipEtaTripReview);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
   const flightImpactFn = useServerFn(getFlightScheduleRecordImpact);
@@ -178,6 +180,16 @@ export function TripDetailsSheet({
   const [boardingNote, setBoardingNote] = useState("");
 
   const isRealJobIdRaw = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+  const { data: shipEtaReview } = useQuery({
+    queryKey: ["ship-eta-trip-review", job.id],
+    queryFn: () => shipEtaReviewFn({ data: { job_id: job.id } }) as Promise<{ previous_eta: string; new_eta: string; changed_at: string; suggested_date: string | null; suggested_time: string | null; driver_locked: boolean } | null>,
+    enabled: open && isRealJobIdRaw && !!job.ship_event_id,
+  });
+  const shipEtaReviewMutation = useMutation({
+    mutationFn: (action: "apply" | "keep") => resolveShipEtaReviewFn({ data: { job_id: job.id, action } }),
+    onSuccess: (result: any) => { toast.success(result.pending ? "Change request sent to driver" : "ETA review resolved"); qc.invalidateQueries({ queryKey: ["ship-eta-trip-review", job.id] }); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   // Protected server fns 401 when there is no session (e.g. after sign-out while
   // the sheet is mounted, or on the /auth screen). Gate every polling query on it.
@@ -425,6 +437,12 @@ export function TripDetailsSheet({
               </div>
             )}
             <SafetyFlagBadges job={job} />
+            {shipEtaReview ? <div className="space-y-2 rounded-md border-2 border-destructive/60 bg-destructive/10 p-3 text-sm" role="alert">
+              <div className="font-semibold text-destructive">Ship ETA changed — review pickup</div>
+              <div className="grid gap-1 text-xs"><span>Current pickup: {job.date} {job.time?.slice(0, 5)}</span><span>Suggested pickup: {shipEtaReview.suggested_date ?? "—"} {shipEtaReview.suggested_time ?? "—"}</span><span>ETA change: {Math.round((new Date(shipEtaReview.new_eta).getTime() - new Date(shipEtaReview.previous_eta).getTime()) / 60000)} minutes</span></div>
+              <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => shipEtaReviewMutation.mutate("apply")} disabled={shipEtaReviewMutation.isPending || !shipEtaReview.suggested_time}>Apply suggested time</Button><Button size="sm" variant="outline" onClick={onEdit}>Edit</Button><Button size="sm" variant="ghost" onClick={() => shipEtaReviewMutation.mutate("keep")} disabled={shipEtaReviewMutation.isPending}>Keep current</Button></div>
+              {shipEtaReview.driver_locked ? <p className="text-xs text-muted-foreground">This trip is driver-locked; applying the suggestion requests driver approval.</p> : null}
+            </div> : null}
             {job.operation_groups ? <div className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${operationGroupColourClasses[normaliseOperationGroupColour(job.operation_groups.colour)]}`}><span className="h-2 w-2 rounded-full bg-current" />{job.operation_groups.reference} · {job.operation_groups.name}</div> : null}
             {(job as any).group_id && (
               <GroupStopsPanel groupId={(job as any).group_id} groupName={(job as any).group_name} />

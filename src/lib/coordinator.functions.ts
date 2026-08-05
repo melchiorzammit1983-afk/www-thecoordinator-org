@@ -1701,6 +1701,70 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
     return { completed: completionError?.code !== "23505", alreadyCompleted: completionError?.code === "23505" };
   });
 
+/** Returns the latest actionable ETA change for one linked ship trip. */
+export const getShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs")
+      .select("id, company_id, ship_event_id, pickup_at, date, time, driver_id, driver_accepted_at, status")
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) return null;
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history")
+      .select("id, previous_eta, new_eta, changed_at")
+      .eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    if (!history || history.previous_eta === history.new_eta) return null;
+    const { data: completion, error: completionError } = await tables.from("ship_eta_review_completions")
+      .select("id").eq("eta_history_id", history.id).maybeSingle();
+    if (completionError) throw new Error(completionError.message);
+    if (completion) return null;
+    const deltaMs = new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime();
+    const currentPickupMs = job.pickup_at ? new Date(job.pickup_at).getTime() : NaN;
+    const suggestedPickupMs = Number.isFinite(currentPickupMs) ? currentPickupMs + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    return { job_id: job.id, history_id: history.id, previous_eta: history.previous_eta, new_eta: history.new_eta, changed_at: history.changed_at, current_pickup_at: job.pickup_at, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) };
+  });
+
+/** Applies or keeps a reviewed ETA suggestion; locked trips use the existing driver approval path. */
+export const resolveShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid(), action: z.enum(["apply", "keep"]) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs").select("id, company_id, ship_event_id, pickup_at, driver_id, driver_accepted_at, status").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) throw new Error("No active Ship ETA review was found.");
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history").select("id, previous_eta, new_eta, changed_at").eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    const { data: completion, error: completionError } = history ? await tables.from("ship_eta_review_completions").select("id").eq("eta_history_id", history.id).maybeSingle() : { data: null, error: null };
+    if (completionError) throw new Error(completionError.message);
+    const deltaMs = history ? new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime() : NaN;
+    const suggestedPickupMs = history && job.pickup_at ? new Date(job.pickup_at).getTime() + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    const review = history && !completion && history.previous_eta !== history.new_eta ? { job_id: job.id, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) } : null;
+    if (!review) throw new Error("No active Ship ETA review was found.");
+    if (data.action === "apply" && review.driver_locked) {
+      const job = await loadLockableJob(data.job_id, c.id);
+      return createChangeRequest({ jobId: data.job_id, companyId: c.id, requestedBy: context.userId, kind: "edit", requestedChanges: { date: review.suggested_date, time: review.suggested_time, pickup_at: review.suggested_date && review.suggested_time ? maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time) : null }, driverId: job?.driver_id }).then((result) => ({ ...result, pending: true as const }));
+    }
+    if (data.action === "apply") {
+      if (!review.suggested_date || !review.suggested_time) throw new Error("Suggested pickup time is unavailable.");
+      const { error } = await tables.from("jobs").update({ date: review.suggested_date, time: review.suggested_time, pickup_at: maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time), needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await tables.from("jobs").update({ needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true, pending: false };
+  });
+
 /**
  * Completes an explicitly linked Ship-to-Flight conflict review. The conflict
  * itself is never stored: it is recalculated against current ETA, active
