@@ -93,7 +93,8 @@ function OperationGroupsPage() {
   const updateFn = useServerFn(updateOperationGroup);
   const statusFn = useServerFn(changeOperationGroupStatus);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all">("all");
+  const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all" | "live">("live");
+  const [typeFilter, setTypeFilter] = useState<(typeof operationGroupTypes)[number] | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newForm, setNewForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState(emptyForm);
@@ -113,12 +114,13 @@ function OperationGroupsPage() {
     const term = search.trim().toLowerCase();
     return groups.filter(
       (group) =>
-        (filter === "all" || group.status === filter) &&
+        (filter === "all" || (filter === "live" ? ["draft", "active"].includes(group.status) : group.status === filter)) &&
+        (typeFilter === "all" || group.type === typeFilter) &&
         (!term ||
           group.reference.toLowerCase().includes(term) ||
           group.name.toLowerCase().includes(term)),
     );
-  }, [filter, groups, search]);
+  }, [filter, groups, search, typeFilter]);
 
   useEffect(() => {
     const group = detailQuery.data;
@@ -246,17 +248,18 @@ function OperationGroupsPage() {
               />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", ...operationGroupStatuses] as const).map((status) => (
+              {(["live", "all", ...operationGroupStatuses] as const).map((status) => (
                 <Button
                   key={status}
                   size="sm"
                   variant={filter === status ? "default" : "outline"}
                   onClick={() => setFilter(status)}
                 >
-                  {status === "all" ? "All" : labelStatus(status)}
+                  {status === "all" ? "All" : status === "live" ? "Draft + Active" : labelStatus(status)}
                 </Button>
               ))}
             </div>
+            <select className="mt-2 h-9 w-full rounded-md border bg-background px-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} aria-label="Operation Group type filter"><option value="all">All group types</option>{operationGroupTypes.map((type) => <option key={type} value={type}>{labelType(type)}</option>)}</select>
           </CardHeader>
           <CardContent className="space-y-2">
             {groupsQuery.isLoading ? (
