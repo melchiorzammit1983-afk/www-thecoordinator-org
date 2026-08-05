@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Layers3, Pencil, Plus, Search } from "lucide-react";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/coordinator/operation-grou
 type GroupDetails = OperationGroup & {
   ship_events: Array<{
     ship_event_id: string;
-    ship_events: { id: string; ship_name: string; eta: string; port: string } | null;
+    ship_events: { id: string; ship_name: string; eta: string; expected_departure?: string | null; actual_arrival?: string | null; actual_departure?: string | null; port: string; berth_id?: string | null; status?: string | null; berths?: { name: string } | null } | null;
   }>;
   flight_records: Array<{
     flight_schedule_record_id: string;
@@ -396,10 +396,27 @@ function OperationGroupsPage() {
                   <Summary label="Immigration reviews" value={detailQuery.data!.alert_counts?.immigration_reviews ?? 0} />
                 </div>
                 <div className="flex flex-wrap gap-2 border-t pt-5">
-                  <Button asChild size="sm" variant="outline"><a href="/coordinator/calendar">Jobs / Trips</a></Button>
-                  <Button asChild size="sm" variant="outline"><a href="/coordinator/ship-operations">Ship Events</a></Button>
-                  <Button asChild size="sm" variant="outline"><a href="/admin/flight-schedule">Flights</a></Button>
+                  <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Jobs / Trips</Link></Button>
+                  <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Ship Events</Link></Button>
+                  <Button asChild size="sm" variant="outline"><Link to="/admin/flight-schedule">Flights</Link></Button>
                 </div>
+                <section className="space-y-3 border-t pt-5">
+                  <h3 className="text-sm font-semibold">Trips</h3>
+                  {selectedJobs.length === 0 ? <p className="text-sm text-muted-foreground">No Jobs or Trips assigned.</p> : <div className="space-y-2">{selectedJobs.map((job: any) => <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"><span>{job.date} {String(job.time ?? "").slice(0, 5)} · {job.from_location} → {job.to_location} · {job.status}</span><Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Open Job / Trip</Link></Button></div>)}</div>}
+                </section>
+                <section className="space-y-3 border-t pt-5">
+                  <h3 className="text-sm font-semibold">Ship</h3>
+                  {detailQuery.data.ship_events.length === 0 ? <p className="text-sm text-muted-foreground">No Ship Event linked.</p> : detailQuery.data.ship_events.map((item) => item.ship_events ? <div key={item.ship_event_id} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{item.ship_events.ship_name}</span><Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Open Ship Operations</Link></Button></div><p className="mt-2 text-xs text-muted-foreground">ETA: {item.ship_events.eta} · Expected Departure: {item.ship_events.expected_departure ?? "—"} · Actual Arrival: {item.ship_events.actual_arrival ?? "—"} · Actual Departure: {item.ship_events.actual_departure ?? "—"}</p><p className="text-xs text-muted-foreground">Port: {item.ship_events.port} · Berth: {item.ship_events.berths?.name ?? "—"} · Status: {item.ship_events.status ?? "Scheduled"}</p></div> : null)}
+                </section>
+                <section className="space-y-3 border-t pt-5">
+                  <h3 className="text-sm font-semibold">Flights</h3>
+                  {detailQuery.data.flight_records.length === 0 ? <p className="text-sm text-muted-foreground">No Flight Records linked.</p> : detailQuery.data.flight_records.map((item) => item.flight_schedule_records ? <div key={item.flight_schedule_record_id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"><span>{item.flight_schedule_records.flight_number} · {item.flight_schedule_records.airline} · {item.flight_schedule_records.origin} → {item.flight_schedule_records.destination} · {item.flight_schedule_records.direction}</span><Button asChild size="sm" variant="outline"><Link to="/admin/flight-schedule">Open Flight Operations</Link></Button></div> : null)}
+                </section>
+                <section className="space-y-3 border-t pt-5">
+                  <h3 className="text-sm font-semibold">Reviews</h3>
+                  <div className="flex flex-wrap gap-2">{[["ETA Reviews", detailQuery.data.alert_counts.eta_reviews], ["Port Reviews", detailQuery.data.alert_counts.port_reviews], ["Immigration Reviews", detailQuery.data.alert_counts.immigration_reviews], ["Departure Warnings", detailQuery.data.alert_counts.departure_warnings]].map(([label, count]) => <Button key={String(label)} asChild size="sm" variant="outline"><Link to="/coordinator/operations">{label}: {count}</Link></Button>)}</div>
+                </section>
+                <section className="space-y-3 border-t pt-5"><h3 className="text-sm font-semibold">Timeline</h3><div className="space-y-1 text-sm">{timelineEvents(detailQuery.data).map((event) => <div key={`${event.label}-${event.at}`} className="flex gap-3"><span className="w-36 shrink-0 text-xs text-muted-foreground">{event.at}</span><span>{event.label}</span></div>)}</div></section>
                 <div className="grid gap-6 border-t pt-5 md:grid-cols-2">
                   <LinkedList
                     title="Ship Events"
@@ -533,6 +550,20 @@ function labelType(type: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function timelineEvents(group: GroupDetails) {
+  const events: Array<{ label: string; at: string }> = [];
+  for (const ship of group.ship_events) {
+    if (ship.ship_events?.eta) events.push({ label: `Ship ETA · ${ship.ship_events.ship_name}`, at: ship.ship_events.eta });
+    if (ship.ship_events?.expected_departure) events.push({ label: `Expected Departure · ${ship.ship_events.ship_name}`, at: ship.ship_events.expected_departure });
+  }
+  for (const flight of group.flight_records) {
+    const record = flight.flight_schedule_records;
+    if (record?.direction === "arrival") events.push({ label: `Flight Arrival · ${record.flight_number}`, at: `${record.scheduled_date}T${record.scheduled_time}` });
+  }
+  for (const job of group.jobs) if (job.date && job.time) events.push({ label: `Trip · ${job.from_location} → ${job.to_location}`, at: `${job.date}T${job.time}` });
+  return events.sort((a, b) => a.at.localeCompare(b.at));
 }
 function labelStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1);
