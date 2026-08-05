@@ -2411,6 +2411,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
+  const hasLinkedFlightSchedule = !!job.flight_schedule_record_id;
   const flightGlyph = job.tracking_kind === "vessel" ? "🚢" : "✈";
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
@@ -2660,7 +2661,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 {flightGlyph} {flightCode} · {flightMsg}
               </div>
             )}
-            {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+            {!delayed && !flightEarly && hasFlightCode && !hasLinkedFlightSchedule && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -2676,6 +2677,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               >
                 {flightGlyph} {flightCode} · Not tracked · fix code
               </button>
+            )}
+            {!delayed && !flightEarly && hasFlightCode && hasLinkedFlightSchedule && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+              <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border bg-muted/30 truncate max-w-full">
+                {flightGlyph} {flightCode} · Scheduled flight linked · live status unavailable
+              </div>
             )}
             {job.status && job.status !== "pending" && job.status !== "active" && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
