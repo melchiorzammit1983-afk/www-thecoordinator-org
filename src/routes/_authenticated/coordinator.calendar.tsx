@@ -87,6 +87,7 @@ import type {
 } from "@/components/coordinator/calendar/types";
 import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
 import { listGroupStops } from "@/lib/groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourClasses } from "@/lib/operation-group-colours";
 
 import {
   listJobs,
@@ -2536,6 +2537,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
               <span>·</span>
               <span>{job.date}</span>
+              {job.operation_groups ? <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${operationGroupColourClasses[normaliseOperationGroupColour(job.operation_groups.colour)]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{job.operation_groups.reference}</span> : null}
               {job.client_confirmed_at && (
                 <span
                   title="Client confirmed"

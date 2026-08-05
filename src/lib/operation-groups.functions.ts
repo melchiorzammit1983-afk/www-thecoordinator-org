@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { operationGroupColours, type OperationGroupColour } from "@/lib/operation-group-colours";
 
 export const operationGroupTypes = [
   "crew_change",
@@ -28,6 +29,7 @@ export type OperationGroup = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  colour: OperationGroupColour | null;
 };
 
 async function getAdmin() {
@@ -80,6 +82,7 @@ const groupFields = {
   start_date: z.string().date().nullable().optional(),
   end_date: z.string().date().nullable().optional(),
   notes: z.string().trim().max(5000).nullable().optional(),
+  colour: z.enum(operationGroupColours).nullable().optional(),
 };
 const createInput = z.object(groupFields).superRefine((value, ctx) => {
   if (value.start_date && value.end_date && value.end_date < value.start_date) {
@@ -94,6 +97,7 @@ const updateInput = idInput.extend(groupFields).partial({
   start_date: true,
   end_date: true,
   notes: true,
+  colour: true,
 }).superRefine((value, ctx) => {
   if (value.start_date && value.end_date && value.end_date < value.start_date) {
     ctx.addIssue({ code: "custom", path: ["end_date"], message: "End date must be on or after start date" });
@@ -115,7 +119,7 @@ function mutationError(error: { code?: string | null; message: string }, noun: s
 async function requireGroup(sb: any, id: string, companyId: string): Promise<OperationGroup> {
   const { data, error } = await sb
     .from("operation_groups")
-    .select("id, company_id, reference, name, type, status, start_date, end_date, notes, created_by, created_at, updated_at")
+    .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
     .eq("id", id)
     .eq("company_id", companyId)
     .maybeSingle();
@@ -156,7 +160,7 @@ export const listOperationGroups = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     const { data, error } = await groupsTable(sb)
       .from("operation_groups")
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, created_by, created_at, updated_at")
+      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .eq("company_id", companyId)
       .order("start_date", { ascending: true, nullsFirst: false })
       .order("reference", { ascending: true });
@@ -207,7 +211,7 @@ export const createOperationGroup = createServerFn({ method: "POST" })
     const { data: group, error } = await groupsTable(sb)
       .from("operation_groups")
       .insert({ ...data, company_id: companyId, created_by: context.userId })
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, created_by, created_at, updated_at")
+      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) mutationError(error, "Operation Group");
     return group as OperationGroup;
@@ -226,7 +230,7 @@ export const updateOperationGroup = createServerFn({ method: "POST" })
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("company_id", companyId)
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, created_by, created_at, updated_at")
+      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) mutationError(error, "Operation Group");
     return group as OperationGroup;
@@ -244,7 +248,7 @@ export const changeOperationGroupStatus = createServerFn({ method: "POST" })
       .update({ status: data.status, updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("company_id", companyId)
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, created_by, created_at, updated_at")
+      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) throw new Error(error.message);
     return group as OperationGroup;

@@ -21,6 +21,7 @@ import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCo
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
 import { displayJobLocation, displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
+import { normaliseOperationGroupColour, operationGroupColourClasses } from "@/lib/operation-group-colours";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripAuditTimeline } from "./TripAuditTimeline";
@@ -84,6 +85,8 @@ export type DetailsJob = {
   from_flight: string | null; to_flight: string | null;
   flight_schedule_record_id?: string | null;
   ship_event_id?: string | null;
+  operation_group_id?: string | null;
+  operation_groups?: { reference: string; name: string; colour?: string | null } | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
@@ -422,6 +425,7 @@ export function TripDetailsSheet({
               </div>
             )}
             <SafetyFlagBadges job={job} />
+            {job.operation_groups ? <div className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${operationGroupColourClasses[normaliseOperationGroupColour(job.operation_groups.colour)]}`}><span className="h-2 w-2 rounded-full bg-current" />{job.operation_groups.reference} · {job.operation_groups.name}</div> : null}
             {(job as any).group_id && (
               <GroupStopsPanel groupId={(job as any).group_id} groupName={(job as any).group_name} />
             )}

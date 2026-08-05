@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { completeShipEtaReview, completeTransportConflictReview, getOperationsInbox, listJobs } from "@/lib/coordinator.functions";
 import { listOperationGroups, getOperationGroup } from "@/lib/operation-groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operations")({
@@ -155,7 +156,7 @@ function OperationsCentrePage() {
             const group = job.operation_groups;
             return <div key={job.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0"><p className="truncate text-sm">{job.from_location} → {job.to_location}</p><p className="text-xs text-muted-foreground">{job.date} {String(job.time ?? "").slice(0, 5)} · {job.status ?? "scheduled"}</p></div>
-              {group ? <Link className="shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent" to="/coordinator/operation-groups" onClick={() => setSelectedGroupId(job.operation_group_id)}>{group.reference} · {group.name}</Link> : <span className="text-xs text-muted-foreground">Ungrouped</span>}
+              {group ? <Link className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:opacity-90 ${operationGroupColourClasses[normaliseOperationGroupColour(group.colour)]}`} to="/coordinator/operation-groups" onClick={() => setSelectedGroupId(job.operation_group_id)}><span className={`h-2 w-2 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</Link> : <span className="text-xs text-muted-foreground">Ungrouped</span>}
             </div>;
           })}
         </CardContent>
@@ -165,7 +166,7 @@ function OperationsCentrePage() {
           const jobs = (jobsQuery.data ?? []).filter((job: any) => job.operation_group_id === group.id);
           const detail = selectedGroupQuery.data?.id === group.id ? selectedGroupQuery.data : null;
           return <Card key={group.id}>
-            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between gap-2 text-base"><span>{group.reference} · {group.name}</span><Badge variant="outline">{group.status}</Badge></CardTitle><CardDescription>{group.type.replaceAll("_", " ")}</CardDescription></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between gap-2 text-base"><span className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</span><Badge variant="outline">{group.status}</Badge></CardTitle><CardDescription>{group.type.replaceAll("_", " ")}</CardDescription></CardHeader>
             <CardContent className="space-y-2 text-sm"><div className="grid grid-cols-2 gap-2"><Summary label="Jobs" value={jobs.length} /><Summary label="Trips" value={jobs.length} /></div>{detail ? <><p className="text-xs text-muted-foreground">Ships: {detail.ship_events?.map((item: any) => item.ship_events?.ship_name).filter(Boolean).join(", ") || "None"}</p><p className="text-xs text-muted-foreground">Flights: {detail.flight_records?.map((item: any) => item.flight_schedule_records?.flight_number).filter(Boolean).join(", ") || "None"}</p></> : null}<Button asChild type="button" size="sm" variant="outline" onClick={() => setSelectedGroupId(group.id)}><Link to="/coordinator/operation-groups">Open Operation Group</Link></Button></CardContent>
           </Card>;
         })}

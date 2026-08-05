@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { createJob, updateJob, createJobsBulk, listJobPax, addJobPax, removeJobPax, updateJobPax, getPaxPersonalToken, updateMyOperationsPhone, previewTripStatus, refreshJobLiveStatus, previewFare, checkDuplicateBooking, getLinkedFlightScheduleRecord, searchActiveFlightScheduleRecords } from "@/lib/coordinator.functions";
 import { createShipEvent, getLinkedShipEvent, searchShipEvents } from "@/lib/ship-events.functions";
 import { listOperationGroups, createOperationGroup, type OperationGroup } from "@/lib/operation-groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourDotClasses, operationGroupColours, operationGroupColourLabels, type OperationGroupColour } from "@/lib/operation-group-colours";
 import { listActivePorts, getPortWithActiveBerths, type PortDirectoryPort, type PortDirectoryBerth } from "@/lib/port-directory.functions";
 import { listStopsForJob, addStopToJob, removeStopFromJob } from "@/lib/groups.functions";
 import { markJobReviewed, listOtgReassignTargets } from "@/lib/driver-otg.functions";
@@ -125,9 +126,10 @@ function OperationGroupPicker({ value, onChange }: { value: string | null; onCha
   const [creating, setCreating] = useState(false);
   const [reference, setReference] = useState("");
   const [name, setName] = useState("");
+  const [creatingColour, setCreatingColour] = useState<OperationGroupColour>("slate");
   const createMutation = useMutation({
-    mutationFn: () => createFn({ data: { reference: reference.trim(), name: name.trim(), type: "other", status: "draft", start_date: null, end_date: null, notes: null } }),
-    onSuccess: (group) => { onChange(group.id); setReference(""); setName(""); setCreating(false); qc.invalidateQueries({ queryKey: ["operation-groups", "booking"] }); toast.success("Operation Group created"); },
+    mutationFn: () => createFn({ data: { reference: reference.trim(), name: name.trim(), type: "other", status: "draft", start_date: null, end_date: null, notes: null, colour: creatingColour } }),
+    onSuccess: (group) => { onChange(group.id); setReference(""); setName(""); setCreatingColour("slate"); setCreating(false); qc.invalidateQueries({ queryKey: ["operation-groups", "booking"] }); toast.success("Operation Group created"); },
     onError: (error: Error) => toast.error(error.message),
   });
   const groups = (query.data ?? []).filter((group) => group.status === "draft" || group.status === "active" || group.id === value);
@@ -135,9 +137,9 @@ function OperationGroupPicker({ value, onChange }: { value: string | null; onCha
     <Label>Operation Group (optional)</Label>
     <Select value={value ?? "__none__"} onValueChange={(next) => onChange(next === "__none__" ? null : next)}>
       <SelectTrigger><SelectValue placeholder="Leave ungrouped" /></SelectTrigger>
-      <SelectContent><SelectItem value="__none__">Leave ungrouped</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</SelectItem>)}</SelectContent>
+    <SelectContent><SelectItem value="__none__">Leave ungrouped</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}><span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name} ({group.status})</span></SelectItem>)}</SelectContent>
     </Select>
-    {!creating ? <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}><Plus className="mr-1 h-3 w-3" />Create Operation Group</Button> : <div className="space-y-2 rounded border bg-background p-2"><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reference" /><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" /><div className="flex gap-2"><Button type="button" size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !reference.trim() || !name.trim()}>Create</Button><Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button></div></div>}
+    {!creating ? <Button type="button" size="sm" variant="outline" onClick={() => setCreating(true)}><Plus className="mr-1 h-3 w-3" />Create Operation Group</Button> : <div className="space-y-2 rounded border bg-background p-2"><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reference" /><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" /><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={creatingColour} onChange={(e) => setCreatingColour(e.target.value as OperationGroupColour)} aria-label="Operation Group colour">{operationGroupColours.map((colour) => <option key={colour} value={colour}>{operationGroupColourLabels[colour]}</option>)}</select><div className="flex gap-2"><Button type="button" size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !reference.trim() || !name.trim()}>Create</Button><Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button></div></div>}
   </div>;
 }
 

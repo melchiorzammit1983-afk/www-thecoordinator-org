@@ -29,6 +29,8 @@ export type Job = {
   ship_event_id?: string | null;
   onward_flight_schedule_record_id?: string | null;
   onward_ship_event_id?: string | null;
+  operation_group_id?: string | null;
+  operation_groups?: { reference: string; name: string; colour?: string | null } | null;
   tracking_kind?: string | null;
   flight_status: string | null;
   flight_status_note: string | null;
