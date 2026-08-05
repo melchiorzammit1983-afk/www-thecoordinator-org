@@ -1,4 +1,4 @@
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Gift, MapPin, Clock, Plane, Ship, ListChecks } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, Tag, Handshake, Car, FileText, Palette, Gift, MapPin, Clock, Plane, Ship, Layers3, ListChecks } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
 
 export type TabDef = {
@@ -20,6 +20,7 @@ export const TAB_CATALOG: TabDef[] = [
   { id: "drivers",    to: "/coordinator/drivers",           label: "Drivers",      icon: Users,           exact: false, feature: "drivers",        defaultSlot: "more" },
   { id: "airport_operations", to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null, defaultSlot: "more" },
   { id: "ship_operations", to: "/coordinator/ship-operations", label: "Ship Operations", icon: Ship, exact: false, feature: null, defaultSlot: "more" },
+  { id: "operation_groups", to: "/coordinator/operation-groups", label: "Operation Groups", icon: Layers3, exact: false, feature: null, defaultSlot: "more" },
   { id: "my_driving", to: "/coordinator/my-driving",        label: "My Driving",   icon: Car,             exact: false, feature: "my_driving",     defaultSlot: "more" },
   { id: "labels",     to: "/coordinator/labels",            label: "Labels",       icon: Tag,             exact: false, feature: "labels",         defaultSlot: "more" },
   { id: "availability", to: "/coordinator/availability",    label: "Availability", icon: Clock,           exact: false, feature: "availability_autoforward", defaultSlot: "more" },

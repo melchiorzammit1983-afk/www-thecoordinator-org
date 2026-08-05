@@ -1,0 +1,523 @@
+import { useEffect, useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Layers3, Pencil, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  changeOperationGroupStatus,
+  createOperationGroup,
+  getOperationGroup,
+  listOperationGroups,
+  operationGroupStatuses,
+  operationGroupTypes,
+  updateOperationGroup,
+  type OperationGroup,
+} from "@/lib/operation-groups.functions";
+
+export const Route = createFileRoute("/_authenticated/coordinator/operation-groups")({
+  head: () => ({ meta: [{ title: "Operation Groups — Coordinator" }] }),
+  component: OperationGroupsPage,
+});
+
+type GroupDetails = OperationGroup & {
+  ship_events: Array<{
+    ship_event_id: string;
+    ship_events: { id: string; ship_name: string; eta: string; port: string } | null;
+  }>;
+  flight_records: Array<{
+    flight_schedule_record_id: string;
+    flight_schedule_records: {
+      id: string;
+      flight_number: string;
+      airline: string;
+      origin: string;
+      destination: string;
+      scheduled_date: string;
+      scheduled_time: string;
+      direction: string;
+    } | null;
+  }>;
+  jobs: Array<{
+    id: string;
+    date: string;
+    time: string;
+    from_location: string;
+    to_location: string;
+    status: string;
+    operation_group_id: string;
+  }>;
+};
+
+const emptyForm = {
+  reference: "",
+  name: "",
+  type: "crew_change" as (typeof operationGroupTypes)[number],
+  status: "draft" as (typeof operationGroupStatuses)[number],
+  start_date: "",
+  end_date: "",
+  notes: "",
+};
+
+function OperationGroupsPage() {
+  const queryClient = useQueryClient();
+  const listFn = useServerFn(listOperationGroups);
+  const detailFn = useServerFn(getOperationGroup);
+  const createFn = useServerFn(createOperationGroup);
+  const updateFn = useServerFn(updateOperationGroup);
+  const statusFn = useServerFn(changeOperationGroupStatus);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all">("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newForm, setNewForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [editing, setEditing] = useState(false);
+
+  const groupsQuery = useQuery({
+    queryKey: ["operation-groups"],
+    queryFn: () => listFn() as Promise<OperationGroup[]>,
+  });
+  const detailQuery = useQuery({
+    queryKey: ["operation-group", selectedId],
+    queryFn: () => detailFn({ data: { id: selectedId! } }) as Promise<GroupDetails>,
+    enabled: Boolean(selectedId),
+  });
+  const groups = groupsQuery.data ?? [];
+  const filteredGroups = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return groups.filter(
+      (group) =>
+        (filter === "all" || group.status === filter) &&
+        (!term ||
+          group.reference.toLowerCase().includes(term) ||
+          group.name.toLowerCase().includes(term)),
+    );
+  }, [filter, groups, search]);
+
+  useEffect(() => {
+    const group = detailQuery.data;
+    if (!group || editing) return;
+    setEditForm({
+      reference: group.reference,
+      name: group.name,
+      type: group.type,
+      status: group.status,
+      start_date: group.start_date ?? "",
+      end_date: group.end_date ?? "",
+      notes: group.notes ?? "",
+    });
+  }, [detailQuery.data, editing]);
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["operation-groups"] });
+    if (selectedId) queryClient.invalidateQueries({ queryKey: ["operation-group", selectedId] });
+  };
+  const errorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : "Something went wrong";
+  const payload = (form: typeof emptyForm) => ({
+    ...form,
+    start_date: form.start_date || null,
+    end_date: form.end_date || null,
+    notes: form.notes || null,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => createFn({ data: payload(newForm) }),
+    onSuccess: (group) => {
+      setNewForm(emptyForm);
+      setSelectedId(group.id);
+      refresh();
+      toast.success("Operation Group created");
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const updateMutation = useMutation({
+    mutationFn: () => updateFn({ data: { id: selectedId!, ...payload(editForm) } }),
+    onSuccess: () => {
+      setEditing(false);
+      refresh();
+      toast.success("Operation Group updated");
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const statusMutation = useMutation({
+    mutationFn: (status: (typeof operationGroupStatuses)[number]) =>
+      statusFn({ data: { id: selectedId!, status } }),
+    onSuccess: () => {
+      refresh();
+      toast.success("Operation Group status updated");
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 pb-24 md:px-8 md:py-8 md:pb-8">
+      <header className="flex items-start gap-3">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <Layers3 className="h-5 w-5" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold sm:text-2xl">Operation Groups</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Organise related operational work without changing existing trips.
+          </p>
+        </div>
+      </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Create Operation Group</CardTitle>
+          <CardDescription>
+            Grouping is always explicit. Existing Jobs and Trips are not changed automatically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <GroupFields value={newForm} onChange={setNewForm} prefix="new-operation-group" />
+          <div className="mt-4 flex justify-end">
+            <Button
+              className="min-h-11"
+              onClick={() => createMutation.mutate()}
+              disabled={
+                createMutation.isPending || !newForm.reference.trim() || !newForm.name.trim()
+              }
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              {createMutation.isPending ? "Creating…" : "Create Operation"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.4fr)]">
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="text-base">Groups</CardTitle>
+            <div className="relative mt-2">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search reference or name"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["all", ...operationGroupStatuses] as const).map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={filter === status ? "default" : "outline"}
+                  onClick={() => setFilter(status)}
+                >
+                  {status === "all" ? "All" : labelStatus(status)}
+                </Button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {groupsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading Operation Groups…</p>
+            ) : groupsQuery.error ? (
+              <p className="text-sm text-destructive">{errorMessage(groupsQuery.error)}</p>
+            ) : filteredGroups.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No Operation Groups found.
+              </p>
+            ) : (
+              filteredGroups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(group.id);
+                    setEditing(false);
+                  }}
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition hover:bg-accent ${selectedId === group.id ? "border-primary bg-primary/5" : ""}`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{group.reference}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {group.name}
+                    </span>
+                  </span>
+                  <Badge variant={group.status === "active" ? "secondary" : "outline"}>
+                    {labelStatus(group.status)}
+                  </Badge>
+                </button>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          {!selectedId ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">
+              Select an Operation Group to view details.
+            </div>
+          ) : detailQuery.isLoading ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">
+              Loading Operation Group…
+            </div>
+          ) : detailQuery.error ? (
+            <div className="p-6 text-sm text-destructive">{errorMessage(detailQuery.error)}</div>
+          ) : detailQuery.data ? (
+            <>
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">{detailQuery.data.reference}</CardTitle>
+                    <CardDescription>{detailQuery.data.name}</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={detailQuery.data.status === "active" ? "secondary" : "outline"}>
+                      {labelStatus(detailQuery.data.status)}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditing((value) => !value)}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      {editing ? "Cancel edit" : "Edit"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {editing ? (
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <GroupFields
+                      value={editForm}
+                      onChange={setEditForm}
+                      prefix="edit-operation-group"
+                    />
+                    <div className="mt-4 flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        className="min-h-11"
+                        onClick={() => setEditing(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        className="min-h-11"
+                        onClick={() => updateMutation.mutate()}
+                        disabled={updateMutation.isPending}
+                      >
+                        Save Changes
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-3 text-sm sm:grid-cols-2">
+                      <Info label="Type" value={labelType(detailQuery.data.type)} />
+                      <Info
+                        label="Dates"
+                        value={`${detailQuery.data.start_date ?? "No start"} → ${detailQuery.data.end_date ?? "No end"}`}
+                      />
+                      <Info label="Notes" value={detailQuery.data.notes ?? "No notes"} />
+                    </div>
+                    <div>
+                      <Label>Status</Label>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {operationGroupStatuses.map((status) => (
+                          <Button
+                            key={status}
+                            size="sm"
+                            variant={detailQuery.data!.status === status ? "default" : "outline"}
+                            onClick={() => statusMutation.mutate(status)}
+                            disabled={statusMutation.isPending}
+                          >
+                            {labelStatus(status)}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Summary label="Jobs" value={detailQuery.data.jobs.length} />
+                  <Summary label="Trips" value={detailQuery.data.jobs.length} />
+                </div>
+                <div className="grid gap-6 border-t pt-5 md:grid-cols-2">
+                  <LinkedList
+                    title="Ship Events"
+                    empty="No Ship Events linked"
+                    items={detailQuery.data.ship_events.map((item) =>
+                      item.ship_events
+                        ? `${item.ship_events.ship_name} · ${item.ship_events.port}`
+                        : item.ship_event_id,
+                    )}
+                  />
+                  <LinkedList
+                    title="Flight Records"
+                    empty="No Flight Records linked"
+              items={detailQuery.data.flight_records.map((item) =>
+                item.flight_schedule_records
+                  ? `${item.flight_schedule_records.flight_number} · ${item.flight_schedule_records.airline} · ${item.flight_schedule_records.origin} → ${item.flight_schedule_records.destination}`
+                        : item.flight_schedule_record_id,
+                    )}
+                  />
+                </div>
+              </CardContent>
+            </>
+          ) : null}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function GroupFields({
+  value,
+  onChange,
+  prefix,
+}: {
+  value: typeof emptyForm;
+  onChange: (value: typeof emptyForm) => void;
+  prefix: string;
+}) {
+  const set = (key: keyof typeof emptyForm, next: string) => onChange({ ...value, [key]: next });
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Reference" htmlFor={`${prefix}-reference`}>
+        <Input
+          id={`${prefix}-reference`}
+          value={value.reference}
+          onChange={(event) => set("reference", event.target.value)}
+          placeholder="e.g. CREW-2026-001"
+        />
+      </Field>
+      <Field label="Name" htmlFor={`${prefix}-name`}>
+        <Input
+          id={`${prefix}-name`}
+          value={value.name}
+          onChange={(event) => set("name", event.target.value)}
+          placeholder="Operation name"
+        />
+      </Field>
+      <Field label="Type" htmlFor={`${prefix}-type`}>
+        <select
+          id={`${prefix}-type`}
+          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          value={value.type}
+          onChange={(event) =>
+            onChange({ ...value, type: event.target.value as typeof value.type })
+          }
+        >
+          {operationGroupTypes.map((type) => (
+            <option key={type} value={type}>
+              {labelType(type)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Status" htmlFor={`${prefix}-status`}>
+        <select
+          id={`${prefix}-status`}
+          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          value={value.status}
+          onChange={(event) =>
+            onChange({ ...value, status: event.target.value as typeof value.status })
+          }
+        >
+          {operationGroupStatuses.map((status) => (
+            <option key={status} value={status}>
+              {labelStatus(status)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Start date" htmlFor={`${prefix}-start`}>
+        <Input
+          id={`${prefix}-start`}
+          type="date"
+          value={value.start_date}
+          onChange={(event) => set("start_date", event.target.value)}
+        />
+      </Field>
+      <Field label="End date" htmlFor={`${prefix}-end`}>
+        <Input
+          id={`${prefix}-end`}
+          type="date"
+          value={value.end_date}
+          onChange={(event) => set("end_date", event.target.value)}
+        />
+      </Field>
+      <Field label="Notes" htmlFor={`${prefix}-notes`}>
+        <textarea
+          id={`${prefix}-notes`}
+          className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm sm:col-span-2"
+          value={value.notes}
+          onChange={(event) => set("notes", event.target.value)}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function labelType(type: string) {
+  return type
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+function labelStatus(status: string) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div>{value}</div>
+    </div>
+  );
+}
+function Summary({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+function LinkedList({ title, empty, items }: { title: string; empty: string; items: string[] }) {
+  return (
+    <div>
+      <h2 className="font-medium">{title}</h2>
+      {items.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="mt-2 space-y-2">
+          {items.map((item) => (
+            <li key={item} className="rounded-lg border p-3 text-sm">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
