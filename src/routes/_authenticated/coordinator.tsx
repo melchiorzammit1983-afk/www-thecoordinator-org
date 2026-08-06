@@ -51,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
       { to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null },
       { to: "/coordinator/ship-operations", label: "Ship Operations", icon: Ship, exact: false, feature: null },
-      { to: "/coordinator/ports", label: "Port Directory", icon: Anchor, exact: false, feature: null },
+      { to: "/coordinator/ports", label: "Places Directory", icon: Anchor, exact: false, feature: null },
       { to: "/coordinator/operation-groups", label: "Operation Groups", icon: Layers3, exact: false, feature: null },
       { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
       { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },

@@ -249,9 +249,9 @@ function ShipOperationsPage() {
                 {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
               </select>
             </Field>
-            <Field label="Berth (optional)" htmlFor="ship-berth">
+            <Field label="Pickup point (optional)" htmlFor="ship-berth">
               <select id="ship-berth" name="berth_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={berthId ?? ""} onChange={(event) => setBerthId(event.target.value || null)} disabled={!portId}>
-                <option value="">No berth selected</option>
+                <option value="">No pickup point selected</option>
                 {(selectedPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
               {selectedPort ? <span className="text-xs text-muted-foreground">{selectedPort.address}</span> : null}
@@ -331,7 +331,7 @@ function ShipOperationsPage() {
                       <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit ETA
                     </Button>
                     {!event.archived_at && event.status !== "cancelled" ? <>
-                      <Button type="button" variant="outline" size="sm" onClick={() => openPortEditor(event)}>Port / Berth</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openPortEditor(event)}>Port / Pickup point</Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => openLifecycleEditor(event)}>Lifecycle</Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => cancel.mutate(event.id)} disabled={cancel.isPending}>Cancel</Button>
                     </> : null}
@@ -355,7 +355,7 @@ function ShipOperationsPage() {
       <Dialog open={Boolean(portEditing)} onOpenChange={(open) => !open && setPortEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit ship Port / Berth</DialogTitle>
+            <DialogTitle>Edit ship Port / Pickup point</DialogTitle>
             <DialogDescription>{portEditing?.ship_name ?? "Ship event"} — changes create a review item when linked trips exist.</DialogDescription>
           </DialogHeader>
           <form onSubmit={(event) => { event.preventDefault(); updatePort.mutate(); }} className="space-y-4">
@@ -365,15 +365,15 @@ function ShipOperationsPage() {
                 {ports.map((item) => <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>)}
               </select>
             </Field>
-            <Field label="Berth (optional)" htmlFor="edit-ship-berth">
+            <Field label="Pickup point (optional)" htmlFor="edit-ship-berth">
               <select id="edit-ship-berth" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editedBerthId} onChange={(event) => setEditedBerthId(event.target.value)} disabled={!editedPortId}>
-                <option value="">No berth selected</option>
+                <option value="">No pickup point selected</option>
                 {(editingPort?.berths ?? []).map((item: PortDirectoryBerth) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPortEditing(null)}>Cancel</Button>
-              <Button type="submit" disabled={updatePort.isPending || !editedPortId}>{updatePort.isPending ? "Saving…" : "Save Port / Berth"}</Button>
+              <Button type="submit" disabled={updatePort.isPending || !editedPortId}>{updatePort.isPending ? "Saving…" : "Save Port / Pickup point"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
