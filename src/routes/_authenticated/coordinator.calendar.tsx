@@ -2281,7 +2281,7 @@ function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   if (!fresh) return null;
   if (point.wait_started_at) return null;
   const status = job.status;
-  if (!["en_route", "arrived", "in_progress"].includes(status)) return null;
+  if (["pending", "completed", "cancelled"].includes(status)) return null;
   if (status === "arrived") {
     return (
       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
@@ -2583,6 +2583,11 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 )}
               </span>
             </div>
+            {job.clientcompanyname && (
+              <div className="text-sm font-semibold text-foreground truncate mt-1" title={job.clientcompanyname}>
+                {job.clientcompanyname}
+              </div>
+            )}
             <div className="text-sm font-semibold truncate mt-0.5">
                   {displayJobLocation(job.from_location, job.pickup_display_name, job.from_port, job.from_berth)}{" "}
               <span className="text-muted-foreground">→</span>{" "}
@@ -2622,14 +2627,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                     +{job.traffic_delay_minutes} min traffic
                   </span>
                 )}
-              </div>
-            )}
-            {expanded && job.clientcompanyname && (
-              <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
-                {sig?.portal_logo_url && (
-                  <img src={sig.portal_logo_url} alt="" className="h-3.5 w-3.5 rounded-sm object-contain bg-white shrink-0" />
-                )}
-                <span className="truncate">{job.clientcompanyname}</span>
               </div>
             )}
             {shownDriver && (
@@ -2683,7 +2680,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 {flightGlyph} {flightCode} · Scheduled flight linked · live status unavailable
               </div>
             )}
-            {job.status && job.status !== "pending" && job.status !== "active" && (
+            {(livePoint || (job.status && job.status !== "pending" && job.status !== "active")) && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
                 <EtaChip point={livePoint} job={job} />

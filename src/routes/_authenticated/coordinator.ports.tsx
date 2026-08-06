@@ -23,7 +23,7 @@ import {
 } from "@/lib/port-directory.functions";
 
 export const Route = createFileRoute("/_authenticated/coordinator/ports")({
-  head: () => ({ meta: [{ title: "Port Directory — Coordinator" }] }),
+  head: () => ({ meta: [{ title: "Places Directory — Coordinator" }] }),
   component: PortsPage,
 });
 
@@ -173,7 +173,7 @@ function PortsPage() {
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 pb-24 md:px-8 md:py-8 md:pb-8">
       <header className="flex items-start gap-3">
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary"><Anchor className="h-5 w-5" /></div>
-        <div><h1 className="text-xl font-semibold sm:text-2xl">Port Directory</h1><p className="mt-1 text-sm text-muted-foreground">Company-private ports and berths.</p></div>
+        <div><h1 className="text-xl font-semibold sm:text-2xl">Places Directory</h1><p className="mt-1 text-sm text-muted-foreground">Company-private ports and pickup points.</p></div>
       </header>
 
       <Card>
