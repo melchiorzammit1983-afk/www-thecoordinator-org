@@ -27,6 +27,7 @@ import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv } from "@/lib/sheet-template";
+import { looksLikeLabeledMessage, parseLabeledMessages } from "@/lib/labeled-message-parser";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FileDown, Paperclip } from "lucide-react";
 import {
@@ -1627,7 +1628,12 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const parsed = useMemo(
-    () => (looksLikeSheetPaste(raw) ? parseSheetPaste(raw) : parseTrips(raw)),
+    () =>
+      looksLikeLabeledMessage(raw)
+        ? parseLabeledMessages(raw)
+        : looksLikeSheetPaste(raw)
+          ? parseSheetPaste(raw)
+          : parseTrips(raw),
     [raw],
   );
   // Bulk paste/upload never goes through Places, so the parser can't know

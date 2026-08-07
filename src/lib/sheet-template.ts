@@ -132,6 +132,10 @@ export async function fileToSheetTsv(file: File): Promise<string> {
 // ---------- Paste parser (Excel / Google Sheets rows) ----------
 
 const HEADER_ALIASES: Record<string, string> = {
+  "client/company": "company",
+  "client / company": "company",
+  company: "company",
+  client: "company",
   "pickup date": "date",
   "date": "date",
   "pickup time": "time",
@@ -387,7 +391,7 @@ export function parseSheetPaste(raw: string): ParsedTrip[] {
       date, time,
       from_location: from,
       to_location: to,
-      clientcompanyname: "",
+      clientcompanyname: get("company").trim(),
       operation_name,
       flightorship: type || from_flight || to_flight || "",
       from_flight,

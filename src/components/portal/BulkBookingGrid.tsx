@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, AlertTriangle, Download, Upload } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Download, Upload, ClipboardPaste } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
@@ -13,6 +14,7 @@ import { fileToSheetTsv } from "@/lib/sheet-template";
 import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { classifyProviderEndpoint, classifyBulkImportLocationText, type JourneyEndpoint } from "@/lib/journey-resolver";
+import { looksLikeLabeledMessage, parseLabeledMessages } from "@/lib/labeled-message-parser";
 import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
 
 type GridRow = {
@@ -133,6 +135,33 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [ports, setPorts] = useState<TokenPort[]>([]);
   useEffect(() => { fetch(`/api/public/portal/${token}/`).then((r) => r.json()).then((data) => setPorts(data.ports ?? [])).catch(() => undefined); }, [token]);
+  const [messageText, setMessageText] = useState("");
+  const [showMessageBox, setShowMessageBox] = useState(false);
+
+  // "Message to Copy" is the app's own fixed "Label - value" format (see
+  // labeled-message-parser.ts) — the same text the bulk-sheet template
+  // generates in its last column. Lets HR paste one straight out of
+  // WhatsApp/email without touching a spreadsheet at all.
+  function addFromMessage() {
+    if (!looksLikeLabeledMessage(messageText)) {
+      toast.error("Didn't recognise that as a booking message — check it starts with \"Operation Name -\"");
+      return;
+    }
+    const trips = parseLabeledMessages(messageText);
+    if (!trips.length) { toast.error("Couldn't find any bookings in that message"); return; }
+    const newRows: GridRow[] = trips.map((t) => ({
+      name: t.pax.join(", "), phone: t.contact_phone, email: t.email,
+      from: t.from_location, fromLocationType: classifyBulkImportLocationText(t.from_location, ports), fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
+      to: t.to_location, toLocationType: classifyBulkImportLocationText(t.to_location, ports), toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
+      pickupAt: t.date && t.time ? `${t.date}T${t.time}` : "",
+      room: "", flight: t.flightorship, vehicle: t.vehicle, pax: String(t.pax.length || 1), notes: t.notes,
+      selected: false,
+    }));
+    setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
+    toast.success(`Added ${newRows.length} booking${newRows.length === 1 ? "" : "s"} from message`);
+    setMessageText("");
+    setShowMessageBox(false);
+  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -335,12 +364,33 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
             <Upload className="h-3.5 w-3.5 mr-1" /> {uploading ? "Reading…" : "Upload filled sheet"}
           </Button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
+          <Button variant="outline" size="sm" onClick={() => setShowMessageBox((v) => !v)}>
+            <ClipboardPaste className="h-3.5 w-3.5 mr-1" /> Paste a message
+          </Button>
           {batchId && (
             <Button variant="ghost" size="sm" onClick={() => setBatchId(null)} title="Next submit will start a fresh batch instead of adding to the last one">
               Start new batch
             </Button>
           )}
         </div>
+        {showMessageBox && (
+          <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+            <p className="text-xs text-muted-foreground">
+              Paste a booking message (the same "Operation Name - …" format the template's last column generates —
+              copied straight out of WhatsApp/email works too). Pasting more than one message at once adds a
+              booking for each.
+            </p>
+            <Textarea
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              placeholder={"Operation Name - ...\ndate - ...\ntime - ...\n..."}
+              className="min-h-[120px] text-xs font-mono"
+            />
+            <div className="flex justify-end">
+              <Button size="sm" onClick={addFromMessage} disabled={!messageText.trim()}>Add to grid</Button>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="overflow-x-auto rounded-md border">
