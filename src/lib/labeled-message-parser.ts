@@ -24,7 +24,14 @@ const LABEL_ALIASES: Record<string, string> = {
   "passenger name and phone number": "pax_header",
   "passenger names and phone numbers": "pax_header",
   "passenger name": "pax_header",
+  "passenger names": "pax_header",
   "passengers": "pax_header",
+  // The sheet formula emits names and phones as two stacked blocks, so the
+  // phone label starts its own multi-line block zipped onto the pax list.
+  "phone number": "phone_header",
+  "phone numbers": "phone_header",
+  "phones": "phone_header",
+  "contact number": "phone_header",
   "email": "email",
   "pick up address": "from",
   "pickup address": "from",
@@ -36,8 +43,10 @@ const LABEL_ALIASES: Record<string, string> = {
   "to vassel": "to_vessel",
   "to vessel": "to_vessel",
   "pax count": "qty",
+  "vehicle": "vehicle",
   "imigrasion needed": "immigration",
   "immigration needed": "immigration",
+  "immigration": "immigration",
   "notes": "notes",
 };
 
@@ -85,48 +94,81 @@ export function looksLikeLabeledMessage(raw: string): boolean {
 }
 
 /**
- * Splits on each new "Operation Name" line (the template always emits it
- * first) so pasting several rows' Message-to-Copy cells at once — e.g.
- * copying a whole column range out of the sheet — still yields one trip per
- * message instead of one merged mess.
+ * Splits on each new "Operation Name" line (the template emits it first), and
+ * — because Operation Name is optional — also whenever a second "date" label
+ * shows up, so pasting several messages at once still yields one trip each
+ * instead of one merged mess.
  */
 export function parseLabeledMessages(raw: string): ParsedTrip[] {
   const lines = raw.split(/\r?\n/);
   const blocks: string[][] = [];
   let current: string[] = [];
+  let currentHasDate = false;
+  const flush = () => {
+    if (current.length) blocks.push(current);
+    current = [];
+    currentHasDate = false;
+  };
   for (const line of lines) {
     const trimmed = line.trim();
-    if (matchLabel(trimmed)?.field === "operation_name" && current.length) {
-      blocks.push(current);
-      current = [];
-    }
+    const field = matchLabel(trimmed)?.field;
+    if (field === "operation_name" && current.length) flush();
+    else if (field === "date" && currentHasDate) flush();
+    if (field === "date") currentHasDate = true;
     if (trimmed) current.push(line);
   }
-  if (current.length) blocks.push(current);
+  flush();
 
   return blocks.map((block) => {
     const fields: Record<string, string> = {};
     const pax: string[] = [];
-    let contact_phone = "";
-    let inPax = false;
+    const paxPhones: string[] = [];
+    const loosePhones: string[] = [];
+    let mode: "pax" | "phones" | null = null;
+
+    const takePhoneLine = (line: string) => {
+      const { phone } = extractPhoneFromName(line);
+      if (phone) loosePhones.push(phone);
+    };
 
     for (const rawLine of block) {
       const line = rawLine.trim();
       if (!line) continue;
       const match = matchLabel(line);
       if (match) {
-        inPax = match.field === "pax_header";
-        if (match.value) fields[match.field] = match.value;
+        mode = match.field === "pax_header" ? "pax" : match.field === "phone_header" ? "phones" : null;
+        if (match.value) {
+          if (match.field === "pax_header") {
+            // "Passenger name and phone number - Jone 3561111111"
+            const { cleanName, phone } = extractPhoneFromName(match.value);
+            if (cleanName && isMeaningfulName(cleanName)) { pax.push(cleanName); paxPhones.push(phone); }
+          } else if (match.field === "phone_header") {
+            takePhoneLine(match.value);
+          } else {
+            fields[match.field] = match.value;
+          }
+        }
         continue;
       }
-      if (inPax) {
+      if (mode === "pax") {
+        // "Jone - 3561111111" keeps that passenger's own phone.
         const { cleanName, phone } = extractPhoneFromName(line);
-        if (phone && !contact_phone) contact_phone = phone;
-        if (cleanName && isMeaningfulName(cleanName)) pax.push(cleanName);
+        if (cleanName && isMeaningfulName(cleanName)) { pax.push(cleanName); paxPhones.push(phone); }
+        else if (phone) loosePhones.push(phone);
+      } else if (mode === "phones") {
+        takePhoneLine(line);
       }
-      // An unrecognised line outside pax mode is dropped — most likely
+      // An unrecognised line outside those blocks is dropped — most likely
       // blank formatting noise the formula's own line breaks introduced.
     }
+
+    // Phones listed as their own stacked block zip positionally onto the pax
+    // list, filling only the passengers that didn't carry an inline phone.
+    let loose = 0;
+    for (let i = 0; i < paxPhones.length; i++) {
+      if (!paxPhones[i] && loose < loosePhones.length) paxPhones[i] = loosePhones[loose++];
+    }
+    const contact_phone = paxPhones.find(Boolean) || loosePhones[0] || "";
 
     const from_flight = (fields.from_flight ?? "").trim();
     const from_vessel = (fields.from_vessel ?? "").trim();
@@ -145,7 +187,9 @@ export function parseLabeledMessages(raw: string): ParsedTrip[] {
     while (pax.length < qty) {
       pax.push(pax.length === 0 ? "Guest" : `Guest ${pax.length + 1}`);
     }
+    while (paxPhones.length < pax.length) paxPhones.push("");
 
+    const immigrationRaw = (fields.immigration ?? "").trim();
     const trip: ParsedTrip = {
       date: normDate(fields.date ?? ""),
       time: normTime(fields.time ?? ""),
@@ -153,15 +197,23 @@ export function parseLabeledMessages(raw: string): ParsedTrip[] {
       to_location: (fields.to ?? "").trim(),
       clientcompanyname: (fields.company ?? "").trim(),
       operation_name: (fields.operation_name ?? "").trim() || undefined,
-      flightorship: trackedFrom || trackedTo || "",
+      // Journey type from the message is informational only — the app derives
+      // the real one from the addresses/flight/vessel, as everywhere else.
+      flightorship: trackedFrom || trackedTo || (fields.journey_type ?? "").trim(),
       from_flight: trackedFrom,
       to_flight: trackedTo,
       tracking_kind,
-      vehicle: "",
+      vehicle: (fields.vehicle ?? "").trim(),
       notes: (fields.notes ?? "").trim(),
       email: (fields.email ?? "").trim(),
-      immigration_needed: /^y(es)?$/i.test((fields.immigration ?? "").trim()),
+      immigration_needed: /^y(es)?$/i.test(immigrationRaw),
+      immigration_required: /^y(es)?$/i.test(immigrationRaw)
+        ? "yes"
+        : /^n(o)?$/i.test(immigrationRaw)
+          ? "no"
+          : "unknown",
       pax,
+      pax_phones: paxPhones,
       contact_phone,
       errors: [],
     };
@@ -172,3 +224,4 @@ export function parseLabeledMessages(raw: string): ParsedTrip[] {
     return trip;
   });
 }
+
