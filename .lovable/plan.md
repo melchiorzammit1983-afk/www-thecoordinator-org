@@ -13,6 +13,7 @@ Make the uploaded v2 sheet the single official trip template across the app, wit
    - paste rows copied from the sheet (with or without headers), or
    - paste the "Label - value" message from column S — one message, or several at once.
 3. **Same template and same paste box** on the company/agent portal bulk booking screen and the HR crew/booking screens, so every portal user files trips in one format. Guest hotel portal is untouched.
+4. **A pasted message produces a fully-built trip, exactly like typing it manually**: journey type derived from the pickup/delivery and flight/vessel fields, addresses resolved through the Places lookup ("airport" → Malta International Airport, with place_id/lat/lng), flight and vessel codes looked up and tracked with the right provider, immigration stop added when the message says yes (with the Freeport exception), passengers and their phones attached, and the operation group created/matched from the operation name. Anything the message left blank (e.g. an empty delivery address) is flagged on the preview row for the user to finish in Manual — never guessed.
 
 ## Technical detail
 
@@ -29,6 +30,16 @@ Make the uploaded v2 sheet the single official trip template across the app, wit
 - Add aliases already present in the v2 messages: `journey type` (parsed, not used for classification), `company`, `vehicle`, `pax count`, `to vassel`, and tolerate the missing space in `time-`.
 - Passenger block: accept `Name - phone` pairs and keep each passenger's own phone alongside the name, rather than only capturing the first phone.
 - Block splitting: currently only a new `Operation Name` line starts a new trip. Also start a new block when a `date` label appears after the previous block already has a date, so messages without an operation name still separate.
+
+**Post-parse enrichment (shared by paste and sheet upload)**
+- One `enrichParsedTrips()` helper used by both intake paths, so a pasted message and an uploaded sheet end up identical:
+  - addresses: `resolveAddresses` from `@/lib/places.functions` on pickup/delivery (respecting `useAddressSettings().auto_fix_bulk`), keeping `place_id`/`lat`/`lng` and marking auto-fixed cells with Undo (`ParsedTrip.autoFixed`), same as the existing bulk-paste convention;
+  - journey type: derived by the existing `src/lib/journey-resolver.ts` from the resolved from/to plus flight/vessel — the message's own "Journey type" text is kept only as a note, never used to classify;
+  - flight/vessel: normalised via `src/lib/flight-code.ts` and tracked with `tracking_kind` from which side/column carried the code;
+  - immigration: "yes" adds the Immigration Office stop, skipped for Freeport pickups;
+  - operation group: matched or created from `Operation Name` through the existing operation-groups flow.
+- Missing required fields stay as row errors on the preview (as today) instead of being auto-filled.
+
 
 **Coordinator — `src/components/coordinator/JobFormDialog.tsx`**
 - No behaviour change needed in the tab wiring (it already tries labeled-message first, then sheet paste); it picks up the new columns/parsers automatically.
