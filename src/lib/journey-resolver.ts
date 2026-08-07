@@ -50,6 +50,37 @@ export function classifyProviderEndpoint(placeTypes?: readonly string[] | null):
   return "local";
 }
 
+const AIRPORT_TEXT_RE = /\b(airport|malta international airport|mia|luqa)\b/i;
+const PORT_TEXT_RE = /\b(port|marina|terminal|shipyard|harbour|harbor|berth|pier|freeport)\b/i;
+
+/**
+ * Best-effort fallback for text that never went through Places — a bulk
+ * paste or an uploaded sheet row, where there is no provider category to
+ * read. This is intentionally separate from classifyProviderEndpoint (whose
+ * whole contract is "free text is never examined") and must never replace
+ * it on a path where real provider data is available; an interactive
+ * address pick or a Port Directory selection always overrides this guess.
+ * Matches a small fixed airport-keyword list first, then the company's own
+ * named ports/berths (substring, either direction), then generic port
+ * keywords. Anything unmatched stays "local" — same default as before this
+ * existed, so a wrong guess is never worse than the prior behaviour.
+ */
+export function classifyBulkImportLocationText(
+  text: string,
+  ports?: readonly { name: string }[] | null,
+): JourneyEndpoint {
+  const t = (text ?? "").trim();
+  if (!t) return "local";
+  if (AIRPORT_TEXT_RE.test(t)) return "airport";
+  const lower = t.toLowerCase();
+  for (const p of ports ?? []) {
+    const name = p.name?.trim().toLowerCase();
+    if (name && (lower.includes(name) || name.includes(lower))) return "port";
+  }
+  if (PORT_TEXT_RE.test(t)) return "port";
+  return "local";
+}
+
 const JOURNEYS: Record<JourneyType, JourneyDecision> = {
   arrival_flight: { journeyType: "arrival_flight", primaryTransport: "flight", optionalConnection: null, trackingKind: "flight" },
   departure_flight: { journeyType: "departure_flight", primaryTransport: "flight", optionalConnection: null, trackingKind: "flight" },

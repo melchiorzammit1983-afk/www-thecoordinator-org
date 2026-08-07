@@ -12,7 +12,7 @@ import { flightFormatWarning } from "@/lib/flight-code";
 import { fileToSheetTsv } from "@/lib/sheet-template";
 import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
-import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
+import { classifyProviderEndpoint, classifyBulkImportLocationText, type JourneyEndpoint } from "@/lib/journey-resolver";
 import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
 
 type GridRow = {
@@ -82,6 +82,15 @@ function rowHasAnyData(r: GridRow): boolean {
   return !!(r.name || r.phone || r.email || r.from || r.to || r.pickupAt || r.room || r.flight || r.vehicle || r.notes.trim());
 }
 
+// Surfaces the detected/selected endpoint type so a pasted/uploaded row's
+// guess is visible, not silent — picking a real address or port above
+// always overrides it. Nothing shown for "local": the common case.
+function EndpointTypeBadge({ type }: { type: JourneyEndpoint }) {
+  if (type === "airport") return <span className="block text-[10px] text-blue-700 dark:text-blue-300">✈ Airport</span>;
+  if (type === "port") return <span className="block text-[10px] text-cyan-700 dark:text-cyan-300">⚓ Port</span>;
+  return null;
+}
+
 // Best-effort parse of a pasted date/time cell into the value a
 // datetime-local input accepts (YYYY-MM-DDTHH:mm). Silently leaves the cell
 // blank if we can't confidently parse it — the coordinator/company can fill
@@ -95,11 +104,16 @@ function parsePastedDateTime(raw: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function applyCellValue(row: GridRow, key: ColumnKey, raw: string): GridRow {
+// Pasted/uploaded text never touches Places, so classify it from the plain
+// text (and the company's own Port Directory) instead of defaulting to
+// "local" — otherwise every imported flight/ship trip silently loses its
+// journey type, tracking, and pickup offset. Picking a real suggestion in
+// the address field afterwards always overrides this guess.
+function applyCellValue(row: GridRow, key: ColumnKey, raw: string, ports: TokenPort[]): GridRow {
   const v = raw.trim();
   switch (key) {
-    case "from": return { ...row, from: v, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null };
-    case "to": return { ...row, to: v, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null };
+    case "from": return { ...row, from: v, fromLocationType: classifyBulkImportLocationText(v, ports), fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null };
+    case "to": return { ...row, to: v, toLocationType: classifyBulkImportLocationText(v, ports), toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null };
     case "pickupAt": return { ...row, pickupAt: parsePastedDateTime(v) };
     case "pax": return { ...row, pax: v.replace(/[^0-9]/g, "") || "1" };
     default: return { ...row, [key]: v };
@@ -131,8 +145,8 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
       if (!parsed.length) { toast.error("Couldn't find any rows in that file"); return; }
       const newRows: GridRow[] = parsed.map((p) => ({
         name: p.name, phone: p.phone, email: p.email,
-        from: p.from, fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
-        to: p.to, toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
+        from: p.from, fromLocationType: classifyBulkImportLocationText(p.from, ports), fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
+        to: p.to, toLocationType: classifyBulkImportLocationText(p.to, ports), toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
         pickupAt: p.pickupAt, room: p.room, flight: p.flight, vehicle: p.vehicle, pax: p.pax, notes: p.notes,
         selected: false,
       }));
@@ -188,7 +202,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         cells.forEach((cellRaw, ci) => {
           const key = COLUMN_KEYS[colIndex + ci];
           if (!key) return;
-          row = applyCellValue(row, key, cellRaw);
+          row = applyCellValue(row, key, cellRaw, ports);
         });
         next[targetRow] = row;
       });
@@ -362,6 +376,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />
+                          <EndpointTypeBadge type={row.fromLocationType} />
                           <TokenPortPicker ports={ports} portId={row.fromPortId} berthId={row.fromBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { fromPortId: portId, fromBerthId: berthId, fromLocationType: portId ? "port" : "local", ...(address ? { from: address, fromPlaceId: null, fromLat: null, fromLng: null } : {}) })} />
                         </>)}
                         {key === "to" && (<>
@@ -372,6 +387,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             inputClassName="h-8 text-xs"
                             hideBadge
                           />
+                          <EndpointTypeBadge type={row.toLocationType} />
                           <TokenPortPicker ports={ports} portId={row.toPortId} berthId={row.toBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { toPortId: portId, toBerthId: berthId, toLocationType: portId ? "port" : "local", ...(address ? { to: address, toPlaceId: null, toLat: null, toLng: null } : {}) })} />
                         </>)}
                         {key === "pickupAt" && (
