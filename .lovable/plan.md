@@ -1,67 +1,49 @@
-# Transport Core schema drift — investigation report
+# One shared bulk template + smart paste everywhere
 
-Read-only investigation of the connected preview database against four repository migrations. Nothing was applied or changed.
+Make the uploaded v2 sheet the single official trip template across the app, with a live "Message to Copy" column, and make pasting either format (sheet rows or the message text) fill the form correctly — in the coordinator's New trip dialog and in every company/HR portal booking screen. The hotel/guest portal stays exactly as it is today.
 
-## 1. Core tables and enum types
+## What changes for the user
 
-| Object | Present in preview DB |
-|---|---|
-| public.operations | No |
-| public.trips | No |
-| public.passengers | No |
-| public.trip_stops | No |
-| enum operation_status | No |
-| enum trip_status_v2 | No |
-| enum passenger_type_v2 | No |
-| enum passenger_row_status_v2 | No |
-| enum trip_stop_type_v2 | No |
+1. **Download template** now gives the v2 layout, matching the uploaded file:
+   `Client/Company, Journey type, Pickup Date, Pickup Time, Passenger Name, Phone Number, Email, Pickup Address, From Flight, From Vessel, Delivery Address, To Flight, To Vessel, Pax Count, Notes, Vehicle, Immigration Needed, Operation Name, Message to Copy`
+   - Excel version: column S ("Message to Copy") holds a real formula, so the message rebuilds itself as the user types on that row. Blank rows carry the formula ready to use.
+   - CSV/Google Sheets version: same columns, with the formula included so it stays live after import.
+   - Example rows (road transfer, flight→ship, ship→flight, ship departure/arrival, flight departure) plus an updated Instructions sheet.
+2. **Pasting works both ways** in the same box:
+   - paste rows copied from the sheet (with or without headers), or
+   - paste the "Label - value" message from column S — one message, or several at once.
+3. **Same template and same paste box** on the company/agent portal bulk booking screen and the HR crew/booking screens, so every portal user files trips in one format. Guest hotel portal is untouched.
 
-Existing public enums are only the legacy set (job_status, pax_status, group_status, booking_status, driver_status, dispatch_*, etc.). The entire Transport Core layer from `20260724153000_transport_core_rebuild.sql` is absent.
+## Technical detail
 
-## 2. Link columns
+**`src/lib/sheet-template.ts`**
+- Replace `SHEET_HEADERS` with the v2 order above and rewrite `SAMPLE_ROWS` / `INSTRUCTIONS` to match the uploaded file.
+- Add a `MESSAGE_FORMULA` builder: for xlsx, write column S as `{ f: CONCATENATE(...) }` referencing that row's cells; for CSV, emit the same as an `=CONCATENATE(...)` string so Sheets keeps it live. Apply it to sample rows and ~200 blank rows.
+- Parser updates:
+  - `HEADER_ALIASES`: add `client/company`, `journey type` (read into `flightorship`/type, never used to classify — journey type stays derived from addresses, as today), `message to copy` (ignored on import).
+  - Headerless fallback order must match the new column order.
+  - **Multi-line cells**: `parseSheetPaste` currently splits on `\n` before parsing quotes, so a stacked `Passenger Name` / `Phone Number` cell breaks the row. Split records quote-aware first, then split fields; inside a name/phone cell, split on newlines and zip names to phones positionally (first phone becomes the booking contact).
+  - `fileToSheetTsv` must keep embedded newlines (currently flattened into the tab join) — return quoted TSV that the new record splitter understands.
 
-| Column | Present |
-|---|---|
-| jobs.operation_id | No |
-| pax.operation_id | No |
-| trips.legacy_job_id | No (table missing) |
-| jobs.flight_schedule_record_id | Yes |
-| trips.flight_schedule_record_id | No (table missing) |
-| jobs.scheduled_transport_pickup_offset_minutes | Yes |
-| companies.default_departure/arrival_pickup_offset_minutes | Yes |
+**`src/lib/labeled-message-parser.ts`**
+- Add aliases already present in the v2 messages: `journey type` (parsed, not used for classification), `company`, `vehicle`, `pax count`, `to vassel`, and tolerate the missing space in `time-`.
+- Passenger block: accept `Name - phone` pairs and keep each passenger's own phone alongside the name, rather than only capturing the first phone.
+- Block splitting: currently only a new `Operation Name` line starts a new trip. Also start a new block when a `date` label appears after the previous block already has a date, so messages without an operation name still separate.
 
-So `20260801160000` and `20260802061035` were applied only in their `jobs`/`companies` halves; their `trips` halves never ran.
+**Coordinator — `src/components/coordinator/JobFormDialog.tsx`**
+- No behaviour change needed in the tab wiring (it already tries labeled-message first, then sheet paste); it picks up the new columns/parsers automatically.
+- Update the Template dropdown labels/help text to mention the Message-to-Copy column.
 
-## 3. Triggers and functions matching transport_core / flight_schedule
+**Portals / HR — `src/components/portal/BulkBookingGrid.tsx` (used by `src/routes/portal.$token.tsx`)**
+- Add the same "Template" download menu (xlsx + CSV) using `sheet-template.ts`, replacing `booking-sheet-template.ts` as the offered download.
+- Route uploads and pastes through the same detect → `parseLabeledMessages` / `parseSheetPaste` path, then map `ParsedTrip` into the grid's row shape (including the existing `selected` and `vehicle` fields).
+- Keep the grid's existing columns and submit logic unchanged — only the intake format is unified.
+- `src/lib/booking-sheet-template.ts` is kept only if still referenced elsewhere; otherwise removed.
 
-Functions present: `create_flight_schedule_draft`, `activate_flight_schedule_draft`, `prevent_flight_schedule_import_mutation`.
-Triggers present: `flight_schedule_imports_immutable`, `flight_schedule_records_immutable`.
+**Untouched:** guest hotel portal (`src/routes/g.$session.tsx`, `h.$slug.*`) keeps its current simpler booking flow.
 
-Absent: `touch_transport_updated_at`, `derive_operation_name`, `ensure_job_operation_id`, `refresh_trip_stops_for_job`, `mirror_job_to_transport_core`, `mirror_pax_to_transport_core`, `mirror_job_flight_schedule_link`, and every `trg_jobs_transport_core_*` / `trg_pax_transport_core_mirror` trigger.
-
-Flight schedule tables (`flight_schedule_versions`, `flight_schedule_imports`, `flight_schedule_records`) all exist, so `20260801202443` is fully applied.
-
-## 4. Can the Transport Core migration apply safely?
-
-Yes — all prerequisites it depends on exist, and no conflicts were found:
-
-- Referenced base tables exist: `companies`, `jobs`, `pax`, `drivers`, `groups`, `group_stops`.
-- Every `jobs` column read by the mirror functions and backfill exists; the only missing names are `operation_id` (created by the migration itself) and `pax` columns (`job_id`, `name`, `phone`, `note`) which all exist on `pax`.
-- `group_stops` has the `stop_index`, `display_name`, `address`, `group_id` columns the stop backfill reads.
-- No name collisions: none of the tables, enums, functions, triggers, indexes or constraints it creates already exist.
-- Data will satisfy the final `SET NOT NULL` steps: 71 jobs (0 with null company_id/from/to/date/time), 143 pax (0 with null job_id), 21 group_stops. The backfill covers all of them.
-
-Two caveats, not blockers:
-
-1. The migration enables RLS on the four new tables and adds no policies and no `GRANT`s. That is intentional in the repo (server-function-only access), but any browser query against `operations`/`trips`/`passengers`/`trip_stops` will fail with a permission error until grants/policies are added.
-2. It installs `AFTER INSERT/UPDATE/DELETE` mirror triggers on `jobs` and `pax`, so every write to those tables afterwards also writes Transport Core rows. Behaviour change, expected by design.
-
-## Smallest safe sequence (not applied)
-
-1. `20260724153000_transport_core_rebuild.sql` — creates enums, four tables, link columns, FKs, mirror functions/triggers, backfills, then sets `operation_id` NOT NULL.
-2. `20260725160000_fix_pax_operation_link.sql` — replaces `mirror_pax_to_transport_core` with the self-healing version (must follow step 1; it depends on `derive_operation_name` and `operations`).
-3. Re-run the `trips`-only halves of `20260801160000_trip_flight_schedule_link.sql` and `20260802061035_operational_pickup_offsets.sql` — both are `ADD COLUMN IF NOT EXISTS` / `CREATE OR REPLACE`, so re-running them whole is idempotent and ends with the correct combined `mirror_job_flight_schedule_link` trigger (run `20260802061035` last so the offset-aware version wins).
-
-No other migration needs to be replayed. Steps 1–2 must run in one transaction-safe order before step 3, because step 3 references `trips.legacy_job_id`.
-
-Nothing has been applied. Say the word if you want this sequence executed.
+## Verification
+- Download both templates, confirm column S recalculates in Excel and Google Sheets.
+- Paste the uploaded v2 file's rows (multi-line passenger cells included) into the coordinator bulk box → expect one trip per primary row with all passengers and their phones.
+- Paste a single column-S message, and several messages at once → same results.
+- Repeat both pastes in the portal bulk grid.
