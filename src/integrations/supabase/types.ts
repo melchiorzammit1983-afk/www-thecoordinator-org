@@ -5093,6 +5093,7 @@ export type Database = {
       }
       operation_groups: {
         Row: {
+          colour: string | null
           company_id: string
           created_at: string
           created_by: string | null
@@ -5107,6 +5108,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          colour?: string | null
           company_id: string
           created_at?: string
           created_by?: string | null
@@ -5121,6 +5123,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          colour?: string | null
           company_id?: string
           created_at?: string
           created_by?: string | null
