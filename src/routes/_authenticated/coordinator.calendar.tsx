@@ -313,6 +313,16 @@ function CalendarPage() {
     queryKey: ["jobs", range.from, range.to],
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
   });
+  // The details drawer is opened with a snapshot of the row that was
+  // clicked; without this it never picks up server-side changes (e.g. a
+  // flight-status Refresh) made while it's open, since invalidating the
+  // "jobs" query only updates the list behind it, not this frozen copy.
+  useEffect(() => {
+    if (!detailsJob) return;
+    const fresh = (jobs ?? []).find((j) => j.id === detailsJob.id);
+    if (fresh) setDetailsJob(fresh);
+  }, [jobs]);
+
   const pendingBoardingFn = useServerFn(listPendingBoardingApprovals);
   const boardingScopeJobIds = useMemo(
     () => (jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
