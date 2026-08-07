@@ -3701,6 +3701,8 @@ const bulkTripInput = z.object({
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
         operation_group_id: z.string().uuid().nullable().optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+        // Positionally aligned with `pax` — blank entries mean "no phone".
+        pax_phones: z.array(z.string().trim().max(40)).max(200).optional(),
       }),
     )
     .min(1)
@@ -3804,7 +3806,11 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       await ensureShipArrivalImmigrationStop(supabaseAdmin, job.id, journey, fromPort, immigrationRequired);
       if (t.pax.length) {
         // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
-        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
+        const rows = t.pax.map((name, i) => ({
+          job_id: job.id,
+          name,
+          phone: t.pax_phones?.[i]?.trim() || null,
+        }));
         const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }

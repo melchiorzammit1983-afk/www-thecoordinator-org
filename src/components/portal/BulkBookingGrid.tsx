@@ -10,11 +10,19 @@ import { Plus, Trash2, AlertTriangle, Download, Upload, ClipboardPaste } from "l
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { flightFormatWarning } from "@/lib/flight-code";
-import { fileToSheetTsv } from "@/lib/sheet-template";
-import { downloadBookingExcelTemplate, downloadBookingCsvTemplate, parseBookingSheet } from "@/lib/booking-sheet-template";
+import {
+  fileToSheetTsv,
+  downloadExcelTemplate,
+  downloadGoogleSheetsTemplate,
+  parseSheetPaste,
+  looksLikeSheetPaste,
+} from "@/lib/sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { classifyProviderEndpoint, classifyBulkImportLocationText, type JourneyEndpoint } from "@/lib/journey-resolver";
 import { looksLikeLabeledMessage, parseLabeledMessages } from "@/lib/labeled-message-parser";
+import type { ParsedTrip } from "@/lib/parse-trips";
+import { useServerFn } from "@tanstack/react-start";
+import { resolveAddresses } from "@/lib/places.functions";
 import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
 
 type GridRow = {
@@ -45,6 +53,11 @@ type GridRow = {
   // every checked row's passenger names combined) instead of each becoming
   // its own booking — see submitAll().
   selected: boolean;
+  // Set when bulk intake auto-fixed a loose address ("airport") into a real
+  // Places match — keeps the typed original around so the Undo link can put
+  // it straight back.
+  fromOriginal?: string | null;
+  toOriginal?: string | null;
 };
 
 function emptyRow(): GridRow {
@@ -135,32 +148,85 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [ports, setPorts] = useState<TokenPort[]>([]);
   useEffect(() => { fetch(`/api/public/portal/${token}/`).then((r) => r.json()).then((data) => setPorts(data.ports ?? [])).catch(() => undefined); }, [token]);
+  const resolveFn = useServerFn(resolveAddresses);
   const [messageText, setMessageText] = useState("");
   const [showMessageBox, setShowMessageBox] = useState(false);
 
-  // "Message to Copy" is the app's own fixed "Label - value" format (see
-  // labeled-message-parser.ts) — the same text the bulk-sheet template
-  // generates in its last column. Lets HR paste one straight out of
-  // WhatsApp/email without touching a spreadsheet at all.
+  // Every intake path (message paste, sheet paste, file upload) funnels
+  // through the same parsed-trip shape as the coordinator's bulk box, so a
+  // trip filed from a portal is built exactly like one filed in-house.
+  function tripToRow(t: ParsedTrip): GridRow {
+    return {
+      name: t.pax.join(", "),
+      phone: t.contact_phone,
+      email: t.email,
+      from: t.from_location,
+      fromLocationType: classifyBulkImportLocationText(t.from_location, ports),
+      fromPlaceId: t.from_place_id ?? null, fromLat: t.from_lat ?? null, fromLng: t.from_lng ?? null,
+      fromPortId: null, fromBerthId: null,
+      to: t.to_location,
+      toLocationType: classifyBulkImportLocationText(t.to_location, ports),
+      toPlaceId: t.to_place_id ?? null, toLat: t.to_lat ?? null, toLng: t.to_lng ?? null,
+      toPortId: null, toBerthId: null,
+      pickupAt: t.date && t.time ? `${t.date}T${t.time}` : "",
+      room: "",
+      flight: t.from_flight || t.to_flight || t.flightorship,
+      vehicle: t.vehicle,
+      pax: String(t.pax.length || 1),
+      notes: t.notes,
+      selected: false,
+    };
+  }
+
+  // Bulk intake gives loose text ("airport", "telford 28 4"). Resolve it to a
+  // real place the same way the coordinator's bulk paste auto-fix does, so a
+  // portal-filed trip carries geodata from the start. Each fixed cell keeps
+  // its original text for the Undo link.
+  async function enrichRows(list: GridRow[]): Promise<GridRow[]> {
+    const items: { key: string; text: string }[] = [];
+    list.forEach((r, i) => {
+      if (r.from.trim() && !r.fromPlaceId) items.push({ key: `${i}:from`, text: r.from.trim().slice(0, 200) });
+      if (r.to.trim() && !r.toPlaceId) items.push({ key: `${i}:to`, text: r.to.trim().slice(0, 200) });
+    });
+    if (!items.length) return list;
+    try {
+      const res = await resolveFn({ data: { items: items.slice(0, 200), public_token: token } });
+      const results = res.results;
+      return list.map((r, i) => {
+        const f = results[`${i}:from`];
+        const t = results[`${i}:to`];
+        let next = r;
+        if (f?.address) next = { ...next, fromOriginal: r.from, from: f.address, fromPlaceId: f.place_id, fromLat: f.lat, fromLng: f.lng, fromLocationType: classifyBulkImportLocationText(f.address, ports) };
+        if (t?.address) next = { ...next, toOriginal: r.to, to: t.address, toPlaceId: t.place_id, toLat: t.lat, toLng: t.lng, toLocationType: classifyBulkImportLocationText(t.address, ports) };
+        return next;
+      });
+    } catch {
+      return list;
+    }
+  }
+
+  // Accepts either the app's "Label - value" message (see
+  // labeled-message-parser.ts — the same text column S of the trips template
+  // builds) or rows copied straight out of that template.
   function addFromMessage() {
-    if (!looksLikeLabeledMessage(messageText)) {
-      toast.error("Didn't recognise that as a booking message — check the first line starts with a recognised label, e.g. \"Company -\" or \"Operation Name -\"");
+    const text = messageText.trim();
+    const trips = looksLikeLabeledMessage(text)
+      ? parseLabeledMessages(text)
+      : looksLikeSheetPaste(text)
+        ? parseSheetPaste(text)
+        : [];
+    if (!trips.length) {
+      toast.error("Didn't recognise that — paste the \"Message to Copy\" text, or rows copied from the trips template");
       return;
     }
-    const trips = parseLabeledMessages(messageText);
-    if (!trips.length) { toast.error("Couldn't find any bookings in that message"); return; }
-    const newRows: GridRow[] = trips.map((t) => ({
-      name: t.pax.join(", "), phone: t.contact_phone, email: t.email,
-      from: t.from_location, fromLocationType: classifyBulkImportLocationText(t.from_location, ports), fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
-      to: t.to_location, toLocationType: classifyBulkImportLocationText(t.to_location, ports), toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
-      pickupAt: t.date && t.time ? `${t.date}T${t.time}` : "",
-      room: "", flight: t.flightorship, vehicle: t.vehicle, pax: String(t.pax.length || 1), notes: t.notes,
-      selected: false,
-    }));
+    const newRows = trips.map(tripToRow);
     setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
-    toast.success(`Added ${newRows.length} booking${newRows.length === 1 ? "" : "s"} from message`);
+    toast.success(`Added ${newRows.length} booking${newRows.length === 1 ? "" : "s"}`);
     setMessageText("");
     setShowMessageBox(false);
+    void enrichRows(newRows).then((fixed) =>
+      setRows((prev) => prev.map((r) => { const i = newRows.indexOf(r); return i === -1 ? r : fixed[i]!; })),
+    );
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -170,17 +236,13 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
     setUploading(true);
     try {
       const tsv = await fileToSheetTsv(file);
-      const parsed = parseBookingSheet(tsv);
+      const parsed = parseSheetPaste(tsv);
       if (!parsed.length) { toast.error("Couldn't find any rows in that file"); return; }
-      const newRows: GridRow[] = parsed.map((p) => ({
-        name: p.name, phone: p.phone, email: p.email,
-        from: p.from, fromLocationType: classifyBulkImportLocationText(p.from, ports), fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
-        to: p.to, toLocationType: classifyBulkImportLocationText(p.to, ports), toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
-        pickupAt: p.pickupAt, room: p.room, flight: p.flight, vehicle: p.vehicle, pax: p.pax, notes: p.notes,
-        selected: false,
-      }));
+      const newRows = parsed.map(tripToRow);
       setRows((prev) => [...prev.filter(rowHasAnyData), ...newRows]);
       toast.success(`Added ${newRows.length} row${newRows.length === 1 ? "" : "s"} from ${file.name}`);
+      const fixed = await enrichRows(newRows);
+      setRows((prev) => prev.map((r) => { const i = newRows.indexOf(r); return i === -1 ? r : fixed[i]!; }));
     } catch {
       toast.error("Couldn't read that file — check it's a .xlsx, .xls, or .csv");
     } finally {
@@ -191,6 +253,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   function updateRow(index: number, patch: Partial<GridRow>) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
+
 
   function addRow() {
     setRows((prev) => [...prev, emptyRow()]);
@@ -354,10 +417,10 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           rows before submitting — their From/To/pickup time must match.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button variant="outline" size="sm" onClick={downloadBookingExcelTemplate}>
+          <Button variant="outline" size="sm" onClick={downloadExcelTemplate}>
             <Download className="h-3.5 w-3.5 mr-1" /> Template (.xlsx)
           </Button>
-          <Button variant="outline" size="sm" onClick={downloadBookingCsvTemplate}>
+          <Button variant="outline" size="sm" onClick={downloadGoogleSheetsTemplate}>
             <Download className="h-3.5 w-3.5 mr-1" /> Template (.csv)
           </Button>
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
@@ -427,6 +490,12 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             hideBadge
                           />
                           <EndpointTypeBadge type={row.fromLocationType} />
+                          {row.fromOriginal && row.fromOriginal !== row.from && (
+                            <button type="button" className="block text-[10px] text-muted-foreground underline"
+                              onClick={() => updateRow(ri, { from: row.fromOriginal!, fromOriginal: null, fromPlaceId: null, fromLat: null, fromLng: null, fromLocationType: classifyBulkImportLocationText(row.fromOriginal!, ports) })}>
+                              Undo auto-fix ("{row.fromOriginal}")
+                            </button>
+                          )}
                           <TokenPortPicker ports={ports} portId={row.fromPortId} berthId={row.fromBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { fromPortId: portId, fromBerthId: berthId, fromLocationType: portId ? "port" : "local", ...(address ? { from: address, fromPlaceId: null, fromLat: null, fromLng: null } : {}) })} />
                         </>)}
                         {key === "to" && (<>
@@ -438,6 +507,12 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
                             hideBadge
                           />
                           <EndpointTypeBadge type={row.toLocationType} />
+                          {row.toOriginal && row.toOriginal !== row.to && (
+                            <button type="button" className="block text-[10px] text-muted-foreground underline"
+                              onClick={() => updateRow(ri, { to: row.toOriginal!, toOriginal: null, toPlaceId: null, toLat: null, toLng: null, toLocationType: classifyBulkImportLocationText(row.toOriginal!, ports) })}>
+                              Undo auto-fix ("{row.toOriginal}")
+                            </button>
+                          )}
                           <TokenPortPicker ports={ports} portId={row.toPortId} berthId={row.toBerthId} onChange={({ portId, berthId, address }) => updateRow(ri, { toPortId: portId, toBerthId: berthId, toLocationType: portId ? "port" : "local", ...(address ? { to: address, toPlaceId: null, toLat: null, toLng: null } : {}) })} />
                         </>)}
                         {key === "pickupAt" && (

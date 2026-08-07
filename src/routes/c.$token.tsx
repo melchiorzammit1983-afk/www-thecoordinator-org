@@ -104,17 +104,17 @@ function PublicBookingPage() {
   // Keep tab title reflective of the promo so the user sees it too.
   useEffect(() => {
     if (promo && typeof document !== "undefined") {
-      document.title = `${promo} — ${company.name}`;
+      document.title = `${promo} — ${(company as any)?.name ?? ""}`;
     }
-  }, [promo, company.name]);
+  }, [promo, (company as any)?.name]);
 
   return (
     <div className="min-h-screen bg-muted/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
         <div className="mb-6 flex flex-col items-center text-center">
-          <BrandLogo logoUrl={logoUrl} name={company.name} size="lg" />
+          <BrandLogo logoUrl={logoUrl} name={(company as any)?.name ?? ""} size="lg" />
           <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
-          <h1 className="text-2xl font-semibold mt-1">{company.name}</h1>
+          <h1 className="text-2xl font-semibold mt-1">{(company as any)?.name}</h1>
         </div>
         {promo && (
           <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">

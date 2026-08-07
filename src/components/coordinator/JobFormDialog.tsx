@@ -1790,6 +1790,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         immigration_required: t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown"),
         immigration_needed: t.immigration_needed,
         pax: t.pax,
+        pax_phones: t.pax_phones,
       })),
       label_ids: labelIds,
     } }),
@@ -1887,13 +1888,13 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                 const files = Array.from(e.clipboardData.files || []);
                 if (files.length) { e.preventDefault(); void addFiles(files); }
               }}
-              placeholder={"Paste trip rows here, a \"Label - value\" message (Company, Passenger name and phone number, pick up address, Flight from, delivery address, …), or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Passenger Name  Phone Number  Email  Pickup Address  From Flight  From Vessel  Delivery Address  To Flight  To Vessel  Pax Count  Notes  Vehicle  Immigration Needed  Transport Type  Operation Name"}
+              placeholder={"Paste trip rows here, a \"Label - value\" message (Company, Passenger name and phone number, pick up address, Flight from, delivery address, …), or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nClient/Company  Journey type  Pickup Date  Pickup Time  Passenger Name  Phone Number  Email  Pickup Address  From Flight  From Vessel  Delivery Address  To Flight  To Vessel  Pax Count  Notes  Vehicle  Immigration Needed  Operation Name  Message to Copy"}
               className="font-mono text-xs"
             />
         </div>
 
         <p className="text-xs text-muted-foreground">
-          You can paste rows straight from the template (headers optional) or a "Label - value" message copied from elsewhere. Blank line or a new date starts a new trip. Use the operation name to keep rows grouped together. Incomplete trips can be finished in Manual.
+          You can paste rows straight from the template (headers optional) or the "Message to Copy" text from the template's last column (column S), which also arrives by WhatsApp/email. Blank line or a new date starts a new trip. Use the operation name to keep rows grouped together. Incomplete trips can be finished in Manual.
         </p>
 
 
