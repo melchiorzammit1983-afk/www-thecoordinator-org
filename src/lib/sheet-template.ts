@@ -12,8 +12,9 @@ import { normalizePhone, isMeaningfulName } from "@/lib/parse-trips";
 export const SHEET_HEADERS = [
   "Client/Company",
   "Journey type",
-  "Pickup Date",
-  "Pickup Time",
+  "Pickup Date (DD/MM/YYYY)",
+  "Pickup Time (24h HH:MM)",
+
   "Passenger Name",
   "Phone Number",
   "Email",
