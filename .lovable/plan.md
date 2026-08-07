@@ -13,6 +13,7 @@ Make the uploaded v2 sheet the single official trip template across the app, wit
    - paste rows copied from the sheet (with or without headers), or
    - paste the "Label - value" message from column S — one message, or several at once.
 3. **Same template and same paste box** on the company/agent portal bulk booking screen and the HR crew/booking screens, so every portal user files trips in one format. Guest hotel portal is untouched.
+4. **A pasted message produces a fully-built trip, exactly like typing it manually**: journey type derived from the pickup/delivery and flight/vessel fields, addresses resolved through the Places lookup ("airport" → Malta International Airport, with place_id/lat/lng), flight and vessel codes looked up and tracked with the right provider, immigration stop added when the message says yes (with the Freeport exception), passengers and their phones attached, and the operation group created/matched from the operation name. Anything the message left blank (e.g. an empty delivery address) is flagged on the preview row for the user to finish in Manual — never guessed.
 
 ## Technical detail
 
