@@ -147,7 +147,7 @@ function buildWorkbook(): XLSX.WorkBook {
     if (cell) (cell as any).s = headerStyle;
   }
 
-  const textCols = ["Phone Number", "Pickup Date", "Pickup Time", "Pax Count"]
+  const textCols = ["Phone Number", "Pickup Date (DD/MM/YYYY)", "Pickup Time (24h HH:MM)", "Pax Count"]
     .map((h) => SHEET_HEADERS.indexOf(h as (typeof SHEET_HEADERS)[number]))
     .filter((i) => i >= 0);
 
