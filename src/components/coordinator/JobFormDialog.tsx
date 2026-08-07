@@ -1876,6 +1876,14 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
               rows={10} value={raw}
               onChange={(e) => setRaw(e.target.value)}
               onPaste={(e) => {
+                // Some sources (screenshots, certain note apps) attach an
+                // image to the clipboard alongside the plain text a
+                // coordinator actually wants pasted. Real text always wins —
+                // treating any attached file as an upload attempt was
+                // discarding the pasted text entirely and showing a
+                // confusing "Only Excel and CSV files are supported" error
+                // instead of just accepting the paste like normal.
+                if (e.clipboardData.getData("text/plain").trim()) return;
                 const files = Array.from(e.clipboardData.files || []);
                 if (files.length) { e.preventDefault(); void addFiles(files); }
               }}
