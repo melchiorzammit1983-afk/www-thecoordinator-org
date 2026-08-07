@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isoToMaltaDateTime } from "@/lib/time";
 import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
+import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 
 
 /**
@@ -249,6 +250,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if ((fromPort && endpointTypes.fromLocationType !== "port") || (toPort && endpointTypes.toLocationType !== "port")) {
       throw new Error("port_endpoint_type_required");
     }
+    const ship = await assertTokenShipSelection(a, cid, payload.ship_event_id);
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
     // create a job
     const { data: job, error: jerr } = await a.from("jobs").insert({
@@ -280,6 +282,8 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       clientcompanyname: (b as any).portal_companies.name || null,
       from_flight: (payload.flight_number || "").toUpperCase() || null,
       flightorship: payload.flight_number || null,
+      ship_event_id: ship?.id ?? null,
+      tracking_kind: ship ? "vessel" : undefined,
       contact_phone: payload.client_phone ?? null,
       vehicle: payload.vehicle || null,
       notes: payload.notes || null,
