@@ -6,6 +6,7 @@ import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
+import { assertTokenShipSelection } from "./ship-events-token.server";
 
 type Ctx = { supabase: any; userId: string };
 type CompanyRecord = {
@@ -3377,6 +3378,7 @@ export const approveBooking = createServerFn({ method: "POST" })
     const fromLocationType = (b as any).from_location_type ?? (fromPort ? "port" : null);
     const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
     if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
+    const ship = await assertTokenShipSelection(supabaseAdmin, c.id, (b as any).ship_event_id);
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
@@ -3395,6 +3397,8 @@ export const approveBooking = createServerFn({ method: "POST" })
         clientcompanyname: `${b.name} ${b.surname}`.trim(),
         from_flight: fromFlight,
         flightorship: fromFlight,
+        ship_event_id: ship?.id ?? null,
+        tracking_kind: ship ? "vessel" : (b as any).tracking_kind ?? undefined,
         notes: (b as any).notes ?? null,
         promo_note: (b as any).promo_note ?? null,
       } as any)

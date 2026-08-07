@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { resolveBookingJourney } from "./journey-resolver";
 import { assertTokenPortSelection, listTokenScopedPorts } from "./port-directory-token.server";
+import { assertTokenShipSelection, listTokenScopedShips } from "./ship-events-token.server";
 
 async function getAdminClient() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -22,7 +23,8 @@ export const getCompanyByLink = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     if (!row || row.status !== "approved") return null;
     const ports = await listTokenScopedPorts(supabaseAdmin, row.id);
-    return { ...row, ports };
+    const ships = await listTokenScopedShips(supabaseAdmin, row.id);
+    return { ...row, ports, ships };
   });
 
 export const submitClientBooking = createServerFn({ method: "POST" })
@@ -42,6 +44,7 @@ export const submitClientBooking = createServerFn({ method: "POST" })
         from_berth_id: z.string().uuid().nullable().optional(),
         to_port_id: z.string().uuid().nullable().optional(),
         to_berth_id: z.string().uuid().nullable().optional(),
+        ship_event_id: z.string().uuid().nullable().optional(),
         immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM"),
@@ -69,6 +72,7 @@ export const submitClientBooking = createServerFn({ method: "POST" })
     if ((fromPort && data.from_location_type !== "port") || (toPort && data.to_location_type !== "port")) {
       throw new Error("port_endpoint_type_required");
     }
+    const ship = await assertTokenShipSelection(supabaseAdmin, company.id, data.ship_event_id);
     const { data: allowed, error: rlErr } = await supabaseAdmin.rpc(
       "register_client_booking_attempt" as any,
       { _company_id: company.id, _limit: 20 } as any,
@@ -89,6 +93,8 @@ export const submitClientBooking = createServerFn({ method: "POST" })
       from_berth_id: data.from_berth_id ?? null,
       to_port_id: data.to_port_id ?? null,
       to_berth_id: data.to_berth_id ?? null,
+      ship_event_id: ship?.id ?? null,
+      tracking_kind: ship ? "vessel" : null,
       immigration_required: data.immigration_required ?? "unknown",
       date: data.date,
       time: data.time.length === 5 ? `${data.time}:00` : data.time,

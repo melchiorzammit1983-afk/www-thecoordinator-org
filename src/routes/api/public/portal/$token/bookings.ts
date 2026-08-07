@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
 import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
+import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 
 const BookingInput = z.object({
   from_location: z.string().min(1).max(200),
@@ -13,6 +14,7 @@ const BookingInput = z.object({
   from_berth_id: z.string().uuid().nullable().optional(),
   to_port_id: z.string().uuid().nullable().optional(),
   to_berth_id: z.string().uuid().nullable().optional(),
+  ship_event_id: z.string().uuid().nullable().optional(),
   immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
   from_place_id: z.string().max(200).nullable().optional(),
   from_lat: z.number().nullable().optional(),
@@ -114,6 +116,7 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
               if ((fromPort && endpointTypes.fromLocationType !== "port") || (toPort && endpointTypes.toLocationType !== "port")) {
                 throw new Error("port_endpoint_type_required");
               }
+              const ship = await assertTokenShipSelection(admin, r.portal.coordinator_company_id, b.ship_event_id);
               return {
                 portal_company_id: r.portal.id,
                 payload: {
@@ -123,6 +126,8 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
                   journey_type: journey.journeyType,
                   from_location: fromPort?.address ?? b.from_location,
                   to_location: toPort?.address ?? b.to_location,
+                  ship_event_id: ship?.id ?? null,
+                  tracking_kind: ship ? "vessel" : null,
                 },
                 agreed_price: b.agreed_price ?? null,
                 currency: b.currency ?? "EUR",
@@ -140,9 +145,17 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
               if ((fromPort && booking.from_location_type !== "port") || (toPort && booking.to_location_type !== "port")) {
                 throw new Error("port_endpoint_type_required");
               }
+              const ship = await assertTokenShipSelection(admin, r.portal.coordinator_company_id, booking.ship_event_id);
               return [{
                 portal_company_id: r.portal.id,
-                payload: { ...booking, from_location: fromPort?.address ?? booking.from_location, to_location: toPort?.address ?? booking.to_location, journey_type: journey.journeyType },
+                payload: {
+                  ...booking,
+                  from_location: fromPort?.address ?? booking.from_location,
+                  to_location: toPort?.address ?? booking.to_location,
+                  journey_type: journey.journeyType,
+                  ship_event_id: ship?.id ?? null,
+                  tracking_kind: ship ? "vessel" : null,
+                },
                 agreed_price: booking.agreed_price ?? null,
                 currency: booking.currency ?? "EUR",
                 created_by_email: booking.created_by_email ?? null,
