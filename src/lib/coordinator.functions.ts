@@ -3926,6 +3926,10 @@ const AERODATABOX_TTL_MS = 20 * 60_000;
 // button is free (already-paid cached answer).
 const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
 const FLIGHT_TIME_MISMATCH_MS = 15 * 60_000;
+// How far actual-vs-scheduled has to drift before the card calls it out as
+// early/delayed rather than leaving the provider's own (often stale) status
+// label standing. Matches the coordinator-visible "10 min" threshold.
+const FLIGHT_DRIFT_ALERT_MIN = 10;
 
 type AeroEndpoint = {
   airport?: { iata?: string; icao?: string; name?: string; municipalityName?: string };
@@ -4344,6 +4348,7 @@ export async function applyLiveStatusToJob(
     tracking_kind?: string | null;
     flight_schedule_record_id?: string | null;
     ship_event_id?: string | null;
+    scheduled_transport_pickup_offset_minutes?: number | null;
   },
 ): Promise<LiveStatusResult> {
   if (job.ship_event_id) {
@@ -4392,16 +4397,33 @@ export async function applyLiveStatusToJob(
 
   let status = result.status ?? "unknown";
   let note = result.note ?? "";
-  // Derive "early" from actual-vs-scheduled drift when the provider didn't
-  // explicitly say so. 10+ min ahead counts as early.
+  // Derive early/delayed from actual-vs-scheduled drift when the provider's
+  // own status string doesn't already say so — providers are often slow to
+  // flip the categorical status even once the times already show the gap
+  // (e.g. still "Expected" after landing 10+ min late).
   if (result.scheduled && result.estimated && (status === "on_time" || status === "unknown")) {
     const drift = Math.round((new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000);
-    if (drift <= -10) status = "early";
+    if (drift <= -FLIGHT_DRIFT_ALERT_MIN) status = "early";
+    else if (drift >= FLIGHT_DRIFT_ALERT_MIN) status = "delayed";
   }
+  // Compare pickup against the EXPECTED pickup time, not the raw flight
+  // time. A departure pickup is deliberately offset ahead of the flight
+  // (default 180 min, or whatever the coordinator/company configured) —
+  // comparing pickup directly to departure would flag every correctly
+  // booked departure trip as a mismatch. Arrivals default to a 0-minute
+  // offset, so this reduces to the old direct comparison for them.
   if (result.scheduled && job.pickup_at) {
-    const s = new Date(result.scheduled).getTime();
+    const offsetMinutes =
+      job.scheduled_transport_pickup_offset_minutes ?? (side === "dep" ? 180 : 0);
+    const scheduledMs = new Date(result.scheduled).getTime();
+    const expectedPickupMs =
+      side === "dep" ? scheduledMs - offsetMinutes * 60_000 : scheduledMs + offsetMinutes * 60_000;
     const p = new Date(job.pickup_at).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > FLIGHT_TIME_MISMATCH_MS) {
+    if (
+      !Number.isNaN(expectedPickupMs) &&
+      !Number.isNaN(p) &&
+      Math.abs(expectedPickupMs - p) > FLIGHT_TIME_MISMATCH_MS
+    ) {
       status = "time_mismatch";
       note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
@@ -4437,7 +4459,7 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", jobId)
       .maybeSingle();
@@ -4509,7 +4531,7 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
@@ -4531,7 +4553,7 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("company_id", c.id)
       // Include trips linked to an imported schedule record even when the
@@ -4595,7 +4617,7 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
