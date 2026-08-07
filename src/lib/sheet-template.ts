@@ -275,8 +275,13 @@ const HEADER_ALIASES: Record<string, string> = {
   "journey type": "journey_type",
   "journey": "journey_type",
   "pickup date": "date",
+  "pickup date (dd/mm/yyyy)": "date",
+  "date (dd/mm/yyyy)": "date",
   "date": "date",
   "pickup time": "time",
+  "pickup time (24h hh:mm)": "time",
+  "time (24h hh:mm)": "time",
+
   "time": "time",
   "customer name": "name",
   "passenger": "name",
