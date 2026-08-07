@@ -4248,20 +4248,83 @@ async function fetchLiveStatus(
 async function resolveLinkedFlightForTracking(
   supabaseAdmin: any,
   job: { flight_schedule_record_id?: string | null; from_flight?: string | null; to_flight?: string | null },
-): Promise<{ code: string | null; side: FlightSide | undefined }> {
+): Promise<{ code: string | null; side: FlightSide | undefined; scheduledDate: string | null }> {
   let code = job.from_flight?.trim() || job.to_flight?.trim() || null;
   let side: FlightSide | undefined = job.from_flight ? "arr" : job.to_flight ? "dep" : undefined;
-  if (!job.flight_schedule_record_id) return { code, side };
+  if (!job.flight_schedule_record_id) return { code, side, scheduledDate: null };
 
   const { data: record } = await supabaseAdmin
     .from("flight_schedule_records")
-    .select("flight_number, direction")
+    .select("flight_number, direction, scheduled_date")
     .eq("id", job.flight_schedule_record_id)
     .maybeSingle();
   if (record?.flight_number) code = String(record.flight_number).trim();
   if (record?.direction === "arrival") side = "arr";
   if (record?.direction === "departure") side = "dep";
-  return { code, side };
+  return { code, side, scheduledDate: record?.scheduled_date ?? null };
+}
+
+/**
+ * The single funnel every schedule-linked flight check goes through —
+ * background create, manual refresh, the bulk sweep, and the T-30 cron all
+ * call this instead of hitting AeroDataBox directly. Two guards keep the
+ * provider bill down and the data honest:
+ *
+ *  - A flight already in the past (Malta calendar day) is never checked —
+ *    there's nothing "live" left to report, and it would just burn a request
+ *    on every trip touch for the rest of the day.
+ *  - One shared row per flight_schedule_record_id, refreshed at most once
+ *    per AERODATABOX_TTL_MS. Ten trips on the same KM101 cost one provider
+ *    request, not ten — every caller after the first reads the row the
+ *    first caller just wrote.
+ */
+async function getSharedFlightLiveStatus(
+  supabaseAdmin: any,
+  flightScheduleRecordId: string,
+  scheduledDate: string | null,
+  code: string,
+  pickupIso: string | null,
+  side: FlightSide | undefined,
+): Promise<LiveStatusResult> {
+  if (scheduledDate) {
+    const todayMalta = isoToMaltaDateTime(new Date().toISOString()).date;
+    if (scheduledDate < todayMalta) return notTracked("Flight date has passed");
+  }
+
+  const { data: cached } = await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .select("status, note, scheduled_at, estimated_at, updated_at")
+    .eq("flight_schedule_record_id", flightScheduleRecordId)
+    .maybeSingle();
+  if (cached?.updated_at && Date.now() - new Date(cached.updated_at).getTime() < AERODATABOX_TTL_MS) {
+    return {
+      ok: true,
+      status: cached.status ?? "unknown",
+      note: cached.note ?? "",
+      scheduled: cached.scheduled_at ?? null,
+      estimated: cached.estimated_at ?? null,
+      confidence: "high",
+      source: "aerodatabox",
+    };
+  }
+
+  // Cache is stale or this flight has never been checked — the one request
+  // that actually reaches the provider for this flight this cycle.
+  const result = await fetchLiveStatus("flight", code, pickupIso, side);
+  await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .upsert(
+      {
+        flight_schedule_record_id: flightScheduleRecordId,
+        status: result.ok ? result.status ?? "unknown" : "unknown",
+        note: result.ok ? result.note ?? null : liveStatusFailureMessage(result.reason, code),
+        scheduled_at: result.ok ? result.scheduled ?? null : null,
+        estimated_at: result.ok ? result.estimated ?? null : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "flight_schedule_record_id" },
+    );
+  return result;
 }
 
 
@@ -4300,10 +4363,19 @@ export async function applyLiveStatusToJob(
   if (!liveStatusProviderEnabled()) {
     return { ok: false, reason: "provider_unavailable" };
   }
-  const kind: "flight" = "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
-  const side: FlightSide | undefined = kind === "flight" ? linkedFlight.side : undefined;
-  const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
+  const side: FlightSide | undefined = linkedFlight.side;
+  // Shared per-flight check, not per-job: every trip on this same flight
+  // (any company, any coordinator) reads the one cached answer instead of
+  // each triggering its own provider request. See getSharedFlightLiveStatus.
+  const result = await getSharedFlightLiveStatus(
+    supabaseAdmin,
+    job.flight_schedule_record_id,
+    linkedFlight.scheduledDate,
+    code,
+    job.pickup_at,
+    side,
+  );
 
   if (!result.ok) {
     const reasonNote = liveStatusFailureMessage(result.reason, code);
@@ -4459,10 +4531,13 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id",
       )
       .eq("company_id", c.id)
-      .or("from_flight.not.is.null,to_flight.not.is.null")
+      // Include trips linked to an imported schedule record even when the
+      // legacy from_flight/to_flight text is empty — otherwise those trips
+      // are silently skipped by this sweep (same gap as the T-30 cron had).
+      .or("from_flight.not.is.null,to_flight.not.is.null,flight_schedule_record_id.not.is.null")
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
@@ -4520,13 +4595,18 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id",
       )
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
-    if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    // A schedule-linked trip can have no legacy from_flight/to_flight text at
+    // all — the display copy is only backfilled when read, not written. Only
+    // reject when there's truly nothing to track.
+    if (!job.from_flight && !job.to_flight && !(job as any).flight_schedule_record_id) {
+      return { ok: false, reason: "no_flight" as const };
+    }
     if (!liveStatusProviderEnabled()) {
       return { ok: false as const, reason: "provider_unavailable" as const };
     }

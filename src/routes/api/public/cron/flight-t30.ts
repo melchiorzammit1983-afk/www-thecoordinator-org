@@ -3,8 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 // Runs on a schedule (e.g. every 5-10 min via pg_cron / external scheduler).
 // Finds trips whose pickup is coming up within the next ~35 minutes and
 // whose flight/vessel status hasn't been checked recently, then checks them.
-// Billing: uses the same spend-then-refund pattern as manual refresh — a
-// company is only charged when the lookup actually returns a result.
+// Trips linked to the same flight_schedule_record_id share one provider
+// request — see getSharedFlightLiveStatus in coordinator.functions.ts.
 export const Route = createFileRoute("/api/public/cron/flight-t30")({
   server: {
     handlers: {
@@ -27,7 +27,11 @@ export const Route = createFileRoute("/api/public/cron/flight-t30")({
         const { data: jobs, error } = await supabaseAdmin
           .from("jobs")
           .select("id, flight_status_updated_at")
-          .or("from_flight.not.is.null,to_flight.not.is.null")
+          // A trip linked to an imported schedule record may have empty
+          // from_flight/to_flight text (the display copy is backfilled only
+          // when read) — without this clause those trips were invisible to
+          // the automatic refresh and never got a live update.
+          .or("from_flight.not.is.null,to_flight.not.is.null,flight_schedule_record_id.not.is.null")
           .not("status", "in", "(completed,cancelled)")
           .gte("pickup_at", from)
           .lte("pickup_at", to);
