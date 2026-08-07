@@ -12,8 +12,9 @@ import { normalizePhone, isMeaningfulName } from "@/lib/parse-trips";
 export const SHEET_HEADERS = [
   "Client/Company",
   "Journey type",
-  "Pickup Date",
-  "Pickup Time",
+  "Pickup Date (DD/MM/YYYY)",
+  "Pickup Time (24h HH:MM)",
+
   "Passenger Name",
   "Phone Number",
   "Email",
@@ -124,19 +125,60 @@ function buildWorkbook(): XLSX.WorkBook {
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = SHEET_HEADERS.map((h) =>
-    h === "Message to Copy" ? { wch: 46 } : { wch: Math.max(14, h.length + 2) },
+    h === "Message to Copy" ? { wch: 46 } : { wch: Math.max(16, h.length + 4) },
   );
-  const phoneColIdx = SHEET_HEADERS.indexOf("Phone Number");
+  // Roomy header row + readable data rows (stacked passenger cells wrap).
+  ws["!rows"] = [{ hpt: 30 }, ...Array.from({ length: rows.length - 1 }, () => ({ hpt: 18 }))];
+  // Freeze the header row so it stays visible while filling long lists.
+  ws["!freeze"] = { xSplit: "0", ySplit: "1", topLeftCell: "A2", activePane: "bottomLeft", state: "frozen" } as any;
+  ws["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(SHEET_HEADERS.length - 1)}1` };
+
+  const headerStyle = {
+    font: { bold: true, sz: 11, color: { rgb: "FFFFFFFF" } },
+    fill: { patternType: "solid", fgColor: { rgb: "FF1F3A5F" } },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: {
+      bottom: { style: "thin", color: { rgb: "FF11243B" } },
+      right: { style: "thin", color: { rgb: "FF11243B" } },
+    },
+  };
+  for (let c = 0; c < SHEET_HEADERS.length; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+    if (cell) (cell as any).s = headerStyle;
+  }
+
+  const textCols = ["Phone Number", "Pickup Date (DD/MM/YYYY)", "Pickup Time (24h HH:MM)", "Pax Count"]
+    .map((h) => SHEET_HEADERS.indexOf(h as (typeof SHEET_HEADERS)[number]))
+    .filter((i) => i >= 0);
+
   for (let r = 1; r < rows.length; r++) {
-    // Force Phone Number to Text so long numbers don't become 3.9E+11.
-    if (phoneColIdx >= 0) {
-      const addr = XLSX.utils.encode_cell({ r, c: phoneColIdx });
+    // Force these to Text so Excel can't reformat DD/MM/YYYY dates into its own
+    // locale order, turn HH:MM into a time serial, or make phones 3.9E+11.
+    for (const c of textCols) {
+      const addr = XLSX.utils.encode_cell({ r, c });
       const cell = ws[addr];
-      if (cell) { cell.t = "s"; cell.z = "@"; cell.v = String(cell.v ?? ""); }
+      if (cell) {
+        cell.t = "s";
+        cell.z = "@";
+        cell.v = String(cell.v ?? "");
+        (cell as any).s = { alignment: { horizontal: "left", vertical: "top" }, numFmt: "@" };
+      }
+    }
+    // Wrap long free-text cells (names, addresses, notes) instead of clipping.
+    for (let c = 0; c < SHEET_HEADERS.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && !(cell as any).s) {
+        (cell as any).s = { alignment: { vertical: "top", wrapText: true } };
+      }
     }
     // Live "Message to Copy" formula on every sample + blank row.
     const msgAddr = XLSX.utils.encode_cell({ r, c: MESSAGE_COLUMN_INDEX });
-    ws[msgAddr] = { t: "s", f: messageFormula(r + 1), v: "" } as XLSX.CellObject;
+    ws[msgAddr] = {
+      t: "s",
+      f: messageFormula(r + 1),
+      v: "",
+      s: { alignment: { vertical: "top", wrapText: true } },
+    } as XLSX.CellObject;
   }
   ws["!ref"] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
@@ -145,9 +187,12 @@ function buildWorkbook(): XLSX.WorkBook {
   XLSX.utils.book_append_sheet(wb, ws, "Trips");
   const ins = XLSX.utils.aoa_to_sheet(INSTRUCTIONS);
   ins["!cols"] = [{ wch: 100 }];
+  const insTitle = ins["A1"];
+  if (insTitle) (insTitle as any).s = { font: { bold: true, sz: 14, color: { rgb: "FF1F3A5F" } } };
   XLSX.utils.book_append_sheet(wb, ins, "Instructions");
   return wb;
 }
+
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -230,9 +275,14 @@ const HEADER_ALIASES: Record<string, string> = {
   "journey type": "journey_type",
   "journey": "journey_type",
   "pickup date": "date",
+  "pickup date (dd/mm/yyyy)": "date",
+  "date (dd/mm/yyyy)": "date",
   "date": "date",
   "pickup time": "time",
+  "pickup time (24h hh:mm)": "time",
+  "time (24h hh:mm)": "time",
   "time": "time",
+
   "customer name": "name",
   "passenger": "name",
   "passenger name": "name",
