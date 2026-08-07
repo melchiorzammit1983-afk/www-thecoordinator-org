@@ -144,7 +144,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   // WhatsApp/email without touching a spreadsheet at all.
   function addFromMessage() {
     if (!looksLikeLabeledMessage(messageText)) {
-      toast.error("Didn't recognise that as a booking message — check it starts with \"Operation Name -\"");
+      toast.error("Didn't recognise that as a booking message — check the first line starts with a recognised label, e.g. \"Company -\" or \"Operation Name -\"");
       return;
     }
     const trips = parseLabeledMessages(messageText);

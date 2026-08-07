@@ -75,10 +75,13 @@ function normTime(s: string): string {
 }
 
 /** True when the pasted text is (or starts with) one of these messages, so
- * the caller can prefer this parser over the freer-form one. */
+ * the caller can prefer this parser over the freer-form one. Operation Name
+ * is optional (see LABEL_ALIASES/instructions), so a real message just as
+ * often leads with Company, Date, or the passenger header — any recognised
+ * label on the first line is enough to identify the format. */
 export function looksLikeLabeledMessage(raw: string): boolean {
   const first = raw.split(/\r?\n/).find((l) => l.trim());
-  return !!first && matchLabel(first.trim())?.field === "operation_name";
+  return !!first && matchLabel(first.trim()) !== null;
 }
 
 /**
