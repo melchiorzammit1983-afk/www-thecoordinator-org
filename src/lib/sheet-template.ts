@@ -281,8 +281,8 @@ const HEADER_ALIASES: Record<string, string> = {
   "pickup time": "time",
   "pickup time (24h hh:mm)": "time",
   "time (24h hh:mm)": "time",
-
   "time": "time",
+
   "customer name": "name",
   "passenger": "name",
   "passenger name": "name",
