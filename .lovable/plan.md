@@ -31,6 +31,16 @@ Make the uploaded v2 sheet the single official trip template across the app, wit
 - Passenger block: accept `Name - phone` pairs and keep each passenger's own phone alongside the name, rather than only capturing the first phone.
 - Block splitting: currently only a new `Operation Name` line starts a new trip. Also start a new block when a `date` label appears after the previous block already has a date, so messages without an operation name still separate.
 
+**Post-parse enrichment (shared by paste and sheet upload)**
+- One `enrichParsedTrips()` helper used by both intake paths, so a pasted message and an uploaded sheet end up identical:
+  - addresses: `resolveAddresses` from `@/lib/places.functions` on pickup/delivery (respecting `useAddressSettings().auto_fix_bulk`), keeping `place_id`/`lat`/`lng` and marking auto-fixed cells with Undo (`ParsedTrip.autoFixed`), same as the existing bulk-paste convention;
+  - journey type: derived by the existing `src/lib/journey-resolver.ts` from the resolved from/to plus flight/vessel — the message's own "Journey type" text is kept only as a note, never used to classify;
+  - flight/vessel: normalised via `src/lib/flight-code.ts` and tracked with `tracking_kind` from which side/column carried the code;
+  - immigration: "yes" adds the Immigration Office stop, skipped for Freeport pickups;
+  - operation group: matched or created from `Operation Name` through the existing operation-groups flow.
+- Missing required fields stay as row errors on the preview (as today) instead of being auto-filled.
+
+
 **Coordinator — `src/components/coordinator/JobFormDialog.tsx`**
 - No behaviour change needed in the tab wiring (it already tries labeled-message first, then sheet paste); it picks up the new columns/parsers automatically.
 - Update the Template dropdown labels/help text to mention the Message-to-Copy column.
