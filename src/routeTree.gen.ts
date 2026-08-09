@@ -24,6 +24,7 @@ import { Route as HelpIndexRouteImport } from './routes/help.index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as PortalTokenRouteImport } from './routes/portal.$token'
+import { Route as OperationLinkTokenRouteImport } from './routes/operation-link.$token'
 import { Route as HelpTopicRouteImport } from './routes/help.$topic'
 import { Route as HSlugRouteImport } from './routes/h.$slug'
 import { Route as GSessionRouteImport } from './routes/g.$session'
@@ -185,6 +186,11 @@ const TTokenRoute = TTokenRouteImport.update({
 const PortalTokenRoute = PortalTokenRouteImport.update({
   id: '/portal/$token',
   path: '/portal/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperationLinkTokenRoute = OperationLinkTokenRouteImport.update({
+  id: '/operation-link/$token',
+  path: '/operation-link/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HelpTopicRoute = HelpTopicRouteImport.update({
@@ -713,6 +719,7 @@ export interface FileRoutesByFullPath {
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
+  '/operation-link/$token': typeof OperationLinkTokenRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -813,6 +820,7 @@ export interface FileRoutesByTo {
   '/crew-portal/dashboard': typeof CrewPortalDashboardRoute
   '/g/$session': typeof GSessionRoute
   '/help/$topic': typeof HelpTopicRoute
+  '/operation-link/$token': typeof OperationLinkTokenRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -918,6 +926,7 @@ export interface FileRoutesById {
   '/g/$session': typeof GSessionRoute
   '/h/$slug': typeof HSlugRouteWithChildren
   '/help/$topic': typeof HelpTopicRoute
+  '/operation-link/$token': typeof OperationLinkTokenRoute
   '/portal/$token': typeof PortalTokenRoute
   '/t/$token': typeof TTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -1024,6 +1033,7 @@ export interface FileRouteTypes {
     | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
+    | '/operation-link/$token'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
@@ -1124,6 +1134,7 @@ export interface FileRouteTypes {
     | '/crew-portal/dashboard'
     | '/g/$session'
     | '/help/$topic'
+    | '/operation-link/$token'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
@@ -1228,6 +1239,7 @@ export interface FileRouteTypes {
     | '/g/$session'
     | '/h/$slug'
     | '/help/$topic'
+    | '/operation-link/$token'
     | '/portal/$token'
     | '/t/$token'
     | '/track/$token'
@@ -1328,6 +1340,7 @@ export interface RootRouteChildren {
   CTokenRoute: typeof CTokenRoute
   GSessionRoute: typeof GSessionRoute
   HSlugRoute: typeof HSlugRouteWithChildren
+  OperationLinkTokenRoute: typeof OperationLinkTokenRoute
   PortalTokenRoute: typeof PortalTokenRoute
   TTokenRoute: typeof TTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
@@ -1477,6 +1490,13 @@ declare module '@tanstack/react-router' {
       path: '/portal/$token'
       fullPath: '/portal/$token'
       preLoaderRoute: typeof PortalTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operation-link/$token': {
+      id: '/operation-link/$token'
+      path: '/operation-link/$token'
+      fullPath: '/operation-link/$token'
+      preLoaderRoute: typeof OperationLinkTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/help/$topic': {
@@ -2299,6 +2319,7 @@ const rootRouteChildren: RootRouteChildren = {
   CTokenRoute: CTokenRoute,
   GSessionRoute: GSessionRoute,
   HSlugRoute: HSlugRouteWithChildren,
+  OperationLinkTokenRoute: OperationLinkTokenRoute,
   PortalTokenRoute: PortalTokenRoute,
   TTokenRoute: TTokenRoute,
   TrackTokenRoute: TrackTokenRoute,

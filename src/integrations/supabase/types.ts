@@ -2751,6 +2751,74 @@ export type Database = {
           },
         ]
       }
+      driver_trip_updates: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by_driver_id: string | null
+          changed_fields: Json
+          company_id: string
+          created_at: string
+          driver_id: string
+          id: string
+          job_id: string
+          new_values: Json
+          previous_values: Json
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by_driver_id?: string | null
+          changed_fields?: Json
+          company_id: string
+          created_at?: string
+          driver_id: string
+          id?: string
+          job_id: string
+          new_values?: Json
+          previous_values?: Json
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by_driver_id?: string | null
+          changed_fields?: Json
+          company_id?: string
+          created_at?: string
+          driver_id?: string
+          id?: string
+          job_id?: string
+          new_values?: Json
+          previous_values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_trip_updates_acknowledged_by_driver_id_fkey"
+            columns: ["acknowledged_by_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_vehicles: {
         Row: {
           created_at: string
@@ -5143,6 +5211,121 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_link_activity: {
+        Row: {
+          action_type: string
+          company_id: string
+          created_at: string
+          id: string
+          new_values: Json
+          operation_group_id: string
+          operation_link_id: string
+          previous_values: Json
+        }
+        Insert: {
+          action_type: string
+          company_id: string
+          created_at?: string
+          id?: string
+          new_values?: Json
+          operation_group_id: string
+          operation_link_id: string
+          previous_values?: Json
+        }
+        Update: {
+          action_type?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          new_values?: Json
+          operation_group_id?: string
+          operation_link_id?: string
+          previous_values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_link_activity_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_link_activity_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_link_activity_operation_link_id_fkey"
+            columns: ["operation_link_id"]
+            isOneToOne: false
+            referencedRelation: "operation_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_links: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          last_accessed_at: string | null
+          operation_group_id: string
+          permissions: Json
+          recipient_name: string
+          recipient_type: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          last_accessed_at?: string | null
+          operation_group_id: string
+          permissions?: Json
+          recipient_name: string
+          recipient_type: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          last_accessed_at?: string | null
+          operation_group_id?: string
+          permissions?: Json
+          recipient_name?: string
+          recipient_type?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_links_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_links_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
             referencedColumns: ["id"]
           },
         ]
