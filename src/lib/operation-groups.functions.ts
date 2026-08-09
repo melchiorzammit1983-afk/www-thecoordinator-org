@@ -115,7 +115,7 @@ const shipRelationInput = relationInput.extend({ ship_event_id: z.string().uuid(
 const flightRelationInput = relationInput.extend({ flight_schedule_record_id: z.string().uuid() });
 const jobRelationInput = relationInput.extend({ job_id: z.string().uuid() });
 const operationLinkType = z.enum(operationLinkRecipientTypes);
-const operationLinkPermissions = z.record(z.boolean()).default({});
+const operationLinkPermissions = z.record(z.string(), z.boolean()).default({});
 const operationLinkCreateInput = relationInput.extend({
   recipient_name: z.string().trim().min(1).max(200),
   recipient_type: operationLinkType,
