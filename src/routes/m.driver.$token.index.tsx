@@ -61,7 +61,7 @@ import {
   CheckCircle2, Check, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
   Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
-  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone, Filter,
+  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone, Filter, Home,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
 import { decodePolyline, distanceToPathMeters } from "@/lib/polyline";
@@ -911,6 +911,9 @@ function DriverManifest() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button type="button" size="icon" variant="outline" aria-label="Home" onClick={() => { setOpenJob(null); setChatJob(null); setNavigateMode(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                <Home className="h-4 w-4" />
+              </Button>
               {audio.speechSupported && (
                 <Button
                   type="button"
@@ -1122,6 +1125,7 @@ function DriverManifest() {
           onSpeak={audio.speechSupported ? speakLatest : null}
           isSpeaking={audio.isSpeaking}
           routeUpdated={routeUpdateNotice}
+          onHome={() => { setNavigateMode(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
         />
       )}
 
@@ -3531,7 +3535,7 @@ function TripExecutionDialog({
 
           
             <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}><ArrowLeft className="h-4 w-4 mr-1" /> Back to manifest</Button>
               {job?.status === "arrived" && (
       <Button onClick={handleStartTrip} disabled={startTripMut.isPending}>
                 {startTripMut.isPending ? "Starting…" : "Passengers on board — en route"}
