@@ -13,11 +13,13 @@ import {
   getBoardingApprovalStatusDriver,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement, driverMarkPayoutReceived,
   getClientLiveLocationDriver,
+  acknowledgeDriverTripUpdate,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
   driverSnapDropoffToHere,
   logDriverAction,
 } from "@/lib/coordinator-public.functions";
+import type { DriverTripUpdate } from "@/lib/driver-trip-updates.server";
 import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
@@ -142,6 +144,7 @@ type Job = {
   dropoff_lng?: number | null;
   created_by_driver?: boolean | null;
   needs_review?: boolean | null;
+  trip_updates?: DriverTripUpdate[];
 };
 
 type Driver = {
@@ -1221,6 +1224,41 @@ function DriverStatusPill({
   );
 }
 
+function DriverTripUpdateAlert({ job, token, onAcknowledged }: { job: Job; token: string; onAcknowledged: () => void }) {
+  const updates = job.trip_updates ?? [];
+  const acknowledgeFn = useServerFn(acknowledgeDriverTripUpdate);
+  const audio = useDriverAudio({ storageKey: `driver:update-audio:${token}` });
+  const acknowledge = useMutation({
+    mutationFn: (updateId: string) => acknowledgeFn({ data: { token, update_id: updateId } }),
+    onSuccess: onAcknowledged,
+    onError: (error: Error) => toast.error(error.message),
+  });
+  useEffect(() => {
+    for (const update of updates) {
+      const key = `driver-trip-update-seen:${update.id}`;
+      let seen = false;
+      try { seen = window.localStorage.getItem(key) === "1"; } catch { /* ignore */ }
+      if (seen) continue;
+      try { window.localStorage.setItem(key, "1"); } catch { /* ignore */ }
+      audio.playChime("dispatch");
+      if (audio.autoRead) audio.speak("Trip updated. Please review the new trip details and acknowledge.");
+      break;
+    }
+  }, [updates, audio]);
+  if (!updates.length) return null;
+  const update = updates[0];
+  const formatValue = (value: unknown) => value == null || value === "" ? "—" : String(value);
+  return <div className="mx-3 mb-2 rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-rose-950 shadow-sm dark:bg-rose-950/30 dark:text-rose-100" role="alert">
+    <div className="font-bold text-sm">Trip updated</div>
+    <div className="mt-1 text-xs">Review the coordinator&apos;s change before continuing.</div>
+    <div className="mt-2 space-y-1 text-xs">
+      {Object.entries(update.changed_fields).map(([field, label]) => <div key={field}><span className="font-semibold">{label}:</span> {formatValue(update.previous_values[field])} → {formatValue(update.new_values[field])}</div>)}
+    </div>
+    <div className="mt-2 text-[11px] opacity-75">Updated {new Date(update.created_at).toLocaleString()}</div>
+    <Button className="mt-3 h-11 w-full bg-rose-600 text-white hover:bg-rose-700" disabled={acknowledge.isPending} onClick={() => acknowledge.mutate(update.id)}>Acknowledge update</Button>
+  </div>;
+}
+
 
 
 function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, onChat }: { job: Job; token: string; driverPos: { lat: number; lng: number } | null; arrivalRadiusM: number; isSafetyMode: boolean; onOpen: () => void; onChat: () => void }) {
@@ -1552,10 +1590,11 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   return (
     <article
       id={`job-card-${job.id}`}
-      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
+      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.trip_updates?.length ? "ring-2 ring-rose-500 animate-pulse" : ""} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
+      <DriverTripUpdateAlert job={job} token={token} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
       {/* Header strip */}
       <div className={`px-4 py-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
         <div className="flex min-w-0 items-center gap-2">

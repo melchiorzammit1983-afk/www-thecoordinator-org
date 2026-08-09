@@ -6,6 +6,7 @@ import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
+import { recordDriverTripUpdate } from "./driver-trip-updates.server";
 import { assertTokenShipSelection } from "./ship-events-token.server";
 
 type Ctx = { supabase: any; userId: string };
@@ -754,6 +755,7 @@ function assertCompleteBookingEndpointTypes(data: {
     throw new Error("Both endpoint types are required when providing journey classification.");
   }
 }
+
 
 async function validateOperationGroupAssignment(supabaseAdmin: any, companyId: string, operationGroupId: string | null | undefined) {
   if (operationGroupId === undefined || operationGroupId === null) return;
@@ -2272,6 +2274,7 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
+    await recordDriverTripUpdate(supabaseAdmin, existing as any, patch, data.id, c.id);
     // A newly selected arrival port gets the automatic immigration stop once.
     // If the coordinator later removes or edits that stop, unchanged saves do
     // not recreate it.
