@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -6,7 +6,10 @@ import {
   getDashboardSummary,
   getDashboardActivity,
   listDrivers,
+  getOperationsInbox,
+  listJobs,
 } from "@/lib/coordinator.functions";
+import { listOperationGroups } from "@/lib/operation-groups.functions";
 import {
   CalendarDays,
   Inbox,
@@ -16,6 +19,13 @@ import {
   Plus,
   ArrowRight,
   Clock,
+  Activity,
+  Anchor,
+  Plane,
+  CheckCircle2,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
@@ -25,6 +35,7 @@ import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
+import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
@@ -36,6 +47,9 @@ function DashboardPage() {
   const summaryFn = useServerFn(getDashboardSummary);
   const activityFn = useServerFn(getDashboardActivity);
   const driversFn = useServerFn(listDrivers);
+  const inboxFn = useServerFn(getOperationsInbox);
+  const jobsFn = useServerFn(listJobs);
+  const groupsFn = useServerFn(listOperationGroups);
 
   const { data } = useQuery({ queryKey: ["coord-summary"], queryFn: () => summaryFn() });
   const { data: activity, refetch: refetchActivity } = useQuery({
@@ -44,6 +58,9 @@ function DashboardPage() {
     refetchInterval: 30_000,
   });
   const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() });
+  const { data: operationsInbox } = useQuery({ queryKey: ["operations-inbox"], queryFn: () => inboxFn(), refetchInterval: 60_000 });
+  const { data: operationJobs } = useQuery({ queryKey: ["operations-jobs"], queryFn: () => jobsFn({ data: {} }) as Promise<any[]> });
+  const { data: operationGroups } = useQuery({ queryKey: ["operations-groups"], queryFn: () => groupsFn() });
 
   const [addOpen, setAddOpen] = useState(false);
 
@@ -119,6 +136,8 @@ function DashboardPage() {
         ))}
       </div>
 
+      <LiveOperationsHome jobs={(operationJobs ?? []) as any[]} groups={(operationGroups ?? []) as any[]} attentionCount={operationsInbox?.total ?? 0} />
+
       {/* New trips – recent pending client bookings */}
       <SectionHeader
         icon={Inbox}
@@ -193,6 +212,30 @@ function DashboardPage() {
       />
     </div>
   );
+}
+
+function LiveOperationsHome({ jobs, groups, attentionCount }: { jobs: any[]; groups: any[]; attentionCount: number }) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Malta" }).format(new Date());
+  const activeGroups = groups.filter((group) => ["draft", "active"].includes(group.status));
+  const activeTrips = jobs.filter((job) => job.date === today && !["completed", "cancelled"].includes(job.status));
+  const shipsToday = jobs.filter((job) => job.date === today && job.ship_event_id).length;
+  const flightsToday = jobs.filter((job) => job.date === today && (job.flight_schedule_record_id || job.from_flight || job.to_flight)).length;
+  const completedToday = jobs.filter((job) => job.date === today && job.status === "completed").length;
+  const hasShip = activeGroups.some((group) => jobs.some((job) => job.operation_group_id === group.id && job.ship_event_id));
+  const hasFlight = activeGroups.some((group) => jobs.some((job) => job.operation_group_id === group.id && (job.flight_schedule_record_id || job.from_flight || job.to_flight)));
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const jobsByGroup = useMemo(() => new Map(activeGroups.map((group) => [group.id, jobs.filter((job) => job.operation_group_id === group.id)])), [activeGroups, jobs]);
+
+  return <section className="mt-6 space-y-3" aria-label="Live operations">
+    <div className="flex items-end justify-between gap-2"><div><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold">Live operations</h2></div><p className="text-[11px] text-muted-foreground mt-0.5">Today&apos;s workspace, using Operations Centre data.</p></div><Link to="/coordinator/operations" className="text-xs font-medium text-primary inline-flex items-center gap-1">Open filters <ArrowRight className="h-3 w-3" /></Link></div>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5"><LiveMetric label="Needs action" value={attentionCount} tone="text-destructive" icon={AlertCircle} /><LiveMetric label="Active trips" value={activeTrips.length} tone="text-blue-600" icon={Truck} /><LiveMetric label="Ships today" value={shipsToday} tone="text-cyan-700" icon={Anchor} /><LiveMetric label="Relevant flights" value={flightsToday} tone="text-indigo-600" icon={Plane} /><LiveMetric label="Completed today" value={completedToday} tone="text-emerald-600" icon={CheckCircle2} /></div>
+    {activeGroups.length === 0 ? <div className="rounded-xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">No active Operation Groups.</div> : <div className="grid gap-2 md:grid-cols-2">{activeGroups.map((group) => { const groupJobs = jobsByGroup.get(group.id) ?? []; const active = groupJobs.filter((job) => !["completed", "cancelled"].includes(job.status)); const passengers = groupJobs.reduce((total, job) => total + (job.pax?.length ?? 0), 0); const attention = groupJobs.filter((job) => job.needs_review || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase())).length; const open = !!expanded[group.id]; const colour = normaliseOperationGroupColour(group.colour); return <div key={group.id} className={`rounded-xl border bg-card p-3 ${operationGroupColourClasses[colour]}`}><button type="button" className="w-full text-left" onClick={() => setExpanded((current) => ({ ...current, [group.id]: !open }))} aria-expanded={open}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${operationGroupColourDotClasses[colour]}`} /><span className="truncate text-sm font-semibold">{group.reference} · {group.name}</span></div><div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span className="capitalize">{group.status}</span><span>{groupJobs.length} trips</span><span>{passengers} passengers</span>{attention > 0 && <span className="font-semibold text-destructive">{attention} needs attention</span>}</div></div>{open ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}</div></button>{open && <div className="mt-3 space-y-2 border-t border-current/10 pt-3 text-xs"><div className="flex flex-wrap gap-2"><span>{active.length} active trips</span><span>{groupJobs.filter((job) => job.driver_id).length} drivers assigned</span></div><div className="flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to="/coordinator/operation-groups">Open Operation</Link></Button>{groupJobs[0] && <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Open Trip</Link></Button>}<Button asChild size="sm" variant="outline"><Link to="/coordinator/operations">Open Review</Link></Button></div></div>}</div>; })}</div>}
+    <div className="flex flex-wrap gap-2">{hasShip && <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Open Ship</Link></Button>}{hasFlight && <Button asChild size="sm" variant="outline"><Link to="/coordinator/airport-operations">Open Flight</Link></Button>}</div>
+  </section>;
+}
+
+function LiveMetric({ label, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: typeof Activity }) {
+  return <div className="rounded-xl border bg-card p-3"><div className="flex items-center justify-between gap-2"><span className="text-[11px] font-medium text-muted-foreground">{label}</span><Icon className={`h-4 w-4 ${tone}`} /></div><div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div></div>;
 }
 
 function SectionHeader({
