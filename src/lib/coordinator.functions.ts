@@ -1793,6 +1793,12 @@ export const resolveShipEtaTripReview = createServerFn({ method: "POST" })
       const { error } = await tables.from("jobs").update({ needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
       if (error) throw new Error(error.message);
     }
+    const { error: auditError } = await tables.from("ship_eta_review_completions").insert({
+      eta_history_id: history.id,
+      company_id: c.id,
+      reviewed_by: context.userId,
+    });
+    if (auditError && auditError.code !== "23505") throw new Error(auditError.message);
     return { ok: true, pending: false };
   });
 

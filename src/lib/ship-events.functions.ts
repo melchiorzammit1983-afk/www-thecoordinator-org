@@ -276,18 +276,35 @@ export const updateShipEventEta = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
+    const nextEta = etaToIso(data.eta);
+    const { data: before, error: beforeError } = await shipEventsTable(sb)
+      .from("ship_events")
+      .select("eta")
+      .eq("id", data.id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (beforeError) throw new Error(beforeError.message);
+    if (!before) throw new Error("Ship event not found");
     const { data: result, error } = await shipEventsTable(sb).rpc(
       "update_ship_event_eta_with_history",
       {
         p_ship_event_id: data.id,
         p_company_id: companyId,
-        p_eta: etaToIso(data.eta),
+        p_eta: nextEta,
         p_changed_by: context.userId,
       },
     );
     if (error) throw new Error(error.message);
     const event = Array.isArray(result) ? result[0] : result;
     if (!event) throw new Error("Ship event not found");
+    if (new Date(before.eta).getTime() !== new Date(nextEta).getTime()) {
+      const { error: reviewError } = await shipEventsTable(sb)
+        .from("jobs")
+        .update({ needs_review: true })
+        .eq("company_id", companyId)
+        .eq("ship_event_id", data.id);
+      if (reviewError) throw new Error(reviewError.message);
+    }
     return event as ShipEvent;
   });
 
