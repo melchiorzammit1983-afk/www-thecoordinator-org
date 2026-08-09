@@ -62,14 +62,18 @@ export const getOperationLinkView = createServerFn({ method: "GET" })
     const permissions = link.permissions ?? {};
     const viewTransport = permissions.view_transport === true;
     const viewTripStatus = permissions.view_trip_status === true;
+    // Passenger/crew visibility needs the same company- and group-scoped Job
+    // query, even when trip-status visibility is not granted. Jobs remain an
+    // internal source for the filtered passenger projection below.
+    const loadJobsForPassengers = permissions.view_passengers === true;
     const [ships, flights, jobs] = await Promise.all([
       viewTransport ? sb.from("operation_group_ship_events").select("ship_events(ship_name, eta, expected_departure, actual_arrival, actual_departure, port, status, berths(name))").eq("operation_group_id", group.id).eq("company_id", link.company_id) : Promise.resolve({ data: [], error: null }),
       viewTransport ? sb.from("operation_group_flight_records").select("flight_schedule_records(flight_number, airline, origin, destination, scheduled_date, scheduled_time, direction)").eq("operation_group_id", group.id).eq("company_id", link.company_id) : Promise.resolve({ data: [], error: null }),
-      viewTripStatus ? sb.from("jobs").select("id, status, date, time, clientcompanyname, pax(id, name, status, boarded_at)").eq("operation_group_id", group.id).eq("company_id", link.company_id) : Promise.resolve({ data: [], error: null }),
+      (viewTripStatus || loadJobsForPassengers) ? sb.from("jobs").select("id, status, date, time, clientcompanyname, pax(id, name, status, boarded_at)").eq("operation_group_id", group.id).eq("company_id", link.company_id) : Promise.resolve({ data: [], error: null }),
     ]);
     for (const result of [ships, flights, jobs]) if (result.error) throw new Error(result.error.message);
     const passengers = permissions.view_passengers === true ? (jobs.data ?? []).flatMap((job: any) => (job.pax ?? []).map((passenger: any) => ({ ...passenger, company: job.clientcompanyname ?? null, job_id: job.id }))) : [];
-    return { link, group, ships: ships.data ?? [], flights: flights.data ?? [], jobs: jobs.data ?? [], passengers };
+    return { link, group, ships: ships.data ?? [], flights: flights.data ?? [], jobs: viewTripStatus ? jobs.data ?? [] : [], passengers };
   });
 
 export const submitOperationLinkUpdate = createServerFn({ method: "POST" })
