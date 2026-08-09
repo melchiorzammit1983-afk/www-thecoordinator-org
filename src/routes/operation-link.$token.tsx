@@ -4,6 +4,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getOperationLinkView, submitOperationLinkUpdate } from "@/lib/operation-links.server";
 import { useState } from "react";
 
+type OperationLinkUpdateInput = {
+  token: string;
+  action:
+    | "update_ship_eta"
+    | "update_expected_departure"
+    | "request_port_change"
+    | "submit_operational_update"
+    | "mark_passenger_onboard"
+    | "undo_passenger_onboard";
+  value?: string;
+  port_id?: string;
+  berth_id?: string | null;
+  passenger_id?: string;
+};
+
 export const Route = createFileRoute("/operation-link/$token")({
   head: () => ({ meta: [{ title: "Operation Link" }] }),
   component: OperationLinkPage,
@@ -18,7 +33,7 @@ function OperationLinkPage() {
   const [note, setNote] = useState("");
   const [portId, setPortId] = useState("");
   const [berthId, setBerthId] = useState("");
-  const updateMutation = useMutation({ mutationFn: (input: Parameters<typeof updateFn>[0]["data"]) => updateFn({ data: input }), onSuccess: () => { setNote(""); query.refetch(); } });
+  const updateMutation = useMutation({ mutationFn: (input: OperationLinkUpdateInput) => updateFn({ data: input } as never), onSuccess: () => { setNote(""); query.refetch(); } });
   const query = useQuery({ queryKey: ["operation-link", token], queryFn: () => viewFn({ data: { token } }) });
   if (query.isLoading) return <main className="grid min-h-screen place-items-center p-6 text-sm text-muted-foreground">Loading Operation Link…</main>;
   if (query.error || !query.data) return <main className="grid min-h-screen place-items-center bg-muted/20 p-6"><div className="w-full max-w-md rounded-2xl border bg-card p-6 text-center"><h1 className="text-xl font-semibold">Operation Link unavailable</h1><p className="mt-2 text-sm text-muted-foreground">This link is expired, revoked, or invalid.</p></div></main>;

@@ -110,7 +110,7 @@ export const submitOperationLinkUpdate = createServerFn({ method: "POST" })
       previous = ship as Record<string, unknown>;
       if (data.action === "update_ship_eta") {
         if (!data.value) throw new Error("ETA is required.");
-        const { error: updateError } = await sb.rpc("update_ship_event_eta_with_history", { p_ship_event_id: shipId, p_company_id: link.company_id, p_eta: data.value, p_changed_by: null });
+        const { error: updateError } = await sb.rpc("update_ship_event_eta_with_history", { p_ship_event_id: shipId, p_company_id: link.company_id, p_eta: data.value, p_changed_by: null } as never);
         if (updateError) throw new Error(updateError.message);
         next = { eta: data.value };
         await sb.from("jobs").update({ needs_review: true }).eq("company_id", link.company_id).eq("ship_event_id", shipId);
@@ -121,7 +121,7 @@ export const submitOperationLinkUpdate = createServerFn({ method: "POST" })
         next = { expected_departure: data.value };
       } else {
         if (!data.port_id) throw new Error("Port is required.");
-        const { data: result, error: updateError } = await sb.rpc("update_ship_event_port_with_review", { p_ship_event_id: shipId, p_company_id: link.company_id, p_port_id: data.port_id, p_berth_id: data.berth_id ?? null, p_changed_by: null });
+        const { data: result, error: updateError } = await sb.rpc("update_ship_event_port_with_review", { p_ship_event_id: shipId, p_company_id: link.company_id, p_port_id: data.port_id, p_berth_id: data.berth_id ?? null, p_changed_by: null } as never);
         if (updateError) throw new Error(updateError.message);
         next = { port_id: data.port_id, berth_id: data.berth_id ?? null, review: result ?? null };
       }
@@ -130,7 +130,7 @@ export const submitOperationLinkUpdate = createServerFn({ method: "POST" })
       next = { note: data.value.trim() };
     }
     const actionType = data.action === "update_ship_eta" ? "eta_updated" : data.action === "update_expected_departure" ? "departure_updated" : data.action === "request_port_change" ? "port_change_requested" : data.action === "mark_passenger_onboard" || data.action === "undo_passenger_onboard" ? "passenger_onboard_updated" : "operational_update_submitted";
-    const { error: auditError } = await sb.from("operation_link_activity").insert({ operation_link_id: link.id, company_id: link.company_id, operation_group_id: link.operation_group_id, action_type: actionType, previous_values: previous, new_values: next });
+    const { error: auditError } = await sb.from("operation_link_activity").insert({ operation_link_id: link.id, company_id: link.company_id, operation_group_id: link.operation_group_id, action_type: actionType, previous_values: previous, new_values: next } as never);
     if (auditError) throw new Error(auditError.message);
     return { ok: true } as const;
   });
