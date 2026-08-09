@@ -210,9 +210,13 @@ function ShipOperationsPage() {
               event.preventDefault();
               const formData = new FormData(event.currentTarget);
               create.mutate({
-                ship_name: String(formData.get("ship_name") ?? ""),
-                eta: String(formData.get("eta") ?? ""),
-                expected_departure: String(formData.get("expected_departure") ?? ""),
+                // Some native datetime-local implementations serialize the
+                // controlled input as an empty FormData value even though the
+                // current React value is valid. Prefer the native value when
+                // present, then fall back to the current controlled state.
+                ship_name: String(formData.get("ship_name") ?? "") || shipName,
+                eta: String(formData.get("eta") ?? "") || eta,
+                expected_departure: String(formData.get("expected_departure") ?? "") || expectedDeparture,
                 port,
                 port_id: String(formData.get("port_id") ?? "") || null,
                 berth_id: String(formData.get("berth_id") ?? "") || null,
