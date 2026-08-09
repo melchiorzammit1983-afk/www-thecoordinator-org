@@ -103,7 +103,7 @@ function PortDirectoryPicker({
   const selectedBerth = berths.find((berth) => berth.id === berthId);
   return (
     <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-2">
-      <Label className="text-xs">Places Directory</Label>
+      <Label className="text-xs">Port Directory</Label>
       <Select value={portId ?? "__none__"} onValueChange={(value) => {
         if (value === "__none__") { onChange({ portId: null, berthId: null }); return; }
         const next = (ports as Array<Omit<PortDirectoryPort, "company_id">>).find((item) => item.id === value);
