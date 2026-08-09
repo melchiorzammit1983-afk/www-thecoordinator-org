@@ -8,6 +8,7 @@ import {
   listDrivers,
   getOperationsInbox,
   listJobs,
+  listActiveDriverLocations,
 } from "@/lib/coordinator.functions";
 import { listOperationGroups } from "@/lib/operation-groups.functions";
 import {
@@ -36,6 +37,7 @@ import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
 import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
+import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
@@ -50,6 +52,7 @@ function DashboardPage() {
   const inboxFn = useServerFn(getOperationsInbox);
   const jobsFn = useServerFn(listJobs);
   const groupsFn = useServerFn(listOperationGroups);
+  const liveLocationsFn = useServerFn(listActiveDriverLocations);
 
   const { data } = useQuery({ queryKey: ["coord-summary"], queryFn: () => summaryFn() });
   const { data: activity, refetch: refetchActivity } = useQuery({
@@ -61,6 +64,7 @@ function DashboardPage() {
   const { data: operationsInbox } = useQuery({ queryKey: ["operations-inbox"], queryFn: () => inboxFn(), refetchInterval: 60_000 });
   const { data: operationJobs } = useQuery({ queryKey: ["operations-jobs"], queryFn: () => jobsFn({ data: {} }) as Promise<any[]> });
   const { data: operationGroups } = useQuery({ queryKey: ["operations-groups"], queryFn: () => groupsFn() });
+  const { data: liveLocations } = useQuery({ queryKey: ["live-locations"], queryFn: () => liveLocationsFn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>, refetchInterval: 60_000 });
 
   const [addOpen, setAddOpen] = useState(false);
 
@@ -136,7 +140,7 @@ function DashboardPage() {
         ))}
       </div>
 
-      <LiveOperationsHome jobs={(operationJobs ?? []) as any[]} groups={(operationGroups ?? []) as any[]} attentionCount={operationsInbox?.total ?? 0} />
+      <LiveOperationsHome jobs={(operationJobs ?? []) as any[]} groups={(operationGroups ?? []) as any[]} attentionCount={operationsInbox?.total ?? 0} liveLocations={(liveLocations ?? []) as LivePoint[]} />
 
       {/* New trips – recent pending client bookings */}
       <SectionHeader
@@ -214,7 +218,7 @@ function DashboardPage() {
   );
 }
 
-function LiveOperationsHome({ jobs, groups, attentionCount }: { jobs: any[]; groups: any[]; attentionCount: number }) {
+function LiveOperationsHome({ jobs, groups, attentionCount, liveLocations }: { jobs: any[]; groups: any[]; attentionCount: number; liveLocations: LivePoint[] }) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Malta" }).format(new Date());
   const activeGroups = groups.filter((group) => ["draft", "active"].includes(group.status));
   const activeTrips = jobs.filter((job) => job.date === today && !["completed", "cancelled"].includes(job.status));
@@ -229,9 +233,18 @@ function LiveOperationsHome({ jobs, groups, attentionCount }: { jobs: any[]; gro
   return <section className="mt-6 space-y-3" aria-label="Live operations">
     <div className="flex items-end justify-between gap-2"><div><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold">Live operations</h2></div><p className="text-[11px] text-muted-foreground mt-0.5">Today&apos;s workspace, using Operations Centre data.</p></div><Link to="/coordinator/operations" className="text-xs font-medium text-primary inline-flex items-center gap-1">Open filters <ArrowRight className="h-3 w-3" /></Link></div>
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-5"><LiveMetric label="Needs action" value={attentionCount} tone="text-destructive" icon={AlertCircle} /><LiveMetric label="Active trips" value={activeTrips.length} tone="text-blue-600" icon={Truck} /><LiveMetric label="Ships today" value={shipsToday} tone="text-cyan-700" icon={Anchor} /><LiveMetric label="Relevant flights" value={flightsToday} tone="text-indigo-600" icon={Plane} /><LiveMetric label="Completed today" value={completedToday} tone="text-emerald-600" icon={CheckCircle2} /></div>
+    <ActiveOperationsMap jobs={activeTrips} points={liveLocations} />
     {activeGroups.length === 0 ? <div className="rounded-xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">No active Operation Groups.</div> : <div className="grid gap-2 md:grid-cols-2">{activeGroups.map((group) => { const groupJobs = jobsByGroup.get(group.id) ?? []; const active = groupJobs.filter((job) => !["completed", "cancelled"].includes(job.status)); const passengers = groupJobs.reduce((total, job) => total + (job.pax?.length ?? 0), 0); const attention = groupJobs.filter((job) => job.needs_review || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase())).length; const open = !!expanded[group.id]; const colour = normaliseOperationGroupColour(group.colour); return <div key={group.id} className={`rounded-xl border bg-card p-3 ${operationGroupColourClasses[colour]}`}><button type="button" className="w-full text-left" onClick={() => setExpanded((current) => ({ ...current, [group.id]: !open }))} aria-expanded={open}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${operationGroupColourDotClasses[colour]}`} /><span className="truncate text-sm font-semibold">{group.reference} · {group.name}</span></div><div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span className="capitalize">{group.status}</span><span>{groupJobs.length} trips</span><span>{passengers} passengers</span>{attention > 0 && <span className="font-semibold text-destructive">{attention} needs attention</span>}</div></div>{open ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}</div></button>{open && <div className="mt-3 space-y-2 border-t border-current/10 pt-3 text-xs"><div className="flex flex-wrap gap-2"><span>{active.length} active trips</span><span>{groupJobs.filter((job) => job.driver_id).length} drivers assigned</span></div><div className="flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to="/coordinator/operation-groups">Open Operation</Link></Button>{groupJobs[0] && <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Open Trip</Link></Button>}<Button asChild size="sm" variant="outline"><Link to="/coordinator/operations">Open Review</Link></Button></div></div>}</div>; })}</div>}
     <div className="flex flex-wrap gap-2">{hasShip && <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Open Ship</Link></Button>}{hasFlight && <Button asChild size="sm" variant="outline"><Link to="/coordinator/airport-operations">Open Flight</Link></Button>}</div>
   </section>;
+}
+
+function ActiveOperationsMap({ jobs, points }: { jobs: any[]; points: LivePoint[] }) {
+  const [open, setOpen] = useState(false);
+  const liveJobIds = new Set(jobs.map((job) => job.id));
+  const visiblePoints = points.filter((point) => liveJobIds.has(point.job_id));
+  const withoutLocation = jobs.filter((job) => !visiblePoints.some((point) => point.job_id === job.id));
+  return <div className="rounded-xl border bg-card p-3"><div className="flex items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">Active trips map</h3><p className="text-[11px] text-muted-foreground">Live driver positions only; completed and cancelled work is hidden.</p></div><Button type="button" size="sm" variant="outline" onClick={() => setOpen((value) => !value)}>{open ? "Hide map" : "Show map"}</Button></div>{open && <div className="mt-3 space-y-2"><DriverLiveMap points={visiblePoints} height={300} />{withoutLocation.length > 0 && <div className="space-y-1 rounded-md border border-dashed p-2 text-xs"><p className="text-muted-foreground">{withoutLocation.length} active trip{withoutLocation.length === 1 ? " has" : "s have"} no current driver location.</p>{withoutLocation.slice(0, 5).map((job) => <div key={job.id} className="flex justify-between gap-2"><span className="truncate">{job.from_location} → {job.to_location}</span><span className="shrink-0 text-muted-foreground">{job.status}</span></div>)}</div>}</div>}</div>;
 }
 
 function LiveMetric({ label, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: typeof Activity }) {

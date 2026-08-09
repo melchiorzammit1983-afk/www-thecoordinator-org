@@ -20,6 +20,16 @@ export type LivePoint = {
   next_instruction?: string | null;
   destination_label?: string | null;
   wait_started_at?: string | null;
+  trip_no?: number | null;
+  date?: string | null;
+  time?: string | null;
+  status?: string | null;
+  passenger_count?: number | null;
+  operation_group_id?: string | null;
+  operation_group?: { reference?: string | null; name?: string | null; colour?: string | null } | null;
+  ship_eta?: string | null;
+  flight_scheduled_at?: string | null;
+  pickup_at?: string | null;
 };
 
 type GMaps = any;
@@ -226,7 +236,7 @@ export function DriverLiveMap({
         scale: waiting ? 12 : 9,
         fillColor: color,
         fillOpacity: 1,
-        strokeColor: waiting ? "#fde68a" : "#ffffff",
+        strokeColor: waiting ? "#fde68a" : groupColourHex(p.operation_group?.colour),
         strokeWeight: waiting ? 5 : 2,
       };
       const waitLabel = p.wait_started_at
@@ -237,15 +247,20 @@ export function DriverLiveMap({
         : null;
       const contentHtml = `
         <div style="font: 12px system-ui; min-width: 160px">
-          <div style="font-weight:600;margin-bottom:2px">${escapeHtml(p.driver_name)}</div>
+          <div style="font-weight:700;margin-bottom:2px">Trip ${p.trip_no ?? "—"}${p.operation_group?.reference ? ` · ${escapeHtml(p.operation_group.reference)}` : ""}</div>
+          <div style="font-weight:600;margin-bottom:2px">${escapeHtml(p.driver_name)} · ${escapeHtml(p.status ?? "active")}</div>
           ${p.from_location || p.to_location
             ? `<div style="color:#555;margin-bottom:4px">${escapeHtml(p.from_location ?? "")} → ${escapeHtml(p.to_location ?? "")}</div>`
             : ""}
+          <div style="color:#555;margin-bottom:4px">${p.passenger_count ?? 0} passenger${p.passenger_count === 1 ? "" : "s"} · pickup ${escapeHtml(p.time ?? "—")}</div>
+          ${p.operation_group?.name ? `<div style="color:#555;margin-bottom:4px">Operation: ${escapeHtml(p.operation_group.name)}</div>` : ""}
+          ${p.ship_eta ? `<div style="color:#555;margin-bottom:4px">Ship ETA: ${escapeHtml(p.ship_eta)}</div>` : p.flight_scheduled_at ? `<div style="color:#555;margin-bottom:4px">Flight: ${escapeHtml(p.flight_scheduled_at)}</div>` : ""}
           ${waitLabel ? `<div style="color:#b45309;font-weight:600;margin-bottom:2px">${waitLabel}</div>` : ""}
           <div style="color:${color};font-weight:600">
             ${waiting ? "Waiting" : state === "live" ? "Live" : state === "paused" ? "Paused" : "Offline"}
             <span style="color:#666;font-weight:400"> · ${ageLabel(p.captured_at)}</span>
           </div>
+          <div style="display:flex;gap:6px;margin-top:6px"><a href="/coordinator/calendar" style="color:#075985">Open Trip</a>${p.operation_group_id ? `<a href="/coordinator/operation-groups" style="color:#075985">Open Operation</a>` : ""}</div>
         </div>`;
       if (existing) {
         existing.marker.setPosition(position);
@@ -317,4 +332,8 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
   ));
+}
+
+function groupColourHex(colour?: string | null) {
+  return ({ slate: "#64748b", blue: "#2563eb", teal: "#0f766e", amber: "#d97706", rose: "#e11d48", violet: "#7c3aed" } as Record<string, string>)[colour ?? "slate"] ?? "#64748b";
 }

@@ -6162,7 +6162,7 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     // have any driver activity recently. Then pull the latest point per driver.
     const { data: jobs, error: jobsErr } = await supabaseAdmin
       .from("jobs")
-      .select("id, driver_id, from_location, to_location, status, drivers(id,name)")
+      .select("id, trip_no, driver_id, from_location, to_location, date, time, pickup_at, status, operation_group_id, operation_groups(reference,name,colour), ship_event_id, ship_events(eta), flight_schedule_record_id, flight_schedule_records(scheduled_date,scheduled_time), pax(id), drivers(id,name)")
       .not("driver_id", "is", null)
       .in("status", ["en_route", "arrived", "in_progress"])
       .or(
@@ -6201,12 +6201,24 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
       if (!p.job_id) continue;
       if (!latest.has(p.driver_id)) {
         const job = jobMap.get(p.job_id);
-        latest.set(p.driver_id, {
+          latest.set(p.driver_id, {
           driver_id: p.driver_id,
           job_id: p.job_id,
           driver_name: job?.drivers?.name ?? "Driver",
+          trip_no: job?.trip_no ?? null,
           from_location: job?.from_location ?? null,
           to_location: job?.to_location ?? null,
+          date: job?.date ?? null,
+          time: job?.time ?? null,
+          pickup_at: job?.pickup_at ?? null,
+          status: job?.status ?? null,
+          passenger_count: Array.isArray(job?.pax) ? job.pax.length : 0,
+          operation_group_id: job?.operation_group_id ?? null,
+          operation_group: job?.operation_groups ?? null,
+          ship_eta: job?.ship_events?.eta ?? null,
+          flight_scheduled_at: job?.flight_schedule_records?.scheduled_date && job?.flight_schedule_records?.scheduled_time
+            ? `${job.flight_schedule_records.scheduled_date}T${job.flight_schedule_records.scheduled_time}`
+            : null,
           latitude: Number(p.latitude),
           longitude: Number(p.longitude),
           accuracy_m: p.accuracy_m ?? null,
