@@ -3,7 +3,7 @@ import { loadGoogleMaps } from "@/components/driver/DriverDashboardMap";
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowUpLeft, ArrowUpRight,
   CornerDownLeft, CornerDownRight, TrafficCone, Volume2, VolumeX,
-  X, Crosshair, ExternalLink,
+  X, Crosshair, ExternalLink, Home,
 } from "lucide-react";
 
 type RouteStep = {
@@ -73,12 +73,13 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  * the way Google Maps navigation renders.
  */
 export function NavigateFullscreen({
-  live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
+  live, destination, onExit, onHome, onSpeak, isSpeaking, externalNavUrl,
   mode = "navigate", footerSlot = null, title = null, destinationLabel = null, routeUpdated = false,
 }: {
   live: LiveRouteInfo;
   destination: string | null;
   onExit: () => void;
+  onHome?: (() => void) | null;
   onSpeak: (() => void) | null;
   isSpeaking: boolean;
   externalNavUrl: string;
@@ -359,6 +360,11 @@ export function NavigateFullscreen({
       >
         <X className="h-6 w-6" />
       </button>
+      {!isPreview && onHome && (
+        <button type="button" onClick={onHome} aria-label="Home" className="absolute top-4 left-16 z-10 min-h-12 min-w-12 grid place-items-center rounded-full bg-white/95 text-slate-900 shadow-lg active:scale-95 transition">
+          <Home className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Top-right: open in Google Maps fallback */}
       <a
