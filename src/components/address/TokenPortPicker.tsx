@@ -36,7 +36,7 @@ export function TokenPortPicker({
         const next = port.berths.find((item) => item.id === id);
         onChange({ portId: portId ?? null, berthId: id, address: next?.address_override ?? port.address });
       }}>
-        <option value="">No berth selected</option>
+        <option value="">No pickup point selected</option>
         {port.berths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select> : null}
       {berth?.address_override || port?.address ? <p className="text-[11px] text-muted-foreground">{berth?.address_override ?? port?.address}</p> : null}

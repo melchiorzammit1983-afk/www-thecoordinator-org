@@ -143,7 +143,7 @@ function ShipOperationsPage() {
   });
   const updatePort = useMutation({
     mutationFn: () => updatePortFn({ data: { id: portEditing!.id, port_id: editedPortId, berth_id: editedBerthId || null } }),
-    onSuccess: (result) => { setPortEditing(null); refresh(); toast.success(result.changed ? "Ship Port/Berth updated" : "No Port/Berth change detected"); },
+    onSuccess: (result) => { setPortEditing(null); refresh(); toast.success(result.changed ? "Ship Port/Pickup point updated" : "No Port/Pickup point change detected"); },
     onError: (reason: Error) => toast.error(reason.message),
   });
   const cancel = useMutation({
