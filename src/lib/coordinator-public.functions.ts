@@ -3,6 +3,8 @@ import { z } from "zod";
 import { maltaWallTimeToUtcIso } from "./time";
 import { DEFAULT_ARRIVAL_RADIUS_M } from "./gps.constants";
 import { BOARDING_OVERRIDE_MS } from "./boarding.constants";
+import { type DriverTripUpdate } from "./driver-trip-updates.server";
+import { recordDriverTripUpdate } from "./driver-trip-updates.server";
 import {
   EMERGENCY_OVERRIDE_ACTION_LABELS,
   EMERGENCY_OVERRIDE_ACTIONS,
@@ -100,6 +102,28 @@ async function resolveToken(token: string, expectedKind: "driver" | "client") {
     revoked_at: string | null;
   };
 }
+
+export const acknowledgeDriverTripUpdate = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) => z.object({ token: z.string().min(8).max(128), update_id: z.string().uuid() }).parse(i))
+  .handler(async ({ data }) => {
+    const link = await resolveToken(data.token, "driver");
+    if (!link?.subject_id) throw new Error("Invalid driver link");
+    const sb = await getAdminClient();
+    const { data: update, error: readError } = await sb.from("driver_trip_updates")
+      .select("id, driver_id, acknowledged_at")
+      .eq("id", data.update_id)
+      .eq("driver_id", link.subject_id)
+      .maybeSingle();
+    if (readError) throw new Error(readError.message);
+    if (!update) throw new Error("Trip update not found");
+    if (!(update as any).acknowledged_at) {
+      const { error } = await sb.from("driver_trip_updates")
+        .update({ acknowledged_at: new Date().toISOString(), acknowledged_by_driver_id: link.subject_id } as never)
+        .eq("id", data.update_id).eq("driver_id", link.subject_id).is("acknowledged_at", null);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
 
 
 export const getDriverManifest = createServerFn({ method: "GET" })
@@ -216,6 +240,21 @@ export const getDriverManifest = createServerFn({ method: "GET" })
       }, {});
     }
     const jobsWithUnread = (jobs ?? []).map((j: { id: string }) => ({ ...j, unread_messages: unread[j.id] ?? 0 }));
+    let updatesByJob = new Map<string, DriverTripUpdate[]>();
+    if (jobIds.length && link.subject_id) {
+      const { data: updates, error: updateError } = await supabaseAdmin.from("driver_trip_updates")
+        .select("id, job_id, changed_fields, previous_values, new_values, created_at, acknowledged_at")
+        .in("job_id", jobIds).eq("driver_id", link.subject_id).is("acknowledged_at", null)
+        .order("created_at", { ascending: false });
+      if (updateError) throw new Error(updateError.message);
+      updatesByJob = new Map<string, DriverTripUpdate[]>();
+      for (const update of (updates ?? []) as DriverTripUpdate[]) {
+        const list = updatesByJob.get(update.job_id) ?? [];
+        list.push(update);
+        updatesByJob.set(update.job_id, list);
+      }
+    }
+    const jobsWithUpdates = jobsWithUnread.map((j: any) => ({ ...j, trip_updates: updatesByJob.get(j.id) ?? [] }));
     const [branding, features, companySettings] = await Promise.all([
       loadCompanyBranding(link.company_id),
       loadCompanyFeatures(link.company_id),
@@ -226,7 +265,7 @@ export const getDriverManifest = createServerFn({ method: "GET" })
     ]);
     return {
       link,
-      jobs: jobsWithUnread,
+      jobs: jobsWithUpdates,
       driver,
       branding,
       features,
@@ -3494,7 +3533,7 @@ export const decideCoordChangeRequest = createServerFn({ method: "POST" })
     // Verify driver actually owns the job.
     const { data: job } = await sb
       .from("jobs")
-      .select("id, company_id, driver_id, group_id")
+      .select("id, company_id, driver_id, group_id, driver_accepted_at, status, from_location, to_location, date, time, pickup_at, pickup_display_name, dropoff_display_name, vehicle")
       .eq("id", (req as any).job_id)
       .eq("company_id", link.company_id)
       .maybeSingle();
@@ -3563,6 +3602,7 @@ export const decideCoordChangeRequest = createServerFn({ method: "POST" })
       }
       await sb.from("jobs").update(patch as never)
         .eq("id", (req as any).job_id).eq("company_id", link.company_id);
+      await recordDriverTripUpdate(sb, job as any, patch, (req as any).job_id, link.company_id);
     }
 
     await sb.from("job_coord_change_requests").update({
