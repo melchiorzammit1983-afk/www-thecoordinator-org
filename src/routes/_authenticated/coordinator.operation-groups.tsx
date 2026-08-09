@@ -74,6 +74,7 @@ type GroupDetails = OperationGroup & {
     immigration_reviews: number;
   };
   operation_links: OperationLink[];
+  operation_link_activity: Array<{ id: string; operation_link_id: string; action_type: string; previous_values: Record<string, unknown>; new_values: Record<string, unknown>; created_at: string; operation_links?: { recipient_name: string; recipient_type: string } | null }>;
 };
 
 const emptyForm = {
@@ -424,6 +425,7 @@ function OperationGroupsPage() {
                   onChanged={refresh}
                 />
                 <OperationLinksSection operationGroupId={detailQuery.data.id} links={detailQuery.data.operation_links ?? []} onChanged={refresh} />
+                <section className="space-y-3 border-t pt-5"><div><h3 className="text-sm font-semibold">Operation Link activity</h3><p className="text-xs text-muted-foreground">External actions and access remain available for audit.</p></div>{(detailQuery.data.operation_link_activity ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No external activity recorded.</p> : <div className="space-y-2">{detailQuery.data.operation_link_activity.map((item) => <div key={item.id} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{item.action_type.replaceAll("_", " ")}</span><span className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-muted-foreground">{item.operation_links?.recipient_name ?? "Operation Link"} · {item.operation_links?.recipient_type?.replaceAll("_", " ") ?? "external"}</p></div>)}</div>}</section>
                 <div className="flex flex-wrap gap-2 border-t pt-5">
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Jobs / Trips</Link></Button>
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Ship Events</Link></Button>
