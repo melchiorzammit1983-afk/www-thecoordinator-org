@@ -548,6 +548,7 @@ function DriverManifest() {
   const [otgOpen, setOtgOpen] = useState(false);
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [routeUpdateNotice, setRouteUpdateNotice] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
 
   useEffect(() => {
     if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
@@ -574,6 +575,20 @@ function DriverManifest() {
     const timer = window.setTimeout(() => setRouteUpdateNotice(false), 8_000);
     return () => window.clearTimeout(timer);
   }, [routeUpdateNotice]);
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true);
+      qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] });
+      qcTop.invalidateQueries({ queryKey: ["driver-live-route"] });
+    };
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [qcTop, token]);
 
 
   const [showArchived, setShowArchived] = useState(false);
@@ -861,6 +876,7 @@ function DriverManifest() {
 
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
+      {!isOnline && !navigateMode && <div className="sticky top-0 z-40 border-b border-amber-500/40 bg-amber-50 px-4 py-2 text-center text-xs font-semibold text-amber-900 dark:bg-amber-950/80 dark:text-amber-100" role="status">Offline — updates will sync when connection returns.</div>}
       {!navigateMode && isSafetyMode && (
         <SafetyModeOverlay
           speedKmh={speedKmh}
@@ -1237,7 +1253,7 @@ function DriverStatusPill({
   );
 }
 
-function DriverTripUpdateAlert({ job, token, isSafetyMode, onAcknowledged }: { job: Job; token: string; isSafetyMode: boolean; onAcknowledged: () => void }) {
+function DriverTripUpdateAlert({ job, token, isSafetyMode, isOnline, onAcknowledged }: { job: Job; token: string; isSafetyMode: boolean; isOnline: boolean; onAcknowledged: () => void }) {
   const updates = job.trip_updates ?? [];
   const acknowledgeFn = useServerFn(acknowledgeDriverTripUpdate);
   const audio = useDriverAudio({ storageKey: `driver:update-audio:${token}` });
@@ -1268,7 +1284,7 @@ function DriverTripUpdateAlert({ job, token, isSafetyMode, onAcknowledged }: { j
       {Object.entries(update.changed_fields).map(([field, label]) => <div key={field}><span className="font-semibold">{label}:</span> {formatValue(update.previous_values[field])} → {formatValue(update.new_values[field])}</div>)}
     </div>
     <div className="mt-2 text-[11px] opacity-75">Updated {new Date(update.created_at).toLocaleString()}</div>
-    <Button className="mt-3 h-11 w-full bg-rose-600 text-white hover:bg-rose-700" disabled={acknowledge.isPending} onClick={() => acknowledge.mutate(update.id)}>Acknowledge update</Button>
+    <Button className="mt-3 h-11 w-full bg-rose-600 text-white hover:bg-rose-700" disabled={acknowledge.isPending || !isOnline} onClick={() => acknowledge.mutate(update.id)}>{isOnline ? "Acknowledge update" : "Waiting for connection"}</Button>
   </div>;
 }
 
@@ -1607,7 +1623,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
-      <DriverTripUpdateAlert job={job} token={token} isSafetyMode={isSafetyMode} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
+      <DriverTripUpdateAlert job={job} token={token} isSafetyMode={isSafetyMode} isOnline={typeof navigator === "undefined" ? true : navigator.onLine} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
       {/* Header strip */}
       <div className={`px-4 py-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
         <div className="flex min-w-0 items-center gap-2">
