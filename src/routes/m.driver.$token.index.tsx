@@ -547,6 +547,7 @@ function DriverManifest() {
   const [statementOpen, setStatementOpen] = useState(false);
   const [otgOpen, setOtgOpen] = useState(false);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const [routeUpdateNotice, setRouteUpdateNotice] = useState(false);
 
   useEffect(() => {
     if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
@@ -562,10 +563,17 @@ function DriverManifest() {
       .channel(`driver:${driverId}`, { config: { broadcast: { self: false } } })
       .on("broadcast", { event: "jobs_updated" }, () => {
         qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] });
+        qcTop.invalidateQueries({ queryKey: ["driver-live-route"] });
+        setRouteUpdateNotice(true);
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [driverId, token, qcTop]);
+  useEffect(() => {
+    if (!routeUpdateNotice) return;
+    const timer = window.setTimeout(() => setRouteUpdateNotice(false), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [routeUpdateNotice]);
 
 
   const [showArchived, setShowArchived] = useState(false);
@@ -1113,6 +1121,7 @@ function DriverManifest() {
           onExit={() => setNavigateMode(false)}
           onSpeak={audio.speechSupported ? speakLatest : null}
           isSpeaking={audio.isSpeaking}
+          routeUpdated={routeUpdateNotice}
         />
       )}
 

@@ -74,7 +74,7 @@ function ManeuverArrow({ maneuver, className }: { maneuver: string | null; class
  */
 export function NavigateFullscreen({
   live, destination, onExit, onSpeak, isSpeaking, externalNavUrl,
-  mode = "navigate", footerSlot = null, title = null, destinationLabel = null,
+  mode = "navigate", footerSlot = null, title = null, destinationLabel = null, routeUpdated = false,
 }: {
   live: LiveRouteInfo;
   destination: string | null;
@@ -86,6 +86,7 @@ export function NavigateFullscreen({
   footerSlot?: React.ReactNode;
   title?: string | null;
   destinationLabel?: string | null;
+  routeUpdated?: boolean;
 }) {
   const isPreview = mode === "preview";
 
@@ -344,6 +345,9 @@ export function NavigateFullscreen({
         <div className="absolute top-4 inset-x-4 rounded-lg bg-destructive text-destructive-foreground p-3 text-sm">
           Map failed to load: {err}
         </div>
+      )}
+      {!isPreview && routeUpdated && (
+        <div className="absolute top-4 left-16 right-16 z-10 mx-auto max-w-md rounded-full bg-emerald-500 px-4 py-2 text-center text-sm font-bold text-white shadow-lg" role="status">Route updated</div>
       )}
 
       {/* Top-left: exit */}
