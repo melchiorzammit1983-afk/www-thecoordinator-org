@@ -1237,7 +1237,7 @@ function DriverStatusPill({
   );
 }
 
-function DriverTripUpdateAlert({ job, token, onAcknowledged }: { job: Job; token: string; onAcknowledged: () => void }) {
+function DriverTripUpdateAlert({ job, token, isSafetyMode, onAcknowledged }: { job: Job; token: string; isSafetyMode: boolean; onAcknowledged: () => void }) {
   const updates = job.trip_updates ?? [];
   const acknowledgeFn = useServerFn(acknowledgeDriverTripUpdate);
   const audio = useDriverAudio({ storageKey: `driver:update-audio:${token}` });
@@ -1261,9 +1261,9 @@ function DriverTripUpdateAlert({ job, token, onAcknowledged }: { job: Job; token
   if (!updates.length) return null;
   const update = updates[0];
   const formatValue = (value: unknown) => value == null || value === "" ? "—" : String(value);
-  return <div className="mx-3 mb-2 rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-rose-950 shadow-sm dark:bg-rose-950/30 dark:text-rose-100" role="alert">
-    <div className="font-bold text-sm">Trip updated</div>
-    <div className="mt-1 text-xs">Review the coordinator&apos;s change before continuing.</div>
+  return <div className={`mx-3 mb-2 rounded-xl border-2 border-rose-500 bg-rose-50 text-rose-950 shadow-sm dark:bg-rose-950/30 dark:text-rose-100 ${isSafetyMode ? "p-2" : "p-3"}`} role="alert">
+    <div className="font-bold text-sm">{isSafetyMode ? "Trip changed" : "Trip updated"}</div>
+    <div className="mt-1 text-xs">{isSafetyMode ? "New route or time received. Acknowledge when safe." : "Review the coordinator&apos;s change before continuing."}</div>
     <div className="mt-2 space-y-1 text-xs">
       {Object.entries(update.changed_fields).map(([field, label]) => <div key={field}><span className="font-semibold">{label}:</span> {formatValue(update.previous_values[field])} → {formatValue(update.new_values[field])}</div>)}
     </div>
@@ -1607,7 +1607,7 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
-      <DriverTripUpdateAlert job={job} token={token} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
+      <DriverTripUpdateAlert job={job} token={token} isSafetyMode={isSafetyMode} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
       {/* Header strip */}
       <div className={`px-4 py-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
         <div className="flex min-w-0 items-center gap-2">
