@@ -116,6 +116,8 @@ import {
   dismissTripFlag,
   refreshJobLiveStatus,
   listPendingBoardingApprovals,
+  getShipEtaTripReview,
+  resolveShipEtaTripReview,
 } from "@/lib/coordinator.functions";
 import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
 
@@ -2352,6 +2354,15 @@ function WaitTimerChip({ startedAt, pickupAt }: { startedAt: string; pickupAt: s
   );
 }
 
+function formatEtaDifference(previousEta: string, newEta: string) {
+  const minutes = Math.round((new Date(newEta).getTime() - new Date(previousEta).getTime()) / 60000);
+  const sign = minutes >= 0 ? "+" : "−";
+  const absolute = Math.abs(minutes);
+  const hours = Math.floor(absolute / 60);
+  const remainder = absolute % 60;
+  return `${sign}${hours ? `${hours}h ` : ""}${remainder ? `${remainder}m` : hours ? "" : "0m"}`.trim();
+}
+
 
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
@@ -2377,6 +2388,23 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const sosOpen = !!sig?.sos_open;
   const driverStatusNew = !!sig?.driver_status_new && !!job.driver_id;
   const rejected = !!(sig as any)?.rejected;
+  const shipEtaReviewFn = useServerFn(getShipEtaTripReview);
+  const resolveShipEtaReviewFn = useServerFn(resolveShipEtaTripReview);
+  const queryClient = useQueryClient();
+  const { data: shipEtaReview } = useQuery({
+    queryKey: ["ship-eta-trip-review", job.id],
+    queryFn: () => shipEtaReviewFn({ data: { job_id: job.id } }) as Promise<{ previous_eta: string; new_eta: string; suggested_date: string | null; suggested_time: string | null; driver_locked: boolean } | null>,
+    enabled: !!job.needs_review && !!job.ship_event_id,
+  });
+  const shipEtaReviewMutation = useMutation({
+    mutationFn: (action: "apply" | "keep") => resolveShipEtaReviewFn({ data: { job_id: job.id, action } }),
+    onSuccess: (result: any) => {
+      toast.success(result.pending ? "Change request sent to driver" : "ETA review resolved");
+      queryClient.invalidateQueries({ queryKey: ["ship-eta-trip-review", job.id] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
   const partnerPending =
@@ -2755,7 +2783,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   Track
                 </Badge>
               )}
-              {job.needs_review && (
+            {job.needs_review && (
                 <Badge className={`text-[10px] border ${job.ship_event_id ? "bg-destructive/15 text-destructive border-destructive/40 hover:bg-destructive/15" : "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/15"}`}>
                   {job.ship_event_id ? "Ship ETA review" : job.auto_created_from_crew_itinerary
                     ? "Auto-created from crew · needs review"
@@ -2763,6 +2791,24 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                       ? "Driver trip · needs review"
                       : "Needs review"}
                 </Badge>
+              )}
+              {shipEtaReview && (
+                <div className="mt-1 w-full space-y-1.5 rounded-md border-2 border-destructive/60 bg-destructive/10 p-2 text-[11px]" role="alert">
+                  <div className="font-semibold text-destructive">Ship ETA changed — review pickup</div>
+                  <div className="grid gap-0.5 text-muted-foreground">
+                    <span>Previous ETA: {shipEtaReview.previous_eta}</span>
+                    <span>New ETA: {shipEtaReview.new_eta}</span>
+                    <span>ETA difference: {formatEtaDifference(shipEtaReview.previous_eta, shipEtaReview.new_eta)}</span>
+                    <span>Current pickup: {job.date} {job.time?.slice(0, 5)}</span>
+                    <span>Suggested pickup: {shipEtaReview.suggested_date ?? "—"} {shipEtaReview.suggested_time ?? "—"}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); shipEtaReviewMutation.mutate("apply"); }} disabled={shipEtaReviewMutation.isPending || !shipEtaReview.suggested_time}>Apply suggested time</Button>
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); ctx.onEdit(job); }}>Edit manually</Button>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); shipEtaReviewMutation.mutate("keep"); }} disabled={shipEtaReviewMutation.isPending}>Keep current</Button>
+                  </div>
+                  {shipEtaReview.driver_locked ? <span className="block text-muted-foreground">Driver-locked: applying requests approval.</span> : null}
+                </div>
               )}
               {job.auto_created_from_crew_itinerary && (
                 <Badge variant="outline" className="text-[10px] gap-1">

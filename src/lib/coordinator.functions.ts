@@ -489,7 +489,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, operation_groups(reference,name,type,status,colour), scheduled_transport_pickup_offset_minutes, immigration_required, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color)), from_port:ports!jobs_from_port_id_fkey(name), from_berth:berths!jobs_from_berth_id_fkey(name), to_port:ports!jobs_to_port_id_fkey(name), to_berth:berths!jobs_to_berth_id_fkey(name)";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, operation_groups(reference,name,type,status,colour), scheduled_transport_pickup_offset_minutes, immigration_required, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color)), ship_events(ship_name), flight_schedule_records(flight_number,airline,origin,destination), from_port:ports!jobs_from_port_id_fkey(name), from_berth:berths!jobs_from_berth_id_fkey(name), to_port:ports!jobs_to_port_id_fkey(name), to_berth:berths!jobs_to_berth_id_fkey(name)";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -1794,6 +1794,12 @@ export const resolveShipEtaTripReview = createServerFn({ method: "POST" })
       const { error } = await tables.from("jobs").update({ needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
       if (error) throw new Error(error.message);
     }
+    const { error: auditError } = await tables.from("ship_eta_review_completions").insert({
+      eta_history_id: history.id,
+      company_id: c.id,
+      reviewed_by: context.userId,
+    });
+    if (auditError && auditError.code !== "23505") throw new Error(auditError.message);
     return { ok: true, pending: false };
   });
 
