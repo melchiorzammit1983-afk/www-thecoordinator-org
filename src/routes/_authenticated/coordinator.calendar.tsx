@@ -315,6 +315,16 @@ function CalendarPage() {
     queryKey: ["jobs", range.from, range.to],
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
   });
+  // The details drawer is opened with a snapshot of the row that was
+  // clicked; without this it never picks up server-side changes (e.g. a
+  // flight-status Refresh) made while it's open, since invalidating the
+  // "jobs" query only updates the list behind it, not this frozen copy.
+  useEffect(() => {
+    if (!detailsJob) return;
+    const fresh = (jobs ?? []).find((j) => j.id === detailsJob.id);
+    if (fresh) setDetailsJob(fresh);
+  }, [jobs]);
+
   const pendingBoardingFn = useServerFn(listPendingBoardingApprovals);
   const boardingScopeJobIds = useMemo(
     () => (jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
@@ -2514,7 +2524,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       ref={setNodeRef}
       data-job-id={job.id}
       style={style}
-      className={`relative rounded-md border-2 pl-8 pr-12 sm:pr-2 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-12 sm:pr-2 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""} ${flightIssue ? "animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 

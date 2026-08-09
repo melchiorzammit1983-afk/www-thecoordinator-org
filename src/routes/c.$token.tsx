@@ -14,6 +14,7 @@ import { BrandLogo, useFavicon } from "@/components/branding/BrandLogo";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
 import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 import { TokenPortPicker } from "@/components/address/TokenPortPicker";
+import { TokenShipPicker } from "@/components/address/TokenShipPicker";
 
 export const Route = createFileRoute("/c/$token")({
   head: ({ loaderData }) => {
@@ -78,6 +79,7 @@ function PublicBookingPage() {
   const [fromBerthId, setFromBerthId] = useState<string | null>(null);
   const [toPortId, setToPortId] = useState<string | null>(null);
   const [toBerthId, setToBerthId] = useState<string | null>(null);
+  const [shipEventId, setShipEventId] = useState<string | null>(null);
 
   const mut = useMutation({
     mutationFn: () => submitFn({ data: {
@@ -88,6 +90,7 @@ function PublicBookingPage() {
       from_berth_id: fromBerthId,
       to_port_id: toPortId,
       to_berth_id: toBerthId,
+      ship_event_id: shipEventId,
       pax_count: Math.max(1, Math.min(200, Number(form.pax_count) || 1)),
       promo_note: promo || undefined,
     } as any }),
@@ -104,17 +107,17 @@ function PublicBookingPage() {
   // Keep tab title reflective of the promo so the user sees it too.
   useEffect(() => {
     if (promo && typeof document !== "undefined") {
-      document.title = `${promo} — ${company.name}`;
+      document.title = `${promo} — ${(company as any)?.name ?? ""}`;
     }
-  }, [promo, company.name]);
+  }, [promo, (company as any)?.name]);
 
   return (
     <div className="min-h-screen bg-muted/30 py-10 px-4">
       <div className="max-w-xl mx-auto">
         <div className="mb-6 flex flex-col items-center text-center">
-          <BrandLogo logoUrl={logoUrl} name={company.name} size="lg" />
+          <BrandLogo logoUrl={logoUrl} name={(company as any)?.name ?? ""} size="lg" />
           <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Booking link</div>
-          <h1 className="text-2xl font-semibold mt-1">{company.name}</h1>
+          <h1 className="text-2xl font-semibold mt-1">{(company as any)?.name}</h1>
         </div>
         {promo && (
           <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">
@@ -135,7 +138,7 @@ function PublicBookingPage() {
               <div className="py-8 text-center">
                 <div className="text-emerald-600 font-medium">Submitted</div>
                 <p className="text-sm text-muted-foreground mt-2">We'll be in touch shortly.</p>
-                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", date:"", time:"", from_flight:"", pax_count:"1", notes:"" }); setFromLocationType("local"); setToLocationType("local"); }}>
+                <Button variant="outline" className="mt-6" onClick={() => { setDone(false); setForm({ name:"", surname:"", client_email:"", room_number:"", from_location:"", to_location:"", date:"", time:"", from_flight:"", pax_count:"1", notes:"" }); setFromLocationType("local"); setToLocationType("local"); setShipEventId(null); }}>
                   Submit another
                 </Button>
               </div>
@@ -196,6 +199,7 @@ function PublicBookingPage() {
                 <div className="space-y-2">
                   <Label htmlFor="b-flight">Flight / vessel (optional)</Label>
                   <Input id="b-flight" value={form.from_flight} onChange={(e) => update("from_flight", e.target.value)} maxLength={40} placeholder="e.g. FR1234 or vessel name" />
+                  <TokenShipPicker ships={(company as any).ships} shipEventId={shipEventId} onChange={setShipEventId} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="b-pax">Passengers</Label>

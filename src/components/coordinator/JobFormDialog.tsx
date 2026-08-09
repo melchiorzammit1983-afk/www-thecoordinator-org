@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { classifyProviderEndpoint, resolveBookingJourney, resolveJourneyOverride, type JourneyEndpoint, type JourneyType } from "@/lib/journey-resolver";
+import { classifyProviderEndpoint, classifyBulkImportLocationText, resolveBookingJourney, resolveJourneyOverride, type JourneyEndpoint, type JourneyType } from "@/lib/journey-resolver";
 
 const JOURNEY_LABELS: Record<JourneyType, string> = {
   arrival_flight: "Arrival Flight",
@@ -27,6 +27,7 @@ import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { Plane, Ship, RefreshCw } from "lucide-react";
 import { parseTrips, extractPhoneFromName, isMeaningfulName, type ParsedTrip } from "@/lib/parse-trips";
 import { downloadExcelTemplate, downloadGoogleSheetsTemplate, looksLikeSheetPaste, parseSheetPaste, fileToSheetTsv } from "@/lib/sheet-template";
+import { looksLikeLabeledMessage, parseLabeledMessages } from "@/lib/labeled-message-parser";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FileDown, Paperclip } from "lucide-react";
 import {
@@ -61,6 +62,20 @@ import { formatMaltaDateTime, isoToMaltaDateTime, maltaWallTimeToUtcIso } from "
 type Driver = { id: string; name: string; vehicle: string | null };
 
 type PortWithBerths = Omit<PortDirectoryPort, "company_id"> & { berths: PortDirectoryBerth[] };
+
+// Surfaces the detected/selected endpoint type on a bulk-import row so a
+// keyword guess is visible, not silent — the coordinator can always
+// override it by picking a real address or Port Directory entry above.
+// Nothing shown for "local": it's the common case and needs no callout.
+function EndpointTypeBadge({ type }: { type?: JourneyEndpoint | null }) {
+  if (type === "airport") {
+    return <span className="text-[10px] text-blue-700 dark:text-blue-300">✈ Airport</span>;
+  }
+  if (type === "port") {
+    return <span className="text-[10px] text-cyan-700 dark:text-cyan-300">⚓ Port</span>;
+  }
+  return null;
+}
 
 function PortDirectoryPicker({
   portId, berthId, onChange,
@@ -1613,12 +1628,38 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const parsed = useMemo(
-    () => (looksLikeSheetPaste(raw) ? parseSheetPaste(raw) : parseTrips(raw)),
+    () =>
+      looksLikeLabeledMessage(raw)
+        ? parseLabeledMessages(raw)
+        : looksLikeSheetPaste(raw)
+          ? parseSheetPaste(raw)
+          : parseTrips(raw),
     [raw],
   );
-  // Editable overrides — mirror `parsed` and let coordinators tweak fields in place.
-  const [edited, setEdited] = useState<ParsedTrip[]>(parsed);
-  useEffect(() => { setEdited(parsed); }, [parsed]);
+  // Bulk paste/upload never goes through Places, so the parser can't know
+  // whether "Malta International Airport" is an airport — classify it here
+  // from the plain text (and the company's own Port Directory) before the
+  // row ever reaches the review table, so journey type/tracking/offset work
+  // the same as a manually-entered trip. Clicking a suggestion in the
+  // address field below always overrides this guess with the real answer.
+  const bulkPortsFn = useServerFn(listActivePorts);
+  const { data: bulkPorts = [] } = useQuery({
+    queryKey: ["active-port-directory"],
+    queryFn: () => bulkPortsFn(),
+    staleTime: 60_000,
+  });
+  const classifiedParsed = useMemo(
+    () =>
+      parsed.map((t) => ({
+        ...t,
+        from_location_type: t.from_location_type ?? classifyBulkImportLocationText(t.from_location, bulkPorts),
+        to_location_type: t.to_location_type ?? classifyBulkImportLocationText(t.to_location, bulkPorts),
+      })),
+    [parsed, bulkPorts],
+  );
+  // Editable overrides — mirror `classifiedParsed` and let coordinators tweak fields in place.
+  const [edited, setEdited] = useState<ParsedTrip[]>(classifiedParsed);
+  useEffect(() => { setEdited(classifiedParsed); }, [classifiedParsed]);
   const inferredOperationName = useMemo(() => {
     const values = parsed.map((t) => t.operation_name?.trim()).filter((value): value is string => !!value);
     if (values.length === 0) return "";
@@ -1732,8 +1773,9 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
       operation_group_id: operationGroupId,
       trips: valid.map((t) => ({
         from_location: t.from_location, to_location: t.to_location,
-        // Bulk imports have no trusted endpoint metadata. Their established
-        // free-text contract is therefore explicitly classified as local.
+        // classifiedParsed above already fills these from the pasted/uploaded
+        // text (or a real Places/Port Directory pick if the coordinator
+        // corrected it) — "local" only remains as a defensive fallback.
         from_location_type: t.from_location_type ?? "local", to_location_type: t.to_location_type ?? "local",
         from_port_id: t.from_port_id ?? null, from_berth_id: t.from_berth_id ?? null,
         to_port_id: t.to_port_id ?? null, to_berth_id: t.to_berth_id ?? null,
@@ -1748,6 +1790,7 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
         immigration_required: t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown"),
         immigration_needed: t.immigration_needed,
         pax: t.pax,
+        pax_phones: t.pax_phones,
       })),
       label_ids: labelIds,
     } }),
@@ -1834,16 +1877,24 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
               rows={10} value={raw}
               onChange={(e) => setRaw(e.target.value)}
               onPaste={(e) => {
+                // Some sources (screenshots, certain note apps) attach an
+                // image to the clipboard alongside the plain text a
+                // coordinator actually wants pasted. Real text always wins —
+                // treating any attached file as an upload attempt was
+                // discarding the pasted text entirely and showing a
+                // confusing "Only Excel and CSV files are supported" error
+                // instead of just accepting the paste like normal.
+                if (e.clipboardData.getData("text/plain").trim()) return;
                 const files = Array.from(e.clipboardData.files || []);
                 if (files.length) { e.preventDefault(); void addFiles(files); }
               }}
-              placeholder={"Paste trip rows here, or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nPickup Date  Pickup Time  Pickup Address  Delivery Address  Customer Name  Contact Number  Transport Type  Quantity  Operation Name"}
+              placeholder={"Paste trip rows here, a \"Label - value\" message (Company, Passenger name and phone number, pick up address, Flight from, delivery address, …), or import an Excel/CSV file. Headers are optional.\n\nColumn order (if no header row):\nClient/Company  Journey type  Pickup Date  Pickup Time  Passenger Name  Phone Number  Email  Pickup Address  From Flight  From Vessel  Delivery Address  To Flight  To Vessel  Pax Count  Notes  Vehicle  Immigration Needed  Operation Name  Message to Copy"}
               className="font-mono text-xs"
             />
         </div>
 
         <p className="text-xs text-muted-foreground">
-          You can paste rows straight from the template (headers optional). Blank line or a new date starts a new trip. Use the operation name to keep rows grouped together. Incomplete trips can be finished in Manual.
+          You can paste rows straight from the template (headers optional) or the "Message to Copy" text from the template's last column (column S), which also arrives by WhatsApp/email. Blank line or a new date starts a new trip. Use the operation name to keep rows grouped together. Incomplete trips can be finished in Manual.
         </p>
 
 
@@ -1913,12 +1964,14 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                           <Undo2 className="h-3 w-3" /> Auto-fixed · undo
                         </button>
                       )}
+                      <EndpointTypeBadge type={t.from_location_type} />
                     </div>
                     <AddressAutocomplete
                       value={t.from_location}
                       placeId={t.from_place_id ?? null}
                       onChange={(v) => patch({
                         from_location: v.address,
+                        from_location_type: classifyProviderEndpoint(v.place_types),
                         from_place_id: v.place_id, from_lat: v.lat, from_lng: v.lng,
                       })}
                       placeholder="Pickup address"
@@ -1947,12 +2000,14 @@ function BulkForm({ onSaved, onComplete, onCancel }: { onSaved: (createdDate?: s
                           <Undo2 className="h-3 w-3" /> Auto-fixed · undo
                         </button>
                       )}
+                      <EndpointTypeBadge type={t.to_location_type} />
                     </div>
                     <AddressAutocomplete
                       value={t.to_location}
                       placeId={t.to_place_id ?? null}
                       onChange={(v) => patch({
                         to_location: v.address,
+                        to_location_type: classifyProviderEndpoint(v.place_types),
                         to_place_id: v.place_id, to_lat: v.lat, to_lng: v.lng,
                       })}
                       placeholder="Delivery address"

@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
+import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
+import { TokenShipPicker, type TokenShip } from "@/components/address/TokenShipPicker";
 import { classifyProviderEndpoint } from "@/lib/journey-resolver";
 import { flightFormatWarning } from "@/lib/flight-code";
 import { AlertTriangle, Download } from "lucide-react";
@@ -219,8 +221,25 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
   });
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
+  const [fromPortId, setFromPortId] = useState<string | null>(null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(null);
+  const [toPortId, setToPortId] = useState<string | null>(null);
+  const [toBerthId, setToBerthId] = useState<string | null>(null);
+  const [shipEventId, setShipEventId] = useState<string | null>(null);
+  const [ports, setPorts] = useState<TokenPort[]>([]);
+  const [ships, setShips] = useState<TokenShip[]>([]);
   const [busy, setBusy] = useState(false);
   const flightWarning = flightFormatWarning(f.flight_number);
+
+  // Same Port Directory / ship-event data the coordinator links against —
+  // so a port or ship an HR/company agent picks here shows on the
+  // coordinator's trip card exactly like one they'd have linked themselves.
+  useEffect(() => {
+    fetch(`/api/public/portal/${token}/`)
+      .then((r) => r.json())
+      .then((data) => { setPorts(data.ports ?? []); setShips(data.ships ?? []); })
+      .catch(() => undefined);
+  }, [token]);
 
   async function submit() {
     setBusy(true);
@@ -237,17 +256,22 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       vehicle: f.vehicle.trim() || null,
       notes: f.notes.trim() || null,
       from_location: fromPick.address,
-      from_location_type: classifyProviderEndpoint(fromPick.place_types),
+      from_location_type: fromPortId ? "port" as const : classifyProviderEndpoint(fromPick.place_types),
       from_place_id: fromPick.place_id,
       from_lat: fromPick.lat,
       from_lng: fromPick.lng,
       from_display_name: fromPick.display_name ?? null,
+      from_port_id: fromPortId,
+      from_berth_id: fromBerthId,
       to_location: toPick.address,
-      to_location_type: classifyProviderEndpoint(toPick.place_types),
+      to_location_type: toPortId ? "port" as const : classifyProviderEndpoint(toPick.place_types),
       to_place_id: toPick.place_id,
       to_lat: toPick.lat,
       to_lng: toPick.lng,
       to_display_name: toPick.display_name ?? null,
+      to_port_id: toPortId,
+      to_berth_id: toBerthId,
+      ship_event_id: shipEventId,
       pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -260,6 +284,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
     setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "" });
     setFromPick({ address: "", place_id: null, lat: null, lng: null });
     setToPick({ address: "", place_id: null, lat: null, lng: null });
+    setFromPortId(null); setFromBerthId(null); setToPortId(null); setToBerthId(null); setShipEventId(null);
     onCreated();
   }
   return (
@@ -270,8 +295,14 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
         <Field label="Guest last name"><Input value={f.surname} onChange={(e) => setF({ ...f, surname: e.target.value })} /></Field>
         <Field label="Guest phone"><Input value={f.client_phone} onChange={(e) => setF({ ...f, client_phone: e.target.value })} /></Field>
         <Field label="Guest email"><Input type="email" value={f.client_email} onChange={(e) => setF({ ...f, client_email: e.target.value })} /></Field>
-        <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-        <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+        <Field label="From">
+          <AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} />
+          <TokenPortPicker ports={ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); if (address) setFromPick((p) => ({ ...p, address })); }} />
+        </Field>
+        <Field label="To">
+          <AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} />
+          <TokenPortPicker ports={ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); if (address) setToPick((p) => ({ ...p, address })); }} />
+        </Field>
         <Field label="Pickup date & time"><Input type="datetime-local" value={f.pickup_at} onChange={(e) => setF({ ...f, pickup_at: e.target.value })} /></Field>
         <Field label="Room"><Input value={f.room_number} onChange={(e) => setF({ ...f, room_number: e.target.value })} /></Field>
         <Field label="Flight">
@@ -289,6 +320,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
           {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
         </Field>
         <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
+        <Field label="Ship (optional)"><TokenShipPicker ships={ships} shipEventId={shipEventId} onChange={setShipEventId} /></Field>
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <div className="md:col-span-2">
           <Field label="Additional passengers (comma-separated, optional)">

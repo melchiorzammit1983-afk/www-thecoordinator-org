@@ -7,6 +7,7 @@ import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./fl
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
 import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
 import { recordDriverTripUpdate } from "./driver-trip-updates.server";
+import { assertTokenShipSelection } from "./ship-events-token.server";
 
 type Ctx = { supabase: any; userId: string };
 type CompanyRecord = {
@@ -3386,6 +3387,7 @@ export const approveBooking = createServerFn({ method: "POST" })
     const fromLocationType = (b as any).from_location_type ?? (fromPort ? "port" : null);
     const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
     if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
+    const ship = await assertTokenShipSelection(supabaseAdmin, c.id, (b as any).ship_event_id);
     const { data: job, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
@@ -3404,6 +3406,8 @@ export const approveBooking = createServerFn({ method: "POST" })
         clientcompanyname: `${b.name} ${b.surname}`.trim(),
         from_flight: fromFlight,
         flightorship: fromFlight,
+        ship_event_id: ship?.id ?? null,
+        tracking_kind: ship ? "vessel" : (b as any).tracking_kind ?? undefined,
         notes: (b as any).notes ?? null,
         promo_note: (b as any).promo_note ?? null,
       } as any)
@@ -3710,6 +3714,8 @@ const bulkTripInput = z.object({
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
         operation_group_id: z.string().uuid().nullable().optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+        // Positionally aligned with `pax` — blank entries mean "no phone".
+        pax_phones: z.array(z.string().trim().max(40)).max(200).optional(),
       }),
     )
     .min(1)
@@ -3813,7 +3819,11 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       await ensureShipArrivalImmigrationStop(supabaseAdmin, job.id, journey, fromPort, immigrationRequired);
       if (t.pax.length) {
         // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
-        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
+        const rows = t.pax.map((name, i) => ({
+          job_id: job.id,
+          name,
+          phone: t.pax_phones?.[i]?.trim() || null,
+        }));
         const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
@@ -3935,6 +3945,10 @@ const AERODATABOX_TTL_MS = 20 * 60_000;
 // button is free (already-paid cached answer).
 const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
 const FLIGHT_TIME_MISMATCH_MS = 15 * 60_000;
+// How far actual-vs-scheduled has to drift before the card calls it out as
+// early/delayed rather than leaving the provider's own (often stale) status
+// label standing. Matches the coordinator-visible "10 min" threshold.
+const FLIGHT_DRIFT_ALERT_MIN = 10;
 
 type AeroEndpoint = {
   airport?: { iata?: string; icao?: string; name?: string; municipalityName?: string };
@@ -4257,20 +4271,83 @@ async function fetchLiveStatus(
 async function resolveLinkedFlightForTracking(
   supabaseAdmin: any,
   job: { flight_schedule_record_id?: string | null; from_flight?: string | null; to_flight?: string | null },
-): Promise<{ code: string | null; side: FlightSide | undefined }> {
+): Promise<{ code: string | null; side: FlightSide | undefined; scheduledDate: string | null }> {
   let code = job.from_flight?.trim() || job.to_flight?.trim() || null;
   let side: FlightSide | undefined = job.from_flight ? "arr" : job.to_flight ? "dep" : undefined;
-  if (!job.flight_schedule_record_id) return { code, side };
+  if (!job.flight_schedule_record_id) return { code, side, scheduledDate: null };
 
   const { data: record } = await supabaseAdmin
     .from("flight_schedule_records")
-    .select("flight_number, direction")
+    .select("flight_number, direction, scheduled_date")
     .eq("id", job.flight_schedule_record_id)
     .maybeSingle();
   if (record?.flight_number) code = String(record.flight_number).trim();
   if (record?.direction === "arrival") side = "arr";
   if (record?.direction === "departure") side = "dep";
-  return { code, side };
+  return { code, side, scheduledDate: record?.scheduled_date ?? null };
+}
+
+/**
+ * The single funnel every schedule-linked flight check goes through —
+ * background create, manual refresh, the bulk sweep, and the T-30 cron all
+ * call this instead of hitting AeroDataBox directly. Two guards keep the
+ * provider bill down and the data honest:
+ *
+ *  - A flight already in the past (Malta calendar day) is never checked —
+ *    there's nothing "live" left to report, and it would just burn a request
+ *    on every trip touch for the rest of the day.
+ *  - One shared row per flight_schedule_record_id, refreshed at most once
+ *    per AERODATABOX_TTL_MS. Ten trips on the same KM101 cost one provider
+ *    request, not ten — every caller after the first reads the row the
+ *    first caller just wrote.
+ */
+async function getSharedFlightLiveStatus(
+  supabaseAdmin: any,
+  flightScheduleRecordId: string,
+  scheduledDate: string | null,
+  code: string,
+  pickupIso: string | null,
+  side: FlightSide | undefined,
+): Promise<LiveStatusResult> {
+  if (scheduledDate) {
+    const todayMalta = isoToMaltaDateTime(new Date().toISOString()).date;
+    if (scheduledDate < todayMalta) return notTracked("Flight date has passed");
+  }
+
+  const { data: cached } = await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .select("status, note, scheduled_at, estimated_at, updated_at")
+    .eq("flight_schedule_record_id", flightScheduleRecordId)
+    .maybeSingle();
+  if (cached?.updated_at && Date.now() - new Date(cached.updated_at).getTime() < AERODATABOX_TTL_MS) {
+    return {
+      ok: true,
+      status: cached.status ?? "unknown",
+      note: cached.note ?? "",
+      scheduled: cached.scheduled_at ?? null,
+      estimated: cached.estimated_at ?? null,
+      confidence: "high",
+      source: "aerodatabox",
+    };
+  }
+
+  // Cache is stale or this flight has never been checked — the one request
+  // that actually reaches the provider for this flight this cycle.
+  const result = await fetchLiveStatus("flight", code, pickupIso, side);
+  await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .upsert(
+      {
+        flight_schedule_record_id: flightScheduleRecordId,
+        status: result.ok ? result.status ?? "unknown" : "unknown",
+        note: result.ok ? result.note ?? null : liveStatusFailureMessage(result.reason, code),
+        scheduled_at: result.ok ? result.scheduled ?? null : null,
+        estimated_at: result.ok ? result.estimated ?? null : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "flight_schedule_record_id" },
+    );
+  return result;
 }
 
 
@@ -4290,6 +4367,7 @@ export async function applyLiveStatusToJob(
     tracking_kind?: string | null;
     flight_schedule_record_id?: string | null;
     ship_event_id?: string | null;
+    scheduled_transport_pickup_offset_minutes?: number | null;
   },
 ): Promise<LiveStatusResult> {
   if (job.ship_event_id) {
@@ -4309,10 +4387,19 @@ export async function applyLiveStatusToJob(
   if (!liveStatusProviderEnabled()) {
     return { ok: false, reason: "provider_unavailable" };
   }
-  const kind: "flight" = "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
-  const side: FlightSide | undefined = kind === "flight" ? linkedFlight.side : undefined;
-  const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
+  const side: FlightSide | undefined = linkedFlight.side;
+  // Shared per-flight check, not per-job: every trip on this same flight
+  // (any company, any coordinator) reads the one cached answer instead of
+  // each triggering its own provider request. See getSharedFlightLiveStatus.
+  const result = await getSharedFlightLiveStatus(
+    supabaseAdmin,
+    job.flight_schedule_record_id,
+    linkedFlight.scheduledDate,
+    code,
+    job.pickup_at,
+    side,
+  );
 
   if (!result.ok) {
     const reasonNote = liveStatusFailureMessage(result.reason, code);
@@ -4329,16 +4416,33 @@ export async function applyLiveStatusToJob(
 
   let status = result.status ?? "unknown";
   let note = result.note ?? "";
-  // Derive "early" from actual-vs-scheduled drift when the provider didn't
-  // explicitly say so. 10+ min ahead counts as early.
+  // Derive early/delayed from actual-vs-scheduled drift when the provider's
+  // own status string doesn't already say so — providers are often slow to
+  // flip the categorical status even once the times already show the gap
+  // (e.g. still "Expected" after landing 10+ min late).
   if (result.scheduled && result.estimated && (status === "on_time" || status === "unknown")) {
     const drift = Math.round((new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000);
-    if (drift <= -10) status = "early";
+    if (drift <= -FLIGHT_DRIFT_ALERT_MIN) status = "early";
+    else if (drift >= FLIGHT_DRIFT_ALERT_MIN) status = "delayed";
   }
+  // Compare pickup against the EXPECTED pickup time, not the raw flight
+  // time. A departure pickup is deliberately offset ahead of the flight
+  // (default 180 min, or whatever the coordinator/company configured) —
+  // comparing pickup directly to departure would flag every correctly
+  // booked departure trip as a mismatch. Arrivals default to a 0-minute
+  // offset, so this reduces to the old direct comparison for them.
   if (result.scheduled && job.pickup_at) {
-    const s = new Date(result.scheduled).getTime();
+    const offsetMinutes =
+      job.scheduled_transport_pickup_offset_minutes ?? (side === "dep" ? 180 : 0);
+    const scheduledMs = new Date(result.scheduled).getTime();
+    const expectedPickupMs =
+      side === "dep" ? scheduledMs - offsetMinutes * 60_000 : scheduledMs + offsetMinutes * 60_000;
     const p = new Date(job.pickup_at).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > FLIGHT_TIME_MISMATCH_MS) {
+    if (
+      !Number.isNaN(expectedPickupMs) &&
+      !Number.isNaN(p) &&
+      Math.abs(expectedPickupMs - p) > FLIGHT_TIME_MISMATCH_MS
+    ) {
       status = "time_mismatch";
       note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
@@ -4374,7 +4478,7 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", jobId)
       .maybeSingle();
@@ -4446,7 +4550,7 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
@@ -4468,10 +4572,13 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("company_id", c.id)
-      .or("from_flight.not.is.null,to_flight.not.is.null")
+      // Include trips linked to an imported schedule record even when the
+      // legacy from_flight/to_flight text is empty — otherwise those trips
+      // are silently skipped by this sweep (same gap as the T-30 cron had).
+      .or("from_flight.not.is.null,to_flight.not.is.null,flight_schedule_record_id.not.is.null")
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
@@ -4529,13 +4636,18 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
-    if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    // A schedule-linked trip can have no legacy from_flight/to_flight text at
+    // all — the display copy is only backfilled when read, not written. Only
+    // reject when there's truly nothing to track.
+    if (!job.from_flight && !job.to_flight && !(job as any).flight_schedule_record_id) {
+      return { ok: false, reason: "no_flight" as const };
+    }
     if (!liveStatusProviderEnabled()) {
       return { ok: false as const, reason: "provider_unavailable" as const };
     }

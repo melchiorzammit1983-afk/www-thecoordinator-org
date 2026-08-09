@@ -19,6 +19,8 @@ export type ParsedTrip = {
   immigration_needed: boolean;
   immigration_required?: "yes" | "no" | "unknown";
   pax: string[];
+  /** Optional per-passenger phone, positionally aligned with `pax`. */
+  pax_phones?: string[];
   contact_phone: string;
   errors: string[];
   from_place_id?: string | null;
