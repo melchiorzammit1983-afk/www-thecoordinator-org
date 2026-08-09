@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { randomBytes, createHash } from "node:crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { operationGroupColours, type OperationGroupColour } from "@/lib/operation-group-colours";
 
@@ -31,6 +32,9 @@ export type OperationGroup = {
   updated_at: string;
   colour: OperationGroupColour | null;
 };
+
+export const operationLinkRecipientTypes = ["captain", "ship_agent", "conference_organiser", "hotel", "corporate", "event_organiser", "other"] as const;
+export type OperationLink = { id: string; operation_group_id: string; recipient_name: string; recipient_type: (typeof operationLinkRecipientTypes)[number]; permissions: Record<string, boolean>; created_at: string; expires_at: string; revoked_at: string | null; last_accessed_at: string | null };
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -110,6 +114,15 @@ const relationInput = z.object({ operation_group_id: z.string().uuid() });
 const shipRelationInput = relationInput.extend({ ship_event_id: z.string().uuid() });
 const flightRelationInput = relationInput.extend({ flight_schedule_record_id: z.string().uuid() });
 const jobRelationInput = relationInput.extend({ job_id: z.string().uuid() });
+const operationLinkType = z.enum(operationLinkRecipientTypes);
+const operationLinkPermissions = z.record(z.boolean()).default({});
+const operationLinkCreateInput = relationInput.extend({
+  recipient_name: z.string().trim().min(1).max(200),
+  recipient_type: operationLinkType,
+  permissions: operationLinkPermissions,
+  expires_at: z.string().datetime().refine((value) => new Date(value).getTime() > Date.now(), "Expiry must be in the future"),
+});
+const operationLinkIdInput = idInput.extend({ operation_link_id: z.string().uuid() });
 
 function mutationError(error: { code?: string | null; message: string }, noun: string) {
   if (error.code === "23505") throw new Error(`This ${noun} is already linked or the reference is already in use.`);
@@ -175,12 +188,13 @@ export const getOperationGroup = createServerFn({ method: "POST" })
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
     const group = await requireGroup(sb, data.id, companyId);
-    const [ships, flights, jobs] = await Promise.all([
+    const [ships, flights, jobs, links] = await Promise.all([
       groupsTable(sb).from("operation_group_ship_events").select("ship_event_id, ship_events(id, ship_name, eta, expected_departure, actual_arrival, actual_departure, port, berth_id, status, berths(name))").eq("operation_group_id", group.id).eq("company_id", companyId),
       groupsTable(sb).from("operation_group_flight_records").select("flight_schedule_record_id, flight_schedule_records(id, flight_number, airline, origin, destination, scheduled_date, scheduled_time, direction)").eq("operation_group_id", group.id).eq("company_id", companyId),
       groupsTable(sb).from("jobs").select("id, date, time, from_location, to_location, status, operation_group_id, driver_id, tracking_kind, flight_schedule_record_id, ship_event_id, from_location_type, to_location_type, needs_review, immigration_required, pax(id, status)").eq("operation_group_id", group.id).eq("company_id", companyId),
+      groupsTable(sb).from("operation_links").select("id, operation_group_id, recipient_name, recipient_type, permissions, created_at, expires_at, revoked_at, last_accessed_at").eq("operation_group_id", group.id).eq("company_id", companyId).order("created_at", { ascending: false }),
     ]);
-    for (const result of [ships, flights, jobs]) if (result.error) throw new Error(result.error.message);
+    for (const result of [ships, flights, jobs, links]) if (result.error) throw new Error(result.error.message);
     const shipIds = (ships.data ?? []).map((row: any) => row.ship_event_id).filter(Boolean);
     const [etaHistory, portReviews, departureWarnings] = shipIds.length ? await Promise.all([
       groupsTable(sb).from("ship_event_eta_history").select("ship_event_id").in("ship_event_id", shipIds),
@@ -193,6 +207,7 @@ export const getOperationGroup = createServerFn({ method: "POST" })
       ship_events: ships.data ?? [],
       flight_records: flights.data ?? [],
       jobs: jobs.data ?? [],
+      operation_links: links.data ?? [],
       alert_counts: {
         eta_reviews: new Set((etaHistory.data ?? []).map((row: any) => row.ship_event_id)).size,
         port_reviews: new Set((portReviews.data ?? []).map((row: any) => row.ship_event_id)).size,
@@ -325,6 +340,56 @@ export const removeJobFromOperationGroup = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     await requireGroup(sb, data.id, companyId);
     const { error } = await groupsTable(sb).from("jobs").update({ operation_group_id: null }).eq("id", data.job_id).eq("company_id", companyId).eq("operation_group_id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true } as const;
+  });
+
+export const listOperationLinks = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => idInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    await requireGroup(sb, data.id, companyId);
+    const { data: links, error } = await groupsTable(sb).from("operation_links")
+      .select("id, operation_group_id, recipient_name, recipient_type, permissions, created_at, expires_at, revoked_at, last_accessed_at")
+      .eq("operation_group_id", data.id).eq("company_id", companyId).order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (links ?? []) as OperationLink[];
+  });
+
+export const createOperationLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => operationLinkCreateInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    await requireGroup(sb, data.operation_group_id, companyId);
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token, "utf8").digest("hex");
+    const { data: link, error } = await groupsTable(sb).from("operation_links").insert({
+      company_id: companyId,
+      operation_group_id: data.operation_group_id,
+      token_hash: tokenHash,
+      recipient_name: data.recipient_name,
+      recipient_type: data.recipient_type,
+      permissions: data.permissions,
+      created_by: context.userId,
+      expires_at: data.expires_at,
+    }).select("id, operation_group_id, recipient_name, recipient_type, permissions, created_at, expires_at, revoked_at, last_accessed_at").single();
+    if (error) mutationError(error, "Operation Link");
+    return { link: link as OperationLink, token };
+  });
+
+export const revokeOperationLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => operationLinkIdInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const companyId = await getMyCompanyId(context.userId);
+    const sb = await getAdmin();
+    await requireGroup(sb, data.id, companyId);
+    const { error } = await groupsTable(sb).from("operation_links").update({ revoked_at: new Date().toISOString() })
+      .eq("id", data.operation_link_id).eq("operation_group_id", data.id).eq("company_id", companyId).is("revoked_at", null);
     if (error) throw new Error(error.message);
     return { ok: true } as const;
   });

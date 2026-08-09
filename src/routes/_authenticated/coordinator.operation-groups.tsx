@@ -19,6 +19,11 @@ import {
   updateOperationGroup,
   linkShipEventToOperationGroup,
   unlinkShipEventFromOperationGroup,
+  listOperationLinks,
+  createOperationLink,
+  revokeOperationLink,
+  operationLinkRecipientTypes,
+  type OperationLink,
   type OperationGroup,
 } from "@/lib/operation-groups.functions";
 import { searchShipEvents, type ShipEvent } from "@/lib/ship-events.functions";
@@ -68,6 +73,7 @@ type GroupDetails = OperationGroup & {
     departure_warnings: number;
     immigration_reviews: number;
   };
+  operation_links: OperationLink[];
 };
 
 const emptyForm = {
@@ -417,6 +423,7 @@ function OperationGroupsPage() {
                   links={detailQuery.data.ship_events}
                   onChanged={refresh}
                 />
+                <OperationLinksSection operationGroupId={detailQuery.data.id} links={detailQuery.data.operation_links ?? []} onChanged={refresh} />
                 <div className="flex flex-wrap gap-2 border-t pt-5">
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Jobs / Trips</Link></Button>
                   <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Ship Events</Link></Button>
@@ -480,6 +487,39 @@ function OperationGroupsPage() {
 }
 
 type ShipLink = GroupDetails["ship_events"][number];
+
+function OperationLinksSection({ operationGroupId, links, onChanged }: { operationGroupId: string; links: OperationLink[]; onChanged: () => void }) {
+  const createFn = useServerFn(createOperationLink);
+  const revokeFn = useServerFn(revokeOperationLink);
+  const [name, setName] = useState("");
+  const [recipientType, setRecipientType] = useState<(typeof operationLinkRecipientTypes)[number]>("other");
+  const [expiresAt, setExpiresAt] = useState(() => new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 16));
+  const [lastLink, setLastLink] = useState<string | null>(null);
+  const [canViewSummary, setCanViewSummary] = useState(true);
+  const [canViewTransport, setCanViewTransport] = useState(false);
+  const createMutation = useMutation({
+    mutationFn: () => createFn({ data: { operation_group_id: operationGroupId, recipient_name: name, recipient_type: recipientType, expires_at: new Date(expiresAt).toISOString(), permissions: { view_operation_summary: canViewSummary, view_transport: canViewTransport } } }),
+    onSuccess: ({ token }) => { setLastLink(`${window.location.origin}/operation-link/${token}`); setName(""); onChanged(); toast.success("Operation Link created"); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not create Operation Link"),
+  });
+  const revokeMutation = useMutation({
+    mutationFn: (linkId: string) => revokeFn({ data: { id: operationGroupId, operation_link_id: linkId } }),
+    onSuccess: () => { onChanged(); toast.success("Operation Link revoked"); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not revoke Operation Link"),
+  });
+  return <section className="space-y-3 border-t pt-5">
+    <div><h3 className="text-sm font-semibold">Operation Links</h3><p className="text-xs text-muted-foreground">Time-limited external access to this Operation Group.</p></div>
+    <div className="grid gap-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-2">
+      <div><Label htmlFor="operation-link-name">Recipient name</Label><Input id="operation-link-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Captain Smith" /></div>
+      <div><Label htmlFor="operation-link-type">Recipient type</Label><select id="operation-link-type" className="mt-1 h-10 w-full rounded-md border bg-background px-2 text-sm" value={recipientType} onChange={(e) => setRecipientType(e.target.value as typeof recipientType)}>{operationLinkRecipientTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></div>
+      <div><Label htmlFor="operation-link-expiry">Expires</Label><Input id="operation-link-expiry" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} /></div>
+      <div className="flex flex-wrap items-end gap-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={canViewSummary} onChange={(e) => setCanViewSummary(e.target.checked)} />View summary</label><label className="flex items-center gap-2"><input type="checkbox" checked={canViewTransport} onChange={(e) => setCanViewTransport(e.target.checked)} />View transport</label></div>
+      <Button className="min-h-11 sm:col-span-2" disabled={!name.trim() || createMutation.isPending} onClick={() => createMutation.mutate()}><Plus className="mr-1.5 h-4 w-4" />Create Operation Link</Button>
+    </div>
+    {lastLink && <div className="rounded-md border border-emerald-500/40 bg-emerald-50 p-3 text-sm dark:bg-emerald-950/30"><p className="font-medium">Copy this link now</p><div className="mt-2 flex gap-2"><Input readOnly value={lastLink} /><Button type="button" variant="outline" onClick={() => navigator.clipboard?.writeText(lastLink)}>Copy</Button></div></div>}
+    <div className="space-y-2">{links.length === 0 ? <p className="text-sm text-muted-foreground">No Operation Links created.</p> : links.map((link) => <div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"><div><p className="font-medium">{link.recipient_name} <Badge variant="outline">{link.recipient_type.replaceAll("_", " ")}</Badge></p><p className="text-xs text-muted-foreground">Expires {new Date(link.expires_at).toLocaleString()} · {link.revoked_at ? "Revoked" : "Active"}</p></div>{!link.revoked_at && <Button size="sm" variant="outline" onClick={() => revokeMutation.mutate(link.id)} disabled={revokeMutation.isPending}>Revoke</Button>}</div>)}</div>
+  </section>;
+}
 
 function ShipLinkSection({
   operationGroupId,
