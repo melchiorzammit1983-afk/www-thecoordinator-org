@@ -497,8 +497,12 @@ function OperationLinksSection({ operationGroupId, links, onChanged }: { operati
   const [lastLink, setLastLink] = useState<string | null>(null);
   const [canViewSummary, setCanViewSummary] = useState(true);
   const [canViewTransport, setCanViewTransport] = useState(false);
+  const [canUpdateEta, setCanUpdateEta] = useState(false);
+  const [canUpdateDeparture, setCanUpdateDeparture] = useState(false);
+  const [canSubmitUpdate, setCanSubmitUpdate] = useState(false);
+  const [canRequestPort, setCanRequestPort] = useState(false);
   const createMutation = useMutation({
-    mutationFn: () => createFn({ data: { operation_group_id: operationGroupId, recipient_name: name, recipient_type: recipientType, expires_at: new Date(expiresAt).toISOString(), permissions: { view_operation_summary: canViewSummary, view_transport: canViewTransport } } }),
+    mutationFn: () => createFn({ data: { operation_group_id: operationGroupId, recipient_name: name, recipient_type: recipientType, expires_at: new Date(expiresAt).toISOString(), permissions: { view_operation_summary: canViewSummary, view_transport: canViewTransport, update_ship_eta: canUpdateEta, update_expected_departure: canUpdateDeparture, request_port_change: canRequestPort, submit_operational_update: canSubmitUpdate } } }),
     onSuccess: ({ token }) => { setLastLink(`${window.location.origin}/operation-link/${token}`); setName(""); onChanged(); toast.success("Operation Link created"); },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not create Operation Link"),
   });
@@ -513,7 +517,7 @@ function OperationLinksSection({ operationGroupId, links, onChanged }: { operati
       <div><Label htmlFor="operation-link-name">Recipient name</Label><Input id="operation-link-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Captain Smith" /></div>
       <div><Label htmlFor="operation-link-type">Recipient type</Label><select id="operation-link-type" className="mt-1 h-10 w-full rounded-md border bg-background px-2 text-sm" value={recipientType} onChange={(e) => setRecipientType(e.target.value as typeof recipientType)}>{operationLinkRecipientTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></div>
       <div><Label htmlFor="operation-link-expiry">Expires</Label><Input id="operation-link-expiry" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} /></div>
-      <div className="flex flex-wrap items-end gap-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={canViewSummary} onChange={(e) => setCanViewSummary(e.target.checked)} />View summary</label><label className="flex items-center gap-2"><input type="checkbox" checked={canViewTransport} onChange={(e) => setCanViewTransport(e.target.checked)} />View transport</label></div>
+      <div className="flex flex-wrap items-end gap-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={canViewSummary} onChange={(e) => setCanViewSummary(e.target.checked)} />View summary</label><label className="flex items-center gap-2"><input type="checkbox" checked={canViewTransport} onChange={(e) => setCanViewTransport(e.target.checked)} />View transport</label><label className="flex items-center gap-2"><input type="checkbox" checked={canUpdateEta} onChange={(e) => setCanUpdateEta(e.target.checked)} />Update ETA</label><label className="flex items-center gap-2"><input type="checkbox" checked={canUpdateDeparture} onChange={(e) => setCanUpdateDeparture(e.target.checked)} />Update departure</label><label className="flex items-center gap-2"><input type="checkbox" checked={canRequestPort} onChange={(e) => setCanRequestPort(e.target.checked)} />Request port change</label><label className="flex items-center gap-2"><input type="checkbox" checked={canSubmitUpdate} onChange={(e) => setCanSubmitUpdate(e.target.checked)} />Submit update</label></div>
       <Button className="min-h-11 sm:col-span-2" disabled={!name.trim() || createMutation.isPending} onClick={() => createMutation.mutate()}><Plus className="mr-1.5 h-4 w-4" />Create Operation Link</Button>
     </div>
     {lastLink && <div className="rounded-md border border-emerald-500/40 bg-emerald-50 p-3 text-sm dark:bg-emerald-950/30"><p className="font-medium">Copy this link now</p><div className="mt-2 flex gap-2"><Input readOnly value={lastLink} /><Button type="button" variant="outline" onClick={() => navigator.clipboard?.writeText(lastLink)}>Copy</Button></div></div>}
