@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertCircle, Anchor, CalendarClock, Plane, RefreshCw, Route as RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,29 @@ function OperationsCentrePage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("operations-centre-filters") ?? "null");
+      if (!saved) return;
+      if (["all", "grouped", "ungrouped"].includes(saved.groupFilter)) setGroupFilter(saved.groupFilter);
+      if (typeof saved.groupSearch === "string") setGroupSearch(saved.groupSearch);
+      if (typeof saved.groupStatus === "string") setGroupStatus(saved.groupStatus);
+      if (typeof saved.groupType === "string") setGroupType(saved.groupType);
+      if (typeof saved.transportFilter === "string") setTransportFilter(saved.transportFilter);
+      if (typeof saved.tripStatus === "string") setTripStatus(saved.tripStatus);
+      if (typeof saved.needsAttention === "boolean") setNeedsAttention(saved.needsAttention);
+      if (typeof saved.fromDate === "string") setFromDate(saved.fromDate);
+      if (typeof saved.toDate === "string") setToDate(saved.toDate);
+    } catch {
+      /* Ignore stale or malformed browser state. */
+    }
+    setFiltersHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    sessionStorage.setItem("operations-centre-filters", JSON.stringify({ groupFilter, groupSearch, groupStatus, groupType, transportFilter, tripStatus, needsAttention, fromDate, toDate }));
+  }, [filtersHydrated, fromDate, groupFilter, groupSearch, groupStatus, groupType, needsAttention, toDate, transportFilter, tripStatus]);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["operations-inbox"],
     queryFn: () => inboxFn(),
@@ -47,7 +70,25 @@ function OperationsCentrePage() {
       const grouped = Boolean(job.operation_group_id);
       const group = job.operation_groups;
       const matchesFilter = groupFilter === "all" || (groupFilter === "grouped" ? grouped : !grouped);
-      const matchesSearch = !term || `${group?.reference ?? ""} ${group?.name ?? ""}`.toLowerCase().includes(term);
+      const flight = job.flight_schedule_records;
+      const ship = job.ship_events;
+      const passengers = Array.isArray(job.pax) ? job.pax.map((item: any) => item.name).join(" ") : "";
+      const searchable = [
+        group?.reference,
+        group?.name,
+        ship?.ship_name,
+        flight?.flight_number,
+        flight?.airline,
+        flight?.origin,
+        flight?.destination,
+        passengers,
+        job.drivers?.name,
+        job.trip_no,
+        job.clientcompanyname,
+        job.from_location,
+        job.to_location,
+      ].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !term || searchable.includes(term);
       const matchesGroupStatus = groupStatus === "all" || (groupStatus === "live" ? ["draft", "active"].includes(group?.status ?? "") : group?.status === groupStatus);
       const matchesGroupType = groupType === "all" || group?.type === groupType;
       const matchesTransport = transportFilter === "all" || (transportFilter === "flight" ? Boolean(job.flight_schedule_record_id) : transportFilter === "ship" ? Boolean(job.ship_event_id) : !job.flight_schedule_record_id && !job.ship_event_id);
@@ -158,7 +199,7 @@ function OperationsCentrePage() {
           <CardTitle className="text-base">Operation Groups</CardTitle>
           <CardDescription>Work grouped explicitly by the coordinator. Existing ordering and calculations are unchanged.</CardDescription>
             <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-            <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm" value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder="Search group reference or name" />
+            <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm" value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder="Search group, ship, flight, passenger, driver, or booking" />
             <div className="flex flex-wrap gap-2">
               {(["all", "grouped", "ungrouped"] as const).map((value) => <Button key={value} type="button" size="sm" variant={groupFilter === value ? "default" : "outline"} onClick={() => setGroupFilter(value)}>{value[0].toUpperCase() + value.slice(1)}</Button>)}
             </div>
