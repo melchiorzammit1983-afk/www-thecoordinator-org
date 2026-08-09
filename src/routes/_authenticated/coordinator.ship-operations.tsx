@@ -240,12 +240,13 @@ function ShipOperationsPage() {
                 name="eta"
                 type="datetime-local"
                 value={eta}
+                onInput={(event) => setEta(event.currentTarget.value)}
                 onChange={(event) => setEta(event.target.value)}
                 required
               />
             </Field>
             <Field label="Expected departure" htmlFor="ship-expected-departure">
-              <Input id="ship-expected-departure" name="expected_departure" type="datetime-local" value={expectedDeparture} onChange={(event) => setExpectedDeparture(event.target.value)} required />
+              <Input id="ship-expected-departure" name="expected_departure" type="datetime-local" value={expectedDeparture} onInput={(event) => setExpectedDeparture(event.currentTarget.value)} onChange={(event) => setExpectedDeparture(event.target.value)} required />
             </Field>
             <Field label="Port" htmlFor="ship-port">
               <select id="ship-port" name="port_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={portId ?? ""} onChange={(event) => { const next = event.target.value || null; setPortId(next); setBerthId(null); setPort(ports.find((item) => item.id === next)?.name ?? ""); }} required>
