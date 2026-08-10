@@ -14,6 +14,9 @@ import {
   createPortalDefinition,
   duplicatePortalDefinition,
   listPortalDefinitions,
+  listPortalRecipients,
+  issuePortalRecipient,
+  setPortalRecipientState,
   setPortalDefinitionStatus,
   updatePortalDefinition,
 } from "@/lib/portal-definitions.functions";
@@ -86,7 +89,27 @@ function PortalCreatorPage() {
           <div className="flex flex-wrap gap-2"><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>{isEditing ? "Save changes" : "Create Portal"}</Button>{isEditing && <Button variant="outline" onClick={reset}>Cancel</Button>}</div>
         </CardContent></Card>
         <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div></CardContent></Card>
+        {selected && <RecipientsPanel portal={selected} />}
       </div>
     </div>
   </div>;
+}
+
+function RecipientsPanel({ portal }: { portal: PortalRow }) {
+  const listFn = useServerFn(listPortalRecipients);
+  const issueFn = useServerFn(issuePortalRecipient);
+  const stateFn = useServerFn(setPortalRecipientState);
+  const qc = useQueryClient();
+  const { data: recipients = [] } = useQuery({ queryKey: ["portal-recipients", portal.id], queryFn: () => listFn({ data: { portal_id: portal.id } }) as Promise<any[]> });
+  const [company, setCompany] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [expires, setExpires] = useState("");
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const issue = useMutation({
+    mutationFn: () => issueFn({ data: { portal_id: portal.id, recipient_company: company, recipient_name: recipient, expires_at: expires ? new Date(expires).toISOString() : null } }),
+    onSuccess: (result: any) => { setNewToken(result.token); setCompany(""); setRecipient(""); setExpires(""); qc.invalidateQueries({ queryKey: ["portal-recipients", portal.id] }); toast.success("Portal access issued"); },
+    onError: (e: any) => toast.error(e?.message ?? "Could not issue access"),
+  });
+  const state = useMutation({ mutationFn: (input: { id: string; action: "revoke" | "disable" | "reactivate" }) => stateFn({ data: input }), onSuccess: () => qc.invalidateQueries({ queryKey: ["portal-recipients", portal.id] }), onError: (e: any) => toast.error(e?.message ?? "Could not update access") });
+  return <Card><CardHeader><CardTitle className="text-base">Recipients & secure access</CardTitle></CardHeader><CardContent className="space-y-3"><div className="grid gap-2 sm:grid-cols-3"><Input placeholder="Recipient company" value={company} onChange={(e) => setCompany(e.target.value)} /><Input placeholder="Recipient name" value={recipient} onChange={(e) => setRecipient(e.target.value)} /><Input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} /></div><Button size="sm" onClick={() => issue.mutate()} disabled={!company.trim() || !recipient.trim() || issue.isPending}>Issue access</Button>{newToken && <div className="rounded-md border bg-muted p-2 text-xs"><div className="font-medium">Copy this secure link now; the token is not stored in plaintext.</div><code className="break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/portal/creator/${newToken}`}</code><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portal/creator/${newToken}`)}><Copy className="mr-1 h-3 w-3" />Copy</Button></div>}<div className="space-y-2">{recipients.map((row: any) => <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm"><div><div className="font-medium">{row.recipient_name} · {row.recipient_company}</div><div className="text-xs text-muted-foreground">{row.revoked_at ? "Revoked" : row.disabled_at ? "Disabled" : "Active"}{row.last_accessed_at ? ` · Last accessed ${new Date(row.last_accessed_at).toLocaleString()}` : ""}</div></div>{!row.revoked_at && <div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => state.mutate({ id: row.id, action: row.disabled_at ? "reactivate" : "disable" })}>{row.disabled_at ? "Reactivate" : "Disable"}</Button><Button size="sm" variant="ghost" onClick={() => state.mutate({ id: row.id, action: "revoke" })}>Revoke</Button></div>}</div>)}</div></CardContent></Card>;
 }

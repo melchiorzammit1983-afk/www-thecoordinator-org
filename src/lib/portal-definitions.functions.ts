@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { createHash, randomBytes } from "node:crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const portalType = z.enum(["corporate", "hr", "hotel", "crew_change", "conference", "event", "client", "custom"]);
@@ -30,6 +31,15 @@ async function companyId(userId: string, supabase: any): Promise<string | null> 
   if (owned?.id) return owned.id;
   const { data: linked } = await supabase.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
   return linked?.company_id ?? null;
+}
+
+async function adminClient() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
+function tokenHash(token: string) {
+  return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
 const createInput = z.object({
@@ -116,4 +126,77 @@ export const duplicatePortalDefinition = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     return row;
+  });
+
+const recipientInput = z.object({
+  portal_id: z.string().uuid(),
+  recipient_company: z.string().trim().min(1).max(160),
+  recipient_name: z.string().trim().min(1).max(160),
+  contact_display_name: z.string().max(160).nullable().optional(),
+  expires_at: z.string().datetime().nullable().optional(),
+});
+
+export const listPortalRecipients = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ portal_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) return [];
+    const { data: rows, error } = await context.supabase.from("portal_recipients" as any)
+      .select("id, portal_id, recipient_company, recipient_name, contact_display_name, expires_at, revoked_at, disabled_at, last_accessed_at, created_at")
+      .eq("portal_id", data.portal_id).eq("company_id", cid).order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const issuePortalRecipient = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => recipientInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) throw new Error("No company found.");
+    const token = randomBytes(32).toString("base64url");
+    const a = await adminClient();
+    const { data: portal } = await a.from("portals").select("id, company_id, status").eq("id", data.portal_id).eq("company_id", cid).maybeSingle();
+    if (!portal) throw new Error("Portal not found.");
+    if (portal.status === "disabled") throw new Error("Disabled portals cannot be issued.");
+    const { data: row, error } = await a.from("portal_recipients").insert({
+      portal_id: data.portal_id, company_id: cid, recipient_company: data.recipient_company,
+      recipient_name: data.recipient_name, contact_display_name: data.contact_display_name ?? null,
+      token_hash: tokenHash(token), expires_at: data.expires_at ?? null, created_by: context.userId,
+    }).select("id, portal_id, recipient_company, recipient_name, contact_display_name, expires_at, revoked_at, disabled_at, last_accessed_at, created_at").single();
+    if (error) throw new Error(error.message);
+    await a.from("portal_recipient_activity").insert({ portal_recipient_id: row.id, portal_id: data.portal_id, company_id: cid, action: "issued" });
+    return { recipient: row, token };
+  });
+
+export const setPortalRecipientState = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid(), action: z.enum(["revoke", "disable", "reactivate"]) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) throw new Error("No company found.");
+    const a = await adminClient();
+    const { data: recipient } = await a.from("portal_recipients").select("id, portal_id, company_id, revoked_at, disabled_at").eq("id", data.id).eq("company_id", cid).maybeSingle();
+    if (!recipient) throw new Error("Recipient not found.");
+    const patch = data.action === "revoke" ? { revoked_at: new Date().toISOString() } : data.action === "disable" ? { disabled_at: new Date().toISOString() } : { disabled_at: null, revoked_at: null };
+    const { data: row, error } = await a.from("portal_recipients").update(patch).eq("id", data.id).eq("company_id", cid)
+      .select("id, portal_id, recipient_company, recipient_name, contact_display_name, expires_at, revoked_at, disabled_at, last_accessed_at, created_at").single();
+    if (error) throw new Error(error.message);
+    await a.from("portal_recipient_activity").insert({ portal_recipient_id: data.id, portal_id: recipient.portal_id, company_id: cid, action: data.action === "revoke" ? "revoked" : data.action === "disable" ? "disabled" : "reactivated" });
+    return row;
+  });
+
+export const resolvePortalRecipient = createServerFn({ method: "GET" })
+  .inputValidator((input) => z.object({ token: z.string().min(32).max(256) }).parse(input))
+  .handler(async ({ data }) => {
+    const a = await adminClient();
+    const { data: recipient } = await a.from("portal_recipients").select("id, portal_id, company_id, recipient_company, recipient_name, contact_display_name, expires_at, revoked_at, disabled_at")
+      .eq("token_hash", tokenHash(data.token)).maybeSingle();
+    if (!recipient || recipient.revoked_at || recipient.disabled_at || (recipient.expires_at && new Date(recipient.expires_at).getTime() <= Date.now())) throw new Error("Portal unavailable.");
+    const { data: portal } = await a.from("portals").select("id, name, description, portal_type, status, configuration").eq("id", recipient.portal_id).eq("company_id", recipient.company_id).maybeSingle();
+    if (!portal || portal.status !== "active") throw new Error("Portal unavailable.");
+    await a.from("portal_recipients").update({ last_accessed_at: new Date().toISOString() }).eq("id", recipient.id);
+    await a.from("portal_recipient_activity").insert({ portal_recipient_id: recipient.id, portal_id: recipient.portal_id, company_id: recipient.company_id, action: "accessed" });
+    return { portal, recipient: { recipient_company: recipient.recipient_company, recipient_name: recipient.recipient_name, contact_display_name: recipient.contact_display_name } };
   });
