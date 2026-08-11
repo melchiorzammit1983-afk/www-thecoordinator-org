@@ -190,13 +190,20 @@ export const setPortalRecipientState = createServerFn({ method: "POST" })
 export const resolvePortalRecipient = createServerFn({ method: "GET" })
   .inputValidator((input) => z.object({ token: z.string().min(32).max(256) }).parse(input))
   .handler(async ({ data }) => {
+    const resolved = await resolvePortalRecipientAccess(data.token);
+    return { portal: resolved.portal, recipient: { recipient_company: resolved.recipient.recipient_company, recipient_name: resolved.recipient.recipient_name, contact_display_name: resolved.recipient.contact_display_name } };
+  });
+
+/** Server-only resolver used by portal booking handlers. It returns trusted
+ * identity/configuration and never accepts a browser-supplied company id. */
+export async function resolvePortalRecipientAccess(token: string) {
     const a = await adminClient();
     const { data: recipient } = await a.from("portal_recipients").select("id, portal_id, company_id, recipient_company, recipient_name, contact_display_name, expires_at, revoked_at, disabled_at")
-      .eq("token_hash", tokenHash(data.token)).maybeSingle();
+      .eq("token_hash", tokenHash(token)).maybeSingle();
     if (!recipient || recipient.revoked_at || recipient.disabled_at || (recipient.expires_at && new Date(recipient.expires_at).getTime() <= Date.now())) throw new Error("Portal unavailable.");
     const { data: portal } = await a.from("portals").select("id, name, description, portal_type, status, configuration").eq("id", recipient.portal_id).eq("company_id", recipient.company_id).maybeSingle();
     if (!portal || portal.status !== "active") throw new Error("Portal unavailable.");
     await a.from("portal_recipients").update({ last_accessed_at: new Date().toISOString() }).eq("id", recipient.id);
     await a.from("portal_recipient_activity").insert({ portal_recipient_id: recipient.id, portal_id: recipient.portal_id, company_id: recipient.company_id, action: "accessed" });
-    return { portal, recipient: { recipient_company: recipient.recipient_company, recipient_name: recipient.recipient_name, contact_display_name: recipient.contact_display_name } };
-  });
+    return { portal, recipient };
+}
