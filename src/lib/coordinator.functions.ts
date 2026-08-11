@@ -3512,7 +3512,28 @@ export const approveBooking = createServerFn({ method: "POST" })
     const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
     if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
     const ship = await assertTokenShipSelection(supabaseAdmin, c.id, (b as any).ship_event_id);
-    const { data: job, error: jErr } = await supabaseAdmin
+    const job = await createAuthoritativeJob({
+      from_location: b.from_location,
+      to_location: b.to_location,
+      from_location_type: fromLocationType ?? "local",
+      to_location_type: toLocationType ?? "local",
+      from_port_id: (b as any).from_port_id ?? null,
+      from_berth_id: (b as any).from_berth_id ?? null,
+      to_port_id: (b as any).to_port_id ?? null,
+      to_berth_id: (b as any).to_berth_id ?? null,
+      date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
+      time: b.time ?? "12:00",
+      from_flight: fromFlight ?? "",
+      clientcompanyname: `${b.name} ${b.surname}`.trim(),
+      ship_event_id: ship?.id ?? null,
+      immigration_required: (b as any).immigration_required ?? "unknown",
+      notes: (b as any).notes ?? "",
+      qr_strict_mode: false,
+      tracking_enabled: false,
+      passengers: [],
+    }, { company_id: c.id, actor_type: "client", actor_user_id: context.userId, source: "client" }, context);
+    /* Legacy inline Job insert retained as a compatibility reference only.
+    const { data: legacyJob, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
         company_id: c.id,
@@ -3538,6 +3559,7 @@ export const approveBooking = createServerFn({ method: "POST" })
       .select()
       .single();
     if (jErr) throw new Error(jErr.message);
+    */
     const { padWithGuests } = await import("./pax-extract");
     const paxName = `${b.name} ${b.surname}`.trim() || "Guest";
     const paxNames = padWithGuests([paxName], (b as any).pax_count);
