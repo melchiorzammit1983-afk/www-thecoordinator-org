@@ -1848,7 +1848,7 @@ export const completeTransportConflictReview = createServerFn({ method: "POST" }
     return { completed: reviewError?.code !== "23505", alreadyCompleted: reviewError?.code === "23505" };
   });
 
-async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
+async function syncJobLabels(_ctx: Ctx | null, companyId: string, jobId: string, labelIds: string[] | undefined) {
   if (!labelIds) return;
   const supabaseAdmin = await getAdminClient();
   // Verify labels belong to the same company
@@ -1865,6 +1865,122 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
   if (allowed.length) {
     await supabaseAdmin.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
   }
+}
+
+/**
+ * Trusted server context for the authoritative booking service.  Callers must
+ * prove identity, company ownership and any portal capabilities before they
+ * invoke this function; no browser-supplied company or actor identifiers are
+ * trusted here.
+ */
+export type BookingActorContext = {
+  company_id: string;
+  actor_type: "coordinator" | "portal" | "bulk" | "client" | "system";
+  actor_user_id?: string | null;
+  source: string;
+  origin_company_id?: string | null;
+  executor_company_id?: string | null;
+};
+
+export type AuthoritativeBookingInput = z.infer<typeof createJobInput>;
+
+/**
+ * The single server-only Job creation path.  It owns booking-domain side
+ * effects; public handlers remain responsible for authenticating and building
+ * the trusted context passed here.
+ */
+export async function createAuthoritativeJob(
+  data: AuthoritativeBookingInput,
+  trusted: BookingActorContext,
+  labelContext: Ctx | null = null,
+) {
+  const supabaseAdmin = await getAdminClient();
+  assertCompleteBookingEndpointTypes(data);
+  await validateOperationGroupAssignment(supabaseAdmin, trusted.company_id, data.operation_group_id);
+  const journey = resolveJourneyForBookingInput(data);
+  const immigrationRequired = data.immigration_required ?? "unknown";
+  const fromPort = await assertCompanyPortSelection(supabaseAdmin, trusted.company_id, data.from_port_id, data.from_berth_id);
+  const toPort = await assertCompanyPortSelection(supabaseAdmin, trusted.company_id, data.to_port_id, data.to_berth_id);
+  if (fromPort && data.from_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+  if (toPort && data.to_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+  if (data.flight_schedule_record_id && data.ship_event_id) throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+  const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
+  if (data.flight_schedule_record_id) await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
+  if (data.onward_flight_schedule_record_id) {
+    if (!data.ship_event_id) throw new Error("An onward Flight can only be linked to a Ship trip.");
+    await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, data.onward_flight_schedule_record_id);
+  }
+  if (data.onward_ship_event_id) {
+    if (!data.flight_schedule_record_id) throw new Error("An onward Ship can only be linked to a Flight trip.");
+    await assertCompanyShipEvent(supabaseAdmin, trusted.company_id, data.onward_ship_event_id);
+  }
+  const scheduledPickup = await resolveScheduledTransportPickup(
+    supabaseAdmin,
+    trusted.company_id,
+    data.flight_schedule_record_id,
+    data.ship_event_id,
+    data.onward_flight_schedule_record_id,
+    data.scheduled_transport_pickup_offset_minutes,
+    data.date,
+    data.time,
+  );
+  const { data: row, error } = await supabaseAdmin.from("jobs").insert({
+    company_id: trusted.company_id,
+    origin_company_id: trusted.origin_company_id ?? trusted.company_id,
+    executor_company_id: trusted.executor_company_id ?? trusted.company_id,
+    source: trusted.source,
+    from_location: fromPort?.address ?? data.from_location,
+    to_location: toPort?.address ?? data.to_location,
+    from_location_type: data.from_location_type ?? null,
+    to_location_type: data.to_location_type ?? null,
+    from_port_id: data.from_port_id ?? null,
+    from_berth_id: data.from_berth_id ?? null,
+    to_port_id: data.to_port_id ?? null,
+    to_berth_id: data.to_berth_id ?? null,
+    date: scheduledPickup.date,
+    time: scheduledPickup.time,
+    pickup_at: scheduledPickup.pickup_at,
+    flightorship: data.flightorship || data.from_flight || data.to_flight || null,
+    from_flight: (data.from_flight || "").toUpperCase() || null,
+    to_flight: (data.to_flight || "").toUpperCase() || null,
+    flight_schedule_record_id: data.flight_schedule_record_id ?? null,
+    ship_event_id: data.ship_event_id ?? null,
+    onward_flight_schedule_record_id: data.onward_flight_schedule_record_id ?? null,
+    onward_ship_event_id: data.onward_ship_event_id ?? null,
+    scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
+    immigration_required: immigrationRequired,
+    clientcompanyname: data.clientcompanyname || null,
+    qr_strict_mode: data.qr_strict_mode,
+    tracking_enabled: !!transportTrackingKind && data.tracking_enabled,
+    vehicle: data.vehicle || null,
+    notes: data.notes || null,
+    contact_phone: data.contact_phone || null,
+    driver_id: data.driver_id || null,
+    operation_group_id: data.operation_group_id ?? null,
+    pickup_place_id: data.pickup_place_id || null,
+    dropoff_place_id: data.dropoff_place_id || null,
+    pickup_display_name: data.pickup_display_name || null,
+    dropoff_display_name: data.dropoff_display_name || null,
+    pickup_lat: data.pickup_lat ?? null,
+    pickup_lng: data.pickup_lng ?? null,
+    dropoff_lat: data.dropoff_lat ?? null,
+    dropoff_lng: data.dropoff_lng ?? null,
+    tracking_kind: transportTrackingKind,
+  } as any).select().single();
+  if (error) throw new Error(error.message);
+  await ensureShipArrivalImmigrationStop(supabaseAdmin, row.id, journey, fromPort, immigrationRequired);
+  let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
+  if (!paxToSync || paxToSync.length === 0) {
+    const { extractPaxNames } = await import("./pax-extract");
+    const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
+    if (auto.length) paxToSync = passengerNamesOnly(auto);
+  }
+  await syncJobPax(row.id, paxToSync);
+  await syncJobLabels(labelContext, trusted.company_id, row.id, data.label_ids);
+  if (data.flight_schedule_record_id && (data.from_flight || data.to_flight)) applyLiveStatusToJobBg(row.id as string);
+  const { autoPriceJobBg } = await import("./auto-price.server");
+  autoPriceJobBg(row.id);
+  return { ...row, journey };
 }
 
 function passengerNamesOnly(names: string[] | undefined): PassengerInput[] | undefined {
@@ -1927,6 +2043,14 @@ export const createJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => createJobInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    return createAuthoritativeJob(data, {
+      company_id: c.id,
+      actor_type: "coordinator",
+      actor_user_id: context.userId,
+      source: "coordinator",
+    }, context);
+    /* Legacy inline implementation retained temporarily while downstream
+       booking callers are moved to the shared service.
     const supabaseAdmin = await getAdminClient();
     assertCompleteBookingEndpointTypes(data);
     await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
@@ -2024,7 +2148,7 @@ export const createJob = createServerFn({ method: "POST" })
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(row.id);
-    return { ...row, journey };
+    return { ...row, journey }; */
   });
 
 export const updateJob = createServerFn({ method: "POST" })
@@ -3388,7 +3512,28 @@ export const approveBooking = createServerFn({ method: "POST" })
     const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
     if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
     const ship = await assertTokenShipSelection(supabaseAdmin, c.id, (b as any).ship_event_id);
-    const { data: job, error: jErr } = await supabaseAdmin
+    const job = await createAuthoritativeJob({
+      from_location: b.from_location,
+      to_location: b.to_location,
+      from_location_type: fromLocationType ?? "local",
+      to_location_type: toLocationType ?? "local",
+      from_port_id: (b as any).from_port_id ?? null,
+      from_berth_id: (b as any).from_berth_id ?? null,
+      to_port_id: (b as any).to_port_id ?? null,
+      to_berth_id: (b as any).to_berth_id ?? null,
+      date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
+      time: b.time ?? "12:00",
+      from_flight: fromFlight ?? "",
+      clientcompanyname: `${b.name} ${b.surname}`.trim(),
+      ship_event_id: ship?.id ?? null,
+      immigration_required: (b as any).immigration_required ?? "unknown",
+      notes: (b as any).notes ?? "",
+      qr_strict_mode: false,
+      tracking_enabled: false,
+      passengers: [],
+    }, { company_id: c.id, actor_type: "client", actor_user_id: context.userId, source: "client" }, context);
+    /* Legacy inline Job insert retained as a compatibility reference only.
+    const { data: legacyJob, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
         company_id: c.id,
@@ -3414,6 +3559,7 @@ export const approveBooking = createServerFn({ method: "POST" })
       .select()
       .single();
     if (jErr) throw new Error(jErr.message);
+    */
     const { padWithGuests } = await import("./pax-extract");
     const paxName = `${b.name} ${b.surname}`.trim() || "Guest";
     const paxNames = padWithGuests([paxName], (b as any).pax_count);
@@ -3779,6 +3925,32 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       if (fromPort && endpointTypes.fromLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       if (toPort && endpointTypes.toLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
+      const sharedJob = await createAuthoritativeJob({
+        from_location: t.from_location,
+        to_location: t.to_location,
+        from_location_type: endpointTypes.fromLocationType,
+        to_location_type: endpointTypes.toLocationType,
+        from_port_id: t.from_port_id,
+        from_berth_id: t.from_berth_id,
+        to_port_id: t.to_port_id,
+        to_berth_id: t.to_berth_id,
+        date: t.date,
+        time,
+        flightorship: t.flightorship,
+        from_flight: t.from_flight,
+        to_flight: t.to_flight,
+        immigration_required: immigrationRequired,
+        clientcompanyname: t.clientcompanyname,
+        vehicle: t.vehicle,
+        notes: t.notes,
+        contact_phone: t.contact_phone,
+        operation_group_id: t.operation_group_id ?? data.operation_group_id ?? null,
+        passengers: t.pax.map((name, i) => ({ name, phone: t.pax_phones?.[i]?.trim() || null })),
+        qr_strict_mode: false,
+        tracking_enabled: false,
+      }, { company_id: c.id, actor_type: "bulk", source: "bulk" }, context);
+      created.push(sharedJob.id);
+      continue;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")
