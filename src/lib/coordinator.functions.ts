@@ -3903,6 +3903,32 @@ export const createJobsBulk = createServerFn({ method: "POST" })
       if (fromPort && endpointTypes.fromLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       if (toPort && endpointTypes.toLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
+      const sharedJob = await createAuthoritativeJob({
+        from_location: t.from_location,
+        to_location: t.to_location,
+        from_location_type: endpointTypes.fromLocationType,
+        to_location_type: endpointTypes.toLocationType,
+        from_port_id: t.from_port_id,
+        from_berth_id: t.from_berth_id,
+        to_port_id: t.to_port_id,
+        to_berth_id: t.to_berth_id,
+        date: t.date,
+        time,
+        flightorship: t.flightorship,
+        from_flight: t.from_flight,
+        to_flight: t.to_flight,
+        immigration_required: immigrationRequired,
+        clientcompanyname: t.clientcompanyname,
+        vehicle: t.vehicle,
+        notes: t.notes,
+        contact_phone: t.contact_phone,
+        operation_group_id: t.operation_group_id ?? data.operation_group_id ?? null,
+        passengers: t.pax.map((name, i) => ({ name, phone: t.pax_phones?.[i]?.trim() || null })),
+        qr_strict_mode: false,
+        tracking_enabled: false,
+      }, { company_id: c.id, actor_type: "bulk", source: "bulk" }, context);
+      created.push(sharedJob.id);
+      continue;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")

@@ -5,6 +5,7 @@ import { isoToMaltaDateTime } from "@/lib/time";
 import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
+import { createAuthoritativeJob } from "@/lib/coordinator.functions";
 
 
 /**
@@ -252,8 +253,36 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     }
     const ship = await assertTokenShipSelection(a, cid, payload.ship_event_id);
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
-    // create a job
-    const { data: job, error: jerr } = await a.from("jobs").insert({
+    // Legacy portal approval now uses the same authoritative Job service as
+    // Coordinator booking; portal_companies remains the compatibility queue.
+    const job = await createAuthoritativeJob({
+      from_location: payload.from_location,
+      to_location: payload.to_location,
+      from_location_type: endpointTypes.fromLocationType,
+      to_location_type: endpointTypes.toLocationType,
+      from_port_id: payload.from_port_id ?? null,
+      from_berth_id: payload.from_berth_id ?? null,
+      to_port_id: payload.to_port_id ?? null,
+      to_berth_id: payload.to_berth_id ?? null,
+      date: payload.date ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).date : new Date().toISOString().slice(0, 10)),
+      time: payload.time ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).time : "12:00"),
+      from_flight: (payload.flight_number || "").toUpperCase() || "",
+      clientcompanyname: (b as any).portal_companies.name || "",
+      contact_phone: payload.client_phone ?? "",
+      vehicle: payload.vehicle || "",
+      notes: payload.notes || "",
+      ship_event_id: ship?.id ?? null,
+      immigration_required: payload.immigration_required,
+      qr_strict_mode: false,
+      tracking_enabled: false,
+      passengers: [],
+    }, {
+      company_id: cid,
+      actor_type: "portal",
+      source: `portal:${(b as any).portal_company_id}`,
+    });
+    /*
+    const { data: legacyJob, error: jerr } = await a.from("jobs").insert({
       company_id: cid,
       origin_company_id: cid,
       executor_company_id: cid,
@@ -291,6 +320,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       status: "pending",
     } as any).select("id").single();
     if (jerr) throw new Error(jerr.message);
+    */
 
     if (payload.flight_number) {
       const { applyLiveStatusToJobBg } = await import("./coordinator.functions");
