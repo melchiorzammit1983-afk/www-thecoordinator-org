@@ -49,6 +49,11 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
         const input = parsed.data;
         if (input.operation_group_id && config.capabilities?.select_operation_group !== true) return Response.json({ error: "operation_group_not_allowed" }, { status: 403 });
         if (input.notes && config.capabilities?.add_notes !== true) return Response.json({ error: "notes_not_allowed" }, { status: 400 });
+        const hasFlightFields = !!(input.from_flight || input.to_flight || input.flight_schedule_record_id || input.onward_flight_schedule_record_id);
+        const hasShipFields = !!(input.ship_event_id || input.onward_ship_event_id);
+        if (hasFlightFields && config.capabilities?.enter_flight_details !== true) return Response.json({ error: "flight_details_not_allowed" }, { status: 403 });
+        if (hasShipFields && config.capabilities?.enter_ship_details !== true) return Response.json({ error: "ship_details_not_allowed" }, { status: 403 });
+        if (input.passengers?.length && config.capabilities?.add_passengers !== true) return Response.json({ error: "passengers_not_allowed" }, { status: 403 });
         const dateTime = input.pickup_at ? isoToMaltaDateTime(input.pickup_at) : null;
         if (!input.date && !dateTime?.date || !input.time && !dateTime?.time) return Response.json({ error: "date_time_required" }, { status: 400 });
         try {
