@@ -32,7 +32,14 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
           return Response.json({ error: "portal_unavailable" }, { status: 403 });
         }
         const config = (access.portal.configuration ?? {}) as {
-          capabilities?: { create_booking?: boolean; select_operation_group?: boolean; add_notes?: boolean };
+          capabilities?: {
+            create_booking?: boolean;
+            select_operation_group?: boolean;
+            add_notes?: boolean;
+            enter_flight_details?: boolean;
+            enter_ship_details?: boolean;
+            add_passengers?: boolean;
+          };
           submission_mode?: "direct" | "approval_required";
         };
         if (config.capabilities?.create_booking !== true) return Response.json({ error: "booking_not_allowed" }, { status: 403 });
