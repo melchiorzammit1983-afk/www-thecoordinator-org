@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createAuthoritativeJob } from "@/lib/coordinator.functions";
 import { resolvePortalRecipientAccess } from "@/lib/portal-definitions.functions";
 import { normalizePortalRecipientBooking, portalRecipientBookingInput } from "@/lib/portal-recipient-booking";
+import { isPortalFieldRequired, isPortalFieldVisible, normalizePortalBookingFields, type PortalBookingFieldConfiguration } from "@/lib/portal-field-configuration";
 
 export const Route = createFileRoute("/api/public/portal/recipient/$token/bookings")({
   server: {
@@ -13,8 +14,9 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
         } catch {
           return Response.json({ error: "portal_unavailable" }, { status: 403 });
         }
-        const config = (access.portal.configuration ?? {}) as { capabilities?: { select_operation_group?: boolean } };
-        if (config.capabilities?.select_operation_group !== true) return Response.json({ groups: [] });
+        const config = (access.portal.configuration ?? {}) as { capabilities?: { select_operation_group?: boolean }; booking_fields?: PortalBookingFieldConfiguration };
+        const bookingFields = normalizePortalBookingFields(config.booking_fields, config.capabilities ?? {});
+        if (config.capabilities?.select_operation_group !== true || !isPortalFieldVisible(bookingFields, "operation_group")) return Response.json({ groups: [] });
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data, error } = await supabaseAdmin.from("operation_groups")
           .select("id, reference, name, status")
@@ -40,6 +42,7 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
             enter_ship_details?: boolean;
             add_passengers?: boolean;
           };
+          booking_fields?: PortalBookingFieldConfiguration;
           submission_mode?: "direct" | "approval_required";
         };
         if (config.capabilities?.create_booking !== true) return Response.json({ error: "booking_not_allowed" }, { status: 403 });
@@ -51,6 +54,15 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
         } catch {
           return Response.json({ error: "date_time_required" }, { status: 400 });
         }
+        const bookingFields = normalizePortalBookingFields(config.booking_fields, config.capabilities ?? {});
+        if (!isPortalFieldVisible(bookingFields, "passenger") && input.passengers?.length) return Response.json({ error: "passengers_not_allowed" }, { status: 403 });
+        if (!isPortalFieldVisible(bookingFields, "contact_phone") && input.contact_phone) return Response.json({ error: "contact_phone_not_allowed" }, { status: 403 });
+        if (!isPortalFieldVisible(bookingFields, "operation_group") && input.operation_group_id) return Response.json({ error: "operation_group_not_allowed" }, { status: 403 });
+        if (!isPortalFieldVisible(bookingFields, "notes") && input.notes) return Response.json({ error: "notes_not_allowed" }, { status: 403 });
+        if (isPortalFieldRequired(bookingFields, "passenger") && !input.passengers?.length) return Response.json({ error: "passenger_required" }, { status: 400 });
+        if (isPortalFieldRequired(bookingFields, "contact_phone") && !input.contact_phone) return Response.json({ error: "contact_phone_required" }, { status: 400 });
+        if (isPortalFieldRequired(bookingFields, "operation_group") && !input.operation_group_id) return Response.json({ error: "operation_group_required" }, { status: 400 });
+        if (isPortalFieldRequired(bookingFields, "notes") && !input.notes) return Response.json({ error: "notes_required" }, { status: 400 });
         if (input.operation_group_id && config.capabilities?.select_operation_group !== true) return Response.json({ error: "operation_group_not_allowed" }, { status: 403 });
         if (input.notes && config.capabilities?.add_notes !== true) return Response.json({ error: "notes_not_allowed" }, { status: 400 });
         const hasFlightFields = !!(input.from_flight || input.to_flight || input.flight_schedule_record_id || input.onward_flight_schedule_record_id);
