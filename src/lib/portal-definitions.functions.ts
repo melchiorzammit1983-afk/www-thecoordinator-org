@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { normalizePortalRecipientBooking, portalRecipientBookingInput } from "@/lib/portal-recipient-booking";
 
 const portalType = z.enum(["corporate", "hr", "hotel", "crew_change", "conference", "event", "client", "custom"]);
 const portalStatus = z.enum(["draft", "active", "disabled"]);
@@ -207,3 +208,120 @@ export async function resolvePortalRecipientAccess(token: string) {
     await a.from("portal_recipient_activity").insert({ portal_recipient_id: recipient.id, portal_id: recipient.portal_id, company_id: recipient.company_id, action: "accessed" });
     return { portal, recipient };
 }
+
+export const listPortalSubmissions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ portal_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) return [];
+    const a = await adminClient();
+    const tables = a as any;
+    const { data: rows, error } = await tables.from("portal_submissions")
+      .select("id, portal_id, portal_recipient_id, company_id, status, payload, job_id, created_at, portal_recipients(recipient_company, recipient_name)")
+      .eq("portal_id", data.portal_id)
+      .eq("company_id", cid)
+      .in("status", ["pending", "approving"])
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const approvePortalSubmission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) throw new Error("No company found.");
+    const a = await adminClient();
+    const tables = a as any;
+    const select = "id, portal_id, portal_recipient_id, company_id, status, payload, job_id";
+    let { data: submission, error: loadError } = await tables.from("portal_submissions")
+      .select(select).eq("id", data.id).eq("company_id", cid).maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!submission) throw new Error("Submission not found.");
+    if (submission.status === "approved" && submission.job_id) {
+      return { ok: true, job_id: submission.job_id, already_approved: true };
+    }
+    if (submission.status === "rejected") throw new Error("Submission has been rejected.");
+
+    let claimed = false;
+    if (submission.status === "pending") {
+      const { data: claimedRow, error: claimError } = await tables.from("portal_submissions")
+        .update({ status: "approving" }).eq("id", data.id).eq("company_id", cid).eq("status", "pending")
+        .select(select).maybeSingle();
+      if (claimError) throw new Error(claimError.message);
+      if (claimedRow) {
+        submission = claimedRow;
+        claimed = true;
+      } else {
+        const { data: latest } = await tables.from("portal_submissions").select(select)
+          .eq("id", data.id).eq("company_id", cid).maybeSingle();
+        submission = latest;
+      }
+    }
+    if (!submission) throw new Error("Submission not found.");
+    const approvalSubmission = submission;
+
+    const source = `portal:${approvalSubmission.portal_id}:${approvalSubmission.portal_recipient_id}:submission:${approvalSubmission.id}`;
+    const findExistingJob = async () => {
+      const { data: job } = await a.from("jobs").select("id").eq("company_id", cid).eq("source", source).maybeSingle();
+      return job?.id as string | undefined;
+    };
+    const finishApproval = async (jobId: string) => {
+      const { data: approved, error } = await tables.from("portal_submissions").update({
+        status: "approved", job_id: jobId, decided_by: context.userId, decided_at: new Date().toISOString(), rejection_reason: null,
+      }).eq("id", approvalSubmission.id).eq("company_id", cid).eq("status", "approving").select("id, job_id").maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!approved) throw new Error("Submission approval could not be completed.");
+      return { ok: true, job_id: jobId, already_approved: !claimed };
+    };
+
+    const existingJobId = await findExistingJob();
+    if (existingJobId) return finishApproval(existingJobId);
+    if (!claimed) throw new Error("Submission approval is already in progress.");
+
+    let input: ReturnType<typeof normalizePortalRecipientBooking>;
+    try {
+      input = normalizePortalRecipientBooking(portalRecipientBookingInput.parse(approvalSubmission.payload));
+      const { createAuthoritativeJob } = await import("@/lib/coordinator.functions");
+      const job = await createAuthoritativeJob({
+        ...input,
+        qr_strict_mode: false,
+        tracking_enabled: false,
+        label_ids: undefined,
+        pax: undefined,
+      }, {
+        company_id: cid,
+        actor_type: "portal",
+        actor_user_id: context.userId,
+        source,
+      });
+      return finishApproval(job.id);
+    } catch (error) {
+      const recoveredJobId = await findExistingJob();
+      if (recoveredJobId) return finishApproval(recoveredJobId);
+      await tables.from("portal_submissions").update({ status: "pending" })
+        .eq("id", approvalSubmission.id).eq("company_id", cid).eq("status", "approving");
+      throw error;
+    }
+  });
+
+export const rejectPortalSubmission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ id: z.string().uuid(), reason: z.string().trim().max(500).optional() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) throw new Error("No company found.");
+    const a = await adminClient();
+    const tables = a as any;
+    const { data: rejected, error } = await tables.from("portal_submissions").update({
+      status: "rejected", rejection_reason: data.reason || null, decided_by: context.userId, decided_at: new Date().toISOString(),
+    }).eq("id", data.id).eq("company_id", cid).eq("status", "pending").select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    if (rejected) return { ok: true };
+    const { data: existing } = await tables.from("portal_submissions").select("status")
+      .eq("id", data.id).eq("company_id", cid).maybeSingle();
+    if (existing?.status === "rejected") return { ok: true, already_rejected: true };
+    throw new Error(existing ? "Submission can no longer be rejected." : "Submission not found.");
+  });
