@@ -239,6 +239,47 @@ export const listPortalSubmissions = createServerFn({ method: "POST" })
     return rows ?? [];
   });
 
+export const listPortalActivity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ portal_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const cid = await companyId(context.userId, context.supabase);
+    if (!cid) return { recipients: [], recipient_activity: [], submissions: [], direct_bookings: [] };
+    const { data: portal, error: portalError } = await context.supabase.from("portals" as any)
+      .select("id").eq("id", data.portal_id).eq("company_id", cid).maybeSingle();
+    if (portalError) throw new Error(portalError.message);
+    if (!portal) throw new Error("Portal not found.");
+    const a = await adminClient();
+    const tables = a as any;
+    const [recipients, recipientActivity, submissions, portalJobs] = await Promise.all([
+      tables.from("portal_recipients")
+        .select("id, recipient_company, recipient_name, expires_at, revoked_at, disabled_at, last_accessed_at, created_at")
+        .eq("portal_id", data.portal_id).eq("company_id", cid)
+        .order("created_at", { ascending: false }),
+      tables.from("portal_recipient_activity")
+        .select("id, portal_recipient_id, action, metadata, created_at, portal_recipients(recipient_company, recipient_name)")
+        .eq("portal_id", data.portal_id).eq("company_id", cid)
+        .order("created_at", { ascending: false }).limit(100),
+      tables.from("portal_submissions")
+        .select("id, portal_recipient_id, status, payload, job_id, rejection_reason, created_at, updated_at, decided_at, portal_recipients(recipient_company, recipient_name)")
+        .eq("portal_id", data.portal_id).eq("company_id", cid)
+        .order("created_at", { ascending: false }).limit(100),
+      tables.from("jobs")
+        .select("id, source, status, from_location, to_location, date, time, created_at")
+        .eq("company_id", cid).like("source", `portal:${data.portal_id}:%`)
+        .order("created_at", { ascending: false }).limit(200),
+    ]);
+    for (const result of [recipients, recipientActivity, submissions, portalJobs]) {
+      if (result.error) throw new Error(result.error.message);
+    }
+    return {
+      recipients: recipients.data ?? [],
+      recipient_activity: recipientActivity.data ?? [],
+      submissions: submissions.data ?? [],
+      direct_bookings: (portalJobs.data ?? []).filter((row: any) => !row.source.includes(":submission:")),
+    };
+  });
+
 export const approvePortalSubmission = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
