@@ -6,6 +6,7 @@ import { normalizePortalRecipientBooking, portalRecipientBookingInput } from "@/
 
 const portalType = z.enum(["corporate", "hr", "hotel", "crew_change", "conference", "event", "client", "custom"]);
 const portalStatus = z.enum(["draft", "active", "disabled"]);
+const portalFieldSetting = z.object({ mode: z.enum(["hidden", "optional", "required"]) });
 
 const portalConfiguration = z.object({
   branding: z.object({
@@ -23,6 +24,16 @@ const portalConfiguration = z.object({
     enter_flight_details: z.boolean().optional(),
     enter_ship_details: z.boolean().optional(),
     add_notes: z.boolean().optional(),
+  }).optional(),
+  booking_fields: z.object({
+    pickup: portalFieldSetting.optional(),
+    destination: portalFieldSetting.optional(),
+    pickup_date: portalFieldSetting.optional(),
+    pickup_time: portalFieldSetting.optional(),
+    passenger: portalFieldSetting.optional(),
+    contact_phone: portalFieldSetting.optional(),
+    operation_group: portalFieldSetting.optional(),
+    notes: portalFieldSetting.optional(),
   }).optional(),
   submission_mode: z.enum(["direct", "approval_required"]).optional(),
 }).default({});

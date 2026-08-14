@@ -12,6 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { classifyProviderEndpoint } from "@/lib/journey-resolver";
 import { resolvePortalRecipient } from "@/lib/portal-definitions.functions";
+import {
+  isPortalFieldRequired,
+  isPortalFieldVisible,
+  normalizePortalBookingFields,
+  type NormalizedPortalBookingFields,
+} from "@/lib/portal-field-configuration";
 
 export const Route = createFileRoute("/portal/creator/$token")({
   head: () => ({ meta: [{ title: "Portal" }] }),
@@ -25,10 +31,11 @@ function CreatorPortalPage() {
   if (isLoading) return <main className="mx-auto max-w-2xl p-6 text-sm text-muted-foreground">Loading portal…</main>;
   if (error || !data) return <main className="mx-auto max-w-2xl p-6"><Card><CardContent className="p-6 text-sm text-destructive">This portal link is unavailable.</CardContent></Card></main>;
   const config = data.portal.configuration ?? {};
+  const bookingFields = normalizePortalBookingFields(config.booking_fields, config.capabilities ?? {});
   const enabled = Object.entries(config.capabilities ?? {}).filter(([, value]) => value === true).map(([key]) => key.replaceAll("_", " "));
   return <main className="min-h-screen bg-muted/30 p-4 md:p-8"><div className="mx-auto max-w-2xl space-y-6">
     <Card><CardHeader><CardTitle>{config.branding?.display_name || data.portal.name}</CardTitle><p className="text-sm text-muted-foreground">{data.portal.description || "A secure portal shared with you by The Coordinator."}</p></CardHeader><CardContent className="space-y-3"><div className="text-sm">Access for <span className="font-medium">{data.recipient.recipient_name}</span> · {data.recipient.recipient_company}</div><Badge variant="outline">{data.portal.portal_type.replaceAll("_", " ")}</Badge></CardContent></Card>
-    {config.capabilities?.create_booking === true && <CreatorBookingForm token={token} capabilities={config.capabilities} recipientCompany={data.recipient.recipient_company} />}
+    {config.capabilities?.create_booking === true && <CreatorBookingForm token={token} capabilities={config.capabilities} bookingFields={bookingFields} recipientCompany={data.recipient.recipient_company} />}
     <Card><CardHeader><CardTitle className="text-base">Available features</CardTitle></CardHeader><CardContent>{enabled.length ? <div className="flex flex-wrap gap-2">{enabled.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div> : <p className="text-sm text-muted-foreground">No features have been enabled yet.</p>}</CardContent></Card>
   </div></main>;
 }
@@ -41,7 +48,7 @@ type BookingCapabilities = {
 
 type OperationGroupOption = { id: string; reference: string; name: string; status: string };
 
-function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: string; capabilities: BookingCapabilities; recipientCompany: string }) {
+function CreatorBookingForm({ token, capabilities, bookingFields, recipientCompany }: { token: string; capabilities: BookingCapabilities; bookingFields: NormalizedPortalBookingFields; recipientCompany: string }) {
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [date, setDate] = useState("");
@@ -55,12 +62,12 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
   const [result, setResult] = useState<{ id: string; requiresApproval: boolean } | null>(null);
 
   useEffect(() => {
-    if (!capabilities.select_operation_group) return;
+    if (!capabilities.select_operation_group || !isPortalFieldVisible(bookingFields, "operation_group")) return;
     fetch(`/api/public/portal/recipient/${token}/bookings`)
       .then(async (response) => response.ok ? response.json() : { groups: [] })
       .then((payload) => setOperationGroups(payload.groups ?? []))
       .catch(() => setOperationGroups([]));
-  }, [capabilities.select_operation_group, token]);
+  }, [bookingFields, capabilities.select_operation_group, token]);
 
   async function submit() {
     setBusy(true);
@@ -77,10 +84,10 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
           date,
           time,
           clientcompanyname: recipientCompany,
-          contact_phone: phone.trim() || undefined,
-          notes: capabilities.add_notes ? notes.trim() || undefined : undefined,
-          passengers: capabilities.add_passengers && passenger.trim() ? [{ name: passenger.trim(), phone: phone.trim() || null }] : undefined,
-          operation_group_id: capabilities.select_operation_group && operationGroupId ? operationGroupId : undefined,
+          contact_phone: isPortalFieldVisible(bookingFields, "contact_phone") ? phone.trim() || undefined : undefined,
+          notes: capabilities.add_notes && isPortalFieldVisible(bookingFields, "notes") ? notes.trim() || undefined : undefined,
+          passengers: capabilities.add_passengers && isPortalFieldVisible(bookingFields, "passenger") && passenger.trim() ? [{ name: passenger.trim(), phone: isPortalFieldVisible(bookingFields, "contact_phone") ? phone.trim() || null : null }] : undefined,
+          operation_group_id: capabilities.select_operation_group && isPortalFieldVisible(bookingFields, "operation_group") && operationGroupId ? operationGroupId : undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -103,10 +110,10 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
     <div className="space-y-1 sm:col-span-2"><Label>Destination</Label><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} required /></div>
     <div className="space-y-1"><Label>Pickup date</Label><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div>
     <div className="space-y-1"><Label>Pickup time</Label><Input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></div>
-    {capabilities.add_passengers && <div className="space-y-1"><Label>Passenger</Label><Input value={passenger} onChange={(event) => setPassenger(event.target.value)} placeholder="Passenger name" /></div>}
-    <div className="space-y-1"><Label>Contact phone</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Optional" /></div>
-    {capabilities.select_operation_group && <div className="space-y-1 sm:col-span-2"><Label>Operation Group</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId} onChange={(event) => setOperationGroupId(event.target.value)}><option value="">No Operation Group</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name}</option>)}</select></div>}
-    {capabilities.add_notes && <div className="space-y-1 sm:col-span-2"><Label>Notes</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></div>}
-    <div className="flex items-center justify-between gap-3 sm:col-span-2"><div className="text-xs text-muted-foreground">{result ? `${result.requiresApproval ? "Awaiting coordinator approval" : "Booking created"} · ${result.id.slice(0, 8)}` : "Direct mode creates one Job and its mirrored Trip; approval mode waits for the coordinator."}</div><Button onClick={submit} disabled={busy || !fromPick.address.trim() || !toPick.address.trim() || !date || !time || (capabilities.add_passengers && !passenger.trim())}>{busy ? "Creating…" : "Create booking"}</Button></div>
+    {capabilities.add_passengers && isPortalFieldVisible(bookingFields, "passenger") && <div className="space-y-1"><Label>Passenger{isPortalFieldRequired(bookingFields, "passenger") ? " *" : ""}</Label><Input value={passenger} onChange={(event) => setPassenger(event.target.value)} placeholder={isPortalFieldRequired(bookingFields, "passenger") ? "Required" : "Optional"} /></div>}
+    {isPortalFieldVisible(bookingFields, "contact_phone") && <div className="space-y-1"><Label>Contact phone{isPortalFieldRequired(bookingFields, "contact_phone") ? " *" : ""}</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={isPortalFieldRequired(bookingFields, "contact_phone") ? "Required" : "Optional"} /></div>}
+    {capabilities.select_operation_group && isPortalFieldVisible(bookingFields, "operation_group") && <div className="space-y-1 sm:col-span-2"><Label>Operation Group{isPortalFieldRequired(bookingFields, "operation_group") ? " *" : ""}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId} onChange={(event) => setOperationGroupId(event.target.value)}><option value="">{isPortalFieldRequired(bookingFields, "operation_group") ? "Select an Operation Group" : "No Operation Group"}</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name}</option>)}</select></div>}
+    {capabilities.add_notes && isPortalFieldVisible(bookingFields, "notes") && <div className="space-y-1 sm:col-span-2"><Label>Notes{isPortalFieldRequired(bookingFields, "notes") ? " *" : ""}</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={isPortalFieldRequired(bookingFields, "notes") ? "Required" : "Optional"} /></div>}
+    <div className="flex items-center justify-between gap-3 sm:col-span-2"><div className="text-xs text-muted-foreground">{result ? `${result.requiresApproval ? "Awaiting coordinator approval" : "Booking created"} · ${result.id.slice(0, 8)}` : "Direct mode creates one Job and its mirrored Trip; approval mode waits for the coordinator."}</div><Button onClick={submit} disabled={busy || !fromPick.address.trim() || !toPick.address.trim() || !date || !time || (isPortalFieldRequired(bookingFields, "passenger") && !passenger.trim()) || (isPortalFieldRequired(bookingFields, "contact_phone") && !phone.trim()) || (isPortalFieldRequired(bookingFields, "operation_group") && !operationGroupId) || (isPortalFieldRequired(bookingFields, "notes") && !notes.trim())}>{busy ? "Creating…" : "Create booking"}</Button></div>
   </CardContent></Card>;
 }
