@@ -121,8 +121,9 @@ export const duplicatePortalDefinition = createServerFn({ method: "POST" })
     const { data: source, error: sourceError } = await context.supabase.from("portals" as any)
       .select("name, description, portal_type, configuration").eq("id", data.id).eq("company_id", cid).single();
     if (sourceError || !source) throw new Error(sourceError?.message ?? "Portal not found.");
+    const src = source as unknown as { name: string; description: string | null; portal_type: string; configuration: any };
     const { data: row, error } = await context.supabase.from("portals" as any)
-      .insert({ ...source, name: data.name ?? `${source.name} Copy`, company_id: cid, created_by: context.userId, status: "draft" })
+      .insert({ ...src, name: data.name ?? `${src.name} Copy`, company_id: cid, created_by: context.userId, status: "draft" })
       .select("id, company_id, name, description, portal_type, status, configuration, created_by, created_at, updated_at")
       .single();
     if (error) throw new Error(error.message);

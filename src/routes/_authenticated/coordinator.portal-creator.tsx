@@ -46,7 +46,7 @@ function PortalCreatorPage() {
   const updateFn = useServerFn(updatePortalDefinition);
   const duplicateFn = useServerFn(duplicatePortalDefinition);
   const statusFn = useServerFn(setPortalDefinitionStatus);
-  const { data: portals = [], isLoading } = useQuery({ queryKey: ["portal-definitions"], queryFn: () => listFn() as Promise<PortalRow[]> });
+  const { data: portals = [], isLoading } = useQuery({ queryKey: ["portal-definitions"], queryFn: () => listFn() as unknown as Promise<PortalRow[]> });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = portals.find((p) => p.id === selectedId) ?? null;
   const [name, setName] = useState("");
