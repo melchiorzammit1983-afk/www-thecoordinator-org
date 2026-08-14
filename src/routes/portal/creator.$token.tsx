@@ -52,7 +52,7 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
   const [operationGroupId, setOperationGroupId] = useState("");
   const [operationGroups, setOperationGroups] = useState<OperationGroupOption[]>([]);
   const [busy, setBusy] = useState(false);
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [result, setResult] = useState<{ id: string; requiresApproval: boolean } | null>(null);
 
   useEffect(() => {
     if (!capabilities.select_operation_group) return;
@@ -64,7 +64,7 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
 
   async function submit() {
     setBusy(true);
-    setCreatedId(null);
+    setResult(null);
     try {
       const response = await fetch(`/api/public/portal/recipient/${token}/bookings`, {
         method: "POST",
@@ -85,11 +85,12 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "booking_failed");
-      setCreatedId(payload.id);
+      const requiresApproval = payload.requires_approval === true;
+      setResult({ id: payload.id, requiresApproval });
       setFromPick({ address: "", place_id: null, lat: null, lng: null });
       setToPick({ address: "", place_id: null, lat: null, lng: null });
       setDate(""); setTime(""); setPassenger(""); setPhone(""); setNotes(""); setOperationGroupId("");
-      toast.success("Booking created");
+      toast.success(requiresApproval ? "Booking submitted for coordinator approval" : "Booking created");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create booking");
     } finally {
@@ -106,6 +107,6 @@ function CreatorBookingForm({ token, capabilities, recipientCompany }: { token: 
     <div className="space-y-1"><Label>Contact phone</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Optional" /></div>
     {capabilities.select_operation_group && <div className="space-y-1 sm:col-span-2"><Label>Operation Group</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId} onChange={(event) => setOperationGroupId(event.target.value)}><option value="">No Operation Group</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name}</option>)}</select></div>}
     {capabilities.add_notes && <div className="space-y-1 sm:col-span-2"><Label>Notes</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></div>}
-    <div className="flex items-center justify-between gap-3 sm:col-span-2"><div className="text-xs text-muted-foreground">{createdId ? `Booking created · ${createdId.slice(0, 8)}` : "Creates one Job and its mirrored Trip."}</div><Button onClick={submit} disabled={busy || !fromPick.address.trim() || !toPick.address.trim() || !date || !time || (capabilities.add_passengers && !passenger.trim())}>{busy ? "Creating…" : "Create booking"}</Button></div>
+    <div className="flex items-center justify-between gap-3 sm:col-span-2"><div className="text-xs text-muted-foreground">{result ? `${result.requiresApproval ? "Awaiting coordinator approval" : "Booking created"} · ${result.id.slice(0, 8)}` : "Direct mode creates one Job and its mirrored Trip; approval mode waits for the coordinator."}</div><Button onClick={submit} disabled={busy || !fromPick.address.trim() || !toPick.address.trim() || !date || !time || (capabilities.add_passengers && !passenger.trim())}>{busy ? "Creating…" : "Create booking"}</Button></div>
   </CardContent></Card>;
 }
