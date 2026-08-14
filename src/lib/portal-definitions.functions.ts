@@ -251,17 +251,13 @@ export const listPortalActivity = createServerFn({ method: "POST" })
     if (!portal) throw new Error("Portal not found.");
     const a = await adminClient();
     const tables = a as any;
-    const [recipients, recipientActivity, submissions, portalJobs] = await Promise.all([
-      tables.from("portal_recipients")
-        .select("id, recipient_company, recipient_name, expires_at, revoked_at, disabled_at, last_accessed_at, created_at")
-        .eq("portal_id", data.portal_id).eq("company_id", cid)
-        .order("created_at", { ascending: false }),
+    const [recipientActivity, submissions, portalJobs] = await Promise.all([
       tables.from("portal_recipient_activity")
-        .select("id, portal_recipient_id, action, metadata, created_at, portal_recipients(recipient_company, recipient_name)")
+        .select("id, portal_recipient_id, action, metadata, created_at")
         .eq("portal_id", data.portal_id).eq("company_id", cid)
         .order("created_at", { ascending: false }).limit(100),
       tables.from("portal_submissions")
-        .select("id, portal_recipient_id, status, payload, job_id, rejection_reason, created_at, updated_at, decided_at, portal_recipients(recipient_company, recipient_name)")
+        .select("id, portal_recipient_id, status, payload, job_id, rejection_reason, created_at, updated_at, decided_at")
         .eq("portal_id", data.portal_id).eq("company_id", cid)
         .order("created_at", { ascending: false }).limit(100),
       tables.from("jobs")
@@ -269,14 +265,15 @@ export const listPortalActivity = createServerFn({ method: "POST" })
         .eq("company_id", cid).like("source", `portal:${data.portal_id}:%`)
         .order("created_at", { ascending: false }).limit(200),
     ]);
-    for (const result of [recipients, recipientActivity, submissions, portalJobs]) {
-      if (result.error) throw new Error(result.error.message);
-    }
+    const issues: string[] = [];
+    if (recipientActivity.error) issues.push("recipient access activity");
+    if (submissions.error) issues.push("submission history");
+    if (portalJobs.error) issues.push("direct booking history");
     return {
-      recipients: recipients.data ?? [],
-      recipient_activity: recipientActivity.data ?? [],
-      submissions: submissions.data ?? [],
-      direct_bookings: (portalJobs.data ?? []).filter((row: any) => !row.source.includes(":submission:")),
+      recipient_activity: recipientActivity.error ? [] : recipientActivity.data ?? [],
+      submissions: submissions.error ? [] : submissions.data ?? [],
+      direct_bookings: portalJobs.error ? [] : (portalJobs.data ?? []).filter((row: any) => !row.source?.includes(":submission:")),
+      issues,
     };
   });
 
