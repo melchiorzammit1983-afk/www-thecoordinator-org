@@ -6422,6 +6422,121 @@ export type Database = {
         }
         Relationships: []
       }
+      portal_recipient_activity: {
+        Row: {
+          action: string
+          company_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          portal_id: string
+          portal_recipient_id: string
+        }
+        Insert: {
+          action: string
+          company_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          portal_id: string
+          portal_recipient_id: string
+        }
+        Update: {
+          action?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          portal_id?: string
+          portal_recipient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_recipient_activity_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipient_activity_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipient_activity_portal_recipient_id_fkey"
+            columns: ["portal_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "portal_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_recipients: {
+        Row: {
+          company_id: string
+          contact_display_name: string | null
+          created_at: string
+          created_by: string | null
+          disabled_at: string | null
+          expires_at: string | null
+          id: string
+          last_accessed_at: string | null
+          portal_id: string
+          recipient_company: string
+          recipient_name: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          company_id: string
+          contact_display_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          disabled_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          portal_id: string
+          recipient_company: string
+          recipient_name: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          company_id?: string
+          contact_display_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          disabled_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          portal_id?: string
+          recipient_company?: string
+          recipient_name?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_recipients_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipients_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_rooms: {
         Row: {
           active: boolean
@@ -6622,6 +6737,53 @@ export type Database = {
             columns: ["portal_company_id"]
             isOneToOne: false
             referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portals: {
+        Row: {
+          company_id: string
+          configuration: Json
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          portal_type: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          configuration?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          portal_type: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          configuration?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          portal_type?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
