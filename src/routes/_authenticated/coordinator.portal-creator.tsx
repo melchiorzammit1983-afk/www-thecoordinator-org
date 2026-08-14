@@ -23,6 +23,12 @@ import {
   setPortalDefinitionStatus,
   updatePortalDefinition,
 } from "@/lib/portal-definitions.functions";
+import {
+  normalizePortalBookingFields,
+  PORTAL_BOOKING_FIELDS,
+  type PortalBookingFieldConfiguration,
+  type PortalBookingFieldMode,
+} from "@/lib/portal-field-configuration";
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-creator")({
   head: () => ({ meta: [{ title: "Portal Creator — Coordinator" }] }),
@@ -38,6 +44,7 @@ const CAPABILITIES = [
   ["add_notes", "Add notes"],
 ] as const;
 type PortalRow = { id: string; name: string; description: string | null; portal_type: string; status: string; configuration: any };
+const DEFAULT_CAPABILITIES: Record<string, boolean> = { create_booking: true, view_own_submissions: true };
 
 function PortalCreatorPage() {
   const qc = useQueryClient();
@@ -54,7 +61,8 @@ function PortalCreatorPage() {
   const [portalType, setPortalType] = useState<(typeof TYPES)[number]>("custom");
   const [submissionMode, setSubmissionMode] = useState<"direct" | "approval_required">("direct");
   const [accent, setAccent] = useState("slate");
-  const [capabilities, setCapabilities] = useState<Record<string, boolean>>({ create_booking: true, view_own_submissions: true });
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>(DEFAULT_CAPABILITIES);
+  const [bookingFields, setBookingFields] = useState<PortalBookingFieldConfiguration>(() => normalizePortalBookingFields(undefined, DEFAULT_CAPABILITIES));
   const isEditing = !!selected;
   const refresh = () => qc.invalidateQueries({ queryKey: ["portal-definitions"] });
 
@@ -63,10 +71,18 @@ function PortalCreatorPage() {
     setSelectedId(portal.id); setName(portal.name); setDescription(portal.description ?? "");
     setPortalType((TYPES.includes(portal.portal_type as any) ? portal.portal_type : "custom") as any);
     setSubmissionMode(config.submission_mode === "approval_required" ? "approval_required" : "direct");
-    setAccent(config.branding?.accent ?? "slate"); setCapabilities(config.capabilities ?? {});
+    const nextCapabilities = config.capabilities ?? {};
+    setAccent(config.branding?.accent ?? "slate"); setCapabilities(nextCapabilities);
+    setBookingFields(normalizePortalBookingFields(config.booking_fields, nextCapabilities));
   }
-  function reset() { setSelectedId(null); setName(""); setDescription(""); setPortalType("custom"); setSubmissionMode("direct"); setAccent("slate"); setCapabilities({ create_booking: true, view_own_submissions: true }); }
-  const configuration = useMemo(() => ({ submission_mode: submissionMode, branding: { accent }, capabilities }), [submissionMode, accent, capabilities]);
+  function reset() { setSelectedId(null); setName(""); setDescription(""); setPortalType("custom"); setSubmissionMode("direct"); setAccent("slate"); setCapabilities(DEFAULT_CAPABILITIES); setBookingFields(normalizePortalBookingFields(undefined, DEFAULT_CAPABILITIES)); }
+  const normalizedFields = useMemo(() => normalizePortalBookingFields(bookingFields, capabilities), [bookingFields, capabilities]);
+  const configuration = useMemo(() => ({ submission_mode: submissionMode, branding: { accent }, capabilities, booking_fields: normalizedFields }), [submissionMode, accent, capabilities, normalizedFields]);
+  function changeCapability(key: string, enabled: boolean) {
+    setCapabilities((current) => ({ ...current, [key]: enabled }));
+    const field = PORTAL_BOOKING_FIELDS.find((definition) => "capability" in definition && definition.capability === key);
+    if (field) setBookingFields((current) => ({ ...current, [field.key]: { mode: enabled ? field.defaultMode : "hidden" } }));
+  }
   const save = useMutation({
     mutationFn: () => isEditing ? updateFn({ data: { id: selected!.id, patch: { name, description: description || null, portal_type: portalType, configuration } } }) : createFn({ data: { name, description: description || null, portal_type: portalType, configuration } }),
     onSuccess: (row: any) => { toast.success(isEditing ? "Portal updated" : "Portal created"); refresh(); edit(row); },
@@ -88,10 +104,15 @@ function PortalCreatorPage() {
           <div className="grid gap-3 sm:grid-cols-2"><div><Label>Portal name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Standard Hotel Portal" /></div><div><Label>Portal type</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={portalType} onChange={(e) => setPortalType(e.target.value as any)}>{TYPES.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></div></div>
           <div><Label>Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this portal is used for" /></div>
           <div className="grid gap-3 sm:grid-cols-2"><div><Label>Submission mode</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={submissionMode} onChange={(e) => setSubmissionMode(e.target.value as any)}><option value="direct">Direct booking</option><option value="approval_required">Coordinator approval required</option></select></div><div><Label>Accent</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={accent} onChange={(e) => setAccent(e.target.value)}>{["slate", "blue", "teal", "amber", "rose", "violet"].map((value) => <option key={value} value={value}>{value}</option>)}</select></div></div>
-          <div><Label>Capabilities</Label><div className="mt-2 grid gap-2 sm:grid-cols-2">{CAPABILITIES.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!capabilities[key]} onChange={(e) => setCapabilities((current) => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div></div>
+          <div><Label>Capabilities</Label><div className="mt-2 grid gap-2 sm:grid-cols-2">{CAPABILITIES.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!capabilities[key]} onChange={(e) => changeCapability(key, e.target.checked)} />{label}</label>)}</div></div>
+          <div className="space-y-2"><div><Label>Booking fields</Label><p className="text-xs text-muted-foreground">Choose what recipients must complete. Core journey fields stay required.</p></div><div className="divide-y rounded-md border">{PORTAL_BOOKING_FIELDS.map((field) => {
+            const capabilityDisabled = "capability" in field && capabilities[field.capability] !== true;
+            const locked = "locked" in field && field.locked;
+            return <div key={field.key} className="flex items-center justify-between gap-3 p-3"><div><div className="text-sm font-medium">{field.label}</div>{capabilityDisabled && <div className="text-xs text-muted-foreground">Enable its capability to use this field.</div>}</div><select aria-label={`${field.label} field mode`} className="h-9 rounded-md border bg-background px-2 text-sm" value={normalizedFields[field.key].mode} disabled={locked || capabilityDisabled} onChange={(event) => setBookingFields((current) => ({ ...current, [field.key]: { mode: event.target.value as PortalBookingFieldMode } }))}><option value="required">Required</option><option value="optional">Optional</option><option value="hidden">Hidden</option></select></div>;
+          })}</div></div>
           <div className="flex flex-wrap gap-2"><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>{isEditing ? "Save changes" : "Create Portal"}</Button>{isEditing && <Button variant="outline" onClick={reset}>Cancel</Button>}</div>
         </CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div></CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div><div><div className="mb-1 text-xs font-medium uppercase text-muted-foreground">Booking fields</div><div className="flex flex-wrap gap-1">{PORTAL_BOOKING_FIELDS.filter((field) => normalizedFields[field.key].mode !== "hidden").map((field) => <Badge key={field.key} variant={normalizedFields[field.key].mode === "required" ? "default" : "secondary"}>{field.label} · {normalizedFields[field.key].mode}</Badge>)}</div></div></CardContent></Card>
         {selected && <><ApprovalPanel portal={selected} /><RecipientsPanel portal={selected} /></>}
       </div>
     </div>
