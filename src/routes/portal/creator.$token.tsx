@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ import {
   normalizePortalBookingFields,
   type NormalizedPortalBookingFields,
 } from "@/lib/portal-field-configuration";
+import { downloadPortalBookingTemplate } from "@/lib/portal-booking-template";
 
 export const Route = createFileRoute("/portal/creator/$token")({
   head: () => ({ meta: [{ title: "Portal" }] }),
@@ -35,7 +37,7 @@ function CreatorPortalPage() {
   const enabled = Object.entries(config.capabilities ?? {}).filter(([, value]) => value === true).map(([key]) => key.replaceAll("_", " "));
   return <main className="min-h-screen bg-muted/30 p-4 md:p-8"><div className="mx-auto max-w-2xl space-y-6">
     <Card><CardHeader><CardTitle>{config.branding?.display_name || data.portal.name}</CardTitle><p className="text-sm text-muted-foreground">{data.portal.description || "A secure portal shared with you by The Coordinator."}</p></CardHeader><CardContent className="space-y-3"><div className="text-sm">Access for <span className="font-medium">{data.recipient.recipient_name}</span> · {data.recipient.recipient_company}</div><Badge variant="outline">{data.portal.portal_type.replaceAll("_", " ")}</Badge></CardContent></Card>
-    {config.capabilities?.create_booking === true && <CreatorBookingForm token={token} capabilities={config.capabilities} bookingFields={bookingFields} recipientCompany={data.recipient.recipient_company} />}
+    {config.capabilities?.create_booking === true && <CreatorBookingForm token={token} capabilities={config.capabilities} bookingFields={bookingFields} portalName={config.branding?.display_name || data.portal.name} recipientCompany={data.recipient.recipient_company} />}
     <Card><CardHeader><CardTitle className="text-base">Available features</CardTitle></CardHeader><CardContent>{enabled.length ? <div className="flex flex-wrap gap-2">{enabled.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div> : <p className="text-sm text-muted-foreground">No features have been enabled yet.</p>}</CardContent></Card>
   </div></main>;
 }
@@ -48,7 +50,7 @@ type BookingCapabilities = {
 
 type OperationGroupOption = { id: string; reference: string; name: string; status: string };
 
-function CreatorBookingForm({ token, capabilities, bookingFields, recipientCompany }: { token: string; capabilities: BookingCapabilities; bookingFields: NormalizedPortalBookingFields; recipientCompany: string }) {
+function CreatorBookingForm({ token, capabilities, bookingFields, portalName, recipientCompany }: { token: string; capabilities: BookingCapabilities; bookingFields: NormalizedPortalBookingFields; portalName: string; recipientCompany: string }) {
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [date, setDate] = useState("");
@@ -105,7 +107,7 @@ function CreatorBookingForm({ token, capabilities, bookingFields, recipientCompa
     }
   }
 
-  return <Card><CardHeader><CardTitle className="text-base">Create booking</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
+  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><div><CardTitle className="text-base">Create booking</CardTitle><p className="mt-1 text-xs text-muted-foreground">Enter one booking here or download the same fields as an Excel template.</p></div><Button size="sm" variant="outline" onClick={() => void downloadPortalBookingTemplate(portalName, bookingFields)}><Download className="mr-1 h-4 w-4" />Template (.xlsx)</Button></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
     <div className="space-y-1 sm:col-span-2"><Label>Pickup</Label><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} required /></div>
     <div className="space-y-1 sm:col-span-2"><Label>Destination</Label><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} required /></div>
     <div className="space-y-1"><Label>Pickup date</Label><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div>

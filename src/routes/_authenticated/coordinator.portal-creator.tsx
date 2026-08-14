@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, Eye, Pencil, Plus, Power, PowerOff } from "lucide-react";
+import { Copy, Download, Eye, Pencil, Plus, Power, PowerOff } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
   type PortalBookingFieldConfiguration,
   type PortalBookingFieldMode,
 } from "@/lib/portal-field-configuration";
+import { downloadPortalBookingTemplate } from "@/lib/portal-booking-template";
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-creator")({
   head: () => ({ meta: [{ title: "Portal Creator — Coordinator" }] }),
@@ -112,7 +113,7 @@ function PortalCreatorPage() {
           })}</div></div>
           <div className="flex flex-wrap gap-2"><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>{isEditing ? "Save changes" : "Create Portal"}</Button>{isEditing && <Button variant="outline" onClick={reset}>Cancel</Button>}</div>
         </CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div><div><div className="mb-1 text-xs font-medium uppercase text-muted-foreground">Booking fields</div><div className="flex flex-wrap gap-1">{PORTAL_BOOKING_FIELDS.filter((field) => normalizedFields[field.key].mode !== "hidden").map((field) => <Badge key={field.key} variant={normalizedFields[field.key].mode === "required" ? "default" : "secondary"}>{field.label} · {normalizedFields[field.key].mode}</Badge>)}</div></div></CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div><div><div className="mb-1 text-xs font-medium uppercase text-muted-foreground">Booking fields</div><div className="flex flex-wrap gap-1">{PORTAL_BOOKING_FIELDS.filter((field) => normalizedFields[field.key].mode !== "hidden").map((field) => <Badge key={field.key} variant={normalizedFields[field.key].mode === "required" ? "default" : "secondary"}>{field.label} · {normalizedFields[field.key].mode}</Badge>)}</div></div>{capabilities.create_booking && <Button size="sm" variant="outline" onClick={() => void downloadPortalBookingTemplate(name || "Portal", normalizedFields)}><Download className="mr-1 h-4 w-4" />Download spreadsheet template</Button>}</CardContent></Card>
         {selected && <><ApprovalPanel portal={selected} /><RecipientsPanel portal={selected} /></>}
       </div>
     </div>
