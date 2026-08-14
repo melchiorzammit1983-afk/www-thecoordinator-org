@@ -13,6 +13,7 @@
 // scope of a client-reachable file.
 
 import { getRequestHeader } from "@tanstack/react-start/server";
+import { createHash } from "node:crypto";
 
 export type MapsCaller = { kind: "user" | "token"; id: string };
 
@@ -60,6 +61,27 @@ async function subjectForToken(token: string): Promise<string | null> {
     (!portal.link_expires_at || new Date(portal.link_expires_at).getTime() > Date.now())
   ) {
     return `portal:${portal.id}`;
+  }
+
+  const recipientTokenHash = createHash("sha256").update(token, "utf8").digest("hex");
+  const { data: portalRecipient } = await (sb as any)
+    .from("portal_recipients")
+    .select("id, portal_id, company_id, expires_at, revoked_at, disabled_at")
+    .eq("token_hash", recipientTokenHash)
+    .maybeSingle();
+  if (
+    portalRecipient &&
+    !portalRecipient.revoked_at &&
+    !portalRecipient.disabled_at &&
+    (!portalRecipient.expires_at || new Date(portalRecipient.expires_at).getTime() > Date.now())
+  ) {
+    const { data: portalDefinition } = await (sb as any)
+      .from("portals")
+      .select("id, status")
+      .eq("id", portalRecipient.portal_id)
+      .eq("company_id", portalRecipient.company_id)
+      .maybeSingle();
+    if (portalDefinition?.status === "active") return `portal-recipient:${portalRecipient.id}`;
   }
 
   const { data: company } = await sb
