@@ -12,10 +12,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createPortalDefinition,
+  approvePortalSubmission,
   duplicatePortalDefinition,
   listPortalDefinitions,
   listPortalRecipients,
+  listPortalSubmissions,
   issuePortalRecipient,
+  rejectPortalSubmission,
   setPortalRecipientState,
   setPortalDefinitionStatus,
   updatePortalDefinition,
@@ -89,10 +92,51 @@ function PortalCreatorPage() {
           <div className="flex flex-wrap gap-2"><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>{isEditing ? "Save changes" : "Create Portal"}</Button>{isEditing && <Button variant="outline" onClick={reset}>Cancel</Button>}</div>
         </CardContent></Card>
         <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div></CardContent></Card>
-        {selected && <RecipientsPanel portal={selected} />}
+        {selected && <><ApprovalPanel portal={selected} /><RecipientsPanel portal={selected} /></>}
       </div>
     </div>
   </div>;
+}
+
+function ApprovalPanel({ portal }: { portal: PortalRow }) {
+  const listFn = useServerFn(listPortalSubmissions);
+  const approveFn = useServerFn(approvePortalSubmission);
+  const rejectFn = useServerFn(rejectPortalSubmission);
+  const qc = useQueryClient();
+  const queryKey = ["portal-submissions", portal.id];
+  const { data: submissions = [], isLoading } = useQuery({
+    queryKey,
+    queryFn: () => listFn({ data: { portal_id: portal.id } }) as Promise<any[]>,
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey });
+  const approve = useMutation({
+    mutationFn: (id: string) => approveFn({ data: { id } }),
+    onSuccess: () => { toast.success("Submission approved and booking created"); refresh(); },
+    onError: (error: any) => toast.error(error?.message ?? "Could not approve submission"),
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => rejectFn({ data: { id } }),
+    onSuccess: () => { toast.success("Submission rejected"); refresh(); },
+    onError: (error: any) => toast.error(error?.message ?? "Could not reject submission"),
+  });
+
+  return <Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Coordinator approval</CardTitle><Badge variant={submissions.length ? "default" : "outline"}>{submissions.length} waiting</Badge></CardHeader><CardContent className="space-y-3">
+    {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+    {!isLoading && submissions.length === 0 && <p className="text-sm text-muted-foreground">No submissions awaiting approval.</p>}
+    {submissions.map((submission: any) => {
+      const payload = submission.payload ?? {};
+      const recipient = submission.portal_recipients ?? {};
+      const passengers = Array.isArray(payload.passengers) ? payload.passengers.map((passenger: any) => passenger.name).filter(Boolean).join(", ") : "";
+      const approving = submission.status === "approving";
+      return <div key={submission.id} className="space-y-2 rounded-md border p-3 text-sm">
+        <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="font-medium">{passengers || payload.clientcompanyname || "Portal booking"}</div><div className="text-xs text-muted-foreground">{recipient.recipient_name || "Recipient"} · {recipient.recipient_company || ""}</div></div><Badge variant="outline">{approving ? "Approving" : "Pending"}</Badge></div>
+        <div>{payload.from_location} → {payload.to_location}</div>
+        <div className="text-xs text-muted-foreground">{payload.date} · {payload.time}</div>
+        {payload.notes && <div className="text-xs text-muted-foreground">{payload.notes}</div>}
+        <div className="flex gap-2"><Button size="sm" onClick={() => approve.mutate(submission.id)} disabled={approving || approve.isPending || reject.isPending}>Approve & create booking</Button><Button size="sm" variant="outline" onClick={() => reject.mutate(submission.id)} disabled={approving || approve.isPending || reject.isPending}>Reject</Button></div>
+      </div>;
+    })}
+  </CardContent></Card>;
 }
 
 function RecipientsPanel({ portal }: { portal: PortalRow }) {
