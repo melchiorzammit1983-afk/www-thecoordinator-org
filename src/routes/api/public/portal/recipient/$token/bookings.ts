@@ -35,6 +35,24 @@ const bookingInput = z.object({
 export const Route = createFileRoute("/api/public/portal/recipient/$token/bookings")({
   server: {
     handlers: {
+      GET: async ({ params }) => {
+        let access;
+        try {
+          access = await resolvePortalRecipientAccess(params.token);
+        } catch {
+          return Response.json({ error: "portal_unavailable" }, { status: 403 });
+        }
+        const config = (access.portal.configuration ?? {}) as { capabilities?: { select_operation_group?: boolean } };
+        if (config.capabilities?.select_operation_group !== true) return Response.json({ groups: [] });
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data, error } = await supabaseAdmin.from("operation_groups")
+          .select("id, reference, name, status")
+          .eq("company_id", access.recipient.company_id)
+          .in("status", ["draft", "active"])
+          .order("name", { ascending: true });
+        if (error) return Response.json({ error: "operation_groups_unavailable" }, { status: 500 });
+        return Response.json({ groups: data ?? [] });
+      },
       POST: async ({ params, request }) => {
         let access;
         try {
