@@ -192,35 +192,36 @@ const RECIPIENT_ACTIONS: Record<string, { label: string; icon: typeof Activity }
   reactivated: { label: "Access reactivated", icon: Power },
 };
 
-function relatedRecipient(row: any) {
-  return Array.isArray(row.portal_recipients) ? row.portal_recipients[0] ?? {} : row.portal_recipients ?? {};
-}
-
 function recipientLabel(recipient: any) {
   return [recipient?.recipient_name, recipient?.recipient_company].filter(Boolean).join(" · ") || "Portal recipient";
 }
 
 function PortalActivityPanel({ portal }: { portal: PortalRow }) {
   const listFn = useServerFn(listPortalActivity);
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const recipientsFn = useServerFn(listPortalRecipients);
+  const { data, isLoading, isFetching: isActivityFetching, error: activityError, refetch: refetchActivity } = useQuery({
     queryKey: ["portal-activity", portal.id],
     queryFn: () => listFn({ data: { portal_id: portal.id } }) as Promise<any>,
   });
+  const { data: recipients = [], isFetching: areRecipientsFetching, error: recipientsError, refetch: refetchRecipients } = useQuery({
+    queryKey: ["portal-recipients", portal.id],
+    queryFn: () => recipientsFn({ data: { portal_id: portal.id } }) as Promise<any[]>,
+  });
   const events = useMemo(() => {
     const rows: Array<{ id: string; at: string; title: string; detail: string; badge: string; icon: typeof Activity }> = [];
+    const recipientById = new Map(recipients.map((recipient: any) => [recipient.id, recipient]));
     for (const row of data?.recipient_activity ?? []) {
       const action = RECIPIENT_ACTIONS[row.action] ?? { label: row.action, icon: Activity };
-      rows.push({ id: `access-${row.id}`, at: row.created_at, title: action.label, detail: recipientLabel(relatedRecipient(row)), badge: "access", icon: action.icon });
+      rows.push({ id: `access-${row.id}`, at: row.created_at, title: action.label, detail: recipientLabel(recipientById.get(row.portal_recipient_id)), badge: "access", icon: action.icon });
     }
     for (const submission of data?.submissions ?? []) {
-      const recipient = recipientLabel(relatedRecipient(submission));
+      const recipient = recipientLabel(recipientById.get(submission.portal_recipient_id));
       const payload = submission.payload ?? {};
       const journey = [payload.from_location, payload.to_location].filter(Boolean).join(" → ");
       rows.push({ id: `submitted-${submission.id}`, at: submission.created_at, title: "Booking submitted", detail: [recipient, journey].filter(Boolean).join(" · "), badge: "submission", icon: Clock3 });
       if (submission.status === "approved" && submission.decided_at) rows.push({ id: `approved-${submission.id}`, at: submission.decided_at, title: "Booking approved", detail: `${recipient}${submission.job_id ? ` · Job ${submission.job_id.slice(0, 8)}` : ""}`, badge: "approved", icon: CheckCircle2 });
       if (submission.status === "rejected" && submission.decided_at) rows.push({ id: `rejected-${submission.id}`, at: submission.decided_at, title: "Booking rejected", detail: [recipient, submission.rejection_reason].filter(Boolean).join(" · "), badge: "rejected", icon: XCircle });
     }
-    const recipientById = new Map((data?.recipients ?? []).map((recipient: any) => [recipient.id, recipient]));
     for (const booking of data?.direct_bookings ?? []) {
       const recipientId = String(booking.source ?? "").split(":")[2];
       const recipient = recipientLabel(recipientById.get(recipientId));
@@ -228,18 +229,21 @@ function PortalActivityPanel({ portal }: { portal: PortalRow }) {
       rows.push({ id: `direct-${booking.id}`, at: booking.created_at, title: "Direct booking created", detail: [recipient, journey].filter(Boolean).join(" · "), badge: "direct", icon: CheckCircle2 });
     }
     return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 50);
-  }, [data]);
+  }, [data, recipients]);
   const submissions = data?.submissions ?? [];
   const counts = {
-    active: (data?.recipients ?? []).filter((row: any) => !row.revoked_at && !row.disabled_at && (!row.expires_at || new Date(row.expires_at).getTime() > Date.now())).length,
+    active: recipients.filter((row: any) => !row.revoked_at && !row.disabled_at && (!row.expires_at || new Date(row.expires_at).getTime() > Date.now())).length,
     waiting: submissions.filter((row: any) => row.status === "pending" || row.status === "approving").length,
     approved: submissions.filter((row: any) => row.status === "approved").length,
     rejected: submissions.filter((row: any) => row.status === "rejected").length,
   };
-  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><div><CardTitle className="text-base"><Activity className="mr-2 inline h-4 w-4" />Portal management & activity</CardTitle><p className="mt-1 text-xs text-muted-foreground">Recipient access and booking decisions for this Portal.</p></div><Button size="sm" variant="outline" onClick={() => void refetch()} disabled={isFetching}><RefreshCw className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh</Button></CardHeader><CardContent className="space-y-4">
+  const issues = [...(data?.issues ?? []), ...(activityError ? ["management activity"] : []), ...(recipientsError ? ["recipient access"] : [])];
+  const isFetching = isActivityFetching || areRecipientsFetching;
+  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><div><CardTitle className="text-base"><Activity className="mr-2 inline h-4 w-4" />Portal management & activity</CardTitle><p className="mt-1 text-xs text-muted-foreground">Recipient access and booking decisions for this Portal.</p></div><Button size="sm" variant="outline" onClick={() => void Promise.all([refetchActivity(), refetchRecipients()])} disabled={isFetching}><RefreshCw className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh</Button></CardHeader><CardContent className="space-y-4">
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Active access", counts.active], ["Waiting", counts.waiting], ["Approved", counts.approved], ["Rejected", counts.rejected]].map(([label, value]) => <div key={String(label)} className="rounded-md border p-2"><div className="text-lg font-semibold">{value}</div><div className="text-xs text-muted-foreground">{label}</div></div>)}</div>
     {isLoading && <p className="text-sm text-muted-foreground">Loading activity…</p>}
-    {!isLoading && events.length === 0 && <p className="text-sm text-muted-foreground">No Portal activity yet.</p>}
+    {issues.length > 0 && <p className="text-sm text-destructive">Some activity could not be loaded: {issues.join(", ")}.</p>}
+    {!isLoading && issues.length === 0 && events.length === 0 && <p className="text-sm text-muted-foreground">No Portal activity yet.</p>}
     <div className="space-y-2">{events.map((event) => { const Icon = event.icon; return <div key={event.id} className="flex items-start gap-3 rounded-md border p-3 text-sm"><div className="rounded-full bg-muted p-2"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{event.title}</span><Badge variant="outline">{event.badge}</Badge></div><div className="mt-1 break-words text-xs text-muted-foreground">{event.detail}</div><div className="mt-1 text-xs text-muted-foreground">{new Date(event.at).toLocaleString()}</div></div></div>; })}</div>
   </CardContent></Card>;
 }
