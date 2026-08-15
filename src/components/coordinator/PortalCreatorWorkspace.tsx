@@ -34,13 +34,19 @@ import { downloadPortalBookingTemplate } from "@/lib/portal-booking-template";
 const TYPES = ["corporate", "hr", "hotel", "crew_change", "conference", "event", "client", "custom"] as const;
 const CAPABILITIES = [
   ["create_booking", "Create booking"], ["view_own_submissions", "View own submissions"],
+  ["view_trips", "View trips and live status"], ["chat", "Client chat"],
+  ["view_statements", "View statements"], ["manage_profile", "Manage portal profile"],
+  ["manage_crew", "Manage hotel crew"],
   ["create_operation_group", "Create Operation Group"], ["select_operation_group", "Select Operation Group"],
   ["add_passengers", "Add passengers"], ["add_stops", "Add stops"],
   ["enter_flight_details", "Enter flight details"], ["enter_ship_details", "Enter Ship details"],
   ["add_notes", "Add notes"],
 ] as const;
 type PortalRow = { id: string; name: string; description: string | null; portal_type: string; status: string; configuration: any };
-const DEFAULT_CAPABILITIES: Record<string, boolean> = { create_booking: true, view_own_submissions: true };
+const DEFAULT_CAPABILITIES: Record<string, boolean> = {
+  create_booking: true, view_own_submissions: true, view_trips: true,
+  chat: true, view_statements: true, manage_profile: true, manage_crew: false,
+};
 
 export function PortalCreatorWorkspace({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
@@ -60,14 +66,17 @@ export function PortalCreatorWorkspace({ embedded = false }: { embedded?: boolea
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>(DEFAULT_CAPABILITIES);
   const [bookingFields, setBookingFields] = useState<PortalBookingFieldConfiguration>(() => normalizePortalBookingFields(undefined, DEFAULT_CAPABILITIES));
   const isEditing = !!selected;
-  const refresh = () => qc.invalidateQueries({ queryKey: ["portal-definitions"] });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["portal-definitions"] });
+    qc.invalidateQueries({ queryKey: ["portal-company-setup"] });
+  };
 
   function edit(portal: PortalRow) {
     const config = portal.configuration ?? {};
     setSelectedId(portal.id); setName(portal.name); setDescription(portal.description ?? "");
     setPortalType((TYPES.includes(portal.portal_type as any) ? portal.portal_type : "custom") as any);
     setSubmissionMode(config.submission_mode === "approval_required" ? "approval_required" : "direct");
-    const nextCapabilities = config.capabilities ?? {};
+    const nextCapabilities = { ...DEFAULT_CAPABILITIES, ...(config.capabilities ?? {}) };
     setAccent(config.branding?.accent ?? "slate"); setCapabilities(nextCapabilities);
     setBookingFields(normalizePortalBookingFields(config.booking_fields, nextCapabilities));
   }
@@ -89,7 +98,7 @@ export function PortalCreatorWorkspace({ embedded = false }: { embedded?: boolea
 
   return <div className={embedded ? "space-y-6" : "mx-auto max-w-6xl space-y-6 p-4 md:p-8"}>
     {!embedded && <div><h1 className="text-2xl font-semibold">Portal Creator</h1><p className="mt-1 text-sm text-muted-foreground">Configure reusable external portals over the existing booking workflows.</p></div>}
-    {embedded && <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Build reusable custom portal configurations here. For a complete client lifecycle—including a branded link, statement, and Close & archive—use the Companies tab.</div>}
+    {embedded && <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Build and preview reusable portal templates here. Activate a template, then assign it to a company from the Companies tab.</div>}
     <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
       <Card><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Portals</CardTitle><Button size="sm" variant="outline" onClick={reset}><Plus className="mr-1 h-4 w-4" />New</Button></CardHeader><CardContent className="space-y-2">
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -110,7 +119,6 @@ export function PortalCreatorWorkspace({ embedded = false }: { embedded?: boolea
           <div className="flex flex-wrap gap-2"><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>{isEditing ? "Save changes" : "Create Portal"}</Button>{isEditing && <Button variant="outline" onClick={reset}>Cancel</Button>}</div>
         </CardContent></Card>
         <Card><CardHeader><CardTitle className="text-base"><Eye className="mr-2 inline h-4 w-4" />Configuration preview</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><div className="font-medium">{name || "Untitled Portal"}</div><div className="text-muted-foreground">{portalType.replaceAll("_", " ")} · {submissionMode === "direct" ? "Direct booking" : "Coordinator approval"}</div><div className="flex flex-wrap gap-1">{Object.entries(capabilities).filter(([, enabled]) => enabled).map(([key]) => <Badge key={key} variant="outline">{key.replaceAll("_", " ")}</Badge>)}</div><div><div className="mb-1 text-xs font-medium uppercase text-muted-foreground">Booking fields</div><div className="flex flex-wrap gap-1">{PORTAL_BOOKING_FIELDS.filter((field) => normalizedFields[field.key].mode !== "hidden").map((field) => <Badge key={field.key} variant={normalizedFields[field.key].mode === "required" ? "default" : "secondary"}>{field.label} · {normalizedFields[field.key].mode}</Badge>)}</div></div>{capabilities.create_booking && <Button size="sm" variant="outline" onClick={() => void downloadPortalBookingTemplate(name || "Portal", normalizedFields)}><Download className="mr-1 h-4 w-4" />Download spreadsheet template</Button>}</CardContent></Card>
-        {selected && <><ApprovalPanel portal={selected} /><RecipientsPanel portal={selected} /><PortalActivityPanel portal={selected} /></>}
       </div>
     </div>
   </div>;
