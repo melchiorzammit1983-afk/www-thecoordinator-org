@@ -6018,7 +6018,9 @@ export type Database = {
           monthly_seat_points: number
           name: string
           notification_email: string | null
+          password_required: boolean
           points_per_booking: number
+          portal_definition_id: string | null
           pricing_mode: string
           slug: string | null
           updated_at: string
@@ -6041,7 +6043,9 @@ export type Database = {
           monthly_seat_points?: number
           name: string
           notification_email?: string | null
+          password_required?: boolean
           points_per_booking?: number
+          portal_definition_id?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -6064,7 +6068,9 @@ export type Database = {
           monthly_seat_points?: number
           name?: string
           notification_email?: string | null
+          password_required?: boolean
           points_per_booking?: number
+          portal_definition_id?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -6075,6 +6081,48 @@ export type Database = {
             columns: ["coordinator_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_companies_portal_definition_id_fkey"
+            columns: ["portal_definition_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_company_passwords: {
+        Row: {
+          claimed_at: string
+          failed_attempts: number
+          locked_until: string | null
+          password_hash: string
+          portal_company_id: string
+          updated_at: string
+        }
+        Insert: {
+          claimed_at?: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash: string
+          portal_company_id: string
+          updated_at?: string
+        }
+        Update: {
+          claimed_at?: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash?: string
+          portal_company_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_company_passwords_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: true
+            referencedRelation: "portal_companies"
             referencedColumns: ["id"]
           },
         ]
@@ -8794,6 +8842,13 @@ export type Database = {
       recalc_trip_event_totals: {
         Args: { _driver_id: string; _job_id: string }
         Returns: undefined
+      }
+      record_portal_password_failure: {
+        Args: { p_portal_company_id: string }
+        Returns: {
+          failed_attempts: number
+          locked_until: string
+        }[]
       }
       record_trip_audit: {
         Args: {
