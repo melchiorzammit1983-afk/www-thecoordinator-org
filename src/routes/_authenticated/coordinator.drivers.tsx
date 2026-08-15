@@ -15,6 +15,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { DriverOpenBadge } from "@/components/coordinator/DriverOpenBadge";
+import { DriverAccessPanel } from "@/components/coordinator/DriverAccessPanel";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/drivers")({
@@ -72,6 +73,7 @@ function DriversPage() {
           </TableBody>
         </Table>
       </div>
+      <DriverAccessPanel />
     </div>
   );
 }
