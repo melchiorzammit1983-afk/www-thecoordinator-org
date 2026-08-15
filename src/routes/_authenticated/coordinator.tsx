@@ -61,8 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Clients & Partners",
     items: [
-      { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
-      { to: "/coordinator/portal-creator", label: "Portal Creator", icon: SettingsIcon, exact: false, feature: "portal_links" },
+      { to: "/coordinator/portal-links", label: "Client Portals", icon: Link2, exact: false, feature: "portal_links" },
       { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
       { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
     ],
