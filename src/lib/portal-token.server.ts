@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 /**
  * Server-only helpers for the Company Portal:
@@ -30,6 +30,21 @@ export type PortalCompany = {
   magic_token: string;
   notification_email: string | null;
   contact_email: string | null;
+  portal_definition_id: string | null;
+  password_required: boolean;
+  portals: {
+    id: string;
+    name: string;
+    portal_type: string;
+    status: string;
+    configuration: Record<string, unknown> | null;
+  } | null;
+  portal_company_passwords: {
+    password_hash: string;
+    claimed_at: string;
+    failed_attempts: number;
+    locked_until: string | null;
+  } | null;
 };
 
 function safeEqStr(a: string, b: string) {
@@ -39,29 +54,72 @@ function safeEqStr(a: string, b: string) {
   return timingSafeEqual(ab, bb);
 }
 
-export async function resolvePortalByToken(token: string): Promise<
-  | { ok: true; portal: PortalCompany }
-  | { ok: false; status: number; error: string }
-> {
+const PORTAL_TOKEN_SELECT = [
+  "id",
+  "coordinator_company_id",
+  "name",
+  "kind",
+  "logo_url",
+  "brand_color",
+  "display_name_for_passenger",
+  "points_per_booking",
+  "active",
+  "link_enabled",
+  "link_expires_at",
+  "magic_token",
+  "notification_email",
+  "contact_email",
+  "portal_definition_id",
+  "password_required",
+  "portals(id,name,portal_type,status,configuration)",
+  "portal_company_passwords(password_hash,claimed_at,failed_attempts,locked_until)",
+].join(",");
+
+function normalizePasswordRecord(
+  value: PortalCompany["portal_company_passwords"] | PortalCompany["portal_company_passwords"][],
+) {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+export async function resolvePortalRecordByToken(
+  token: string,
+): Promise<{ ok: true; portal: PortalCompany } | { ok: false; status: number; error: string }> {
   if (!token || token.length < 20 || token.length > 128) {
     return { ok: false, status: 400, error: "invalid_token" };
   }
   const admin = await getAdmin();
   const { data, error } = await admin
     .from("portal_companies")
-    .select(
-      "id, coordinator_company_id, name, kind, logo_url, brand_color, display_name_for_passenger, points_per_booking, active, link_enabled, link_expires_at, magic_token, notification_email, contact_email",
-    )
+    .select(PORTAL_TOKEN_SELECT)
     .eq("magic_token", token)
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: "db_error" };
   if (!data) return { ok: false, status: 404, error: "not_found" };
-  if (!safeEqStr(data.magic_token, token)) return { ok: false, status: 404, error: "not_found" };
-  if (!data.active) return { ok: false, status: 403, error: "portal_disabled" };
-  if (!data.link_enabled) return { ok: false, status: 403, error: "link_off" };
-  if (data.link_expires_at && new Date(data.link_expires_at).getTime() < Date.now())
+  const portal = data as unknown as PortalCompany;
+  if (!safeEqStr(portal.magic_token, token)) return { ok: false, status: 404, error: "not_found" };
+  if (!portal.active) return { ok: false, status: 403, error: "portal_disabled" };
+  if (!portal.link_enabled) return { ok: false, status: 403, error: "link_off" };
+  if (portal.link_expires_at && new Date(portal.link_expires_at).getTime() < Date.now())
     return { ok: false, status: 403, error: "link_expired" };
-  return { ok: true, portal: data as PortalCompany };
+  portal.portal_company_passwords = normalizePasswordRecord(portal.portal_company_passwords);
+  if (portal.portal_definition_id && (!portal.portals || portal.portals.status !== "active")) {
+    return { ok: false, status: 403, error: "portal_configuration_disabled" };
+  }
+  return { ok: true, portal };
+}
+
+export async function resolvePortalByToken(
+  token: string,
+  request?: Request,
+): Promise<{ ok: true; portal: PortalCompany } | { ok: false; status: number; error: string }> {
+  const resolved = await resolvePortalRecordByToken(token);
+  if (!resolved.ok || !resolved.portal.password_required) return resolved;
+  const password = normalizePasswordRecord(resolved.portal.portal_company_passwords);
+  if (!password) return { ok: false, status: 401, error: "password_setup_required" };
+  if (!request || !hasPortalAccess(request, resolved.portal)) {
+    return { ok: false, status: 401, error: "password_required" };
+  }
+  return resolved;
 }
 
 const CHANGE_LOCK_HOURS = 3;
@@ -73,7 +131,9 @@ const CHANGE_LOCK_HOURS = 3;
  * en route. Before a driver is assigned, there's nothing to disrupt yet, so
  * requests stay open regardless of how soon pickup is.
  */
-export function isChangeLocked(job: { driver_id: string | null; pickup_at: string | null } | null | undefined): boolean {
+export function isChangeLocked(
+  job: { driver_id: string | null; pickup_at: string | null } | null | undefined,
+): boolean {
   if (!job?.driver_id || !job.pickup_at) return false;
   const hoursUntilPickup = (new Date(job.pickup_at).getTime() - Date.now()) / 3_600_000;
   return hoursUntilPickup < CHANGE_LOCK_HOURS;
@@ -84,16 +144,16 @@ export async function checkRateLimit(token: string, limit = 60): Promise<boolean
   const admin = await getAdmin();
   const bucket = Math.floor(Date.now() / 60_000);
   const { data: existing } = await admin
-    .from("portal_rate_limits" as any)
+    .from("portal_rate_limits")
     .select("count")
     .eq("token", token)
     .eq("minute_bucket", bucket)
     .maybeSingle();
-  const next = ((existing as any)?.count ?? 0) + 1;
+  const next = (existing?.count ?? 0) + 1;
   if (next > limit) return false;
   await admin
-    .from("portal_rate_limits" as any)
-    .upsert({ token, minute_bucket: bucket, count: next } as any, { onConflict: "token,minute_bucket" });
+    .from("portal_rate_limits")
+    .upsert({ token, minute_bucket: bucket, count: next }, { onConflict: "token,minute_bucket" });
   return true;
 }
 
@@ -111,6 +171,104 @@ function secret() {
   const s = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!s) throw new Error("missing_secret");
   return s;
+}
+
+const PORTAL_ACCESS_TTL_SECONDS = 8 * 60 * 60;
+
+function portalAccessCookieName(token: string) {
+  return `portal_access_${token.slice(0, 12)}`;
+}
+
+function readCookie(request: Request, name: string) {
+  const header = request.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const [key, ...value] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(value.join("="));
+  }
+  return null;
+}
+
+function mintPortalAccess(portal: PortalCompany) {
+  const password = normalizePasswordRecord(portal.portal_company_passwords);
+  const payload = b64url(
+    Buffer.from(
+      JSON.stringify({
+        portalId: portal.id,
+        token: portal.magic_token,
+        passwordClaimedAt: password?.claimed_at ?? null,
+        exp: Math.floor(Date.now() / 1000) + PORTAL_ACCESS_TTL_SECONDS,
+      }),
+    ),
+  );
+  const signature = b64url(
+    createHmac("sha256", secret()).update(`portal-access.${payload}`).digest(),
+  );
+  return `${payload}.${signature}`;
+}
+
+function verifyPortalAccess(value: string, portal: PortalCompany) {
+  try {
+    const [payload, signature] = value.split(".");
+    if (!payload || !signature) return false;
+    const expected = b64url(
+      createHmac("sha256", secret()).update(`portal-access.${payload}`).digest(),
+    );
+    if (!safeEqStr(signature, expected)) return false;
+    const parsed = JSON.parse(b64urlDecode(payload).toString("utf8"));
+    const password = normalizePasswordRecord(portal.portal_company_passwords);
+    return (
+      parsed.portalId === portal.id &&
+      parsed.token === portal.magic_token &&
+      parsed.passwordClaimedAt === (password?.claimed_at ?? null) &&
+      typeof parsed.exp === "number" &&
+      parsed.exp >= Math.floor(Date.now() / 1000)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function hasPortalAccess(request: Request, portal: PortalCompany) {
+  if (!portal.password_required) return true;
+  const value = readCookie(request, portalAccessCookieName(portal.magic_token));
+  return !!value && verifyPortalAccess(value, portal);
+}
+
+export function portalAccessCookie(request: Request, portal: PortalCompany) {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `${portalAccessCookieName(portal.magic_token)}=${encodeURIComponent(mintPortalAccess(portal))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${PORTAL_ACCESS_TTL_SECONDS}${secure}`;
+}
+
+export function clearPortalAccessCookie(request: Request, portal: PortalCompany) {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `${portalAccessCookieName(portal.magic_token)}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function derivePortalPassword(password: string, salt: Buffer) {
+  return new Promise<Buffer>((resolve, reject) => {
+    scrypt(password, salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }, (error, key) => {
+      if (error) reject(error);
+      else resolve(key as Buffer);
+    });
+  });
+}
+
+export async function hashPortalPassword(password: string) {
+  const salt = randomBytes(16);
+  const hash = await derivePortalPassword(password, salt);
+  return `scrypt-v1$${salt.toString("base64url")}$${hash.toString("base64url")}`;
+}
+
+export async function verifyPortalPassword(password: string, stored: string) {
+  try {
+    const [version, saltValue, hashValue] = stored.split("$");
+    if (version !== "scrypt-v1" || !saltValue || !hashValue) return false;
+    const expected = Buffer.from(hashValue, "base64url");
+    const actual = await derivePortalPassword(password, Buffer.from(saltValue, "base64url"));
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
 }
 
 export function mintPaxJwt(payload: { token: string; jobId: string; exp: number }): string {
