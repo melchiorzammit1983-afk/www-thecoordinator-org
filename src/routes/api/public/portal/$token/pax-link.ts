@@ -5,7 +5,7 @@ export const Route = createFileRoute("/api/public/portal/$token/pax-link")({
   server: {
     handlers: {
       GET: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const url = new URL(request.url);
         const bookingId = url.searchParams.get("booking_id");
