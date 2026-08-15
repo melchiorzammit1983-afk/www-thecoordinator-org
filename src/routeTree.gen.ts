@@ -110,6 +110,7 @@ import { Route as ApiPublicPortalTokenLogoRouteImport } from './routes/api/publi
 import { Route as ApiPublicPortalTokenChangeRequestsRouteImport } from './routes/api/public/portal/$token/change-requests'
 import { Route as ApiPublicPortalTokenBookingsRouteImport } from './routes/api/public/portal/$token/bookings'
 import { Route as ApiPublicPortalTokenAdminRouteImport } from './routes/api/public/portal/$token/admin'
+import { Route as ApiPublicPortalTokenAccessRouteImport } from './routes/api/public/portal/$token/access'
 import { Route as ApiPublicBTokenSubmitRouteImport } from './routes/api/public/b/$token/submit'
 import { Route as ApiPublicBTokenMessagesRouteImport } from './routes/api/public/b/$token/messages'
 import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/api/public/portal/guest/$session/index'
@@ -680,6 +681,12 @@ const ApiPublicPortalTokenAdminRoute =
     path: '/api/public/portal/$token/admin',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalTokenAccessRoute =
+  ApiPublicPortalTokenAccessRouteImport.update({
+    id: '/api/public/portal/$token/access',
+    path: '/api/public/portal/$token/access',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicBTokenSubmitRoute = ApiPublicBTokenSubmitRouteImport.update({
   id: '/api/public/b/$token/submit',
   path: '/api/public/b/$token/submit',
@@ -806,6 +813,7 @@ export interface FileRoutesByFullPath {
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
+  '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -910,6 +918,7 @@ export interface FileRoutesByTo {
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
+  '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -1021,6 +1030,7 @@ export interface FileRoutesById {
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
   '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
+  '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -1132,6 +1142,7 @@ export interface FileRouteTypes {
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
+    | '/api/public/portal/$token/access'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1236,6 +1247,7 @@ export interface FileRouteTypes {
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
+    | '/api/public/portal/$token/access'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1346,6 +1358,7 @@ export interface FileRouteTypes {
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
     | '/api/public/portal/$token/admin'
+    | '/api/public/portal/$token/access'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1414,6 +1427,7 @@ export interface RootRouteChildren {
   ApiPublicBTokenMessagesRoute: typeof ApiPublicBTokenMessagesRoute
   ApiPublicBTokenSubmitRoute: typeof ApiPublicBTokenSubmitRoute
   ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
+  ApiPublicPortalTokenAccessRoute: typeof ApiPublicPortalTokenAccessRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
   ApiPublicPortalTokenLogoRoute: typeof ApiPublicPortalTokenLogoRoute
@@ -2147,6 +2161,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalTokenAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/$token/access': {
+      id: '/api/public/portal/$token/access'
+      path: '/api/public/portal/$token/access'
+      fullPath: '/api/public/portal/$token/access'
+      preLoaderRoute: typeof ApiPublicPortalTokenAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/b/$token/submit': {
       id: '/api/public/b/$token/submit'
       path: '/api/public/b/$token/submit'
@@ -2428,6 +2449,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicBTokenMessagesRoute: ApiPublicBTokenMessagesRoute,
   ApiPublicBTokenSubmitRoute: ApiPublicBTokenSubmitRoute,
   ApiPublicPortalTokenAdminRoute: ApiPublicPortalTokenAdminRoute,
+  ApiPublicPortalTokenAccessRoute: ApiPublicPortalTokenAccessRoute,
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
   ApiPublicPortalTokenChangeRequestsRoute:
     ApiPublicPortalTokenChangeRequestsRoute,

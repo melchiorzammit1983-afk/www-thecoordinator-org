@@ -33,8 +33,8 @@ export const CrewInput = z.object({
 export const Route = createFileRoute("/api/public/portal/$token/crew/")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
-        const r = await resolvePortalByToken(params.token);
+      GET: async ({ params, request }) => {
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const admin = await getAdmin();
         const { data: crew, error } = await admin
@@ -63,7 +63,7 @@ export const Route = createFileRoute("/api/public/portal/$token/crew/")({
       },
 
       POST: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token, 30))) return Response.json({ error: "rate_limited" }, { status: 429 });
 

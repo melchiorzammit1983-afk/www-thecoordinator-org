@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
@@ -16,7 +16,7 @@ import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortP
 import { TokenShipPicker, type TokenShip } from "@/components/address/TokenShipPicker";
 import { classifyProviderEndpoint } from "@/lib/journey-resolver";
 import { flightFormatWarning } from "@/lib/flight-code";
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle, Download, LockKeyhole } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { loadGoogleMaps } from "@/lib/load-google-maps";
@@ -88,7 +88,12 @@ function TripStatusTimeline({ current }: { current: string | undefined }) {
 }
 
 type Boot = {
-  portal: { id: string; name: string; kind: string; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string; link_expires_at: string | null };
+  portal: {
+    id: string; name: string; kind: string; logo_url: string | null;
+    brand_color: string | null; display_name_for_passenger: string;
+    link_expires_at: string | null; template_name: string | null;
+    configuration: { capabilities?: Record<string, boolean> } | null;
+  };
   bookings: any[];
   jobs: any[];
 };
@@ -97,16 +102,25 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [accessMode, setAccessMode] = useState<"setup" | "login" | null>(null);
   const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
+      if (r.status === 401 && (e.error === "password_setup_required" || e.error === "password_required")) {
+        setAccessMode(e.error === "password_setup_required" ? "setup" : "login");
+        setErr(null);
+        setBoot(null);
+        return;
+      }
+      setAccessMode(null);
       setErr(e.error || `error_${r.status}`);
       return;
     }
     setErr(null);
+    setAccessMode(null);
     setBoot(await r.json());
   }
   useEffect(() => {
@@ -115,6 +129,22 @@ function PortalPage() {
     return () => window.clearInterval(refresh);
   }, [token]);
 
+  const capabilities = boot?.portal.configuration?.capabilities;
+  const capabilityEnabled = (key: string, fallback = true) => capabilities?.[key] ?? fallback;
+  const showBookings = capabilityEnabled("create_booking") || capabilityEnabled("view_own_submissions");
+  const showTrips = capabilityEnabled("view_trips");
+  const showChat = capabilityEnabled("chat");
+  const showStatements = capabilityEnabled("view_statements");
+  const showManage = boot?.portal.kind === "hotel"
+    && capabilityEnabled("manage_crew", !boot?.portal.configuration);
+  const showSettings = capabilityEnabled("manage_profile");
+  const availableTabs = [
+    showBookings && "bookings", showTrips && "trips", showChat && "chat",
+    showStatements && "statement", showManage && "manage", showSettings && "settings",
+  ].filter(Boolean) as Array<typeof tab>;
+  const activeTab = availableTabs.includes(tab) ? tab : (availableTabs[0] ?? tab);
+
+  if (accessMode) return <PortalPasswordDialog token={token} mode={accessMode} onAuthenticated={reload} />;
   if (err) return <OfflineCard reason={err} />;
   if (!boot) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
 
@@ -131,49 +161,49 @@ function PortalPage() {
           )}
           <div>
             <div className="font-semibold">{boot.portal.name}</div>
-            <div className="text-xs text-muted-foreground">{portalKindLabel(boot.portal.kind)} portal</div>
+            <div className="text-xs text-muted-foreground">{boot.portal.template_name ?? portalKindLabel(boot.portal.kind)} portal</div>
           </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto p-4">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+        <Tabs value={activeTab} onValueChange={(v) => setTab(v as any)}>
           <TabsList className="flex-wrap h-auto">
-            <TabsTrigger value="bookings">Bookings</TabsTrigger>
-            <TabsTrigger value="trips">Trips</TabsTrigger>
-            <TabsTrigger value="chat">Chat</TabsTrigger>
-            <TabsTrigger value="statement">Statement</TabsTrigger>
-            {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            {showBookings && <TabsTrigger value="bookings">Bookings</TabsTrigger>}
+            {showTrips && <TabsTrigger value="trips">Trips</TabsTrigger>}
+            {showChat && <TabsTrigger value="chat">Chat</TabsTrigger>}
+            {showStatements && <TabsTrigger value="statement">Statement</TabsTrigger>}
+            {showManage && <TabsTrigger value="manage">Manage</TabsTrigger>}
+            {showSettings && <TabsTrigger value="settings">Settings</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="bookings" className="mt-4 space-y-4">
-            <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />
-            <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />
-          </TabsContent>
+          {showBookings && <TabsContent value="bookings" className="mt-4 space-y-4">
+            {capabilityEnabled("create_booking") && <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />}
+            {capabilityEnabled("view_own_submissions") && <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />}
+          </TabsContent>}
 
-          <TabsContent value="trips" className="mt-4">
+          {showTrips && <TabsContent value="trips" className="mt-4">
             <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} onChanged={reload} />
-          </TabsContent>
+          </TabsContent>}
 
-          <TabsContent value="chat" className="mt-4">
+          {showChat && <TabsContent value="chat" className="mt-4">
             <ChatPanel token={token} bookings={boot.bookings} />
-          </TabsContent>
+          </TabsContent>}
 
-          <TabsContent value="statement" className="mt-4">
+          {showStatements && <TabsContent value="statement" className="mt-4">
             <PortalStatementPanel token={token} />
-          </TabsContent>
+          </TabsContent>}
 
-          {boot.portal.kind === "hotel" && (
+          {showManage && (
             <TabsContent value="manage" className="mt-4">
               <HotelManagePanel token={token} portal={boot.portal as any} />
             </TabsContent>
           )}
 
-          <TabsContent value="settings" className="mt-4 space-y-4">
+          {showSettings && <TabsContent value="settings" className="mt-4 space-y-4">
             <LogoPanel token={token} portal={boot.portal} onSaved={reload} />
             <SettingsPanel token={token} portal={boot.portal} onSaved={reload} />
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </main>
     </div>
@@ -184,6 +214,7 @@ function OfflineCard({ reason }: { reason: string }) {
   const msg = reason === "link_off" ? "This portal link is currently switched off."
     : reason === "link_expired" ? "This portal link has expired."
     : reason === "portal_disabled" ? "This portal is not active."
+    : reason === "portal_configuration_disabled" ? "This portal configuration is not active."
     : reason === "not_found" ? "This link is not valid."
     : "This link is unavailable.";
   return (
@@ -194,6 +225,91 @@ function OfflineCard({ reason }: { reason: string }) {
       </div>
     </div>
   );
+}
+
+function PortalPasswordDialog({ token, mode, onAuthenticated }: {
+  token: string;
+  mode: "setup" | "login";
+  onAuthenticated: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submit() {
+    if (mode === "setup" && password !== confirmPassword) {
+      setMessage("The passwords do not match.");
+      return;
+    }
+    if (password.length < 8) {
+      setMessage("Use at least 8 characters.");
+      return;
+    }
+    setBusy(true); setMessage(null);
+    try {
+      const response = await fetch(`/api/public/portal/${token}/access`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: mode, password }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (payload.error === "password_already_created") {
+          setMessage("A password was already created. Enter that password to continue.");
+          window.setTimeout(onAuthenticated, 300); return;
+        }
+        if (payload.error === "password_locked") {
+          const until = payload.locked_until
+            ? new Date(payload.locked_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "later";
+          setMessage(`Too many attempts. Try again after ${until}.`); return;
+        }
+        if (payload.error === "invalid_password") {
+          setMessage(`Incorrect password. ${payload.attempts_remaining ?? 0} attempts remaining.`); return;
+        }
+        if (payload.error === "rate_limited") {
+          setMessage("Too many attempts. Wait one minute and try again."); return;
+        }
+        setMessage("Password access could not be completed."); return;
+      }
+      toast.success(mode === "setup" ? "Your portal password is ready" : "Portal unlocked");
+      await onAuthenticated();
+    } catch {
+      setMessage("Could not connect. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="min-h-screen bg-muted/30">
+    <Dialog open onOpenChange={() => undefined}>
+      <DialogContent onInteractOutside={(event) => event.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" />
+            {mode === "setup" ? "Create your portal password" : "Enter your portal password"}
+          </DialogTitle>
+          <DialogDescription>{mode === "setup"
+            ? "This is your first visit. Create a private password that only your company should know. The coordinator cannot view it."
+            : "This company portal is password protected."}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <div className="space-y-1.5"><Label>Password</Label>
+            <Input type="password" autoComplete={mode === "setup" ? "new-password" : "current-password"}
+              value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
+            {mode === "setup" && <p className="text-xs text-muted-foreground">Use at least 8 characters. Do not share it in the same message as the portal link.</p>}
+          </div>
+          {mode === "setup" && <div className="space-y-1.5"><Label>Confirm password</Label>
+            <Input type="password" autoComplete="new-password" value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)} />
+          </div>}
+          {message && <p className="text-sm text-destructive">{message}</p>}
+          <Button className="w-full" type="submit" disabled={busy}>
+            {busy ? "Please wait…" : mode === "setup" ? "Create password & open portal" : "Open portal"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
 
 function BookingEntry({ token, kind, onCreated }: { token: string; kind: string; onCreated: () => void }) {

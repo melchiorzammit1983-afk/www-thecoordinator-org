@@ -16,6 +16,11 @@ const portalConfiguration = z.object({
   capabilities: z.object({
     create_booking: z.boolean().optional(),
     view_own_submissions: z.boolean().optional(),
+    view_trips: z.boolean().optional(),
+    chat: z.boolean().optional(),
+    view_statements: z.boolean().optional(),
+    manage_profile: z.boolean().optional(),
+    manage_crew: z.boolean().optional(),
     create_operation_group: z.boolean().optional(),
     select_operation_group: z.boolean().optional(),
     add_passengers: z.boolean().optional(),

@@ -11,8 +11,8 @@ import { listTokenScopedShips } from "@/lib/ship-events-token.server";
 export const Route = createFileRoute("/api/public/portal/$token/")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
-        const r = await resolvePortalByToken(params.token);
+      GET: async ({ params, request }) => {
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const admin = await getAdmin();
         const ports = await listTokenScopedPorts(admin, r.portal.coordinator_company_id);
@@ -43,6 +43,8 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
             brand_color: r.portal.brand_color,
             display_name_for_passenger: r.portal.display_name_for_passenger ?? r.portal.name,
             link_expires_at: r.portal.link_expires_at,
+            template_name: r.portal.portals?.name ?? null,
+            configuration: r.portal.portals?.configuration ?? null,
           },
           bookings: bookings ?? [],
           jobs,
@@ -52,7 +54,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
       },
       POST: async ({ params, request }) => {
         // Toggle link off from hotel side (they can turn their own link off)
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token))) return Response.json({ error: "rate_limited" }, { status: 429 });
         const body = await request.json().catch(() => ({}));

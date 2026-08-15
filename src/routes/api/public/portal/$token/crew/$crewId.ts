@@ -17,8 +17,8 @@ import { CrewInput } from "./index";
 export const Route = createFileRoute("/api/public/portal/$token/crew/$crewId")({
   server: {
     handlers: {
-      DELETE: async ({ params }) => {
-        const r = await resolvePortalByToken(params.token);
+      DELETE: async ({ params, request }) => {
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token, 30))) return Response.json({ error: "rate_limited" }, { status: 429 });
 
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/api/public/portal/$token/crew/$crewId")({
       },
 
       PATCH: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token, 30))) return Response.json({ error: "rate_limited" }, { status: 429 });
 

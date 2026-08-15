@@ -11,7 +11,7 @@ export const Route = createFileRoute("/api/public/portal/$token/messages")({
   server: {
     handlers: {
       GET: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const url = new URL(request.url);
         const bookingId = url.searchParams.get("booking_id");
@@ -35,7 +35,7 @@ export const Route = createFileRoute("/api/public/portal/$token/messages")({
         return Response.json({ messages: msgs ?? [], thread_id: (t as any).id });
       },
       POST: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token))) return Response.json({ error: "rate_limited" }, { status: 429 });
         const body = await request.json().catch(() => ({}));
