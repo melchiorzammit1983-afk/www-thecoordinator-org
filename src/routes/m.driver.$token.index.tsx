@@ -713,6 +713,12 @@ function DriverManifest() {
   });
 
   const [navigateMode, setNavigateMode] = useState(false);
+  const goToCoordinatorDashboard = useCallback(() => {
+    setOpenJob(null);
+    setChatJob(null);
+    setNavigateMode(false);
+    navigate({ to: "/coordinator" });
+  }, [navigate]);
   useEffect(() => {
     if (!inMotion && navigateMode) setNavigateMode(false);
   }, [inMotion, navigateMode]);
@@ -927,7 +933,7 @@ function DriverManifest() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="button" size="icon" variant="outline" aria-label="Home" onClick={() => { setOpenJob(null); setChatJob(null); setNavigateMode(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+              <Button type="button" size="icon" variant="outline" aria-label="Home" onClick={goToCoordinatorDashboard}>
                 <Home className="h-4 w-4" />
               </Button>
               {audio.speechSupported && (
@@ -1141,7 +1147,7 @@ function DriverManifest() {
           onSpeak={audio.speechSupported ? speakLatest : null}
           isSpeaking={audio.isSpeaking}
           routeUpdated={routeUpdateNotice}
-          onHome={() => { setNavigateMode(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+          onHome={goToCoordinatorDashboard}
         />
       )}
 
