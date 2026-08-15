@@ -6613,6 +6613,80 @@ export type Database = {
           },
         ]
       }
+      portal_submissions: {
+        Row: {
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          job_id: string | null
+          payload: Json
+          portal_id: string
+          portal_recipient_id: string | null
+          rejection_reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id: string
+          portal_recipient_id?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id?: string
+          portal_recipient_id?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_submissions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_portal_recipient_id_fkey"
+            columns: ["portal_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "portal_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_threads: {
         Row: {
           created_at: string
