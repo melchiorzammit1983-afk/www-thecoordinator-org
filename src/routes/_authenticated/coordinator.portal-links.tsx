@@ -10,7 +10,8 @@ import {
 } from "@/lib/coordinator.functions";
 import {
   listPortals, createPortal, updatePortal, rotatePortalToken,
-  checkSlugAvailable, slugify, generatePortalStatement,
+  checkSlugAvailable, professionalPortalSlug, generatePortalStatement,
+  getPortalCompanySetup, resetPortalClientPassword,
 } from "@/lib/portal.functions";
 import { PortalCreatorWorkspace } from "@/components/coordinator/PortalCreatorWorkspace";
 import {
@@ -33,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Archive, Copy, Trash2, Link2, Clock, MessageCircle, Power, PowerOff, RotateCw, Settings2,
-  Image as ImageIcon, ExternalLink, Receipt,
+  Image as ImageIcon, ExternalLink, KeyRound, Receipt,
 } from "lucide-react";
 
 const PORTAL_KIND_LABELS: Record<string, string> = {
@@ -61,15 +62,9 @@ function PortalLinksPage() {
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="companies">Companies</TabsTrigger>
           <TabsTrigger value="builder">Portal Builder</TabsTrigger>
-          <TabsTrigger value="public">Public booking</TabsTrigger>
-          <TabsTrigger value="driver">Drivers</TabsTrigger>
-          <TabsTrigger value="client">Clients</TabsTrigger>
         </TabsList>
         <TabsContent value="companies" className="mt-4"><CompaniesPanel /></TabsContent>
         <TabsContent value="builder" className="mt-4"><PortalCreatorWorkspace embedded /></TabsContent>
-        <TabsContent value="public" className="mt-4"><PublicBookingPanel /></TabsContent>
-        <TabsContent value="driver" className="mt-4"><LinksPanel kind="driver" /></TabsContent>
-        <TabsContent value="client" className="mt-4"><LinksPanel kind="client" /></TabsContent>
       </Tabs>
     </div>
   );
@@ -311,11 +306,13 @@ const BRAND_DOMAIN = "thecoordinator.org";
 
 function brandedUrl(slug: string | null | undefined) {
   if (!slug) return null;
-  return `https://${BRAND_DOMAIN}/h/${slug}`;
+  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}/h/${slug}`;
+  return `${window.location.origin}/h/${slug}`;
 }
 function brandedUrlDisplay(slug: string | null | undefined) {
   if (!slug) return null;
-  return `${BRAND_DOMAIN}/h/${slug}`;
+  const host = typeof window === "undefined" ? BRAND_DOMAIN : window.location.host;
+  return `${host}/h/${slug}`;
 }
 function rawTokenUrl(token: string) {
   if (typeof window === "undefined") return `/portal/${token}`;
@@ -326,19 +323,37 @@ function CompaniesPanel() {
   const listFn = useServerFn(listPortals);
   const createFn = useServerFn(createPortal);
   const checkFn = useServerFn(checkSlugAvailable);
+  const setupFn = useServerFn(getPortalCompanySetup);
   const qc = useQueryClient();
   const { data: portals } = useQuery({ queryKey: ["portals"], queryFn: () => listFn() as Promise<any[]> });
+  const { data: setup } = useQuery({
+    queryKey: ["portal-company-setup"],
+    queryFn: () => setupFn() as Promise<{
+      coordinator_name: string;
+      templates: Array<{ id: string; name: string; portal_type: string }>;
+    }>,
+  });
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [kind, setKind] = useState<"hotel" | "agent" | "company_agent">("hotel");
+  const [templateId, setTemplateId] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [points, setPoints] = useState("3");
   const [expiryPreset, setExpiryPreset] = useState<string>("never");
   const [slugState, setSlugState] = useState<"idle" | "ok" | "taken" | "invalid" | "reserved" | "checking">("idle");
   const debounceRef = useRef<number | null>(null);
 
-  const autoSlug = useMemo(() => (name ? slugify(name) : ""), [name]);
+  const templates = setup?.templates ?? [];
+  const effectiveTemplateId = templateId || templates[0]?.id || "";
+  const selectedTemplate = templates.find((template) => template.id === effectiveTemplateId);
+  const kind = selectedTemplate?.portal_type === "hotel" ? "hotel" : "company_agent";
+  const autoSlug = useMemo(
+    () => name
+      ? professionalPortalSlug(setup?.coordinator_name ?? "", name, selectedTemplate?.name ?? "portal")
+      : "",
+    [name, selectedTemplate?.name, setup?.coordinator_name],
+  );
   const effectiveSlug = slugTouched ? slug : autoSlug;
 
   function onSlugChange(v: string) {
@@ -367,11 +382,13 @@ function CompaniesPanel() {
         name, kind, points_per_booking: Number(points) || 3,
         slug: effectiveSlug || undefined,
         link_expires_at: expiresAt,
+        portal_definition_id: effectiveTemplateId,
+        password_required: passwordRequired,
       } });
     },
     onSuccess: () => {
       toast.success("Company portal created");
-      setName(""); setSlug(""); setSlugTouched(false); setSlugState("idle");
+      setName(""); setSlug(""); setSlugTouched(false); setSlugState("idle"); setPasswordRequired(false);
       qc.invalidateQueries({ queryKey: ["portals"] });
     },
     onError: (e: Error) => toast.error(e.message ?? "Failed"),
@@ -380,9 +397,15 @@ function CompaniesPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-        Send a company its own private dashboard where they can create bookings, chat with guests, and see their statements.
-        Branded URLs look like <code className="bg-background px-1 rounded">{BRAND_DOMAIN}/h/yourhotel</code>.
+        Build and activate the design in Portal Builder, then create one secure portal for each company here.
+        The link includes the coordinator, company, and portal names plus a private random suffix.
       </div>
+
+      {templates.length === 0 && (
+        <div className="rounded-lg border border-amber-400/50 bg-amber-50 p-3 text-sm text-amber-900">
+          Create and activate a template in Portal Builder before creating a company portal.
+        </div>
+      )}
 
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
@@ -404,14 +427,14 @@ function CompaniesPanel() {
             </div>
             <SlugHint state={slugState} slug={effectiveSlug} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Kind</Label>
-            <Select value={kind} onValueChange={(v) => setKind(v as any)}>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Portal Builder template</Label>
+            <Select value={effectiveTemplateId} onValueChange={setTemplateId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="hotel">Hotel</SelectItem>
-                <SelectItem value="agent">Agent</SelectItem>
-                <SelectItem value="company_agent">Company/Agent Portal</SelectItem>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -432,10 +455,18 @@ function CompaniesPanel() {
               </SelectContent>
             </Select>
           </div>
+          <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+            <input
+              type="checkbox"
+              checked={passwordRequired}
+              onChange={(event) => setPasswordRequired(event.target.checked)}
+            />
+            Require client password
+          </label>
           <div className="md:col-span-6 flex justify-end">
             <Button
               onClick={() => create.mutate()}
-              disabled={!name || create.isPending || slugState === "taken" || slugState === "invalid" || slugState === "reserved"}
+              disabled={!name || !effectiveTemplateId || create.isPending || slugState === "taken" || slugState === "invalid" || slugState === "reserved"}
             >
               <Link2 className="h-4 w-4 mr-1" /> Create company portal
             </Button>
@@ -489,6 +520,9 @@ function CompanyRow({ portal }: { portal: any }) {
   const branded = brandedUrl(portal.slug);
   const raw = rawTokenUrl(portal.magic_token);
   const shareUrl = branded || raw;
+  const passwordClaimed = Array.isArray(portal.portal_company_passwords)
+    ? portal.portal_company_passwords.length > 0
+    : !!portal.portal_company_passwords;
 
   const isExpired = portal.link_expires_at && new Date(portal.link_expires_at) < new Date();
   const status: "live" | "dormant" | "expired" | "archived" =
@@ -541,7 +575,11 @@ function CompanyRow({ portal }: { portal: any }) {
   function shareOnWhatsApp() {
     const lines = [
       `🏨 ${portal.name} — your booking portal`,
-      `Create bookings, chat with guests, and see your statements.`,
+      portal.password_required
+        ? passwordClaimed
+          ? `Open the secure link and enter your company password.`
+          : `On your first visit, the portal will ask you to create your private password.`
+        : `Create bookings, manage trips, chat, and see your statements.`,
       ``,
       `Open: ${shareUrl}`,
     ];
@@ -563,7 +601,16 @@ function CompanyRow({ portal }: { portal: any }) {
           )}
           <div className="min-w-0">
             <div className="font-medium truncate">{portal.name}</div>
-            <div className="text-[11px] text-muted-foreground">{portalKindLabel(portal.kind)} · {Number(portal.points_per_booking ?? 3)} pts/booking</div>
+            <div className="text-[11px] text-muted-foreground">
+              {portal.portals?.name ?? portalKindLabel(portal.kind)} · {Number(portal.points_per_booking ?? 3)} pts/booking
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {portal.password_required
+                ? passwordClaimed
+                  ? "Password active"
+                  : "Password setup pending"
+                : "No password"}
+            </div>
           </div>
         </div>
       </TableCell>
@@ -595,6 +642,7 @@ function CompanyRow({ portal }: { portal: any }) {
         <Button asChild size="icon" variant="ghost" title="Manage portal">
           <Link to="/coordinator/portals/$id" params={{ id: portal.id }}><Settings2 className="h-3.5 w-3.5" /></Link>
         </Button>
+        <PortalPasswordAccessButton portal={portal} />
         <StatementDialogButton
           portalId={portal.id}
           portalName={portal.name}
@@ -624,6 +672,73 @@ function CompanyRow({ portal }: { portal: any }) {
         </>}
       </TableCell>
     </TableRow>
+  );
+}
+
+function PortalPasswordAccessButton({ portal }: { portal: any }) {
+  const updateFn = useServerFn(updatePortal);
+  const resetFn = useServerFn(resetPortalClientPassword);
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const claimed = Array.isArray(portal.portal_company_passwords)
+    ? portal.portal_company_passwords.length > 0
+    : !!portal.portal_company_passwords;
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["portals"] });
+    setOpen(false);
+  };
+  const toggle = useMutation({
+    mutationFn: (required: boolean) =>
+      updateFn({ data: { id: portal.id, patch: { password_required: required } } }),
+    onSuccess: (_data, required) => {
+      toast.success(required ? "Client password enabled" : "Client password disabled");
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const reset = useMutation({
+    mutationFn: () => resetFn({ data: { id: portal.id } }),
+    onSuccess: () => {
+      toast.success("Password reset. The client will create a new password on the next visit.");
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="icon" variant="ghost" title="Client password access">
+          <KeyRound className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Client password — {portal.name}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {!portal.password_required
+            ? "Password protection is off."
+            : claimed
+              ? "The client has created a password. Coordinators cannot see it."
+              : "Password protection is on. The client will create the password on the first visit."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {!portal.password_required ? (
+            <Button disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
+              Enable password
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" disabled={reset.isPending} onClick={() => reset.mutate()}>
+                Reset client password
+              </Button>
+              <Button variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate(false)}>
+                Disable password
+              </Button>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
