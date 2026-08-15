@@ -812,8 +812,8 @@ export interface FileRoutesByFullPath {
   '/m/driver/$token/': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
-  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
+  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -917,8 +917,8 @@ export interface FileRoutesByTo {
   '/m/driver/$token': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
-  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
+  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -1029,8 +1029,8 @@ export interface FileRoutesById {
   '/m/driver/$token/': typeof MDriverTokenIndexRoute
   '/api/public/b/$token/messages': typeof ApiPublicBTokenMessagesRoute
   '/api/public/b/$token/submit': typeof ApiPublicBTokenSubmitRoute
-  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/access': typeof ApiPublicPortalTokenAccessRoute
+  '/api/public/portal/$token/admin': typeof ApiPublicPortalTokenAdminRoute
   '/api/public/portal/$token/bookings': typeof ApiPublicPortalTokenBookingsRoute
   '/api/public/portal/$token/change-requests': typeof ApiPublicPortalTokenChangeRequestsRoute
   '/api/public/portal/$token/logo': typeof ApiPublicPortalTokenLogoRoute
@@ -1141,8 +1141,8 @@ export interface FileRouteTypes {
     | '/m/driver/$token/'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
-    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/access'
+    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1246,8 +1246,8 @@ export interface FileRouteTypes {
     | '/m/driver/$token'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
-    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/access'
+    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1357,8 +1357,8 @@ export interface FileRouteTypes {
     | '/m/driver/$token/'
     | '/api/public/b/$token/messages'
     | '/api/public/b/$token/submit'
-    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/access'
+    | '/api/public/portal/$token/admin'
     | '/api/public/portal/$token/bookings'
     | '/api/public/portal/$token/change-requests'
     | '/api/public/portal/$token/logo'
@@ -1426,8 +1426,8 @@ export interface RootRouteChildren {
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   ApiPublicBTokenMessagesRoute: typeof ApiPublicBTokenMessagesRoute
   ApiPublicBTokenSubmitRoute: typeof ApiPublicBTokenSubmitRoute
-  ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
   ApiPublicPortalTokenAccessRoute: typeof ApiPublicPortalTokenAccessRoute
+  ApiPublicPortalTokenAdminRoute: typeof ApiPublicPortalTokenAdminRoute
   ApiPublicPortalTokenBookingsRoute: typeof ApiPublicPortalTokenBookingsRoute
   ApiPublicPortalTokenChangeRequestsRoute: typeof ApiPublicPortalTokenChangeRequestsRoute
   ApiPublicPortalTokenLogoRoute: typeof ApiPublicPortalTokenLogoRoute
@@ -2448,8 +2448,8 @@ const rootRouteChildren: RootRouteChildren = {
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   ApiPublicBTokenMessagesRoute: ApiPublicBTokenMessagesRoute,
   ApiPublicBTokenSubmitRoute: ApiPublicBTokenSubmitRoute,
-  ApiPublicPortalTokenAdminRoute: ApiPublicPortalTokenAdminRoute,
   ApiPublicPortalTokenAccessRoute: ApiPublicPortalTokenAccessRoute,
+  ApiPublicPortalTokenAdminRoute: ApiPublicPortalTokenAdminRoute,
   ApiPublicPortalTokenBookingsRoute: ApiPublicPortalTokenBookingsRoute,
   ApiPublicPortalTokenChangeRequestsRoute:
     ApiPublicPortalTokenChangeRequestsRoute,
