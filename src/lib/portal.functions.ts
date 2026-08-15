@@ -31,6 +31,16 @@ async function myCompanyId(userId: string) {
   return (data?.company_id ?? null) as string | null;
 }
 
+const PORTAL_MANAGER_SELECT = [
+  "id", "coordinator_company_id", "name", "kind", "contact_email", "contact_phone",
+  "logo_url", "brand_color", "display_name_for_passenger", "points_per_booking",
+  "monthly_seat_points", "active", "link_enabled", "link_expires_at", "magic_token",
+  "notification_email", "currency", "pricing_mode", "slug", "created_at", "updated_at",
+  "portal_definition_id", "password_required",
+  "portals(id,name,portal_type,status,configuration)",
+  "portal_company_passwords(claimed_at,locked_until)",
+].join(",");
+
 // Mirrors the crew-notification email pattern (crew-trip-auto-create.ts):
 // same enqueue_email/transactional_emails shape, just a different label so
 // it's distinguishable in the queue. Best-effort — callers should swallow
@@ -60,13 +70,29 @@ export const listPortals = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) return [];
-    const { data, error } = await context.supabase
+    const a = await admin();
+    const { data, error } = await a
       .from("portal_companies" as any)
-      .select("*")
+      .select(PORTAL_MANAGER_SELECT)
       .eq("coordinator_company_id", cid)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
+  });
+
+export const getPortalCompanySetup = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const cid = await myCompanyId(context.userId);
+    if (!cid) return { coordinator_name: "", templates: [] };
+    const a = await admin();
+    const [{ data: company }, { data: templates, error }] = await Promise.all([
+      a.from("companies").select("name").eq("id", cid).maybeSingle(),
+      a.from("portals").select("id,name,portal_type,status,configuration")
+        .eq("company_id", cid).eq("status", "active").order("name"),
+    ]);
+    if (error) throw new Error(error.message);
+    return { coordinator_name: company?.name ?? "", templates: templates ?? [] };
   });
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
@@ -79,6 +105,16 @@ export function slugify(input: string): string {
   const base = (input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
   const trimmed = base.length > 38 ? base.slice(0, 38) : base;
   return trimmed.length >= 3 ? trimmed : `${trimmed}co`;
+}
+
+export function professionalPortalSlug(coordinatorName: string, companyName: string, portalName: string) {
+  const clean = (value: string, max: number) => value.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "")
+    .slice(0, max).replace(/-+$/g, "");
+  // Keep room for the 16-character random suffix added by createPortal.
+  const value = [clean(coordinatorName, 7), clean(companyName, 8), clean(portalName, 6)]
+    .filter(Boolean).join("-").slice(0, 23).replace(/-+$/g, "");
+  return value.length >= 3 ? value : slugify(companyName || portalName || coordinatorName);
 }
 
 export const checkSlugAvailable = createServerFn({ method: "POST" })
@@ -107,14 +143,40 @@ export const createPortal = createServerFn({ method: "POST" })
     display_name_for_passenger: z.string().max(120).optional().nullable(),
     brand_color: z.string().max(20).optional().nullable(),
     link_expires_at: z.string().datetime().optional().nullable(),
+    portal_definition_id: z.string().uuid().optional().nullable(),
+    password_required: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
-    // Ensure a unique slug (auto-suggest + dedup)
-    let baseSlug = (data.slug ?? slugify(data.name)).toLowerCase();
-    if (RESERVED_SLUGS.has(baseSlug)) baseSlug = `${baseSlug}-portal`;
     const a = await admin();
+    const [{ data: company }, { data: activePortals }] = await Promise.all([
+      a.from("companies").select("name").eq("id", cid).maybeSingle(),
+      a.from("portal_companies" as any).select("id,name")
+        .eq("coordinator_company_id", cid).eq("active", true),
+    ]);
+    if ((activePortals ?? []).some((portal: any) =>
+      portal.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
+      throw new Error("This company already has an active portal.");
+    }
+    let template: { id: string; name: string } | null = null;
+    if (data.portal_definition_id) {
+      const { data: row } = await a.from("portals").select("id,name,status,company_id")
+        .eq("id", data.portal_definition_id).eq("company_id", cid).maybeSingle();
+      if (!row || row.status !== "active") throw new Error("Select an active Portal Builder template.");
+      template = row;
+    }
+    // Names keep the URL readable; the random suffix prevents predictable
+    // no-password links. The destination still uses the private magic token.
+    const requestedBase = (data.slug ?? professionalPortalSlug(
+      company?.name ?? "", data.name, template?.name ?? "portal",
+    )).toLowerCase().slice(0, 23).replace(/-+$/g, "");
+    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const safeBase = RESERVED_SLUGS.has(requestedBase)
+      ? `${requestedBase.slice(0, 21)}-p`
+      : requestedBase;
+    const baseSlug = `${safeBase}-${secureSuffix}`;
     let attempt = baseSlug, n = 1;
     while (n <= 20) {
       const { data: exists } = await a.from("portal_companies" as any).select("id").eq("slug", attempt).limit(1);
@@ -122,10 +184,10 @@ export const createPortal = createServerFn({ method: "POST" })
       n += 1;
       attempt = `${baseSlug.slice(0, 36)}-${n}`;
     }
-    const { data: row, error } = await context.supabase
+    const { data: row, error } = await a
       .from("portal_companies" as any)
       .insert({ ...data, slug: attempt, coordinator_company_id: cid } as any)
-      .select("*")
+      .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return row;
@@ -149,19 +211,49 @@ export const updatePortal = createServerFn({ method: "POST" })
       active: z.boolean().optional(),
       link_enabled: z.boolean().optional(),
       link_expires_at: z.string().datetime().nullable().optional(),
+      portal_definition_id: z.string().uuid().nullable().optional(),
+      password_required: z.boolean().optional(),
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
     if (data.patch.slug && RESERVED_SLUGS.has(data.patch.slug.toLowerCase())) {
       throw new Error("slug_reserved");
     }
-    const { error, data: row } = await context.supabase
+    const cid = await myCompanyId(context.userId);
+    if (!cid) throw new Error("no_company");
+    const a = await admin();
+    const { data: target } = await a.from("portal_companies" as any)
+      .select("id,name,active,coordinator_company_id")
+      .eq("id", data.id).eq("coordinator_company_id", cid).maybeSingle();
+    if (!target) throw new Error("Portal not found.");
+    const targetPortal = target as unknown as { id: string; name: string; active: boolean };
+    if (targetPortal.active || data.patch.active === true) {
+      const candidateName = data.patch.name ?? targetPortal.name;
+      const { data: activePortals } = await a.from("portal_companies" as any)
+        .select("id,name").eq("coordinator_company_id", cid).eq("active", true).neq("id", data.id);
+      if ((activePortals ?? []).some((portal: any) =>
+        portal.name.trim().toLowerCase() === candidateName.trim().toLowerCase())) {
+        throw new Error("This company already has another active portal.");
+      }
+    }
+    if (data.patch.portal_definition_id) {
+      const { data: template } = await a.from("portals").select("id,status")
+        .eq("id", data.patch.portal_definition_id).eq("company_id", cid).maybeSingle();
+      if (!template || template.status !== "active")
+        throw new Error("Select an active Portal Builder template.");
+    }
+    const { error, data: row } = await a
       .from("portal_companies" as any)
       .update(data.patch as any)
-      .eq("id", data.id)
-      .select("*")
+      .eq("id", data.id).eq("coordinator_company_id", cid)
+      .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
+    if (data.patch.password_required === false) {
+      const { error: passwordError } = await a.from("portal_company_passwords" as any)
+        .delete().eq("portal_company_id", data.id);
+      if (passwordError) throw new Error(passwordError.message);
+    }
     // audit
     await context.supabase.from("portal_link_events" as any).insert({
       portal_company_id: data.id,
@@ -171,6 +263,28 @@ export const updatePortal = createServerFn({ method: "POST" })
       detail: data.patch as any,
     } as any);
     return row;
+  });
+
+export const resetPortalClientPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const cid = await myCompanyId(context.userId);
+    if (!cid) throw new Error("no_company");
+    const a = await admin();
+    const { data: portal } = await a.from("portal_companies" as any).select("id")
+      .eq("id", data.id).eq("coordinator_company_id", cid).maybeSingle();
+    if (!portal) throw new Error("Portal not found.");
+    const { error } = await a.from("portal_company_passwords" as any)
+      .delete().eq("portal_company_id", data.id);
+    if (error) throw new Error(error.message);
+    await a.from("portal_companies" as any).update({ password_required: true })
+      .eq("id", data.id).eq("coordinator_company_id", cid);
+    await a.from("portal_link_events" as any).insert({
+      portal_company_id: data.id, actor_user_id: context.userId,
+      actor_kind: "coordinator", event: "client_password_reset",
+    } as any);
+    return { ok: true };
   });
 
 export const rotatePortalToken = createServerFn({ method: "POST" })
