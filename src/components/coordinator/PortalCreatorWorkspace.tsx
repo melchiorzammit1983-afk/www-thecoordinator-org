@@ -46,6 +46,9 @@ type PortalRow = { id: string; name: string; description: string | null; portal_
 const DEFAULT_CAPABILITIES: Record<string, boolean> = {
   create_booking: true, view_own_submissions: true, view_trips: true,
   chat: true, view_statements: true, manage_profile: true, manage_crew: false,
+  create_operation_group: true, select_operation_group: true,
+  add_passengers: true, add_stops: true, enter_flight_details: true,
+  enter_ship_details: true, add_notes: true,
 };
 
 export function PortalCreatorWorkspace({ embedded = false }: { embedded?: boolean }) {

@@ -21,6 +21,7 @@ import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/bo
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { loadGoogleMaps } from "@/lib/load-google-maps";
 import { formatEta } from "@/lib/trip-display";
+import { OperationsWorkspace } from "@/components/portal/OperationsWorkspace";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -103,7 +104,7 @@ function PortalPage() {
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [accessMode, setAccessMode] = useState<"setup" | "login" | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
+  const [tab, setTab] = useState<"bookings" | "operations" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
@@ -133,13 +134,15 @@ function PortalPage() {
   const capabilityEnabled = (key: string, fallback = true) => capabilities?.[key] ?? fallback;
   const showBookings = capabilityEnabled("create_booking") || capabilityEnabled("view_own_submissions");
   const showTrips = capabilityEnabled("view_trips");
+  const showOperations = capabilityEnabled("create_operation_group", true)
+    || capabilityEnabled("select_operation_group", true);
   const showChat = capabilityEnabled("chat");
   const showStatements = capabilityEnabled("view_statements");
   const showManage = boot?.portal.kind === "hotel"
     && capabilityEnabled("manage_crew", !boot?.portal.configuration);
   const showSettings = capabilityEnabled("manage_profile");
   const availableTabs = [
-    showBookings && "bookings", showTrips && "trips", showChat && "chat",
+    showBookings && "bookings", showOperations && "operations", showTrips && "trips", showChat && "chat",
     showStatements && "statement", showManage && "manage", showSettings && "settings",
   ].filter(Boolean) as Array<typeof tab>;
   const activeTab = availableTabs.includes(tab) ? tab : (availableTabs[0] ?? tab);
@@ -170,6 +173,7 @@ function PortalPage() {
         <Tabs value={activeTab} onValueChange={(v) => setTab(v as any)}>
           <TabsList className="flex-wrap h-auto">
             {showBookings && <TabsTrigger value="bookings">Bookings</TabsTrigger>}
+            {showOperations && <TabsTrigger value="operations">Operations</TabsTrigger>}
             {showTrips && <TabsTrigger value="trips">Trips</TabsTrigger>}
             {showChat && <TabsTrigger value="chat">Chat</TabsTrigger>}
             {showStatements && <TabsTrigger value="statement">Statement</TabsTrigger>}
@@ -180,6 +184,10 @@ function PortalPage() {
           {showBookings && <TabsContent value="bookings" className="mt-4 space-y-4">
             {capabilityEnabled("create_booking") && <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />}
             {capabilityEnabled("view_own_submissions") && <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />}
+          </TabsContent>}
+
+          {showOperations && <TabsContent value="operations" className="mt-4">
+            <OperationsWorkspace mode="client" token={token} portalName={boot.portal.name} />
           </TabsContent>}
 
           {showTrips && <TabsContent value="trips" className="mt-4">

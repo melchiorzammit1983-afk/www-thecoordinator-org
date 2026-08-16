@@ -16,6 +16,7 @@ import {
 import { portalNameSlug } from "@/lib/portal-slug";
 
 import { PortalCreatorWorkspace } from "@/components/coordinator/PortalCreatorWorkspace";
+import { CoordinatorOperationsButton } from "@/components/portal/OperationsWorkspace";
 import {
   listPublicPortals, createPublicPortal, updatePublicPortal,
   rotatePublicPortal, deletePublicPortal,
@@ -661,6 +662,7 @@ function CompanyRow({ portal, coordinatorSlug }: { portal: any; coordinatorSlug:
           <Link to="/coordinator/portals/$id" params={{ id: portal.id }}><Settings2 className="h-3.5 w-3.5" /></Link>
         </Button>
         <PortalPasswordAccessButton portal={portal} />
+        <CoordinatorOperationsButton portalCompanyId={portal.id} portalName={portal.name} />
         <StatementDialogButton
           portalId={portal.id}
           portalName={portal.name}
