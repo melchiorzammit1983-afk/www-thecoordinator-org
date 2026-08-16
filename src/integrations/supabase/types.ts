@@ -1679,6 +1679,7 @@ export type Database = {
           safety_mode_allow_override: boolean
           safety_mode_enabled: boolean
           safety_mode_threshold_kmh: number
+          slug: string | null
           status: Database["public"]["Enums"]["company_status"]
           trial_ends_at: string | null
           updated_at: string
@@ -1733,6 +1734,7 @@ export type Database = {
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
+          slug?: string | null
           status?: Database["public"]["Enums"]["company_status"]
           trial_ends_at?: string | null
           updated_at?: string
@@ -1787,6 +1789,7 @@ export type Database = {
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
+          slug?: string | null
           status?: Database["public"]["Enums"]["company_status"]
           trial_ends_at?: string | null
           updated_at?: string
@@ -6021,6 +6024,7 @@ export type Database = {
           password_required: boolean
           points_per_booking: number
           portal_definition_id: string | null
+          portal_slug: string | null
           pricing_mode: string
           slug: string | null
           updated_at: string
@@ -6046,6 +6050,7 @@ export type Database = {
           password_required?: boolean
           points_per_booking?: number
           portal_definition_id?: string | null
+          portal_slug?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -6071,6 +6076,7 @@ export type Database = {
           password_required?: boolean
           points_per_booking?: number
           portal_definition_id?: string | null
+          portal_slug?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -8962,6 +8968,7 @@ export type Database = {
           row_id: string
         }[]
       }
+      web_slugify: { Args: { _input: string }; Returns: string }
     }
     Enums: {
       booking_status:
