@@ -406,8 +406,9 @@ function CompaniesPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-        Build and activate the design in Portal Builder, then create one secure portal for each company here.
-        The link includes the coordinator, company, and portal names plus a private random suffix.
+        Build and activate the design in Portal Builder, then create one secure portal here.
+        Every link is <span className="font-medium text-foreground">{BRAND_DOMAIN}/{coordinatorSlug || "your-name"}/portal-name</span> —
+        your coordinator name stays fixed, you choose the portal name.
       </div>
 
       {templates.length === 0 && (
@@ -419,13 +420,15 @@ function CompaniesPanel() {
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Company name</Label>
+            <Label>Portal name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Grand Hotel Valletta" />
           </div>
           <div className="space-y-1.5 md:col-span-2">
             <Label>Branded link</Label>
-            <div className="flex items-center border rounded-md h-10 px-2 bg-background text-sm">
-              <span className="text-muted-foreground text-xs whitespace-nowrap">{BRAND_DOMAIN}/h/</span>
+            <div className="flex items-center border rounded-md h-10 pl-2 pr-2 bg-background text-sm overflow-hidden">
+              <span className="text-muted-foreground text-xs whitespace-nowrap">
+                {BRAND_DOMAIN}/<span className="font-medium text-foreground">{coordinatorSlug || "…"}</span>/
+              </span>
               <Input
                 className="border-0 h-8 px-0 focus-visible:ring-0 flex-1 min-w-0"
                 value={effectiveSlug}
@@ -464,14 +467,20 @@ function CompaniesPanel() {
               </SelectContent>
             </Select>
           </div>
-          <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
-            <input
-              type="checkbox"
-              checked={passwordRequired}
-              onChange={(event) => setPasswordRequired(event.target.checked)}
-            />
-            Require client password
-          </label>
+          <div className="space-y-1.5 md:col-span-2">
+            <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+              <input
+                type="checkbox"
+                checked={passwordRequired}
+                onChange={(event) => setPasswordRequired(event.target.checked)}
+              />
+              Require client password
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              A clean link is easy to share — and easy to guess. Turn this on for portals that shouldn't open publicly.
+            </p>
+          </div>
+
           <div className="md:col-span-6 flex justify-end">
             <Button
               onClick={() => create.mutate()}
