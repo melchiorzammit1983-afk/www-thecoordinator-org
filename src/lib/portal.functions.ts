@@ -80,43 +80,46 @@ export const listPortals = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+/** Ensures the coordinator company has a stable, unique URL slug. */
+async function ensureCoordinatorSlug(a: any, cid: string): Promise<{ name: string; slug: string }> {
+  const { data: company } = await a.from("companies").select("name,slug").eq("id", cid).maybeSingle();
+  const name = (company?.name ?? "") as string;
+  if (company?.slug) return { name, slug: String(company.slug) };
+  const base = coordinatorNameSlug(name) || "coordinator";
+  let attempt = base;
+  for (let n = 2; n <= 50; n += 1) {
+    const { data: exists } = await a.from("companies").select("id").eq("slug", attempt).neq("id", cid).limit(1);
+    if (!exists || exists.length === 0) break;
+    attempt = `${base}-${n}`;
+  }
+  const { error } = await a.from("companies").update({ slug: attempt } as any).eq("id", cid);
+  if (error) throw new Error(error.message);
+  return { name, slug: attempt };
+}
+
 export const getPortalCompanySetup = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const cid = await myCompanyId(context.userId);
-    if (!cid) return { coordinator_name: "", templates: [] };
+    if (!cid) return { coordinator_name: "", coordinator_slug: "", templates: [] };
     const a = await admin();
-    const [{ data: company }, { data: templates, error }] = await Promise.all([
-      a.from("companies").select("name").eq("id", cid).maybeSingle(),
+    const [{ name, slug }, { data: templates, error }] = await Promise.all([
+      ensureCoordinatorSlug(a, cid),
       a.from("portals").select("id,name,portal_type,status,configuration")
         .eq("company_id", cid).eq("status", "active").order("name"),
     ]);
     if (error) throw new Error(error.message);
-    return { coordinator_name: company?.name ?? "", templates: templates ?? [] };
+    return { coordinator_name: name, coordinator_slug: slug, templates: templates ?? [] };
   });
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-const RESERVED_SLUGS = new Set([
-  "www", "admin", "api", "app", "id-preview", "project", "mail", "auth",
-  "preview", "portal", "track", "static", "assets", "cdn", "help", "docs",
-]);
+const SLUG_RE = PORTAL_SLUG_RE;
 
 export function slugify(input: string): string {
-  const base = (input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
-  const trimmed = base.length > 38 ? base.slice(0, 38) : base;
+  const trimmed = slugifyWeb(input, 38);
   return trimmed.length >= 3 ? trimmed : `${trimmed}co`;
 }
 
-export function professionalPortalSlug(coordinatorName: string, companyName: string, portalName: string) {
-  const clean = (value: string, max: number) => value.toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "")
-    .slice(0, max).replace(/-+$/g, "");
-  // Keep room for the 16-character random suffix added by createPortal.
-  const value = [clean(coordinatorName, 7), clean(companyName, 8), clean(portalName, 6)]
-    .filter(Boolean).join("-").slice(0, 23).replace(/-+$/g, "");
-  return value.length >= 3 ? value : slugify(companyName || portalName || coordinatorName);
-}
-
+/** Availability of a portal segment inside the caller's own coordinator space. */
 export const checkSlugAvailable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), excludeId: z.string().uuid().optional() }).parse(d))
@@ -124,12 +127,17 @@ export const checkSlugAvailable = createServerFn({ method: "POST" })
     const s = data.slug.trim().toLowerCase();
     if (!SLUG_RE.test(s)) return { ok: false as const, reason: "invalid" };
     if (RESERVED_SLUGS.has(s)) return { ok: false as const, reason: "reserved" };
-    let q = context.supabase.from("portal_companies" as any).select("id").eq("slug", s).limit(1);
+    const cid = await myCompanyId(context.userId);
+    if (!cid) return { ok: false as const, reason: "invalid" };
+    const a = await admin();
+    let q = a.from("portal_companies" as any).select("id")
+      .eq("coordinator_company_id", cid).eq("portal_slug", s).limit(1);
     if (data.excludeId) q = q.neq("id", data.excludeId);
     const { data: rows } = await q;
     if (rows && rows.length > 0) return { ok: false as const, reason: "taken" };
     return { ok: true as const };
   });
+
 
 export const createPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
