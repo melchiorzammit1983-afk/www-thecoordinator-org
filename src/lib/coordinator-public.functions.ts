@@ -1224,14 +1224,17 @@ export const updateJobStatus = createServerFn({ method: "POST" })
       ) {
         const distance = haversineMetersLL(data.lat, data.lng, pLat, pLng);
         if (distance > ARRIVAL_PICKUP_RADIUS_M) {
-          const err: any = new Error(
-            `too_far_from_pickup:${Math.round(distance)}:${ARRIVAL_PICKUP_RADIUS_M}`,
-          );
-          err.code = "too_far_from_pickup";
-          err.distance_m = Math.round(distance);
-          err.radius_m = ARRIVAL_PICKUP_RADIUS_M;
-          throw err;
+          // Advisory, not an error: return a soft result so the client can ask
+          // the driver to confirm instead of surfacing a runtime exception.
+          return {
+            ok: false as const,
+            needs_override: true as const,
+            code: "too_far_from_pickup" as const,
+            distance_m: Math.round(distance),
+            radius_m: ARRIVAL_PICKUP_RADIUS_M,
+          };
         }
+
       }
     }
 
