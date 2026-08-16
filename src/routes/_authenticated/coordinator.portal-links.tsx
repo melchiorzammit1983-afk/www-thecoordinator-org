@@ -304,16 +304,25 @@ function PendingRequestRow({ req }: { req: any }) {
 
 const BRAND_DOMAIN = "thecoordinator.org";
 
-function brandedUrl(slug: string | null | undefined) {
-  if (!slug) return null;
-  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}/h/${slug}`;
-  return `${window.location.origin}/h/${slug}`;
+/** Clean branded link, falling back to the legacy /h/<slug> form. */
+function brandedPath(coordinatorSlug: string | null | undefined, portal: any): string | null {
+  if (coordinatorSlug && portal?.portal_slug) return `/${coordinatorSlug}/${portal.portal_slug}`;
+  if (portal?.slug) return `/h/${portal.slug}`;
+  return null;
 }
-function brandedUrlDisplay(slug: string | null | undefined) {
-  if (!slug) return null;
+function brandedUrl(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
+  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}${path}`;
+  return `${window.location.origin}${path}`;
+}
+function brandedUrlDisplay(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
   const host = typeof window === "undefined" ? BRAND_DOMAIN : window.location.host;
-  return `${host}/h/${slug}`;
+  return `${host}${path}`;
 }
+
 function rawTokenUrl(token: string) {
   if (typeof window === "undefined") return `/portal/${token}`;
   return `${window.location.origin}/portal/${token}`;
