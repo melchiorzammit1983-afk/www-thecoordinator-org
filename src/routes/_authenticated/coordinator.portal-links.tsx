@@ -10,9 +10,11 @@ import {
 } from "@/lib/coordinator.functions";
 import {
   listPortals, createPortal, updatePortal, rotatePortalToken,
-  checkSlugAvailable, professionalPortalSlug, generatePortalStatement,
+  checkSlugAvailable, generatePortalStatement,
   getPortalCompanySetup, resetPortalClientPassword,
 } from "@/lib/portal.functions";
+import { portalNameSlug } from "@/lib/portal-slug";
+
 import { PortalCreatorWorkspace } from "@/components/coordinator/PortalCreatorWorkspace";
 import {
   listPublicPortals, createPublicPortal, updatePublicPortal,
@@ -304,16 +306,25 @@ function PendingRequestRow({ req }: { req: any }) {
 
 const BRAND_DOMAIN = "thecoordinator.org";
 
-function brandedUrl(slug: string | null | undefined) {
-  if (!slug) return null;
-  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}/h/${slug}`;
-  return `${window.location.origin}/h/${slug}`;
+/** Clean branded link, falling back to the legacy /h/<slug> form. */
+function brandedPath(coordinatorSlug: string | null | undefined, portal: any): string | null {
+  if (coordinatorSlug && portal?.portal_slug) return `/${coordinatorSlug}/${portal.portal_slug}`;
+  if (portal?.slug) return `/h/${portal.slug}`;
+  return null;
 }
-function brandedUrlDisplay(slug: string | null | undefined) {
-  if (!slug) return null;
+function brandedUrl(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
+  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}${path}`;
+  return `${window.location.origin}${path}`;
+}
+function brandedUrlDisplay(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
   const host = typeof window === "undefined" ? BRAND_DOMAIN : window.location.host;
-  return `${host}/h/${slug}`;
+  return `${host}${path}`;
 }
+
 function rawTokenUrl(token: string) {
   if (typeof window === "undefined") return `/portal/${token}`;
   return `${window.location.origin}/portal/${token}`;
@@ -330,6 +341,7 @@ function CompaniesPanel() {
     queryKey: ["portal-company-setup"],
     queryFn: () => setupFn() as Promise<{
       coordinator_name: string;
+      coordinator_slug: string;
       templates: Array<{ id: string; name: string; portal_type: string }>;
     }>,
   });
@@ -345,16 +357,13 @@ function CompaniesPanel() {
   const debounceRef = useRef<number | null>(null);
 
   const templates = setup?.templates ?? [];
+  const coordinatorSlug = setup?.coordinator_slug ?? "";
   const effectiveTemplateId = templateId || templates[0]?.id || "";
   const selectedTemplate = templates.find((template) => template.id === effectiveTemplateId);
   const kind = selectedTemplate?.portal_type === "hotel" ? "hotel" : "company_agent";
-  const autoSlug = useMemo(
-    () => name
-      ? professionalPortalSlug(setup?.coordinator_name ?? "", name, selectedTemplate?.name ?? "portal")
-      : "",
-    [name, selectedTemplate?.name, setup?.coordinator_name],
-  );
+  const autoSlug = useMemo(() => (name ? portalNameSlug(name) : ""), [name]);
   const effectiveSlug = slugTouched ? slug : autoSlug;
+
 
   function onSlugChange(v: string) {
     setSlugTouched(true);
@@ -397,8 +406,9 @@ function CompaniesPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-        Build and activate the design in Portal Builder, then create one secure portal for each company here.
-        The link includes the coordinator, company, and portal names plus a private random suffix.
+        Build and activate the design in Portal Builder, then create one secure portal here.
+        Every link is <span className="font-medium text-foreground">{BRAND_DOMAIN}/{coordinatorSlug || "your-name"}/portal-name</span> —
+        your coordinator name stays fixed, you choose the portal name.
       </div>
 
       {templates.length === 0 && (
@@ -410,13 +420,15 @@ function CompaniesPanel() {
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Company name</Label>
+            <Label>Portal name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Grand Hotel Valletta" />
           </div>
           <div className="space-y-1.5 md:col-span-2">
             <Label>Branded link</Label>
-            <div className="flex items-center border rounded-md h-10 px-2 bg-background text-sm">
-              <span className="text-muted-foreground text-xs whitespace-nowrap">{BRAND_DOMAIN}/h/</span>
+            <div className="flex items-center border rounded-md h-10 pl-2 pr-2 bg-background text-sm overflow-hidden">
+              <span className="text-muted-foreground text-xs whitespace-nowrap">
+                {BRAND_DOMAIN}/<span className="font-medium text-foreground">{coordinatorSlug || "…"}</span>/
+              </span>
               <Input
                 className="border-0 h-8 px-0 focus-visible:ring-0 flex-1 min-w-0"
                 value={effectiveSlug}
@@ -455,14 +467,20 @@ function CompaniesPanel() {
               </SelectContent>
             </Select>
           </div>
-          <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
-            <input
-              type="checkbox"
-              checked={passwordRequired}
-              onChange={(event) => setPasswordRequired(event.target.checked)}
-            />
-            Require client password
-          </label>
+          <div className="space-y-1.5 md:col-span-2">
+            <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+              <input
+                type="checkbox"
+                checked={passwordRequired}
+                onChange={(event) => setPasswordRequired(event.target.checked)}
+              />
+              Require client password
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              A clean link is easy to share — and easy to guess. Turn this on for portals that shouldn't open publicly.
+            </p>
+          </div>
+
           <div className="md:col-span-6 flex justify-end">
             <Button
               onClick={() => create.mutate()}
@@ -478,7 +496,7 @@ function CompaniesPanel() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Company</TableHead>
+              <TableHead>Portal</TableHead>
               <TableHead>Branded URL</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Expires</TableHead>
@@ -492,7 +510,7 @@ function CompaniesPanel() {
               </TableCell></TableRow>
             )}
             {(portals ?? []).map((p) => (
-              <CompanyRow key={p.id} portal={p} />
+              <CompanyRow key={p.id} portal={p} coordinatorSlug={coordinatorSlug} />
             ))}
           </TableBody>
         </Table>
@@ -511,13 +529,13 @@ function SlugHint({ state, slug }: { state: string; slug: string }) {
   return null;
 }
 
-function CompanyRow({ portal }: { portal: any }) {
+function CompanyRow({ portal, coordinatorSlug }: { portal: any; coordinatorSlug: string }) {
   const updateFn = useServerFn(updatePortal);
   const rotateFn = useServerFn(rotatePortalToken);
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["portals"] });
 
-  const branded = brandedUrl(portal.slug);
+  const branded = brandedUrl(coordinatorSlug, portal);
   const raw = rawTokenUrl(portal.magic_token);
   const shareUrl = branded || raw;
   const passwordClaimed = Array.isArray(portal.portal_company_passwords)
@@ -617,7 +635,7 @@ function CompanyRow({ portal }: { portal: any }) {
       <TableCell>
         <div className="flex items-center gap-1 max-w-[340px]">
           <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">
-            {brandedUrlDisplay(portal.slug) ?? "(no slug)"}
+            {brandedUrlDisplay(coordinatorSlug, portal) ?? "(no link yet)"}
           </code>
           <Button size="icon" variant="ghost" title="Copy link" onClick={copyLink}>
             <Copy className="h-3.5 w-3.5" />

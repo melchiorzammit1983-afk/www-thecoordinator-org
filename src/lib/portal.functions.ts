@@ -6,6 +6,10 @@ import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/jour
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 import { createAuthoritativeJob } from "@/lib/coordinator.functions";
+import {
+  PORTAL_SLUG_RE, RESERVED_SLUGS, coordinatorNameSlug, portalNameSlug, slugifyWeb,
+} from "@/lib/portal-slug";
+
 
 
 /**
@@ -35,7 +39,7 @@ const PORTAL_MANAGER_SELECT = [
   "id", "coordinator_company_id", "name", "kind", "contact_email", "contact_phone",
   "logo_url", "brand_color", "display_name_for_passenger", "points_per_booking",
   "monthly_seat_points", "active", "link_enabled", "link_expires_at", "magic_token",
-  "notification_email", "currency", "pricing_mode", "slug", "created_at", "updated_at",
+  "notification_email", "currency", "pricing_mode", "slug", "portal_slug", "created_at", "updated_at",
   "portal_definition_id", "password_required",
   "portals(id,name,portal_type,status,configuration)",
   "portal_company_passwords(claimed_at,locked_until)",
@@ -80,43 +84,46 @@ export const listPortals = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+/** Ensures the coordinator company has a stable, unique URL slug. */
+async function ensureCoordinatorSlug(a: any, cid: string): Promise<{ name: string; slug: string }> {
+  const { data: company } = await a.from("companies").select("name,slug").eq("id", cid).maybeSingle();
+  const name = (company?.name ?? "") as string;
+  if (company?.slug) return { name, slug: String(company.slug) };
+  const base = coordinatorNameSlug(name) || "coordinator";
+  let attempt = base;
+  for (let n = 2; n <= 50; n += 1) {
+    const { data: exists } = await a.from("companies").select("id").eq("slug", attempt).neq("id", cid).limit(1);
+    if (!exists || exists.length === 0) break;
+    attempt = `${base}-${n}`;
+  }
+  const { error } = await a.from("companies").update({ slug: attempt } as any).eq("id", cid);
+  if (error) throw new Error(error.message);
+  return { name, slug: attempt };
+}
+
 export const getPortalCompanySetup = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const cid = await myCompanyId(context.userId);
-    if (!cid) return { coordinator_name: "", templates: [] };
+    if (!cid) return { coordinator_name: "", coordinator_slug: "", templates: [] };
     const a = await admin();
-    const [{ data: company }, { data: templates, error }] = await Promise.all([
-      a.from("companies").select("name").eq("id", cid).maybeSingle(),
+    const [{ name, slug }, { data: templates, error }] = await Promise.all([
+      ensureCoordinatorSlug(a, cid),
       a.from("portals").select("id,name,portal_type,status,configuration")
         .eq("company_id", cid).eq("status", "active").order("name"),
     ]);
     if (error) throw new Error(error.message);
-    return { coordinator_name: company?.name ?? "", templates: templates ?? [] };
+    return { coordinator_name: name, coordinator_slug: slug, templates: templates ?? [] };
   });
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-const RESERVED_SLUGS = new Set([
-  "www", "admin", "api", "app", "id-preview", "project", "mail", "auth",
-  "preview", "portal", "track", "static", "assets", "cdn", "help", "docs",
-]);
+const SLUG_RE = PORTAL_SLUG_RE;
 
 export function slugify(input: string): string {
-  const base = (input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
-  const trimmed = base.length > 38 ? base.slice(0, 38) : base;
+  const trimmed = slugifyWeb(input, 38);
   return trimmed.length >= 3 ? trimmed : `${trimmed}co`;
 }
 
-export function professionalPortalSlug(coordinatorName: string, companyName: string, portalName: string) {
-  const clean = (value: string, max: number) => value.toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "")
-    .slice(0, max).replace(/-+$/g, "");
-  // Keep room for the 16-character random suffix added by createPortal.
-  const value = [clean(coordinatorName, 7), clean(companyName, 8), clean(portalName, 6)]
-    .filter(Boolean).join("-").slice(0, 23).replace(/-+$/g, "");
-  return value.length >= 3 ? value : slugify(companyName || portalName || coordinatorName);
-}
-
+/** Availability of a portal segment inside the caller's own coordinator space. */
 export const checkSlugAvailable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), excludeId: z.string().uuid().optional() }).parse(d))
@@ -124,12 +131,17 @@ export const checkSlugAvailable = createServerFn({ method: "POST" })
     const s = data.slug.trim().toLowerCase();
     if (!SLUG_RE.test(s)) return { ok: false as const, reason: "invalid" };
     if (RESERVED_SLUGS.has(s)) return { ok: false as const, reason: "reserved" };
-    let q = context.supabase.from("portal_companies" as any).select("id").eq("slug", s).limit(1);
+    const cid = await myCompanyId(context.userId);
+    if (!cid) return { ok: false as const, reason: "invalid" };
+    const a = await admin();
+    let q = a.from("portal_companies" as any).select("id")
+      .eq("coordinator_company_id", cid).eq("portal_slug", s).limit(1);
     if (data.excludeId) q = q.neq("id", data.excludeId);
     const { data: rows } = await q;
     if (rows && rows.length > 0) return { ok: false as const, reason: "taken" };
     return { ok: true as const };
   });
+
 
 export const createPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -150,48 +162,44 @@ export const createPortal = createServerFn({ method: "POST" })
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
     const a = await admin();
-    const [{ data: company }, { data: activePortals }] = await Promise.all([
-      a.from("companies").select("name").eq("id", cid).maybeSingle(),
-      a.from("portal_companies" as any).select("id,name")
-        .eq("coordinator_company_id", cid).eq("active", true),
-    ]);
+    await ensureCoordinatorSlug(a, cid);
+    const { data: activePortals } = await a.from("portal_companies" as any).select("id,name")
+      .eq("coordinator_company_id", cid).eq("active", true);
     if ((activePortals ?? []).some((portal: any) =>
       portal.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
       throw new Error("This company already has an active portal.");
     }
-    let template: { id: string; name: string } | null = null;
     if (data.portal_definition_id) {
       const { data: row } = await a.from("portals").select("id,name,status,company_id")
         .eq("id", data.portal_definition_id).eq("company_id", cid).maybeSingle();
       if (!row || row.status !== "active") throw new Error("Select an active Portal Builder template.");
-      template = row;
     }
-    // Names keep the URL readable; the random suffix prevents predictable
-    // no-password links. The destination still uses the private magic token.
-    const requestedBase = (data.slug ?? professionalPortalSlug(
-      company?.name ?? "", data.name, template?.name ?? "portal",
-    )).toLowerCase().slice(0, 23).replace(/-+$/g, "");
-    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
-      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    const safeBase = RESERVED_SLUGS.has(requestedBase)
-      ? `${requestedBase.slice(0, 21)}-p`
-      : requestedBase;
-    const baseSlug = `${safeBase}-${secureSuffix}`;
-    let attempt = baseSlug, n = 1;
-    while (n <= 20) {
-      const { data: exists } = await a.from("portal_companies" as any).select("id").eq("slug", attempt).limit(1);
+    // Clean branded link: /<coordinator-slug>/<portal-slug>. The portal
+    // segment only has to be unique inside this coordinator.
+    const requestedBase = (data.slug ?? portalNameSlug(data.name)) || "portal";
+    if (RESERVED_SLUGS.has(requestedBase)) throw new Error("slug_reserved");
+    let portalSlug = requestedBase, n = 1;
+    while (n <= 30) {
+      const { data: exists } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", portalSlug).limit(1);
       if (!exists || exists.length === 0) break;
       n += 1;
-      attempt = `${baseSlug.slice(0, 36)}-${n}`;
+      portalSlug = `${requestedBase.slice(0, 36)}-${n}`;
     }
+    // Legacy globally-unique slug keeps older `/h/<slug>` links working.
+    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const legacySlug = `${requestedBase.slice(0, 23).replace(/-+$/g, "")}-${secureSuffix}`;
+    const { slug: _ignored, ...rest } = data;
     const { data: row, error } = await a
       .from("portal_companies" as any)
-      .insert({ ...data, slug: attempt, coordinator_company_id: cid } as any)
+      .insert({ ...rest, slug: legacySlug, portal_slug: portalSlug, coordinator_company_id: cid } as any)
       .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return row;
   });
+
 
 export const updatePortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -242,9 +250,21 @@ export const updatePortal = createServerFn({ method: "POST" })
       if (!template || template.status !== "active")
         throw new Error("Select an active Portal Builder template.");
     }
+    // `patch.slug` is the portal segment of the branded link; the legacy
+    // global slug stays untouched so already-shared /h/<slug> links work.
+    const { slug: newPortalSlug, ...restPatch } = data.patch;
+    const patch: Record<string, unknown> = { ...restPatch };
+    if (newPortalSlug) {
+      const { data: clash } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", newPortalSlug)
+        .neq("id", data.id).limit(1);
+      if (clash && clash.length > 0) throw new Error("slug_taken");
+      patch.portal_slug = newPortalSlug;
+    }
     const { error, data: row } = await a
       .from("portal_companies" as any)
-      .update(data.patch as any)
+      .update(patch as any)
+
       .eq("id", data.id).eq("coordinator_company_id", cid)
       .select(PORTAL_MANAGER_SELECT)
       .single();

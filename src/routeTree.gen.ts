@@ -41,6 +41,7 @@ import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]
 import { Route as HSlugIndexRouteImport } from './routes/h.$slug.index'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as CompanyPortalIndexRouteImport } from './routes/$company/$portal.index'
 import { Route as PortalCreatorTokenRouteImport } from './routes/portal/creator.$token'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
@@ -117,6 +118,7 @@ import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/a
 import { Route as ApiPublicPortalTokenCrewIndexRouteImport } from './routes/api/public/portal/$token/crew/index'
 import { Route as ApiPublicPortalRecipientTokenBookingsRouteImport } from './routes/api/public/portal/recipient/$token/bookings'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
+import { Route as ApiPublicPortalByPathCompanyPortalRouteImport } from './routes/api/public/portal/by-path/$company/$portal'
 import { Route as ApiPublicPortalTokenCrewCrewIdRouteImport } from './routes/api/public/portal/$token/crew/$crewId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -281,6 +283,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const CompanyPortalIndexRoute = CompanyPortalIndexRouteImport.update({
+  id: '/$company/$portal/',
+  path: '/$company/$portal/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PortalCreatorTokenRoute = PortalCreatorTokenRouteImport.update({
   id: '/portal/creator/$token',
@@ -721,6 +728,12 @@ const ApiPublicPortalGuestRoomQrRoute =
     path: '/api/public/portal/guest/room/$qr',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalByPathCompanyPortalRoute =
+  ApiPublicPortalByPathCompanyPortalRouteImport.update({
+    id: '/api/public/portal/by-path/$company/$portal',
+    path: '/api/public/portal/by-path/$company/$portal',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalTokenCrewCrewIdRoute =
   ApiPublicPortalTokenCrewCrewIdRouteImport.update({
     id: '/api/public/portal/$token/crew/$crewId',
@@ -796,6 +809,7 @@ export interface FileRoutesByFullPath {
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal/': typeof CompanyPortalIndexRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug/': typeof HSlugIndexRoute
@@ -833,6 +847,7 @@ export interface FileRoutesByFullPath {
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -901,6 +916,7 @@ export interface FileRoutesByTo {
   '/api/db-proxy/$': typeof ApiDbProxySplatRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal': typeof CompanyPortalIndexRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug': typeof HSlugIndexRoute
@@ -938,6 +954,7 @@ export interface FileRoutesByTo {
   '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -1013,6 +1030,7 @@ export interface FileRoutesById {
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal/': typeof CompanyPortalIndexRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug/': typeof HSlugIndexRoute
@@ -1050,6 +1068,7 @@ export interface FileRoutesById {
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -1125,6 +1144,7 @@ export interface FileRouteTypes {
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal/'
     | '/admin/'
     | '/coordinator/'
     | '/h/$slug/'
@@ -1162,6 +1182,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew/'
@@ -1230,6 +1251,7 @@ export interface FileRouteTypes {
     | '/api/db-proxy/$'
     | '/m/client/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal'
     | '/admin'
     | '/coordinator'
     | '/h/$slug'
@@ -1267,6 +1289,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token'
     | '/api/public/track/$token'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew'
@@ -1341,6 +1364,7 @@ export interface FileRouteTypes {
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal/'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
     | '/h/$slug/'
@@ -1378,6 +1402,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew/'
@@ -1417,6 +1442,7 @@ export interface RootRouteChildren {
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   PortalCreatorTokenRoute: typeof PortalCreatorTokenRoute
+  CompanyPortalIndexRoute: typeof CompanyPortalIndexRoute
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronAutoForwardRoute: typeof ApiPublicCronAutoForwardRoute
   ApiPublicCronFlightT30Route: typeof ApiPublicCronFlightT30Route
@@ -1446,6 +1472,7 @@ export interface RootRouteChildren {
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
   ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
   ApiPublicPortalTokenCrewCrewIdRoute: typeof ApiPublicPortalTokenCrewCrewIdRoute
+  ApiPublicPortalByPathCompanyPortalRoute: typeof ApiPublicPortalByPathCompanyPortalRoute
   ApiPublicPortalGuestRoomQrRoute: typeof ApiPublicPortalGuestRoomQrRoute
   ApiPublicPortalRecipientTokenBookingsRoute: typeof ApiPublicPortalRecipientTokenBookingsRoute
   ApiPublicPortalTokenCrewIndexRoute: typeof ApiPublicPortalTokenCrewIndexRoute
@@ -1677,6 +1704,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/$company/$portal/': {
+      id: '/$company/$portal/'
+      path: '/$company/$portal'
+      fullPath: '/$company/$portal/'
+      preLoaderRoute: typeof CompanyPortalIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/portal/creator/$token': {
       id: '/portal/creator/$token'
@@ -2210,6 +2244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalGuestRoomQrRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/by-path/$company/$portal': {
+      id: '/api/public/portal/by-path/$company/$portal'
+      path: '/api/public/portal/by-path/$company/$portal'
+      fullPath: '/api/public/portal/by-path/$company/$portal'
+      preLoaderRoute: typeof ApiPublicPortalByPathCompanyPortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/$token/crew/$crewId': {
       id: '/api/public/portal/$token/crew/$crewId'
       path: '/api/public/portal/$token/crew/$crewId'
@@ -2438,6 +2479,7 @@ const rootRouteChildren: RootRouteChildren = {
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   PortalCreatorTokenRoute: PortalCreatorTokenRoute,
+  CompanyPortalIndexRoute: CompanyPortalIndexRoute,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronAutoForwardRoute: ApiPublicCronAutoForwardRoute,
   ApiPublicCronFlightT30Route: ApiPublicCronFlightT30Route,
@@ -2471,6 +2513,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
   ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
   ApiPublicPortalTokenCrewCrewIdRoute: ApiPublicPortalTokenCrewCrewIdRoute,
+  ApiPublicPortalByPathCompanyPortalRoute:
+    ApiPublicPortalByPathCompanyPortalRoute,
   ApiPublicPortalGuestRoomQrRoute: ApiPublicPortalGuestRoomQrRoute,
   ApiPublicPortalRecipientTokenBookingsRoute:
     ApiPublicPortalRecipientTokenBookingsRoute,
