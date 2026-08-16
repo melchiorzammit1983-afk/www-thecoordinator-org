@@ -250,9 +250,21 @@ export const updatePortal = createServerFn({ method: "POST" })
       if (!template || template.status !== "active")
         throw new Error("Select an active Portal Builder template.");
     }
+    // `patch.slug` is the portal segment of the branded link; the legacy
+    // global slug stays untouched so already-shared /h/<slug> links work.
+    const { slug: newPortalSlug, ...restPatch } = data.patch;
+    const patch: Record<string, unknown> = { ...restPatch };
+    if (newPortalSlug) {
+      const { data: clash } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", newPortalSlug)
+        .neq("id", data.id).limit(1);
+      if (clash && clash.length > 0) throw new Error("slug_taken");
+      patch.portal_slug = newPortalSlug;
+    }
     const { error, data: row } = await a
       .from("portal_companies" as any)
-      .update(data.patch as any)
+      .update(patch as any)
+
       .eq("id", data.id).eq("coordinator_company_id", cid)
       .select(PORTAL_MANAGER_SELECT)
       .single();
