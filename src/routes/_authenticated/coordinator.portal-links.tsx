@@ -496,7 +496,7 @@ function CompaniesPanel() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Company</TableHead>
+              <TableHead>Portal</TableHead>
               <TableHead>Branded URL</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Expires</TableHead>
