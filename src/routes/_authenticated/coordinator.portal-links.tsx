@@ -306,6 +306,7 @@ function PendingRequestRow({ req }: { req: any }) {
 /* ------------------------- Companies (portals) ------------------------- */
 
 const BRAND_DOMAIN = "thecoordinator.org";
+const PUBLIC_APP_ORIGIN = "https://www.thecoordinator.org";
 
 /** Clean branded link, falling back to the legacy /h/<slug> form. */
 function brandedPath(coordinatorSlug: string | null | undefined, portal: any): string | null {
@@ -316,19 +317,16 @@ function brandedPath(coordinatorSlug: string | null | undefined, portal: any): s
 function brandedUrl(coordinatorSlug: string | null | undefined, portal: any) {
   const path = brandedPath(coordinatorSlug, portal);
   if (!path) return null;
-  if (typeof window === "undefined") return `https://${BRAND_DOMAIN}${path}`;
-  return `${window.location.origin}${path}`;
+  return `${PUBLIC_APP_ORIGIN}${path}`;
 }
 function brandedUrlDisplay(coordinatorSlug: string | null | undefined, portal: any) {
   const path = brandedPath(coordinatorSlug, portal);
   if (!path) return null;
-  const host = typeof window === "undefined" ? BRAND_DOMAIN : window.location.host;
-  return `${host}${path}`;
+  return `${PUBLIC_APP_ORIGIN}${path}`;
 }
 
 function rawTokenUrl(token: string) {
-  if (typeof window === "undefined") return `/portal/${token}`;
-  return `${window.location.origin}/portal/${token}`;
+  return `${PUBLIC_APP_ORIGIN}/portal/${token}`;
 }
 
 function CompaniesPanel() {
