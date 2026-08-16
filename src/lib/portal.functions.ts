@@ -39,7 +39,7 @@ const PORTAL_MANAGER_SELECT = [
   "id", "coordinator_company_id", "name", "kind", "contact_email", "contact_phone",
   "logo_url", "brand_color", "display_name_for_passenger", "points_per_booking",
   "monthly_seat_points", "active", "link_enabled", "link_expires_at", "magic_token",
-  "notification_email", "currency", "pricing_mode", "slug", "created_at", "updated_at",
+  "notification_email", "currency", "pricing_mode", "slug", "portal_slug", "created_at", "updated_at",
   "portal_definition_id", "password_required",
   "portals(id,name,portal_type,status,configuration)",
   "portal_company_passwords(claimed_at,locked_until)",
