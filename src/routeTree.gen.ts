@@ -117,6 +117,7 @@ import { Route as ApiPublicPortalGuestSessionIndexRouteImport } from './routes/a
 import { Route as ApiPublicPortalTokenCrewIndexRouteImport } from './routes/api/public/portal/$token/crew/index'
 import { Route as ApiPublicPortalRecipientTokenBookingsRouteImport } from './routes/api/public/portal/recipient/$token/bookings'
 import { Route as ApiPublicPortalGuestRoomQrRouteImport } from './routes/api/public/portal/guest/room/$qr'
+import { Route as ApiPublicPortalByPathCompanyPortalRouteImport } from './routes/api/public/portal/by-path/$company/$portal'
 import { Route as ApiPublicPortalTokenCrewCrewIdRouteImport } from './routes/api/public/portal/$token/crew/$crewId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -721,6 +722,12 @@ const ApiPublicPortalGuestRoomQrRoute =
     path: '/api/public/portal/guest/room/$qr',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicPortalByPathCompanyPortalRoute =
+  ApiPublicPortalByPathCompanyPortalRouteImport.update({
+    id: '/api/public/portal/by-path/$company/$portal',
+    path: '/api/public/portal/by-path/$company/$portal',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPortalTokenCrewCrewIdRoute =
   ApiPublicPortalTokenCrewCrewIdRouteImport.update({
     id: '/api/public/portal/$token/crew/$crewId',
@@ -833,6 +840,7 @@ export interface FileRoutesByFullPath {
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -938,6 +946,7 @@ export interface FileRoutesByTo {
   '/api/public/portal/$token': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -1050,6 +1059,7 @@ export interface FileRoutesById {
   '/api/public/portal/$token/': typeof ApiPublicPortalTokenIndexRoute
   '/api/public/track/$token/': typeof ApiPublicTrackTokenIndexRoute
   '/api/public/portal/$token/crew/$crewId': typeof ApiPublicPortalTokenCrewCrewIdRoute
+  '/api/public/portal/by-path/$company/$portal': typeof ApiPublicPortalByPathCompanyPortalRoute
   '/api/public/portal/guest/room/$qr': typeof ApiPublicPortalGuestRoomQrRoute
   '/api/public/portal/recipient/$token/bookings': typeof ApiPublicPortalRecipientTokenBookingsRoute
   '/api/public/portal/$token/crew/': typeof ApiPublicPortalTokenCrewIndexRoute
@@ -1162,6 +1172,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew/'
@@ -1267,6 +1278,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token'
     | '/api/public/track/$token'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew'
@@ -1378,6 +1390,7 @@ export interface FileRouteTypes {
     | '/api/public/portal/$token/'
     | '/api/public/track/$token/'
     | '/api/public/portal/$token/crew/$crewId'
+    | '/api/public/portal/by-path/$company/$portal'
     | '/api/public/portal/guest/room/$qr'
     | '/api/public/portal/recipient/$token/bookings'
     | '/api/public/portal/$token/crew/'
@@ -1446,6 +1459,7 @@ export interface RootRouteChildren {
   ApiPublicPortalTokenIndexRoute: typeof ApiPublicPortalTokenIndexRoute
   ApiPublicTrackTokenIndexRoute: typeof ApiPublicTrackTokenIndexRoute
   ApiPublicPortalTokenCrewCrewIdRoute: typeof ApiPublicPortalTokenCrewCrewIdRoute
+  ApiPublicPortalByPathCompanyPortalRoute: typeof ApiPublicPortalByPathCompanyPortalRoute
   ApiPublicPortalGuestRoomQrRoute: typeof ApiPublicPortalGuestRoomQrRoute
   ApiPublicPortalRecipientTokenBookingsRoute: typeof ApiPublicPortalRecipientTokenBookingsRoute
   ApiPublicPortalTokenCrewIndexRoute: typeof ApiPublicPortalTokenCrewIndexRoute
@@ -2210,6 +2224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPortalGuestRoomQrRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/portal/by-path/$company/$portal': {
+      id: '/api/public/portal/by-path/$company/$portal'
+      path: '/api/public/portal/by-path/$company/$portal'
+      fullPath: '/api/public/portal/by-path/$company/$portal'
+      preLoaderRoute: typeof ApiPublicPortalByPathCompanyPortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/portal/$token/crew/$crewId': {
       id: '/api/public/portal/$token/crew/$crewId'
       path: '/api/public/portal/$token/crew/$crewId'
@@ -2471,6 +2492,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPortalTokenIndexRoute: ApiPublicPortalTokenIndexRoute,
   ApiPublicTrackTokenIndexRoute: ApiPublicTrackTokenIndexRoute,
   ApiPublicPortalTokenCrewCrewIdRoute: ApiPublicPortalTokenCrewCrewIdRoute,
+  ApiPublicPortalByPathCompanyPortalRoute:
+    ApiPublicPortalByPathCompanyPortalRoute,
   ApiPublicPortalGuestRoomQrRoute: ApiPublicPortalGuestRoomQrRoute,
   ApiPublicPortalRecipientTokenBookingsRoute:
     ApiPublicPortalRecipientTokenBookingsRoute,
