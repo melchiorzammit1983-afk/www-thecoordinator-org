@@ -510,7 +510,7 @@ function CompaniesPanel() {
               </TableCell></TableRow>
             )}
             {(portals ?? []).map((p) => (
-              <CompanyRow key={p.id} portal={p} />
+              <CompanyRow key={p.id} portal={p} coordinatorSlug={coordinatorSlug} />
             ))}
           </TableBody>
         </Table>
@@ -529,13 +529,13 @@ function SlugHint({ state, slug }: { state: string; slug: string }) {
   return null;
 }
 
-function CompanyRow({ portal }: { portal: any }) {
+function CompanyRow({ portal, coordinatorSlug }: { portal: any; coordinatorSlug: string }) {
   const updateFn = useServerFn(updatePortal);
   const rotateFn = useServerFn(rotatePortalToken);
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["portals"] });
 
-  const branded = brandedUrl(portal.slug);
+  const branded = brandedUrl(coordinatorSlug, portal);
   const raw = rawTokenUrl(portal.magic_token);
   const shareUrl = branded || raw;
   const passwordClaimed = Array.isArray(portal.portal_company_passwords)
@@ -635,7 +635,7 @@ function CompanyRow({ portal }: { portal: any }) {
       <TableCell>
         <div className="flex items-center gap-1 max-w-[340px]">
           <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">
-            {brandedUrlDisplay(portal.slug) ?? "(no slug)"}
+            {brandedUrlDisplay(coordinatorSlug, portal) ?? "(no link yet)"}
           </code>
           <Button size="icon" variant="ghost" title="Copy link" onClick={copyLink}>
             <Copy className="h-3.5 w-3.5" />
