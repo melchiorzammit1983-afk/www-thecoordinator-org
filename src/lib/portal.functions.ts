@@ -6,6 +6,10 @@ import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/jour
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 import { createAuthoritativeJob } from "@/lib/coordinator.functions";
+import {
+  PORTAL_SLUG_RE, RESERVED_SLUGS, coordinatorNameSlug, portalNameSlug, slugifyWeb,
+} from "@/lib/portal-slug";
+
 
 
 /**
