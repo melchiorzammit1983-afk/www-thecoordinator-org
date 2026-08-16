@@ -30,6 +30,7 @@ export type PortalCompany = {
   magic_token: string;
   notification_email: string | null;
   contact_email: string | null;
+  client_slug: string | null;
   portal_definition_id: string | null;
   password_required: boolean;
   portals: {
@@ -69,6 +70,7 @@ const PORTAL_TOKEN_SELECT = [
   "magic_token",
   "notification_email",
   "contact_email",
+  "client_slug",
   "portal_definition_id",
   "password_required",
   "portals(id,name,portal_type,status,configuration)",
@@ -79,6 +81,22 @@ function normalizePasswordRecord(
   value: PortalCompany["portal_company_passwords"] | PortalCompany["portal_company_passwords"][],
 ) {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+function validateResolvedPortal(
+  data: unknown,
+): { ok: true; portal: PortalCompany } | { ok: false; status: number; error: string } {
+  if (!data) return { ok: false, status: 404, error: "not_found" };
+  const portal = data as PortalCompany;
+  if (!portal.active) return { ok: false, status: 403, error: "portal_disabled" };
+  if (!portal.link_enabled) return { ok: false, status: 403, error: "link_off" };
+  if (portal.link_expires_at && new Date(portal.link_expires_at).getTime() < Date.now())
+    return { ok: false, status: 403, error: "link_expired" };
+  portal.portal_company_passwords = normalizePasswordRecord(portal.portal_company_passwords);
+  if (portal.portal_definition_id && (!portal.portals || portal.portals.status !== "active")) {
+    return { ok: false, status: 403, error: "portal_configuration_disabled" };
+  }
+  return { ok: true, portal };
 }
 
 export async function resolvePortalRecordByToken(
@@ -97,15 +115,36 @@ export async function resolvePortalRecordByToken(
   if (!data) return { ok: false, status: 404, error: "not_found" };
   const portal = data as unknown as PortalCompany;
   if (!safeEqStr(portal.magic_token, token)) return { ok: false, status: 404, error: "not_found" };
-  if (!portal.active) return { ok: false, status: 403, error: "portal_disabled" };
-  if (!portal.link_enabled) return { ok: false, status: 403, error: "link_off" };
-  if (portal.link_expires_at && new Date(portal.link_expires_at).getTime() < Date.now())
-    return { ok: false, status: 403, error: "link_expired" };
-  portal.portal_company_passwords = normalizePasswordRecord(portal.portal_company_passwords);
-  if (portal.portal_definition_id && (!portal.portals || portal.portals.status !== "active")) {
-    return { ok: false, status: 403, error: "portal_configuration_disabled" };
+  return validateResolvedPortal(portal);
+}
+
+export async function resolvePortalRecordByHandles(
+  coordinatorHandle: string,
+  clientHandle: string,
+): Promise<{ ok: true; portal: PortalCompany } | { ok: false; status: number; error: string }> {
+  const handlePattern = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+  const coordinator = coordinatorHandle.trim().toLowerCase();
+  const client = clientHandle.trim().toLowerCase();
+  if (!handlePattern.test(coordinator) || !handlePattern.test(client)) {
+    return { ok: false, status: 400, error: "invalid_address" };
   }
-  return { ok: true, portal };
+  const admin = await getAdmin();
+  const { data: company, error: companyError } = await admin
+    .from("companies" as any)
+    .select("id")
+    .eq("portal_subdomain", coordinator)
+    .maybeSingle();
+  if (companyError) return { ok: false, status: 500, error: "db_error" };
+  if (!company) return { ok: false, status: 404, error: "not_found" };
+  const companyRecord = company as unknown as { id: string };
+  const { data, error } = await admin
+    .from("portal_companies" as any)
+    .select(PORTAL_TOKEN_SELECT)
+    .eq("coordinator_company_id", companyRecord.id)
+    .eq("client_slug", client)
+    .maybeSingle();
+  if (error) return { ok: false, status: 500, error: "db_error" };
+  return validateResolvedPortal(data);
 }
 
 export async function resolvePortalByToken(

@@ -171,6 +171,14 @@ function AuthPage() {
               </CardHeader>
               <CardContent>
                 <SignInForm loadingLabel={t.loading} loginLabel={t.login} />
+                <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <span className="h-px flex-1 bg-border" />
+                  Client access
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <Button asChild variant="outline" className="w-full">
+                  <Link to="/client-portal">Open Client Portal</Link>
+                </Button>
               </CardContent>
             </Card>
 
