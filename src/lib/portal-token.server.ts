@@ -137,12 +137,22 @@ export async function resolvePortalRecordByHandles(
   if (companyError) return { ok: false, status: 500, error: "db_error" };
   if (!company) return { ok: false, status: 404, error: "not_found" };
   const companyRecord = company as unknown as { id: string };
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from("portal_companies" as any)
     .select(PORTAL_TOKEN_SELECT)
     .eq("coordinator_company_id", companyRecord.id)
     .eq("client_slug", client)
     .maybeSingle();
+  // Keep older portal links working when their record has not yet been
+  // populated with the canonical client_slug field.
+  if (!data && !error) {
+    ({ data, error } = await admin
+      .from("portal_companies" as any)
+      .select(PORTAL_TOKEN_SELECT)
+      .eq("coordinator_company_id", companyRecord.id)
+      .eq("portal_slug", client)
+      .maybeSingle());
+  }
   if (error) return { ok: false, status: 500, error: "db_error" };
   return validateResolvedPortal(data);
 }
