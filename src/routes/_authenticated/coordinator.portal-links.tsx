@@ -10,9 +10,11 @@ import {
 } from "@/lib/coordinator.functions";
 import {
   listPortals, createPortal, updatePortal, rotatePortalToken,
-  checkSlugAvailable, professionalPortalSlug, generatePortalStatement,
+  checkSlugAvailable, generatePortalStatement,
   getPortalCompanySetup, resetPortalClientPassword,
 } from "@/lib/portal.functions";
+import { portalNameSlug } from "@/lib/portal-slug";
+
 import { PortalCreatorWorkspace } from "@/components/coordinator/PortalCreatorWorkspace";
 import {
   listPublicPortals, createPublicPortal, updatePublicPortal,
