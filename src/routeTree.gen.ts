@@ -41,6 +41,7 @@ import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]
 import { Route as HSlugIndexRouteImport } from './routes/h.$slug.index'
 import { Route as AuthenticatedCoordinatorIndexRouteImport } from './routes/_authenticated/coordinator.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as CompanyPortalIndexRouteImport } from './routes/$company/$portal.index'
 import { Route as PortalCreatorTokenRouteImport } from './routes/portal/creator.$token'
 import { Route as MDriverTokenRouteImport } from './routes/m.driver.$token'
 import { Route as MClientTokenRouteImport } from './routes/m/client/$token'
@@ -282,6 +283,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const CompanyPortalIndexRoute = CompanyPortalIndexRouteImport.update({
+  id: '/$company/$portal/',
+  path: '/$company/$portal/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PortalCreatorTokenRoute = PortalCreatorTokenRouteImport.update({
   id: '/portal/creator/$token',
@@ -803,6 +809,7 @@ export interface FileRoutesByFullPath {
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal/': typeof CompanyPortalIndexRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug/': typeof HSlugIndexRoute
@@ -909,6 +916,7 @@ export interface FileRoutesByTo {
   '/api/db-proxy/$': typeof ApiDbProxySplatRoute
   '/m/client/$token': typeof MClientTokenRoute
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal': typeof CompanyPortalIndexRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/coordinator': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug': typeof HSlugIndexRoute
@@ -1022,6 +1030,7 @@ export interface FileRoutesById {
   '/m/client/$token': typeof MClientTokenRoute
   '/m/driver/$token': typeof MDriverTokenRouteWithChildren
   '/portal/creator/$token': typeof PortalCreatorTokenRoute
+  '/$company/$portal/': typeof CompanyPortalIndexRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/coordinator/': typeof AuthenticatedCoordinatorIndexRoute
   '/h/$slug/': typeof HSlugIndexRoute
@@ -1135,6 +1144,7 @@ export interface FileRouteTypes {
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal/'
     | '/admin/'
     | '/coordinator/'
     | '/h/$slug/'
@@ -1241,6 +1251,7 @@ export interface FileRouteTypes {
     | '/api/db-proxy/$'
     | '/m/client/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal'
     | '/admin'
     | '/coordinator'
     | '/h/$slug'
@@ -1353,6 +1364,7 @@ export interface FileRouteTypes {
     | '/m/client/$token'
     | '/m/driver/$token'
     | '/portal/creator/$token'
+    | '/$company/$portal/'
     | '/_authenticated/admin/'
     | '/_authenticated/coordinator/'
     | '/h/$slug/'
@@ -1430,6 +1442,7 @@ export interface RootRouteChildren {
   MClientTokenRoute: typeof MClientTokenRoute
   MDriverTokenRoute: typeof MDriverTokenRouteWithChildren
   PortalCreatorTokenRoute: typeof PortalCreatorTokenRoute
+  CompanyPortalIndexRoute: typeof CompanyPortalIndexRoute
   ApiPublicCronAiAutoCoordinateRoute: typeof ApiPublicCronAiAutoCoordinateRoute
   ApiPublicCronAutoForwardRoute: typeof ApiPublicCronAutoForwardRoute
   ApiPublicCronFlightT30Route: typeof ApiPublicCronFlightT30Route
@@ -1691,6 +1704,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/$company/$portal/': {
+      id: '/$company/$portal/'
+      path: '/$company/$portal'
+      fullPath: '/$company/$portal/'
+      preLoaderRoute: typeof CompanyPortalIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/portal/creator/$token': {
       id: '/portal/creator/$token'
@@ -2459,6 +2479,7 @@ const rootRouteChildren: RootRouteChildren = {
   MClientTokenRoute: MClientTokenRoute,
   MDriverTokenRoute: MDriverTokenRouteWithChildren,
   PortalCreatorTokenRoute: PortalCreatorTokenRoute,
+  CompanyPortalIndexRoute: CompanyPortalIndexRoute,
   ApiPublicCronAiAutoCoordinateRoute: ApiPublicCronAiAutoCoordinateRoute,
   ApiPublicCronAutoForwardRoute: ApiPublicCronAutoForwardRoute,
   ApiPublicCronFlightT30Route: ApiPublicCronFlightT30Route,
