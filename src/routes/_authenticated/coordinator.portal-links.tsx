@@ -339,6 +339,7 @@ function CompaniesPanel() {
     queryKey: ["portal-company-setup"],
     queryFn: () => setupFn() as Promise<{
       coordinator_name: string;
+      coordinator_slug: string;
       templates: Array<{ id: string; name: string; portal_type: string }>;
     }>,
   });
@@ -354,16 +355,13 @@ function CompaniesPanel() {
   const debounceRef = useRef<number | null>(null);
 
   const templates = setup?.templates ?? [];
+  const coordinatorSlug = setup?.coordinator_slug ?? "";
   const effectiveTemplateId = templateId || templates[0]?.id || "";
   const selectedTemplate = templates.find((template) => template.id === effectiveTemplateId);
   const kind = selectedTemplate?.portal_type === "hotel" ? "hotel" : "company_agent";
-  const autoSlug = useMemo(
-    () => name
-      ? professionalPortalSlug(setup?.coordinator_name ?? "", name, selectedTemplate?.name ?? "portal")
-      : "",
-    [name, selectedTemplate?.name, setup?.coordinator_name],
-  );
+  const autoSlug = useMemo(() => (name ? portalNameSlug(name) : ""), [name]);
   const effectiveSlug = slugTouched ? slug : autoSlug;
+
 
   function onSlugChange(v: string) {
     setSlugTouched(true);
