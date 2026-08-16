@@ -158,48 +158,44 @@ export const createPortal = createServerFn({ method: "POST" })
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
     const a = await admin();
-    const [{ data: company }, { data: activePortals }] = await Promise.all([
-      a.from("companies").select("name").eq("id", cid).maybeSingle(),
-      a.from("portal_companies" as any).select("id,name")
-        .eq("coordinator_company_id", cid).eq("active", true),
-    ]);
+    await ensureCoordinatorSlug(a, cid);
+    const { data: activePortals } = await a.from("portal_companies" as any).select("id,name")
+      .eq("coordinator_company_id", cid).eq("active", true);
     if ((activePortals ?? []).some((portal: any) =>
       portal.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
       throw new Error("This company already has an active portal.");
     }
-    let template: { id: string; name: string } | null = null;
     if (data.portal_definition_id) {
       const { data: row } = await a.from("portals").select("id,name,status,company_id")
         .eq("id", data.portal_definition_id).eq("company_id", cid).maybeSingle();
       if (!row || row.status !== "active") throw new Error("Select an active Portal Builder template.");
-      template = row;
     }
-    // Names keep the URL readable; the random suffix prevents predictable
-    // no-password links. The destination still uses the private magic token.
-    const requestedBase = (data.slug ?? professionalPortalSlug(
-      company?.name ?? "", data.name, template?.name ?? "portal",
-    )).toLowerCase().slice(0, 23).replace(/-+$/g, "");
-    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
-      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    const safeBase = RESERVED_SLUGS.has(requestedBase)
-      ? `${requestedBase.slice(0, 21)}-p`
-      : requestedBase;
-    const baseSlug = `${safeBase}-${secureSuffix}`;
-    let attempt = baseSlug, n = 1;
-    while (n <= 20) {
-      const { data: exists } = await a.from("portal_companies" as any).select("id").eq("slug", attempt).limit(1);
+    // Clean branded link: /<coordinator-slug>/<portal-slug>. The portal
+    // segment only has to be unique inside this coordinator.
+    const requestedBase = (data.slug ?? portalNameSlug(data.name)) || "portal";
+    if (RESERVED_SLUGS.has(requestedBase)) throw new Error("slug_reserved");
+    let portalSlug = requestedBase, n = 1;
+    while (n <= 30) {
+      const { data: exists } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", portalSlug).limit(1);
       if (!exists || exists.length === 0) break;
       n += 1;
-      attempt = `${baseSlug.slice(0, 36)}-${n}`;
+      portalSlug = `${requestedBase.slice(0, 36)}-${n}`;
     }
+    // Legacy globally-unique slug keeps older `/h/<slug>` links working.
+    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const legacySlug = `${requestedBase.slice(0, 23).replace(/-+$/g, "")}-${secureSuffix}`;
+    const { slug: _ignored, ...rest } = data;
     const { data: row, error } = await a
       .from("portal_companies" as any)
-      .insert({ ...data, slug: attempt, coordinator_company_id: cid } as any)
+      .insert({ ...rest, slug: legacySlug, portal_slug: portalSlug, coordinator_company_id: cid } as any)
       .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return row;
   });
+
 
 export const updatePortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
