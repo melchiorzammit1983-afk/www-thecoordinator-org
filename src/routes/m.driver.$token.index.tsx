@@ -1549,19 +1549,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
       } });
     },
-    onSuccess: (_res, input) => {
+    onSuccess: (res: any, input) => {
       const status = typeof input === "string" ? input : input.status;
-      toast.success("Status updated");
-      if (status === "en_route") void fireDriverActionLog("en_route");
-      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
-      invalidate();
-    },
-    onError: (e: Error, input) => {
-      const status = typeof input === "string" ? input : input.status;
-      const msg = e.message ?? "";
-      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
-        const parts = msg.split(":");
-        const dist = Number(parts[1] ?? 0);
+      if (res?.needs_override && res?.code === "too_far_from_pickup") {
+        const dist = Number(res.distance_m ?? 0);
         const ok = typeof window !== "undefined" && window.confirm(
           `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
         );
@@ -1570,8 +1561,15 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         }
         return;
       }
+      toast.success("Status updated");
+      if (status === "en_route") void fireDriverActionLog("en_route");
+      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
+      invalidate();
+    },
+    onError: (e: Error) => {
       toast.error(formatDriverStatusError(e));
     },
+
   });
   const payMut = useMutation({
     mutationFn: (status: "paid" | "pending") => payFn({ data: { token, job_id: job.id, status } }),
