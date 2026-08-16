@@ -2502,12 +2502,9 @@ function NextInstructionCard({ job, token, onOpenSummary, live, driverPos, canEn
         ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
       } });
     },
-    onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
-    onError: (e: Error, input) => {
-      const status = typeof input === "string" ? input : input.status;
-      const msg = e.message ?? "";
-      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
-        const dist = Number(msg.split(":")[1] ?? 0);
+    onSuccess: (res: any) => {
+      if (res?.needs_override && res?.code === "too_far_from_pickup") {
+        const dist = Number(res.distance_m ?? 0);
         const ok = typeof window !== "undefined" && window.confirm(
           `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
         );
@@ -2516,8 +2513,13 @@ function NextInstructionCard({ job, token, onOpenSummary, live, driverPos, canEn
         }
         return;
       }
+      toast.success("Status updated");
+      qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
+    },
+    onError: (e: Error) => {
       toast.error(formatDriverStatusError(e));
     },
+
   });
 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
