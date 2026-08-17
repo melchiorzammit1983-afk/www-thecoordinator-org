@@ -381,7 +381,7 @@ export async function performPortalOperationAction(args: {
         notes: input.notes ?? null,
       })
       .select(
-        "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,created_at,updated_at",
+        "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,visit_start_date,visit_end_date,notes,created_at,updated_at",
       )
       .single();
     if (error)
