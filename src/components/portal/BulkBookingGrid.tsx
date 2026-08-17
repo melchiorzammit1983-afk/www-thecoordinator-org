@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,7 +99,7 @@ function applyCellValue(row: GridRow, key: ColumnKey, raw: string): GridRow {
   }
 }
 
-export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated: () => void }) {
+export function BulkBookingGrid({ token, operationGroups, onCreated }: { token: string; operationGroups: Array<{ id: string; reference: string; name: string; status: string }>; onCreated: () => void }) {
   const [rows, setRows] = useState<GridRow[]>([emptyRow(), emptyRow(), emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -108,6 +109,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   // starting a new one. The server has the final say (it silently starts a
   // fresh batch if this one's already been touched by the coordinator).
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [operationGroupId, setOperationGroupId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -242,6 +244,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           vehicle: r.vehicle.trim() || null,
           pax_count: Math.max(Number(r.pax) || 1, paxNames.length || 1),
           notes: r.notes.trim() || null,
+          operation_group_id: operationGroupId,
         };
       }
 
@@ -313,6 +316,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {operationGroups.length > 0 && <div className="max-w-xl space-y-1"><Label className="text-xs">Operation (applies to this batch)</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></div>}
         <div className="overflow-x-auto rounded-md border">
           <Table className="text-xs">
             <TableHeader>

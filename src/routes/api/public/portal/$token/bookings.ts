@@ -33,6 +33,7 @@ const BookingInput = z.object({
   notes: z.string().max(2000).nullable().optional(),
   agreed_price: z.number().min(0).nullable().optional(),
   currency: z.string().max(6).nullable().optional(),
+  operation_group_id: z.string().uuid().nullable().optional(),
 });
 
 export const Route = createFileRoute("/api/public/portal/$token/bookings")({
@@ -59,6 +60,16 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
         if (!bulk.success && !single.success) return Response.json({ error: "bad_input" }, { status: 400 });
 
         const admin = await getAdmin();
+        const selected = (bulk.success ? bulk.data.bookings : [single.data!]).map((booking) => booking.operation_group_id).filter(Boolean) as string[];
+        if (selected.length) {
+          const { data: groups } = await admin.from("operation_groups").select("id, status").eq("company_id", r.portal.coordinator_company_id).in("id", [...new Set(selected)]);
+          const byId = new Map((groups ?? []).map((group: any) => [group.id, group]));
+          for (const id of selected) {
+            const group = byId.get(id);
+            if (!group) return Response.json({ error: "operation_group_not_found" }, { status: 400 });
+            if (!["draft", "active"].includes(group.status)) return Response.json({ error: "operation_group_not_accepting_bookings" }, { status: 400 });
+          }
+        }
 
         // Every submission belongs to a batch (size 1 for the single-entry
         // form, size N for a grid submit) so the portal's own bookings list

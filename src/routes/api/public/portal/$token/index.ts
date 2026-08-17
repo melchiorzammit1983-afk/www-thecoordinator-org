@@ -13,6 +13,11 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
         const r = await resolvePortalByToken(params.token);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const admin = await getAdmin();
+        const { data: operation_groups } = await admin.from("operation_groups")
+          .select("id, reference, name, status")
+          .eq("company_id", r.portal.coordinator_company_id)
+          .in("status", ["draft", "active"])
+          .order("name", { ascending: true });
         const { data: bookings } = await admin
           .from("portal_bookings" as any)
           .select("id, status, payload, agreed_price, currency, created_at, accepted_at, job_id, batch_id")
@@ -42,6 +47,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
           },
           bookings: bookings ?? [],
           jobs,
+          operation_groups: operation_groups ?? [],
         });
       },
       POST: async ({ params, request }) => {

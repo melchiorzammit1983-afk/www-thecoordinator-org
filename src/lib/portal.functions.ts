@@ -240,6 +240,11 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if ((b as any).status !== "pending") throw new Error("not_pending");
 
     const payload = (b as any).payload ?? {};
+    if (payload.operation_group_id) {
+      const { data: group } = await a.from("operation_groups").select("id, status").eq("id", payload.operation_group_id).eq("company_id", cid).maybeSingle();
+      if (!group) throw new Error("Operation Group not found.");
+      if (!["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
+    }
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
     // create a job
     const { data: job, error: jerr } = await a.from("jobs").insert({
@@ -268,6 +273,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       contact_phone: payload.client_phone ?? null,
       vehicle: payload.vehicle || null,
       notes: payload.notes || null,
+      operation_group_id: payload.operation_group_id ?? null,
       source: `portal:${(b as any).portal_company_id}`,
       status: "pending",
     } as any).select("id").single();

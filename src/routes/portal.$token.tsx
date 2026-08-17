@@ -88,6 +88,7 @@ type Boot = {
   portal: { id: string; name: string; kind: string; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string; link_expires_at: string | null };
   bookings: any[];
   jobs: any[];
+  operation_groups: Array<{ id: string; reference: string; name: string; status: string }>;
 };
 
 function PortalPage() {
@@ -145,7 +146,7 @@ function PortalPage() {
           </TabsList>
 
           <TabsContent value="bookings" className="mt-4 space-y-4">
-            <BookingEntry token={token} kind={boot.portal.kind} onCreated={reload} />
+            <BookingEntry token={token} kind={boot.portal.kind} operationGroups={boot.operation_groups ?? []} onCreated={reload} />
             <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />
           </TabsContent>
 
@@ -193,9 +194,9 @@ function OfflineCard({ reason }: { reason: string }) {
   );
 }
 
-function BookingEntry({ token, kind, onCreated }: { token: string; kind: string; onCreated: () => void }) {
+function BookingEntry({ token, kind, operationGroups, onCreated }: { token: string; kind: string; operationGroups: Boot["operation_groups"]; onCreated: () => void }) {
   const [view, setView] = useState<"grid" | "single">("grid");
-  if (kind !== "company_agent") return <NewBookingForm token={token} onCreated={onCreated} />;
+  if (kind !== "company_agent") return <NewBookingForm token={token} operationGroups={operationGroups} onCreated={onCreated} />;
   return (
     <div className="space-y-2">
       <div className="flex justify-end">
@@ -204,13 +205,13 @@ function BookingEntry({ token, kind, onCreated }: { token: string; kind: string;
         </Button>
       </div>
       {view === "grid"
-        ? <BulkBookingGrid token={token} onCreated={onCreated} />
-        : <NewBookingForm token={token} onCreated={onCreated} />}
+        ? <BulkBookingGrid token={token} operationGroups={operationGroups} onCreated={onCreated} />
+        : <NewBookingForm token={token} operationGroups={operationGroups} onCreated={onCreated} />}
     </div>
   );
 }
 
-function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => void }) {
+function NewBookingForm({ token, operationGroups, onCreated }: { token: string; operationGroups: Boot["operation_groups"]; onCreated: () => void }) {
   const [f, setF] = useState({
     name: "", surname: "", client_phone: "", client_email: "",
     pickup_at: "", room_number: "",
@@ -219,6 +220,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [busy, setBusy] = useState(false);
+  const [operationGroupId, setOperationGroupId] = useState<string | null>(null);
   const flightWarning = flightFormatWarning(f.flight_number);
 
   async function submit() {
@@ -245,6 +247,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
       to_lat: toPick.lat,
       to_lng: toPick.lng,
       to_display_name: toPick.display_name ?? null,
+      operation_group_id: operationGroupId,
       pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -286,6 +289,7 @@ function NewBookingForm({ token, onCreated }: { token: string; onCreated: () => 
           {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
         </Field>
         <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
+        {operationGroups.length > 0 && <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>}
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <div className="md:col-span-2">
           <Field label="Additional passengers (comma-separated, optional)">
