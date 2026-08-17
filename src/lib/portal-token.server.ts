@@ -129,11 +129,20 @@ export async function resolvePortalRecordByHandles(
     return { ok: false, status: 400, error: "invalid_address" };
   }
   const admin = await getAdmin();
-  const { data: company, error: companyError } = await admin
+  let { data: company, error: companyError } = await admin
     .from("companies" as any)
     .select("id")
     .eq("portal_subdomain", coordinator)
     .maybeSingle();
+  // Keep existing coordinator links working until the canonical handle is
+  // populated on the company record.
+  if (!company && !companyError) {
+    ({ data: company, error: companyError } = await admin
+      .from("companies" as any)
+      .select("id")
+      .eq("slug", coordinator)
+      .maybeSingle());
+  }
   if (companyError) return { ok: false, status: 500, error: "db_error" };
   if (!company) return { ok: false, status: 404, error: "not_found" };
   const companyRecord = company as unknown as { id: string };
