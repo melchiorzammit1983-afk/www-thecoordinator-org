@@ -62,6 +62,14 @@ type MemberRow = {
   name: string;
   email: string | null;
   is_primary_approver: boolean;
+  active: boolean;
+  person_type: "crew" | "visitor";
+  organisation: string | null;
+  movement_type: "on_signing" | "off_signing" | "visitor" | "other";
+  flight_information: string | null;
+  hotel_required: boolean;
+  transport_required: boolean;
+  notes: string | null;
 };
 type ServiceRow = {
   id: string;
@@ -356,8 +364,15 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
                 )}
               </Card>
 
-              {mode === "coordinator" && (
+              {mode === "coordinator" ? (
                 <MembersCard
+                  groupId={selectedGroup.id}
+                  members={members}
+                  busy={action.isPending}
+                  onAction={(value) => action.mutateAsync(value)}
+                />
+              ) : (
+                <ClientPeopleCard
                   groupId={selectedGroup.id}
                   members={members}
                   busy={action.isPending}
@@ -666,6 +681,194 @@ function MembersCard({
           />
           Make this person the primary approver for their side
         </label>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClientPeopleCard({
+  groupId,
+  members,
+  busy,
+  onAction,
+}: {
+  groupId: string;
+  members: MemberRow[];
+  busy: boolean;
+  onAction: (value: WorkspaceAction) => Promise<unknown>;
+}) {
+  const blank = {
+    name: "",
+    email: "",
+    person_type: "crew" as const,
+    organisation: "",
+    movement_type: "other" as const,
+    flight_information: "",
+    hotel_required: false,
+    transport_required: false,
+    notes: "",
+  };
+  const [form, setForm] = useState(blank);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [multiple, setMultiple] = useState("");
+  const activePeople = members.filter((member) => member.side === "client" && member.active);
+  const save = async () => {
+    const base = {
+      operation_group_id: groupId,
+      name: form.name,
+      email: form.email || null,
+      person_type: form.person_type,
+      organisation: form.organisation || null,
+      movement_type: form.movement_type,
+      flight_information: form.flight_information || null,
+      hotel_required: form.hotel_required,
+      transport_required: form.transport_required,
+      notes: form.notes || null,
+    };
+    const result = await onAction(
+      editingId
+        ? { action: "update_member", member_id: editingId, ...base }
+        : {
+            action: "add_member",
+            side: "client",
+            role: "client_viewer",
+            is_primary_approver: false,
+            ...base,
+          },
+    );
+    const review = !!(result && typeof result === "object" && "review_required" in result && result.review_required);
+    toast.success(review ? "Saved; coordinator review is required" : editingId ? "Person updated" : "Person added");
+    setForm(blank);
+    setEditingId(null);
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">People in this operation</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Add crew and visitors here. This does not create transport automatically.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          {activePeople.length === 0 && (
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              No people added yet.
+            </p>
+          )}
+          {activePeople.map((person) => (
+            <div key={person.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+              <div className="min-w-0">
+                <div className="font-medium">{person.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {person.person_type} · {person.movement_type.replaceAll("_", " ")}
+                  {person.organisation ? ` · ${person.organisation}` : ""}
+                  {person.transport_required ? " · transport" : ""}
+                  {person.hotel_required ? " · hotel" : ""}
+                </div>
+                {person.flight_information && (
+                  <div className="text-xs text-muted-foreground">Flight: {person.flight_information}</div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingId(person.id);
+                    setForm({
+                      name: person.name,
+                      email: person.email ?? "",
+                      person_type: person.person_type,
+                      organisation: person.organisation ?? "",
+                      movement_type: person.movement_type,
+                      flight_information: person.flight_information ?? "",
+                      hotel_required: person.hotel_required,
+                      transport_required: person.transport_required,
+                      notes: person.notes ?? "",
+                    });
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    onAction({ action: "remove_member", operation_group_id: groupId, member_id: person.id }).then(() =>
+                      toast.success("Person removed"),
+                    )
+                  }
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label={editingId ? "Edit person" : "Add person — full name"}>
+            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </Field>
+          <Field label="Email (optional)">
+            <Input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+          </Field>
+          <Field label="Person type">
+            <select className="h-10 rounded-md border bg-background px-2 text-sm" value={form.person_type} onChange={(event) => setForm({ ...form, person_type: event.target.value as "crew" | "visitor" })}>
+              <option value="crew">Crew</option>
+              <option value="visitor">Visitor</option>
+            </select>
+          </Field>
+          <Field label="Movement type">
+            <select className="h-10 rounded-md border bg-background px-2 text-sm" value={form.movement_type} onChange={(event) => setForm({ ...form, movement_type: event.target.value as typeof form.movement_type })}>
+              <option value="on_signing">On-signing</option>
+              <option value="off_signing">Off-signing</option>
+              <option value="visitor">Visitor</option>
+              <option value="other">Other</option>
+            </select>
+          </Field>
+          <Field label="Company / organisation (optional)">
+            <Input value={form.organisation} onChange={(event) => setForm({ ...form, organisation: event.target.value })} />
+          </Field>
+          <Field label="Flight information (optional)">
+            <Input value={form.flight_information} onChange={(event) => setForm({ ...form, flight_information: event.target.value })} />
+          </Field>
+          <div className="flex flex-wrap gap-4 text-sm md:col-span-2">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.hotel_required} onChange={(event) => setForm({ ...form, hotel_required: event.target.checked })} /> Hotel required</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.transport_required} onChange={(event) => setForm({ ...form, transport_required: event.target.checked })} /> Transport required</label>
+          </div>
+          <Field label="Notes for the coordinator">
+            <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+          </Field>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" disabled={busy || !form.name.trim()} onClick={() => void save()}>
+            {editingId ? "Save changes" : "Add person"}
+          </Button>
+          {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm(blank); }}>Cancel</Button>}
+        </div>
+        <div className="rounded-lg border border-dashed p-3">
+          <Label>Add multiple (one full name per line)</Label>
+          <Textarea value={multiple} onChange={(event) => setMultiple(event.target.value)} placeholder="Crew member 1\nCrew member 2" />
+          <Button
+            type="button"
+            className="mt-2"
+            variant="outline"
+            disabled={busy || !multiple.trim()}
+            onClick={async () => {
+              for (const name of multiple.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
+                await onAction({ action: "add_member", operation_group_id: groupId, side: "client", role: "client_viewer", is_primary_approver: false, name, email: null, person_type: "crew", organisation: null, movement_type: "other", flight_information: null, hotel_required: false, transport_required: false, notes: null });
+              }
+              setMultiple("");
+              toast.success("People added");
+            }}
+          >
+            Add multiple
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

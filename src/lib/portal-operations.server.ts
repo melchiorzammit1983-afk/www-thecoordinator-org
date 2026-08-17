@@ -239,7 +239,7 @@ export async function loadPortalOperations(admin: AdminClient, portal: PortalSco
       ? admin
           .from("operation_group_members")
           .select(
-            "id,operation_group_id,side,role,name,email,is_primary_approver,active,created_at,updated_at",
+            "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,created_at,updated_at",
           )
           .in("operation_group_id", ids)
           .order("created_at")
@@ -338,8 +338,8 @@ export async function performPortalOperationAction(args: {
   }
 
   if (input.action === "add_member") {
-    if (side !== "coordinator")
-      throw new Error("Only the coordinator can manage the Operations Group.");
+    if (side === "client" && input.side !== "client")
+      throw new Error("Clients may only add client people.");
     const group = await requireGroup(admin, portal, input.operation_group_id);
     const coordinatorRoles = new Set([
       "lead_coordinator",
@@ -369,9 +369,16 @@ export async function performPortalOperationAction(args: {
         name: input.name,
         email: input.email ?? null,
         is_primary_approver: input.is_primary_approver,
+        person_type: input.person_type,
+        organisation: input.organisation ?? null,
+        movement_type: input.movement_type,
+        flight_information: input.flight_information ?? null,
+        hotel_required: input.hotel_required,
+        transport_required: input.transport_required,
+        notes: input.notes ?? null,
       })
       .select(
-        "id,operation_group_id,side,role,name,email,is_primary_approver,active,created_at,updated_at",
+        "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,created_at,updated_at",
       )
       .single();
     if (error)
@@ -386,6 +393,78 @@ export async function performPortalOperationAction(args: {
       details: { member_name: member.name, role: member.role, side: member.side },
     });
     return { ok: true, member };
+  }
+
+  if (input.action === "update_member" || input.action === "remove_member") {
+    const group = await requireGroup(admin, portal, input.operation_group_id);
+    const existing = await admin
+      .from("operation_group_members")
+      .select(
+        "id,operation_group_id,side,name,email,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,active",
+      )
+      .eq("id", input.member_id)
+      .eq("operation_group_id", group.id)
+      .eq("portal_company_id", portal.id)
+      .eq("company_id", portal.coordinator_company_id)
+      .maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    if (!existing.data || !existing.data.active) throw new Error("Operation person not found.");
+    if (side === "client" && existing.data.side !== "client")
+      throw new Error("Clients may only manage client-added people.");
+
+    const liveJobs = await admin
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("operation_group_id", group.id)
+      .not("status", "in", "(completed,cancelled,archived)");
+    if (liveJobs.error) throw new Error(liveJobs.error.message);
+    const hasLiveTransport = (liveJobs.count ?? 0) > 0;
+
+    if (input.action === "remove_member") {
+      const { error } = await admin
+        .from("operation_group_members")
+        .update({ active: false })
+        .eq("id", existing.data.id)
+        .eq("operation_group_id", group.id)
+        .eq("portal_company_id", portal.id)
+        .eq("company_id", portal.coordinator_company_id);
+      if (error) throw new Error(error.message);
+      await insertEvent(admin, portal, {
+        operationGroupId: group.id,
+        actorSide: side,
+        actorName,
+        eventType: hasLiveTransport ? "change_requested" : "member_removed",
+        details: { member_id: existing.data.id, member_name: existing.data.name, live_transport: hasLiveTransport },
+      });
+      return { ok: true, review_required: hasLiveTransport };
+    }
+
+    const { error } = await admin
+      .from("operation_group_members")
+      .update({
+        name: input.name,
+        email: input.email ?? null,
+        person_type: input.person_type,
+        organisation: input.organisation ?? null,
+        movement_type: input.movement_type,
+        flight_information: input.flight_information ?? null,
+        hotel_required: input.hotel_required,
+        transport_required: input.transport_required,
+        notes: input.notes ?? null,
+      })
+      .eq("id", existing.data.id)
+      .eq("operation_group_id", group.id)
+      .eq("portal_company_id", portal.id)
+      .eq("company_id", portal.coordinator_company_id);
+    if (error) throw new Error(error.message);
+    await insertEvent(admin, portal, {
+      operationGroupId: group.id,
+      actorSide: side,
+      actorName,
+      eventType: hasLiveTransport ? "change_requested" : "member_updated",
+      details: { member_id: existing.data.id, member_name: input.name, live_transport: hasLiveTransport },
+    });
+    return { ok: true, review_required: hasLiveTransport };
   }
 
   if (input.action === "save_emergency_policy") {
