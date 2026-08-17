@@ -84,6 +84,13 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
             if (error) throw new Error(error.message);
             return Response.json({ id: submission.id, status: submission.status, requires_approval: true }, { status: 202 });
           }
+          await syncBookingPeopleToOperation(
+            (await import("@/integrations/supabase/client.server")).supabaseAdmin,
+            input,
+            input.operation_group_id,
+            access.recipient.company_id,
+            access.portal.id,
+          );
           const job = await createAuthoritativeJob({
             ...input,
             qr_strict_mode: false,
@@ -96,13 +103,6 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
             actor_user_id: null,
             source: `portal:${access.portal.id}:${access.recipient.id}`,
           });
-          await syncBookingPeopleToOperation(
-            (await import("@/integrations/supabase/client.server")).supabaseAdmin,
-            input,
-            input.operation_group_id,
-            access.recipient.company_id,
-            access.portal.id,
-          );
           return Response.json({ id: job.id, journey: job.journey, requires_approval: false }, { status: 201 });
         } catch (error) {
           return Response.json({ error: error instanceof Error ? error.message : "booking_failed" }, { status: 400 });

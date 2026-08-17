@@ -395,6 +395,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       if (!["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
     }
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
+    await syncBookingPeopleToOperation(a, payload, payload.operation_group_id, cid, (b as any).portal_company_id);
     // Legacy portal approval now uses the same authoritative Job service as
     // Coordinator booking; portal_companies remains the compatibility queue.
     const job = await createAuthoritativeJob({
@@ -424,7 +425,6 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       actor_type: "portal",
       source: `portal:${(b as any).portal_company_id}`,
     });
-    await syncBookingPeopleToOperation(a, payload, payload.operation_group_id, cid, (b as any).portal_company_id);
     /*
     const { data: legacyJob, error: jerr } = await a.from("jobs").insert({
       company_id: cid,
