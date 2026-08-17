@@ -34,6 +34,14 @@ const BookingInput = z.object({
   agreed_price: z.number().min(0).nullable().optional(),
   currency: z.string().max(6).nullable().optional(),
   operation_group_id: z.string().uuid().nullable().optional(),
+  person_type: z.enum(["crew", "visitor"]).optional(),
+  organisation: z.string().max(200).nullable().optional(),
+  movement_type: z.enum(["on_signing", "off_signing", "visitor", "other"]).optional(),
+  flight_information: z.string().max(300).nullable().optional(),
+  hotel_required: z.boolean().optional(),
+  transport_required: z.boolean().optional(),
+  visit_start_date: z.string().nullable().optional(),
+  visit_end_date: z.string().nullable().optional(),
 });
 
 export const Route = createFileRoute("/api/public/portal/$token/bookings")({

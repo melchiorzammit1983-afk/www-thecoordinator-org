@@ -216,6 +216,8 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
     name: "", surname: "", client_phone: "", client_email: "",
     pickup_at: "", room_number: "",
     flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "",
+    person_type: "crew" as "crew" | "visitor", organisation: "", movement_type: "other" as "on_signing" | "off_signing" | "visitor" | "other",
+    flight_information: "", hotel_required: false, transport_required: false, visit_start_date: "", visit_end_date: "",
   });
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
@@ -224,6 +226,10 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
   const flightWarning = flightFormatWarning(f.flight_number);
 
   async function submit() {
+    if (f.person_type === "visitor" && f.visit_start_date && f.visit_end_date && f.visit_end_date < f.visit_start_date) {
+      toast.error("Visit end date must be on or after the start date");
+      return;
+    }
     setBusy(true);
     const primary = `${f.name.trim()} ${f.surname.trim()}`.trim();
     const paxNames = [primary, ...splitPaxNames(f.extra_pax)].filter(Boolean);
@@ -248,6 +254,14 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
       to_lng: toPick.lng,
       to_display_name: toPick.display_name ?? null,
       operation_group_id: operationGroupId,
+      person_type: f.person_type,
+      organisation: f.organisation.trim() || null,
+      movement_type: f.movement_type,
+      flight_information: f.flight_information.trim() || null,
+      hotel_required: f.hotel_required,
+      transport_required: f.transport_required,
+      visit_start_date: f.visit_start_date || null,
+      visit_end_date: f.visit_end_date || null,
       pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -257,7 +271,7 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
     setBusy(false);
     if (!r.ok) { toast.error("Failed to submit"); return; }
     toast.success("Booking submitted — awaiting coordinator approval");
-    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "" });
+    setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "", person_type: "crew", organisation: "", movement_type: "other", flight_information: "", hotel_required: false, transport_required: false, visit_start_date: "", visit_end_date: "" });
     setFromPick({ address: "", place_id: null, lat: null, lng: null });
     setToPick({ address: "", place_id: null, lat: null, lng: null });
     onCreated();
@@ -291,6 +305,12 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
         <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
         {operationGroups.length > 0 && <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>}
         <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
+        <Field label="Person type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.person_type} onChange={(e) => setF({ ...f, person_type: e.target.value as "crew" | "visitor" })}><option value="crew">Crew</option><option value="visitor">Visitor</option></select></Field>
+        <Field label="Movement type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.movement_type} onChange={(e) => setF({ ...f, movement_type: e.target.value as "on_signing" | "off_signing" | "visitor" | "other" })}><option value="on_signing">On-signing</option><option value="off_signing">Off-signing</option><option value="visitor">Visitor</option><option value="other">Other</option></select></Field>
+        <Field label="Organisation (optional)"><Input value={f.organisation} onChange={(e) => setF({ ...f, organisation: e.target.value })} /></Field>
+        <Field label="Flight information (optional)"><Input value={f.flight_information} onChange={(e) => setF({ ...f, flight_information: e.target.value })} /></Field>
+        {f.person_type === "visitor" && <><Field label="Visit start"><Input type="date" value={f.visit_start_date} onChange={(e) => setF({ ...f, visit_start_date: e.target.value })} /></Field><Field label="Visit end"><Input type="date" value={f.visit_end_date} onChange={(e) => setF({ ...f, visit_end_date: e.target.value })} /></Field></>}
+        <div className="flex items-center gap-4 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={f.hotel_required} onChange={(e) => setF({ ...f, hotel_required: e.target.checked })} />Hotel required</label><label className="flex items-center gap-2"><input type="checkbox" checked={f.transport_required} onChange={(e) => setF({ ...f, transport_required: e.target.checked })} />Transport required</label></div>
         <div className="md:col-span-2">
           <Field label="Additional passengers (comma-separated, optional)">
             <Input value={f.extra_pax} onChange={(e) => setF({ ...f, extra_pax: e.target.value })} placeholder="Maria Rossi, Ali Hassan" />

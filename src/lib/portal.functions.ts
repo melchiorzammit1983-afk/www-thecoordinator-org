@@ -2,6 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isoToMaltaDateTime } from "@/lib/time";
+import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/journey-resolver";
+import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
+import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
+import { createAuthoritativeJob } from "@/lib/coordinator.functions";
+import { syncBookingPeopleToOperation } from "@/lib/portal-booking-people.server";
+import {
+  PORTAL_SLUG_RE, RESERVED_SLUGS, coordinatorNameSlug, portalNameSlug, slugifyWeb,
+} from "@/lib/portal-slug";
+
 
 
 /**
@@ -26,6 +35,16 @@ async function myCompanyId(userId: string) {
   const { data } = await a.from("drivers").select("company_id").eq("linked_user_id", userId).maybeSingle();
   return (data?.company_id ?? null) as string | null;
 }
+
+const PORTAL_MANAGER_SELECT = [
+  "id", "coordinator_company_id", "name", "kind", "contact_email", "contact_phone",
+  "logo_url", "brand_color", "display_name_for_passenger", "points_per_booking",
+  "monthly_seat_points", "active", "link_enabled", "link_expires_at", "magic_token",
+  "notification_email", "currency", "pricing_mode", "slug", "portal_slug", "created_at", "updated_at",
+  "portal_definition_id", "password_required",
+  "portals(id,name,portal_type,status,configuration)",
+  "portal_company_passwords(claimed_at,locked_until)",
+].join(",");
 
 // Mirrors the crew-notification email pattern (crew-trip-auto-create.ts):
 // same enqueue_email/transactional_emails shape, just a different label so
@@ -56,27 +75,56 @@ export const listPortals = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) return [];
-    const { data, error } = await context.supabase
+    const a = await admin();
+    const { data, error } = await a
       .from("portal_companies" as any)
-      .select("*")
+      .select(PORTAL_MANAGER_SELECT)
       .eq("coordinator_company_id", cid)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
   });
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-const RESERVED_SLUGS = new Set([
-  "www", "admin", "api", "app", "id-preview", "project", "mail", "auth",
-  "preview", "portal", "track", "static", "assets", "cdn", "help", "docs",
-]);
+/** Ensures the coordinator company has a stable, unique URL slug. */
+async function ensureCoordinatorSlug(a: any, cid: string): Promise<{ name: string; slug: string }> {
+  const { data: company } = await a.from("companies").select("name,slug").eq("id", cid).maybeSingle();
+  const name = (company?.name ?? "") as string;
+  if (company?.slug) return { name, slug: String(company.slug) };
+  const base = coordinatorNameSlug(name) || "coordinator";
+  let attempt = base;
+  for (let n = 2; n <= 50; n += 1) {
+    const { data: exists } = await a.from("companies").select("id").eq("slug", attempt).neq("id", cid).limit(1);
+    if (!exists || exists.length === 0) break;
+    attempt = `${base}-${n}`;
+  }
+  const { error } = await a.from("companies").update({ slug: attempt } as any).eq("id", cid);
+  if (error) throw new Error(error.message);
+  return { name, slug: attempt };
+}
+
+export const getPortalCompanySetup = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const cid = await myCompanyId(context.userId);
+    if (!cid) return { coordinator_name: "", coordinator_slug: "", templates: [] };
+    const a = await admin();
+    const [{ name, slug }, { data: templates, error }] = await Promise.all([
+      ensureCoordinatorSlug(a, cid),
+      a.from("portals").select("id,name,portal_type,status,configuration")
+        .eq("company_id", cid).eq("status", "active").order("name"),
+    ]);
+    if (error) throw new Error(error.message);
+    return { coordinator_name: name, coordinator_slug: slug, templates: templates ?? [] };
+  });
+
+const SLUG_RE = PORTAL_SLUG_RE;
 
 export function slugify(input: string): string {
-  const base = (input || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
-  const trimmed = base.length > 38 ? base.slice(0, 38) : base;
+  const trimmed = slugifyWeb(input, 38);
   return trimmed.length >= 3 ? trimmed : `${trimmed}co`;
 }
 
+/** Availability of a portal segment inside the caller's own coordinator space. */
 export const checkSlugAvailable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ slug: z.string(), excludeId: z.string().uuid().optional() }).parse(d))
@@ -84,12 +132,17 @@ export const checkSlugAvailable = createServerFn({ method: "POST" })
     const s = data.slug.trim().toLowerCase();
     if (!SLUG_RE.test(s)) return { ok: false as const, reason: "invalid" };
     if (RESERVED_SLUGS.has(s)) return { ok: false as const, reason: "reserved" };
-    let q = context.supabase.from("portal_companies" as any).select("id").eq("slug", s).limit(1);
+    const cid = await myCompanyId(context.userId);
+    if (!cid) return { ok: false as const, reason: "invalid" };
+    const a = await admin();
+    let q = a.from("portal_companies" as any).select("id")
+      .eq("coordinator_company_id", cid).eq("portal_slug", s).limit(1);
     if (data.excludeId) q = q.neq("id", data.excludeId);
     const { data: rows } = await q;
     if (rows && rows.length > 0) return { ok: false as const, reason: "taken" };
     return { ok: true as const };
   });
+
 
 export const createPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -103,29 +156,51 @@ export const createPortal = createServerFn({ method: "POST" })
     display_name_for_passenger: z.string().max(120).optional().nullable(),
     brand_color: z.string().max(20).optional().nullable(),
     link_expires_at: z.string().datetime().optional().nullable(),
+    portal_definition_id: z.string().uuid().optional().nullable(),
+    password_required: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const cid = await myCompanyId(context.userId);
     if (!cid) throw new Error("no_company");
-    // Ensure a unique slug (auto-suggest + dedup)
-    let baseSlug = (data.slug ?? slugify(data.name)).toLowerCase();
-    if (RESERVED_SLUGS.has(baseSlug)) baseSlug = `${baseSlug}-portal`;
     const a = await admin();
-    let attempt = baseSlug, n = 1;
-    while (n <= 20) {
-      const { data: exists } = await a.from("portal_companies" as any).select("id").eq("slug", attempt).limit(1);
+    await ensureCoordinatorSlug(a, cid);
+    const { data: activePortals } = await a.from("portal_companies" as any).select("id,name")
+      .eq("coordinator_company_id", cid).eq("active", true);
+    if ((activePortals ?? []).some((portal: any) =>
+      portal.name.trim().toLowerCase() === data.name.trim().toLowerCase())) {
+      throw new Error("This company already has an active portal.");
+    }
+    if (data.portal_definition_id) {
+      const { data: row } = await a.from("portals").select("id,name,status,company_id")
+        .eq("id", data.portal_definition_id).eq("company_id", cid).maybeSingle();
+      if (!row || row.status !== "active") throw new Error("Select an active Portal Builder template.");
+    }
+    // Clean branded link: /<coordinator-slug>/<portal-slug>. The portal
+    // segment only has to be unique inside this coordinator.
+    const requestedBase = (data.slug ?? portalNameSlug(data.name)) || "portal";
+    if (RESERVED_SLUGS.has(requestedBase)) throw new Error("slug_reserved");
+    let portalSlug = requestedBase, n = 1;
+    while (n <= 30) {
+      const { data: exists } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", portalSlug).limit(1);
       if (!exists || exists.length === 0) break;
       n += 1;
-      attempt = `${baseSlug.slice(0, 36)}-${n}`;
+      portalSlug = `${requestedBase.slice(0, 36)}-${n}`;
     }
-    const { data: row, error } = await context.supabase
+    // Legacy globally-unique slug keeps older `/h/<slug>` links working.
+    const secureSuffix = [...crypto.getRandomValues(new Uint8Array(8))]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const legacySlug = `${requestedBase.slice(0, 23).replace(/-+$/g, "")}-${secureSuffix}`;
+    const { slug: _ignored, ...rest } = data;
+    const { data: row, error } = await a
       .from("portal_companies" as any)
-      .insert({ ...data, slug: attempt, coordinator_company_id: cid } as any)
-      .select("*")
+      .insert({ ...rest, slug: legacySlug, portal_slug: portalSlug, coordinator_company_id: cid } as any)
+      .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
     return row;
   });
+
 
 export const updatePortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -145,19 +220,61 @@ export const updatePortal = createServerFn({ method: "POST" })
       active: z.boolean().optional(),
       link_enabled: z.boolean().optional(),
       link_expires_at: z.string().datetime().nullable().optional(),
+      portal_definition_id: z.string().uuid().nullable().optional(),
+      password_required: z.boolean().optional(),
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
     if (data.patch.slug && RESERVED_SLUGS.has(data.patch.slug.toLowerCase())) {
       throw new Error("slug_reserved");
     }
-    const { error, data: row } = await context.supabase
+    const cid = await myCompanyId(context.userId);
+    if (!cid) throw new Error("no_company");
+    const a = await admin();
+    const { data: target } = await a.from("portal_companies" as any)
+      .select("id,name,active,coordinator_company_id")
+      .eq("id", data.id).eq("coordinator_company_id", cid).maybeSingle();
+    if (!target) throw new Error("Portal not found.");
+    const targetPortal = target as unknown as { id: string; name: string; active: boolean };
+    if (targetPortal.active || data.patch.active === true) {
+      const candidateName = data.patch.name ?? targetPortal.name;
+      const { data: activePortals } = await a.from("portal_companies" as any)
+        .select("id,name").eq("coordinator_company_id", cid).eq("active", true).neq("id", data.id);
+      if ((activePortals ?? []).some((portal: any) =>
+        portal.name.trim().toLowerCase() === candidateName.trim().toLowerCase())) {
+        throw new Error("This company already has another active portal.");
+      }
+    }
+    if (data.patch.portal_definition_id) {
+      const { data: template } = await a.from("portals").select("id,status")
+        .eq("id", data.patch.portal_definition_id).eq("company_id", cid).maybeSingle();
+      if (!template || template.status !== "active")
+        throw new Error("Select an active Portal Builder template.");
+    }
+    // `patch.slug` is the portal segment of the branded link; the legacy
+    // global slug stays untouched so already-shared /h/<slug> links work.
+    const { slug: newPortalSlug, ...restPatch } = data.patch;
+    const patch: Record<string, unknown> = { ...restPatch };
+    if (newPortalSlug) {
+      const { data: clash } = await a.from("portal_companies" as any).select("id")
+        .eq("coordinator_company_id", cid).eq("portal_slug", newPortalSlug)
+        .neq("id", data.id).limit(1);
+      if (clash && clash.length > 0) throw new Error("slug_taken");
+      patch.portal_slug = newPortalSlug;
+    }
+    const { error, data: row } = await a
       .from("portal_companies" as any)
-      .update(data.patch as any)
-      .eq("id", data.id)
-      .select("*")
+      .update(patch as any)
+
+      .eq("id", data.id).eq("coordinator_company_id", cid)
+      .select(PORTAL_MANAGER_SELECT)
       .single();
     if (error) throw new Error(error.message);
+    if (data.patch.password_required === false) {
+      const { error: passwordError } = await a.from("portal_company_passwords" as any)
+        .delete().eq("portal_company_id", data.id);
+      if (passwordError) throw new Error(passwordError.message);
+    }
     // audit
     await context.supabase.from("portal_link_events" as any).insert({
       portal_company_id: data.id,
@@ -167,6 +284,28 @@ export const updatePortal = createServerFn({ method: "POST" })
       detail: data.patch as any,
     } as any);
     return row;
+  });
+
+export const resetPortalClientPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const cid = await myCompanyId(context.userId);
+    if (!cid) throw new Error("no_company");
+    const a = await admin();
+    const { data: portal } = await a.from("portal_companies" as any).select("id")
+      .eq("id", data.id).eq("coordinator_company_id", cid).maybeSingle();
+    if (!portal) throw new Error("Portal not found.");
+    const { error } = await a.from("portal_company_passwords" as any)
+      .delete().eq("portal_company_id", data.id);
+    if (error) throw new Error(error.message);
+    await a.from("portal_companies" as any).update({ password_required: true })
+      .eq("id", data.id).eq("coordinator_company_id", cid);
+    await a.from("portal_link_events" as any).insert({
+      portal_company_id: data.id, actor_user_id: context.userId,
+      actor_kind: "coordinator", event: "client_password_reset",
+    } as any);
+    return { ok: true };
   });
 
 export const rotatePortalToken = createServerFn({ method: "POST" })
@@ -240,19 +379,65 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
     if ((b as any).status !== "pending") throw new Error("not_pending");
 
     const payload = (b as any).payload ?? {};
+    const endpointTypes = normalizeBookingEndpointTypes(payload, { defaultMissingToLocal: true });
+    const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
+    const fromPort = await assertTokenPortSelection(a, cid, payload.from_port_id, payload.from_berth_id);
+    const toPort = await assertTokenPortSelection(a, cid, payload.to_port_id, payload.to_berth_id);
+    if ((fromPort && endpointTypes.fromLocationType !== "port") || (toPort && endpointTypes.toLocationType !== "port")) {
+      throw new Error("port_endpoint_type_required");
+    }
+    const ship = await assertTokenShipSelection(a, cid, payload.ship_event_id);
     if (payload.operation_group_id) {
-      const { data: group } = await a.from("operation_groups").select("id, status").eq("id", payload.operation_group_id).eq("company_id", cid).maybeSingle();
+      const { data: group, error: groupError } = await a.from("operation_groups")
+        .select("id, status").eq("id", payload.operation_group_id).eq("company_id", cid).maybeSingle();
+      if (groupError) throw new Error(groupError.message);
       if (!group) throw new Error("Operation Group not found.");
       if (!["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
     }
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
-    // create a job
-    const { data: job, error: jerr } = await a.from("jobs").insert({
+    // Legacy portal approval now uses the same authoritative Job service as
+    // Coordinator booking; portal_companies remains the compatibility queue.
+    const job = await createAuthoritativeJob({
+      from_location: payload.from_location,
+      to_location: payload.to_location,
+      from_location_type: endpointTypes.fromLocationType,
+      to_location_type: endpointTypes.toLocationType,
+      from_port_id: payload.from_port_id ?? null,
+      from_berth_id: payload.from_berth_id ?? null,
+      to_port_id: payload.to_port_id ?? null,
+      to_berth_id: payload.to_berth_id ?? null,
+      date: payload.date ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).date : new Date().toISOString().slice(0, 10)),
+      time: payload.time ?? (payload.pickup_at ? isoToMaltaDateTime(payload.pickup_at).time : "12:00"),
+      from_flight: (payload.flight_number || "").toUpperCase() || "",
+      clientcompanyname: (b as any).portal_companies.name || "",
+      contact_phone: payload.client_phone ?? "",
+      vehicle: payload.vehicle || "",
+      notes: payload.notes || "",
+      ship_event_id: ship?.id ?? null,
+      immigration_required: payload.immigration_required,
+      operation_group_id: payload.operation_group_id ?? null,
+      qr_strict_mode: false,
+      tracking_enabled: false,
+      passengers: [],
+    }, {
+      company_id: cid,
+      actor_type: "portal",
+      source: `portal:${(b as any).portal_company_id}`,
+    });
+    await syncBookingPeopleToOperation(a, payload, payload.operation_group_id, cid, (b as any).portal_company_id);
+    /*
+    const { data: legacyJob, error: jerr } = await a.from("jobs").insert({
       company_id: cid,
       origin_company_id: cid,
       executor_company_id: cid,
-      from_location: payload.from_location,
-      to_location: payload.to_location,
+      from_location: fromPort?.address ?? payload.from_location,
+      to_location: toPort?.address ?? payload.to_location,
+      from_location_type: endpointTypes.fromLocationType,
+      to_location_type: endpointTypes.toLocationType,
+      from_port_id: payload.from_port_id ?? null,
+      from_berth_id: payload.from_berth_id ?? null,
+      to_port_id: payload.to_port_id ?? null,
+      to_berth_id: payload.to_berth_id ?? null,
       pickup_lat: payload.from_lat ?? null,
       pickup_lng: payload.from_lng ?? null,
       pickup_display_name: payload.from_display_name || payload.from_location || null,
@@ -270,14 +455,16 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       clientcompanyname: (b as any).portal_companies.name || null,
       from_flight: (payload.flight_number || "").toUpperCase() || null,
       flightorship: payload.flight_number || null,
+      ship_event_id: ship?.id ?? null,
+      tracking_kind: ship ? "vessel" : undefined,
       contact_phone: payload.client_phone ?? null,
       vehicle: payload.vehicle || null,
       notes: payload.notes || null,
-      operation_group_id: payload.operation_group_id ?? null,
       source: `portal:${(b as any).portal_company_id}`,
       status: "pending",
     } as any).select("id").single();
     if (jerr) throw new Error(jerr.message);
+    */
 
     if (payload.flight_number) {
       const { applyLiveStatusToJobBg } = await import("./coordinator.functions");
@@ -349,7 +536,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       const { autoPriceJobBg } = await import("./auto-price.server");
       autoPriceJobBg((job as any).id);
     }
-    return { ok: true, job_id: (job as any).id };
+    return { ok: true, job_id: (job as any).id, journey };
   });
 
 export const rejectPortalBooking = createServerFn({ method: "POST" })
