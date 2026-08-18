@@ -69,6 +69,8 @@ type MemberRow = {
   flight_information: string | null;
   hotel_required: boolean;
   transport_required: boolean;
+  visit_start_date?: string | null;
+  visit_end_date?: string | null;
   notes: string | null;
 };
 type ServiceRow = {
@@ -720,6 +722,14 @@ function ClientPeopleCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [multiple, setMultiple] = useState("");
   const activePeople = members.filter((member) => member.side === "client" && member.active);
+  const suggestions = activePeople.reduce((counts, person) => {
+    if (!person.transport_required) return counts;
+    const label = person.person_type === "visitor"
+      ? (person.hotel_required ? "Hotel ↔ Ship" : "Airport → Ship")
+      : (person.movement_type === "off_signing" ? "Ship → Airport" : "Airport → Ship");
+    counts[label] = (counts[label] ?? 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
   const save = async () => {
     const base = {
       operation_group_id: groupId,
@@ -758,6 +768,7 @@ function ClientPeopleCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {Object.keys(suggestions).length > 0 && <div className="rounded-lg border border-dashed bg-muted/20 p-3"><div className="text-xs font-semibold">Suggested transport (review only)</div><div className="mt-1 space-y-0.5 text-xs text-muted-foreground">{Object.entries(suggestions).map(([label, count]) => <div key={label}>{count} {label}</div>)}</div><p className="mt-1 text-[11px] text-muted-foreground">Suggestions do not create or change Trips.</p></div>}
         <div className="space-y-2">
           {activePeople.length === 0 && (
             <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -773,6 +784,7 @@ function ClientPeopleCard({
                   {person.organisation ? ` · ${person.organisation}` : ""}
                   {person.transport_required ? " · transport" : ""}
                   {person.hotel_required ? " · hotel" : ""}
+                  {person.visit_start_date ? ` · visit ${person.visit_start_date}${person.visit_end_date ? ` → ${person.visit_end_date}` : ""}` : ""}
                 </div>
                 {person.flight_information && (
                   <div className="text-xs text-muted-foreground">Flight: {person.flight_information}</div>
