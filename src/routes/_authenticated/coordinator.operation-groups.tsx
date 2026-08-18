@@ -508,6 +508,9 @@ function OperationLinksSection({ operationGroupId, links, onChanged }: { operati
   const [accessPreset, setAccessPreset] = useState("custom");
   const applyPreset = (preset: string) => {
     setAccessPreset(preset);
+    if (preset === "captain") setRecipientType("captain");
+    if (preset === "ship_agent") setRecipientType("ship_agent");
+    if (preset === "hr") setRecipientType("corporate");
     const grants = {
       view_operation_summary: true,
       view_transport: false,
