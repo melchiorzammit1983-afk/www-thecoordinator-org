@@ -71,6 +71,8 @@ export const portalOperationActionSchema = z.discriminatedUnion("action", [
     flight_information: z.string().trim().max(300).nullable().optional(),
     hotel_required: z.boolean().default(false),
     transport_required: z.boolean().default(false),
+    visit_start_date: z.string().date().nullable().optional(),
+    visit_end_date: z.string().date().nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
   }),
   z.object({
@@ -86,6 +88,8 @@ export const portalOperationActionSchema = z.discriminatedUnion("action", [
     flight_information: z.string().trim().max(300).nullable().optional(),
     hotel_required: z.boolean(),
     transport_required: z.boolean(),
+    visit_start_date: z.string().date().nullable().optional(),
+    visit_end_date: z.string().date().nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
   }),
   z.object({

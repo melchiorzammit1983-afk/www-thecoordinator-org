@@ -31,6 +31,14 @@ export const portalRecipientBookingInput = z.object({
     note: z.string().trim().max(500).optional().nullable(),
   })).max(200).optional(),
   operation_group_id: z.string().uuid().nullable().optional(),
+  person_type: z.enum(["crew", "visitor"]).optional(),
+  organisation: z.string().trim().max(200).nullable().optional(),
+  movement_type: z.enum(["on_signing", "off_signing", "visitor", "other"]).optional(),
+  flight_information: z.string().trim().max(300).nullable().optional(),
+  hotel_required: z.boolean().optional(),
+  transport_required: z.boolean().optional(),
+  visit_start_date: z.string().date().nullable().optional(),
+  visit_end_date: z.string().date().nullable().optional(),
 });
 
 export type PortalRecipientBookingInput = z.infer<typeof portalRecipientBookingInput>;

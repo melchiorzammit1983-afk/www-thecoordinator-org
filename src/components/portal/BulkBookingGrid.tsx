@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -49,6 +50,11 @@ type GridRow = {
   vehicle: string;
   pax: string;
   notes: string;
+  personType: "crew" | "visitor";
+  hotelRequired: boolean;
+  transportRequired: boolean;
+  visitStartDate: string;
+  visitEndDate: string;
   // Checked rows are merged into a single trip on submit (one shared job,
   // every checked row's passenger names combined) instead of each becoming
   // its own booking — see submitAll().
@@ -65,7 +71,7 @@ function emptyRow(): GridRow {
     name: "", phone: "", email: "",
     from: "", fromLocationType: "local", fromPlaceId: null, fromLat: null, fromLng: null, fromPortId: null, fromBerthId: null,
     to: "", toLocationType: "local", toPlaceId: null, toLat: null, toLng: null, toPortId: null, toBerthId: null,
-    pickupAt: "", room: "", flight: "", vehicle: "", pax: "1", notes: "", selected: false,
+    pickupAt: "", room: "", flight: "", vehicle: "", pax: "1", notes: "", personType: "crew", hotelRequired: false, transportRequired: false, visitStartDate: "", visitEndDate: "", selected: false,
   };
 }
 
@@ -135,7 +141,7 @@ function applyCellValue(row: GridRow, key: ColumnKey, raw: string, ports: TokenP
   }
 }
 
-export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated: () => void }) {
+export function BulkBookingGrid({ token, operationGroups, onCreated }: { token: string; operationGroups: Array<{ id: string; reference: string; name: string; status: string }>; onCreated: () => void }) {
   const [rows, setRows] = useState<GridRow[]>([emptyRow(), emptyRow(), emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -145,6 +151,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
   // starting a new one. The server has the final say (it silently starts a
   // fresh batch if this one's already been touched by the coordinator).
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [operationGroupId, setOperationGroupId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [ports, setPorts] = useState<TokenPort[]>([]);
   useEffect(() => { fetch(`/api/public/portal/${token}/`).then((r) => r.json()).then((data) => setPorts(data.ports ?? [])).catch(() => undefined); }, [token]);
@@ -364,6 +371,12 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
           vehicle: r.vehicle.trim() || null,
           pax_count: Math.max(Number(r.pax) || 1, paxNames.length || 1),
           notes: r.notes.trim() || null,
+          operation_group_id: operationGroupId,
+          person_type: r.personType,
+          hotel_required: r.hotelRequired,
+          transport_required: r.transportRequired,
+          visit_start_date: r.personType === "visitor" ? (r.visitStartDate || null) : null,
+          visit_end_date: r.personType === "visitor" ? (r.visitEndDate || null) : null,
         };
       }
 
@@ -456,6 +469,7 @@ export function BulkBookingGrid({ token, onCreated }: { token: string; onCreated
         )}
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="grid gap-2 rounded-md border bg-muted/20 p-2 md:grid-cols-4"><div className="space-y-1"><Label className="text-xs">Operation (this batch)</Label><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></div><div className="space-y-1"><Label className="text-xs">Person type</Label><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={rows[0]?.personType ?? "crew"} onChange={(e) => setRows((current) => current.map((row) => ({ ...row, personType: e.target.value as "crew" | "visitor" })))}><option value="crew">Crew</option><option value="visitor">Visitor</option></select></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={rows[0]?.hotelRequired ?? false} onChange={(e) => setRows((current) => current.map((row) => ({ ...row, hotelRequired: e.target.checked })))} /> Hotel required</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={rows[0]?.transportRequired ?? false} onChange={(e) => setRows((current) => current.map((row) => ({ ...row, transportRequired: e.target.checked })))} /> Transport required</label></div>
         <div className="overflow-x-auto rounded-md border">
           <Table className="text-xs">
             <TableHeader>

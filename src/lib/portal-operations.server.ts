@@ -239,7 +239,7 @@ export async function loadPortalOperations(admin: AdminClient, portal: PortalSco
       ? admin
           .from("operation_group_members")
           .select(
-            "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,created_at,updated_at",
+            "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,visit_start_date,visit_end_date,notes,created_at,updated_at",
           )
           .in("operation_group_id", ids)
           .order("created_at")
@@ -338,6 +338,7 @@ export async function performPortalOperationAction(args: {
   }
 
   if (input.action === "add_member") {
+    if (input.visit_start_date && input.visit_end_date && input.visit_end_date < input.visit_start_date) throw new Error("Visit end date must be on or after the start date.");
     if (side === "client" && input.side !== "client")
       throw new Error("Clients may only add client people.");
     const group = await requireGroup(admin, portal, input.operation_group_id);
@@ -375,10 +376,12 @@ export async function performPortalOperationAction(args: {
         flight_information: input.flight_information ?? null,
         hotel_required: input.hotel_required,
         transport_required: input.transport_required,
+        visit_start_date: input.visit_start_date ?? null,
+        visit_end_date: input.visit_end_date ?? null,
         notes: input.notes ?? null,
       })
       .select(
-        "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,notes,created_at,updated_at",
+            "id,operation_group_id,side,role,name,email,is_primary_approver,active,person_type,organisation,movement_type,flight_information,hotel_required,transport_required,visit_start_date,visit_end_date,notes,created_at,updated_at",
       )
       .single();
     if (error)
@@ -396,6 +399,7 @@ export async function performPortalOperationAction(args: {
   }
 
   if (input.action === "update_member" || input.action === "remove_member") {
+    if (input.action === "update_member" && input.visit_start_date && input.visit_end_date && input.visit_end_date < input.visit_start_date) throw new Error("Visit end date must be on or after the start date.");
     const group = await requireGroup(admin, portal, input.operation_group_id);
     const existing = await admin
       .from("operation_group_members")
@@ -450,6 +454,8 @@ export async function performPortalOperationAction(args: {
         flight_information: input.flight_information ?? null,
         hotel_required: input.hotel_required,
         transport_required: input.transport_required,
+        visit_start_date: input.visit_start_date ?? null,
+        visit_end_date: input.visit_end_date ?? null,
         notes: input.notes ?? null,
       })
       .eq("id", existing.data.id)
