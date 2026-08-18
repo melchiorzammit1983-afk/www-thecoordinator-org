@@ -6,6 +6,7 @@ import { normalizeBookingEndpointTypes, resolveBookingJourney } from "@/lib/jour
 import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 import { createAuthoritativeJob } from "@/lib/coordinator.functions";
+import { syncBookingPeopleToOperation } from "@/lib/portal-booking-people.server";
 import {
   PORTAL_SLUG_RE, RESERVED_SLUGS, coordinatorNameSlug, portalNameSlug, slugifyWeb,
 } from "@/lib/portal-slug";
@@ -386,7 +387,14 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       throw new Error("port_endpoint_type_required");
     }
     const ship = await assertTokenShipSelection(a, cid, payload.ship_event_id);
+    if (payload.operation_group_id) {
+      const { data: group, error: groupError } = await a.from("operation_groups")
+        .select("id, status").eq("id", payload.operation_group_id).eq("company_id", cid).maybeSingle();
+      if (groupError) throw new Error(groupError.message);
+      if (!group || !["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
+    }
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
+    await syncBookingPeopleToOperation(a, payload, payload.operation_group_id, cid, (b as any).portal_company_id);
     // Legacy portal approval now uses the same authoritative Job service as
     // Coordinator booking; portal_companies remains the compatibility queue.
     const job = await createAuthoritativeJob({
@@ -407,6 +415,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       notes: payload.notes || "",
       ship_event_id: ship?.id ?? null,
       immigration_required: payload.immigration_required,
+      operation_group_id: payload.operation_group_id ?? null,
       qr_strict_mode: false,
       tracking_enabled: false,
       passengers: [],

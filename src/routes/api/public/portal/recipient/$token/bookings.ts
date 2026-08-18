@@ -3,6 +3,7 @@ import { createAuthoritativeJob } from "@/lib/coordinator.functions";
 import { resolvePortalRecipientAccess } from "@/lib/portal-definitions.functions";
 import { normalizePortalRecipientBooking, portalRecipientBookingInput } from "@/lib/portal-recipient-booking";
 import { isPortalFieldRequired, isPortalFieldVisible, normalizePortalBookingFields, type PortalBookingFieldConfiguration } from "@/lib/portal-field-configuration";
+import { syncBookingPeopleToOperation } from "@/lib/portal-booking-people.server";
 
 export const Route = createFileRoute("/api/public/portal/recipient/$token/bookings")({
   server: {
@@ -83,6 +84,13 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
             if (error) throw new Error(error.message);
             return Response.json({ id: submission.id, status: submission.status, requires_approval: true }, { status: 202 });
           }
+          await syncBookingPeopleToOperation(
+            (await import("@/integrations/supabase/client.server")).supabaseAdmin,
+            input,
+            input.operation_group_id,
+            access.recipient.company_id,
+            access.portal.id,
+          );
           const job = await createAuthoritativeJob({
             ...input,
             qr_strict_mode: false,
