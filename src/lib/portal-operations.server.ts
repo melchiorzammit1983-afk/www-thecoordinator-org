@@ -341,6 +341,8 @@ export async function performPortalOperationAction(args: {
     if (side === "client" && input.side !== "client")
       throw new Error("Clients may only add client people.");
     const group = await requireGroup(admin, portal, input.operation_group_id);
+    if (side === "client" && group.status !== "draft")
+      throw new Error("People can only be added while the Operation is Draft.");
     const coordinatorRoles = new Set([
       "lead_coordinator",
       "operations_member",
@@ -397,6 +399,8 @@ export async function performPortalOperationAction(args: {
 
   if (input.action === "update_member" || input.action === "remove_member") {
     const group = await requireGroup(admin, portal, input.operation_group_id);
+    if (side === "client" && group.status !== "draft")
+      throw new Error("People can only be changed while the Operation is Draft.");
     const existing = await admin
       .from("operation_group_members")
       .select(
