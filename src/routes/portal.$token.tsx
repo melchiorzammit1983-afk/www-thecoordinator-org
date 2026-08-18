@@ -7,17 +7,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { HotelManagePanel } from "@/components/portal/HotelManagePanel";
 import { BulkBookingGrid } from "@/components/portal/BulkBookingGrid";
 import { AddressAutocomplete, type AddressPick } from "@/components/address/AddressAutocomplete";
+import { TokenPortPicker, type TokenPort } from "@/components/address/TokenPortPicker";
+import { TokenShipPicker, type TokenShip } from "@/components/address/TokenShipPicker";
+import { classifyProviderEndpoint } from "@/lib/journey-resolver";
 import { flightFormatWarning } from "@/lib/flight-code";
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle, Download, LockKeyhole } from "lucide-react";
 import { downloadBookingsStatusExcel, downloadBookingsStatusCsv } from "@/lib/booking-sheet-template";
 import { splitPaxNames } from "@/lib/split-pax-names";
 import { loadGoogleMaps } from "@/lib/load-google-maps";
 import { formatEta } from "@/lib/trip-display";
+import { OperationsWorkspace } from "@/components/portal/OperationsWorkspace";
 
 export const Route = createFileRoute("/portal/$token")({
   ssr: false,
@@ -85,7 +89,12 @@ function TripStatusTimeline({ current }: { current: string | undefined }) {
 }
 
 type Boot = {
-  portal: { id: string; name: string; kind: string; logo_url: string | null; brand_color: string | null; display_name_for_passenger: string; link_expires_at: string | null };
+  portal: {
+    id: string; name: string; kind: string; logo_url: string | null;
+    brand_color: string | null; display_name_for_passenger: string;
+    link_expires_at: string | null; template_name: string | null;
+    configuration: { capabilities?: Record<string, boolean> } | null;
+  };
   bookings: any[];
   jobs: any[];
   operation_groups: Array<{ id: string; reference: string; name: string; status: string }>;
@@ -95,16 +104,25 @@ function PortalPage() {
   const { token } = Route.useParams();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bookings" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
+  const [accessMode, setAccessMode] = useState<"setup" | "login" | null>(null);
+  const [tab, setTab] = useState<"bookings" | "operations" | "trips" | "chat" | "statement" | "manage" | "settings">("bookings");
 
   async function reload() {
     const r = await fetch(`/api/public/portal/${token}/`);
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
+      if (r.status === 401 && (e.error === "password_setup_required" || e.error === "password_required")) {
+        setAccessMode(e.error === "password_setup_required" ? "setup" : "login");
+        setErr(null);
+        setBoot(null);
+        return;
+      }
+      setAccessMode(null);
       setErr(e.error || `error_${r.status}`);
       return;
     }
     setErr(null);
+    setAccessMode(null);
     setBoot(await r.json());
   }
   useEffect(() => {
@@ -113,6 +131,24 @@ function PortalPage() {
     return () => window.clearInterval(refresh);
   }, [token]);
 
+  const capabilities = boot?.portal.configuration?.capabilities;
+  const capabilityEnabled = (key: string, fallback = true) => capabilities?.[key] ?? fallback;
+  const showBookings = capabilityEnabled("create_booking") || capabilityEnabled("view_own_submissions");
+  const showTrips = capabilityEnabled("view_trips");
+  const showOperations = capabilityEnabled("create_operation_group", true)
+    || capabilityEnabled("select_operation_group", true);
+  const showChat = capabilityEnabled("chat");
+  const showStatements = capabilityEnabled("view_statements");
+  const showManage = boot?.portal.kind === "hotel"
+    && capabilityEnabled("manage_crew", !boot?.portal.configuration);
+  const showSettings = capabilityEnabled("manage_profile");
+  const availableTabs = [
+    showBookings && "bookings", showOperations && "operations", showTrips && "trips", showChat && "chat",
+    showStatements && "statement", showManage && "manage", showSettings && "settings",
+  ].filter(Boolean) as Array<typeof tab>;
+  const activeTab = availableTabs.includes(tab) ? tab : (availableTabs[0] ?? tab);
+
+  if (accessMode) return <PortalPasswordDialog token={token} mode={accessMode} onAuthenticated={reload} />;
   if (err) return <OfflineCard reason={err} />;
   if (!boot) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
 
@@ -129,49 +165,54 @@ function PortalPage() {
           )}
           <div>
             <div className="font-semibold">{boot.portal.name}</div>
-            <div className="text-xs text-muted-foreground">{portalKindLabel(boot.portal.kind)} portal</div>
+            <div className="text-xs text-muted-foreground">{boot.portal.template_name ?? portalKindLabel(boot.portal.kind)} portal</div>
           </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto p-4">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+        <Tabs value={activeTab} onValueChange={(v) => setTab(v as any)}>
           <TabsList className="flex-wrap h-auto">
-            <TabsTrigger value="bookings">Bookings</TabsTrigger>
-            <TabsTrigger value="trips">Trips</TabsTrigger>
-            <TabsTrigger value="chat">Chat</TabsTrigger>
-            <TabsTrigger value="statement">Statement</TabsTrigger>
-            {boot.portal.kind === "hotel" && <TabsTrigger value="manage">Manage</TabsTrigger>}
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            {showBookings && <TabsTrigger value="bookings">Bookings</TabsTrigger>}
+            {showOperations && <TabsTrigger value="operations">Operations</TabsTrigger>}
+            {showTrips && <TabsTrigger value="trips">Trips</TabsTrigger>}
+            {showChat && <TabsTrigger value="chat">Chat</TabsTrigger>}
+            {showStatements && <TabsTrigger value="statement">Statement</TabsTrigger>}
+            {showManage && <TabsTrigger value="manage">Manage</TabsTrigger>}
+            {showSettings && <TabsTrigger value="settings">Settings</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="bookings" className="mt-4 space-y-4">
-            <BookingEntry token={token} kind={boot.portal.kind} operationGroups={boot.operation_groups ?? []} onCreated={reload} />
-            <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />
-          </TabsContent>
+          {showBookings && <TabsContent value="bookings" className="mt-4 space-y-4">
+            {capabilityEnabled("create_booking") && <BookingEntry token={token} kind={boot.portal.kind} operationGroups={boot.operation_groups ?? []} onCreated={reload} />}
+            {capabilityEnabled("view_own_submissions") && <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />}
+          </TabsContent>}
 
-          <TabsContent value="trips" className="mt-4">
+          {showOperations && <TabsContent value="operations" className="mt-4">
+            <OperationsWorkspace mode="client" token={token} portalName={boot.portal.name} />
+          </TabsContent>}
+
+          {showTrips && <TabsContent value="trips" className="mt-4">
             <TripsList token={token} bookings={boot.bookings} jobs={boot.jobs} onChanged={reload} />
-          </TabsContent>
+          </TabsContent>}
 
-          <TabsContent value="chat" className="mt-4">
+          {showChat && <TabsContent value="chat" className="mt-4">
             <ChatPanel token={token} bookings={boot.bookings} />
-          </TabsContent>
+          </TabsContent>}
 
-          <TabsContent value="statement" className="mt-4">
+          {showStatements && <TabsContent value="statement" className="mt-4">
             <PortalStatementPanel token={token} />
-          </TabsContent>
+          </TabsContent>}
 
-          {boot.portal.kind === "hotel" && (
+          {showManage && (
             <TabsContent value="manage" className="mt-4">
               <HotelManagePanel token={token} portal={boot.portal as any} />
             </TabsContent>
           )}
 
-          <TabsContent value="settings" className="mt-4 space-y-4">
+          {showSettings && <TabsContent value="settings" className="mt-4 space-y-4">
             <LogoPanel token={token} portal={boot.portal} onSaved={reload} />
             <SettingsPanel token={token} portal={boot.portal} onSaved={reload} />
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </main>
     </div>
@@ -182,6 +223,7 @@ function OfflineCard({ reason }: { reason: string }) {
   const msg = reason === "link_off" ? "This portal link is currently switched off."
     : reason === "link_expired" ? "This portal link has expired."
     : reason === "portal_disabled" ? "This portal is not active."
+    : reason === "portal_configuration_disabled" ? "This portal configuration is not active."
     : reason === "not_found" ? "This link is not valid."
     : "This link is unavailable.";
   return (
@@ -192,6 +234,91 @@ function OfflineCard({ reason }: { reason: string }) {
       </div>
     </div>
   );
+}
+
+function PortalPasswordDialog({ token, mode, onAuthenticated }: {
+  token: string;
+  mode: "setup" | "login";
+  onAuthenticated: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submit() {
+    if (mode === "setup" && password !== confirmPassword) {
+      setMessage("The passwords do not match.");
+      return;
+    }
+    if (password.length < 8) {
+      setMessage("Use at least 8 characters.");
+      return;
+    }
+    setBusy(true); setMessage(null);
+    try {
+      const response = await fetch(`/api/public/portal/${token}/access`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: mode, password }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (payload.error === "password_already_created") {
+          setMessage("A password was already created. Enter that password to continue.");
+          window.setTimeout(onAuthenticated, 300); return;
+        }
+        if (payload.error === "password_locked") {
+          const until = payload.locked_until
+            ? new Date(payload.locked_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "later";
+          setMessage(`Too many attempts. Try again after ${until}.`); return;
+        }
+        if (payload.error === "invalid_password") {
+          setMessage(`Incorrect password. ${payload.attempts_remaining ?? 0} attempts remaining.`); return;
+        }
+        if (payload.error === "rate_limited") {
+          setMessage("Too many attempts. Wait one minute and try again."); return;
+        }
+        setMessage("Password access could not be completed."); return;
+      }
+      toast.success(mode === "setup" ? "Your portal password is ready" : "Portal unlocked");
+      await onAuthenticated();
+    } catch {
+      setMessage("Could not connect. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="min-h-screen bg-muted/30">
+    <Dialog open onOpenChange={() => undefined}>
+      <DialogContent onInteractOutside={(event) => event.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" />
+            {mode === "setup" ? "Create your portal password" : "Enter your portal password"}
+          </DialogTitle>
+          <DialogDescription>{mode === "setup"
+            ? "This is your first visit. Create a private password that only your company should know. The coordinator cannot view it."
+            : "This company portal is password protected."}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <div className="space-y-1.5"><Label>Password</Label>
+            <Input type="password" autoComplete={mode === "setup" ? "new-password" : "current-password"}
+              value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
+            {mode === "setup" && <p className="text-xs text-muted-foreground">Use at least 8 characters. Do not share it in the same message as the portal link.</p>}
+          </div>
+          {mode === "setup" && <div className="space-y-1.5"><Label>Confirm password</Label>
+            <Input type="password" autoComplete="new-password" value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)} />
+          </div>}
+          {message && <p className="text-sm text-destructive">{message}</p>}
+          <Button className="w-full" type="submit" disabled={busy}>
+            {busy ? "Please wait…" : mode === "setup" ? "Create password & open portal" : "Open portal"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
 
 function BookingEntry({ token, kind, operationGroups, onCreated }: { token: string; kind: string; operationGroups: Boot["operation_groups"]; onCreated: () => void }) {
@@ -215,21 +342,32 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
   const [f, setF] = useState({
     name: "", surname: "", client_phone: "", client_email: "",
     pickup_at: "", room_number: "",
-    flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "",
-    person_type: "crew" as "crew" | "visitor", organisation: "", movement_type: "other" as "on_signing" | "off_signing" | "visitor" | "other",
-    flight_information: "", hotel_required: false, transport_required: false, visit_start_date: "", visit_end_date: "",
+    flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "", person_type: "crew" as "crew" | "visitor", organisation: "", movement_type: "other" as "on_signing" | "off_signing" | "visitor" | "other", flight_information: "", hotel_required: false, transport_required: false, visit_start_date: "", visit_end_date: "",
   });
   const [fromPick, setFromPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
   const [toPick, setToPick] = useState<AddressPick>({ address: "", place_id: null, lat: null, lng: null });
-  const [busy, setBusy] = useState(false);
+  const [fromPortId, setFromPortId] = useState<string | null>(null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(null);
+  const [toPortId, setToPortId] = useState<string | null>(null);
+  const [toBerthId, setToBerthId] = useState<string | null>(null);
+  const [shipEventId, setShipEventId] = useState<string | null>(null);
   const [operationGroupId, setOperationGroupId] = useState<string | null>(null);
+  const [ports, setPorts] = useState<TokenPort[]>([]);
+  const [ships, setShips] = useState<TokenShip[]>([]);
+  const [busy, setBusy] = useState(false);
   const flightWarning = flightFormatWarning(f.flight_number);
 
+  // Same Port Directory / ship-event data the coordinator links against —
+  // so a port or ship an HR/company agent picks here shows on the
+  // coordinator's trip card exactly like one they'd have linked themselves.
+  useEffect(() => {
+    fetch(`/api/public/portal/${token}/`)
+      .then((r) => r.json())
+      .then((data) => { setPorts(data.ports ?? []); setShips(data.ships ?? []); })
+      .catch(() => undefined);
+  }, [token]);
+
   async function submit() {
-    if (f.person_type === "visitor" && f.visit_start_date && f.visit_end_date && f.visit_end_date < f.visit_start_date) {
-      toast.error("Visit end date must be on or after the start date");
-      return;
-    }
     setBusy(true);
     const primary = `${f.name.trim()} ${f.surname.trim()}`.trim();
     const paxNames = [primary, ...splitPaxNames(f.extra_pax)].filter(Boolean);
@@ -244,15 +382,22 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
       vehicle: f.vehicle.trim() || null,
       notes: f.notes.trim() || null,
       from_location: fromPick.address,
+      from_location_type: fromPortId ? "port" as const : classifyProviderEndpoint(fromPick.place_types),
       from_place_id: fromPick.place_id,
       from_lat: fromPick.lat,
       from_lng: fromPick.lng,
       from_display_name: fromPick.display_name ?? null,
+      from_port_id: fromPortId,
+      from_berth_id: fromBerthId,
       to_location: toPick.address,
+      to_location_type: toPortId ? "port" as const : classifyProviderEndpoint(toPick.place_types),
       to_place_id: toPick.place_id,
       to_lat: toPick.lat,
       to_lng: toPick.lng,
       to_display_name: toPick.display_name ?? null,
+      to_port_id: toPortId,
+      to_berth_id: toBerthId,
+      ship_event_id: shipEventId,
       operation_group_id: operationGroupId,
       person_type: f.person_type,
       organisation: f.organisation.trim() || null,
@@ -260,8 +405,8 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
       flight_information: f.flight_information.trim() || null,
       hotel_required: f.hotel_required,
       transport_required: f.transport_required,
-      visit_start_date: f.visit_start_date || null,
-      visit_end_date: f.visit_end_date || null,
+      visit_start_date: f.person_type === "visitor" ? (f.visit_start_date || null) : null,
+      visit_end_date: f.person_type === "visitor" ? (f.visit_end_date || null) : null,
       pax_count: Math.max(Number(f.pax_count) || 1, paxNames.length || 1),
       pickup_at: f.pickup_at ? new Date(f.pickup_at).toISOString() : null,
     };
@@ -274,6 +419,7 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
     setF({ name: "", surname: "", client_phone: "", client_email: "", pickup_at: "", room_number: "", flight_number: "", vehicle: "", pax_count: "1", notes: "", extra_pax: "", person_type: "crew", organisation: "", movement_type: "other", flight_information: "", hotel_required: false, transport_required: false, visit_start_date: "", visit_end_date: "" });
     setFromPick({ address: "", place_id: null, lat: null, lng: null });
     setToPick({ address: "", place_id: null, lat: null, lng: null });
+    setFromPortId(null); setFromBerthId(null); setToPortId(null); setToBerthId(null); setShipEventId(null); setOperationGroupId(null);
     onCreated();
   }
   return (
@@ -284,8 +430,14 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
         <Field label="Guest last name"><Input value={f.surname} onChange={(e) => setF({ ...f, surname: e.target.value })} /></Field>
         <Field label="Guest phone"><Input value={f.client_phone} onChange={(e) => setF({ ...f, client_phone: e.target.value })} /></Field>
         <Field label="Guest email"><Input type="email" value={f.client_email} onChange={(e) => setF({ ...f, client_email: e.target.value })} /></Field>
-        <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-        <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+        <Field label="From">
+          <AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} />
+          <TokenPortPicker ports={ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); if (address) setFromPick((p) => ({ ...p, address })); }} />
+        </Field>
+        <Field label="To">
+          <AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} />
+          <TokenPortPicker ports={ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); if (address) setToPick((p) => ({ ...p, address })); }} />
+        </Field>
         <Field label="Pickup date & time"><Input type="datetime-local" value={f.pickup_at} onChange={(e) => setF({ ...f, pickup_at: e.target.value })} /></Field>
         <Field label="Room"><Input value={f.room_number} onChange={(e) => setF({ ...f, room_number: e.target.value })} /></Field>
         <Field label="Flight">
@@ -303,14 +455,15 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
           {flightWarning && <p className="text-xs text-red-600 mt-1">{flightWarning}</p>}
         </Field>
         <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
+        <Field label="Ship (optional)"><TokenShipPicker ships={ships} shipEventId={shipEventId} onChange={setShipEventId} /></Field>
         {operationGroups.length > 0 && <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>}
-        <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <Field label="Person type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.person_type} onChange={(e) => setF({ ...f, person_type: e.target.value as "crew" | "visitor" })}><option value="crew">Crew</option><option value="visitor">Visitor</option></select></Field>
         <Field label="Movement type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.movement_type} onChange={(e) => setF({ ...f, movement_type: e.target.value as "on_signing" | "off_signing" | "visitor" | "other" })}><option value="on_signing">On-signing</option><option value="off_signing">Off-signing</option><option value="visitor">Visitor</option><option value="other">Other</option></select></Field>
         <Field label="Organisation (optional)"><Input value={f.organisation} onChange={(e) => setF({ ...f, organisation: e.target.value })} /></Field>
         <Field label="Flight information (optional)"><Input value={f.flight_information} onChange={(e) => setF({ ...f, flight_information: e.target.value })} /></Field>
         {f.person_type === "visitor" && <><Field label="Visit start"><Input type="date" value={f.visit_start_date} onChange={(e) => setF({ ...f, visit_start_date: e.target.value })} /></Field><Field label="Visit end"><Input type="date" value={f.visit_end_date} onChange={(e) => setF({ ...f, visit_end_date: e.target.value })} /></Field></>}
-        <div className="flex items-center gap-4 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={f.hotel_required} onChange={(e) => setF({ ...f, hotel_required: e.target.checked })} />Hotel required</label><label className="flex items-center gap-2"><input type="checkbox" checked={f.transport_required} onChange={(e) => setF({ ...f, transport_required: e.target.checked })} />Transport required</label></div>
+        <div className="md:col-span-2 flex items-center gap-4 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={f.hotel_required} onChange={(e) => setF({ ...f, hotel_required: e.target.checked })} />Hotel required</label><label className="flex items-center gap-2"><input type="checkbox" checked={f.transport_required} onChange={(e) => setF({ ...f, transport_required: e.target.checked })} />Transport required</label></div>
+        <Field label="Pax"><Input type="number" min={1} value={f.pax_count} onChange={(e) => setF({ ...f, pax_count: e.target.value })} /></Field>
         <div className="md:col-span-2">
           <Field label="Additional passengers (comma-separated, optional)">
             <Input value={f.extra_pax} onChange={(e) => setF({ ...f, extra_pax: e.target.value })} placeholder="Maria Rossi, Ali Hassan" />
@@ -511,8 +664,8 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
                 <Field label="Guest email"><Input value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
               </>
             )}
-            <Field label="From"><AddressAutocomplete value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
-            <Field label="To"><AddressAutocomplete value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
+            <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
+            <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
             <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
             {isPending && (
               <>

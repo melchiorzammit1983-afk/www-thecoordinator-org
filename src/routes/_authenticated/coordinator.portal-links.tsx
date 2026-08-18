@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useRef, useState } from "react";
@@ -9,9 +9,14 @@ import {
   getMagicLinkPreview,
 } from "@/lib/coordinator.functions";
 import {
-  listPortals, createPortal, updatePortal, rotatePortalToken, deletePortal,
-  checkSlugAvailable, slugify, generatePortalStatement,
+  listPortals, createPortal, updatePortal, rotatePortalToken,
+  checkSlugAvailable, generatePortalStatement,
+  getPortalCompanySetup, resetPortalClientPassword,
 } from "@/lib/portal.functions";
+import { portalNameSlug } from "@/lib/portal-slug";
+
+import { PortalCreatorWorkspace } from "@/components/coordinator/PortalCreatorWorkspace";
+import { CoordinatorOperationsButton } from "@/components/portal/OperationsWorkspace";
 import {
   listPublicPortals, createPublicPortal, updatePublicPortal,
   rotatePublicPortal, deletePublicPortal,
@@ -31,8 +36,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Copy, Trash2, Link2, Clock, MessageCircle, Power, PowerOff, RotateCw,
-  Image as ImageIcon, ExternalLink, Receipt,
+  Archive, Copy, Trash2, Link2, Clock, MessageCircle, Power, PowerOff, RotateCw, Settings2,
+  Image as ImageIcon, ExternalLink, KeyRound, Receipt,
 } from "lucide-react";
 
 const PORTAL_KIND_LABELS: Record<string, string> = {
@@ -45,28 +50,24 @@ function portalKindLabel(kind: string): string {
 }
 
 export const Route = createFileRoute("/_authenticated/coordinator/portal-links")({
-  head: () => ({ meta: [{ title: "Portal Links — Coordinator" }] }),
+  head: () => ({ meta: [{ title: "Client Portals — Coordinator" }] }),
   component: PortalLinksPage,
 });
 
 function PortalLinksPage() {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-semibold">Portal links</h1>
+      <h1 className="text-2xl font-semibold">Client portals</h1>
       <p className="text-sm text-muted-foreground mt-1">
-        Passwordless links that let drivers see their manifest, clients see their bookings, and hotels/agents/companies run their own bookings dashboard.
+        Create, share, manage, close, and archive every external portal and secure access link from one workspace.
       </p>
       <Tabs defaultValue="companies" className="mt-6">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="companies">Companies</TabsTrigger>
-          <TabsTrigger value="public">Public booking</TabsTrigger>
-          <TabsTrigger value="driver">Drivers</TabsTrigger>
-          <TabsTrigger value="client">Clients</TabsTrigger>
+          <TabsTrigger value="builder">Portal Builder</TabsTrigger>
         </TabsList>
         <TabsContent value="companies" className="mt-4"><CompaniesPanel /></TabsContent>
-        <TabsContent value="public" className="mt-4"><PublicBookingPanel /></TabsContent>
-        <TabsContent value="driver" className="mt-4"><LinksPanel kind="driver" /></TabsContent>
-        <TabsContent value="client" className="mt-4"><LinksPanel kind="client" /></TabsContent>
+        <TabsContent value="builder" className="mt-4"><PortalCreatorWorkspace embedded /></TabsContent>
       </Tabs>
     </div>
   );
@@ -305,38 +306,63 @@ function PendingRequestRow({ req }: { req: any }) {
 /* ------------------------- Companies (portals) ------------------------- */
 
 const BRAND_DOMAIN = "thecoordinator.org";
+const PUBLIC_APP_ORIGIN = "https://www.thecoordinator.org";
 
-function brandedUrl(slug: string | null | undefined) {
-  if (!slug) return null;
-  return `https://${BRAND_DOMAIN}/h/${slug}`;
+/** Clean branded link, falling back to the legacy /h/<slug> form. */
+function brandedPath(coordinatorSlug: string | null | undefined, portal: any): string | null {
+  if (coordinatorSlug && portal?.portal_slug) return `/${coordinatorSlug}/${portal.portal_slug}`;
+  if (portal?.slug) return `/h/${portal.slug}`;
+  return null;
 }
-function brandedUrlDisplay(slug: string | null | undefined) {
-  if (!slug) return null;
-  return `${BRAND_DOMAIN}/h/${slug}`;
+function brandedUrl(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
+  return `${PUBLIC_APP_ORIGIN}${path}`;
 }
+function brandedUrlDisplay(coordinatorSlug: string | null | undefined, portal: any) {
+  const path = brandedPath(coordinatorSlug, portal);
+  if (!path) return null;
+  return `${PUBLIC_APP_ORIGIN}${path}`;
+}
+
 function rawTokenUrl(token: string) {
-  if (typeof window === "undefined") return `/portal/${token}`;
-  return `${window.location.origin}/portal/${token}`;
+  return `${PUBLIC_APP_ORIGIN}/portal/${token}`;
 }
 
 function CompaniesPanel() {
   const listFn = useServerFn(listPortals);
   const createFn = useServerFn(createPortal);
   const checkFn = useServerFn(checkSlugAvailable);
+  const setupFn = useServerFn(getPortalCompanySetup);
   const qc = useQueryClient();
   const { data: portals } = useQuery({ queryKey: ["portals"], queryFn: () => listFn() as Promise<any[]> });
+  const { data: setup } = useQuery({
+    queryKey: ["portal-company-setup"],
+    queryFn: () => setupFn() as Promise<{
+      coordinator_name: string;
+      coordinator_slug: string;
+      templates: Array<{ id: string; name: string; portal_type: string }>;
+    }>,
+  });
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [kind, setKind] = useState<"hotel" | "agent" | "company_agent">("hotel");
+  const [templateId, setTemplateId] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [points, setPoints] = useState("3");
   const [expiryPreset, setExpiryPreset] = useState<string>("never");
   const [slugState, setSlugState] = useState<"idle" | "ok" | "taken" | "invalid" | "reserved" | "checking">("idle");
   const debounceRef = useRef<number | null>(null);
 
-  const autoSlug = useMemo(() => (name ? slugify(name) : ""), [name]);
+  const templates = setup?.templates ?? [];
+  const coordinatorSlug = setup?.coordinator_slug ?? "";
+  const effectiveTemplateId = templateId || templates[0]?.id || "";
+  const selectedTemplate = templates.find((template) => template.id === effectiveTemplateId);
+  const kind = selectedTemplate?.portal_type === "hotel" ? "hotel" : "company_agent";
+  const autoSlug = useMemo(() => (name ? portalNameSlug(name) : ""), [name]);
   const effectiveSlug = slugTouched ? slug : autoSlug;
+
 
   function onSlugChange(v: string) {
     setSlugTouched(true);
@@ -364,11 +390,13 @@ function CompaniesPanel() {
         name, kind, points_per_booking: Number(points) || 3,
         slug: effectiveSlug || undefined,
         link_expires_at: expiresAt,
+        portal_definition_id: effectiveTemplateId,
+        password_required: passwordRequired,
       } });
     },
     onSuccess: () => {
       toast.success("Company portal created");
-      setName(""); setSlug(""); setSlugTouched(false); setSlugState("idle");
+      setName(""); setSlug(""); setSlugTouched(false); setSlugState("idle"); setPasswordRequired(false);
       qc.invalidateQueries({ queryKey: ["portals"] });
     },
     onError: (e: Error) => toast.error(e.message ?? "Failed"),
@@ -377,20 +405,29 @@ function CompaniesPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-        Send a company its own private dashboard where they can create bookings, chat with guests, and see their statements.
-        Branded URLs look like <code className="bg-background px-1 rounded">{BRAND_DOMAIN}/h/yourhotel</code>.
+        Build and activate the design in Portal Builder, then create one secure portal here.
+        Every link is <span className="font-medium text-foreground">{BRAND_DOMAIN}/{coordinatorSlug || "your-name"}/portal-name</span> —
+        your coordinator name stays fixed, you choose the portal name.
       </div>
+
+      {templates.length === 0 && (
+        <div className="rounded-lg border border-amber-400/50 bg-amber-50 p-3 text-sm text-amber-900">
+          Create and activate a template in Portal Builder before creating a company portal.
+        </div>
+      )}
 
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Company name</Label>
+            <Label>Portal name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Grand Hotel Valletta" />
           </div>
           <div className="space-y-1.5 md:col-span-2">
             <Label>Branded link</Label>
-            <div className="flex items-center border rounded-md h-10 px-2 bg-background text-sm">
-              <span className="text-muted-foreground text-xs whitespace-nowrap">{BRAND_DOMAIN}/h/</span>
+            <div className="flex items-center border rounded-md h-10 pl-2 pr-2 bg-background text-sm overflow-hidden">
+              <span className="text-muted-foreground text-xs whitespace-nowrap">
+                {BRAND_DOMAIN}/<span className="font-medium text-foreground">{coordinatorSlug || "…"}</span>/
+              </span>
               <Input
                 className="border-0 h-8 px-0 focus-visible:ring-0 flex-1 min-w-0"
                 value={effectiveSlug}
@@ -401,14 +438,14 @@ function CompaniesPanel() {
             </div>
             <SlugHint state={slugState} slug={effectiveSlug} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Kind</Label>
-            <Select value={kind} onValueChange={(v) => setKind(v as any)}>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Portal Builder template</Label>
+            <Select value={effectiveTemplateId} onValueChange={setTemplateId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="hotel">Hotel</SelectItem>
-                <SelectItem value="agent">Agent</SelectItem>
-                <SelectItem value="company_agent">Company/Agent Portal</SelectItem>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -429,10 +466,24 @@ function CompaniesPanel() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+              <input
+                type="checkbox"
+                checked={passwordRequired}
+                onChange={(event) => setPasswordRequired(event.target.checked)}
+              />
+              Require client password
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              A clean link is easy to share — and easy to guess. Turn this on for portals that shouldn't open publicly.
+            </p>
+          </div>
+
           <div className="md:col-span-6 flex justify-end">
             <Button
               onClick={() => create.mutate()}
-              disabled={!name || create.isPending || slugState === "taken" || slugState === "invalid" || slugState === "reserved"}
+              disabled={!name || !effectiveTemplateId || create.isPending || slugState === "taken" || slugState === "invalid" || slugState === "reserved"}
             >
               <Link2 className="h-4 w-4 mr-1" /> Create company portal
             </Button>
@@ -444,7 +495,7 @@ function CompaniesPanel() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Company</TableHead>
+              <TableHead>Portal</TableHead>
               <TableHead>Branded URL</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Expires</TableHead>
@@ -458,7 +509,7 @@ function CompaniesPanel() {
               </TableCell></TableRow>
             )}
             {(portals ?? []).map((p) => (
-              <CompanyRow key={p.id} portal={p} />
+              <CompanyRow key={p.id} portal={p} coordinatorSlug={coordinatorSlug} />
             ))}
           </TableBody>
         </Table>
@@ -477,20 +528,22 @@ function SlugHint({ state, slug }: { state: string; slug: string }) {
   return null;
 }
 
-function CompanyRow({ portal }: { portal: any }) {
+function CompanyRow({ portal, coordinatorSlug }: { portal: any; coordinatorSlug: string }) {
   const updateFn = useServerFn(updatePortal);
   const rotateFn = useServerFn(rotatePortalToken);
-  const deleteFn = useServerFn(deletePortal);
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["portals"] });
 
-  const branded = brandedUrl(portal.slug);
+  const branded = brandedUrl(coordinatorSlug, portal);
   const raw = rawTokenUrl(portal.magic_token);
   const shareUrl = branded || raw;
+  const passwordClaimed = Array.isArray(portal.portal_company_passwords)
+    ? portal.portal_company_passwords.length > 0
+    : !!portal.portal_company_passwords;
 
   const isExpired = portal.link_expires_at && new Date(portal.link_expires_at) < new Date();
-  const status: "live" | "dormant" | "expired" | "disabled" =
-    !portal.active ? "disabled" : isExpired ? "expired" : portal.link_enabled ? "live" : "dormant";
+  const status: "live" | "dormant" | "expired" | "archived" =
+    !portal.active ? "archived" : isExpired ? "expired" : portal.link_enabled ? "live" : "dormant";
 
   const toggle = useMutation({
     mutationFn: () => updateFn({ data: { id: portal.id, patch: { link_enabled: !portal.link_enabled } } }),
@@ -501,9 +554,15 @@ function CompanyRow({ portal }: { portal: any }) {
     mutationFn: () => rotateFn({ data: { id: portal.id } }),
     onSuccess: () => { toast.success("Token rotated — old URL no longer works"); invalidate(); },
   });
-  const del = useMutation({
-    mutationFn: () => deleteFn({ data: { id: portal.id } }),
-    onSuccess: () => { toast.success("Deleted"); invalidate(); },
+  const archive = useMutation({
+    mutationFn: () => updateFn({ data: { id: portal.id, patch: { active: false, link_enabled: false } } }),
+    onSuccess: () => { toast.success("Portal closed and archived. Its records are preserved."); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const restore = useMutation({
+    mutationFn: () => updateFn({ data: { id: portal.id, patch: { active: true, link_enabled: false } } }),
+    onSuccess: () => { toast.success("Portal restored as dormant. Enable its link when ready."); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
   });
   const extend = useMutation({
     mutationFn: (hoursOrNever: number | null) => updateFn({ data: { id: portal.id, patch: {
@@ -533,7 +592,11 @@ function CompanyRow({ portal }: { portal: any }) {
   function shareOnWhatsApp() {
     const lines = [
       `🏨 ${portal.name} — your booking portal`,
-      `Create bookings, chat with guests, and see your statements.`,
+      portal.password_required
+        ? passwordClaimed
+          ? `Open the secure link and enter your company password.`
+          : `On your first visit, the portal will ask you to create your private password.`
+        : `Create bookings, manage trips, chat, and see your statements.`,
       ``,
       `Open: ${shareUrl}`,
     ];
@@ -543,7 +606,7 @@ function CompanyRow({ portal }: { portal: any }) {
   }
 
   return (
-    <TableRow className={status === "disabled" || status === "expired" ? "opacity-60" : ""}>
+    <TableRow className={status === "archived" || status === "expired" ? "opacity-60" : ""}>
       <TableCell>
         <div className="flex items-center gap-2">
           {portal.logo_url ? (
@@ -555,14 +618,23 @@ function CompanyRow({ portal }: { portal: any }) {
           )}
           <div className="min-w-0">
             <div className="font-medium truncate">{portal.name}</div>
-            <div className="text-[11px] text-muted-foreground">{portalKindLabel(portal.kind)} · {Number(portal.points_per_booking ?? 3)} pts/booking</div>
+            <div className="text-[11px] text-muted-foreground">
+              {portal.portals?.name ?? portalKindLabel(portal.kind)} · {Number(portal.points_per_booking ?? 3)} pts/booking
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {portal.password_required
+                ? passwordClaimed
+                  ? "Password active"
+                  : "Password setup pending"
+                : "No password"}
+            </div>
           </div>
         </div>
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1 max-w-[340px]">
           <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">
-            {brandedUrlDisplay(portal.slug) ?? "(no slug)"}
+            {brandedUrlDisplay(coordinatorSlug, portal) ?? "(no link yet)"}
           </code>
           <Button size="icon" variant="ghost" title="Copy link" onClick={copyLink}>
             <Copy className="h-3.5 w-3.5" />
@@ -584,39 +656,131 @@ function CompanyRow({ portal }: { portal: any }) {
         <Button size="icon" variant="ghost" title="Share on WhatsApp" onClick={shareOnWhatsApp}>
           <MessageCircle className="h-3.5 w-3.5" />
         </Button>
-        <StatementDialogButton portalId={portal.id} portalName={portal.name} />
+        <Button asChild size="icon" variant="ghost" title="Manage portal">
+          <Link to="/coordinator/portals/$id" params={{ id: portal.id }}><Settings2 className="h-3.5 w-3.5" /></Link>
+        </Button>
+        <PortalPasswordAccessButton portal={portal} />
+        <CoordinatorOperationsButton portalCompanyId={portal.id} portalName={portal.name} />
+        <StatementDialogButton
+          portalId={portal.id}
+          portalName={portal.name}
+          portalCreatedAt={portal.created_at}
+          archived={status === "archived"}
+          archiving={archive.isPending}
+          onArchive={() => archive.mutate()}
+        />
         <LogoUploadButton portalId={portal.id} onDone={invalidate} />
         <Button size="icon" variant="ghost" title="Set expiry" onClick={promptExpiry}>
           <Clock className="h-3.5 w-3.5" />
         </Button>
-        <Button size="icon" variant="ghost"
-          title={portal.link_enabled ? "Make dormant" : "Revive link"}
-          onClick={() => toggle.mutate()}>
-          {portal.link_enabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-        </Button>
-        <Button size="icon" variant="ghost" title="Rotate token"
-          onClick={() => { if (confirm("Rotate the link? The old URL will stop working.")) rotate.mutate(); }}>
-          <RotateCw className="h-3.5 w-3.5" />
-        </Button>
-        <Button size="icon" variant="ghost" title="Delete"
-          onClick={() => { if (confirm("Delete this company portal? All bookings and chats will be removed.")) del.mutate(); }}>
-          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-        </Button>
+        {status === "archived" ? (
+          <Button size="icon" variant="ghost" title="Restore archived portal" disabled={restore.isPending} onClick={() => restore.mutate()}>
+            <Power className="h-3.5 w-3.5" />
+          </Button>
+        ) : <>
+          <Button size="icon" variant="ghost"
+            title={portal.link_enabled ? "Make dormant" : "Revive link"}
+            onClick={() => toggle.mutate()}>
+            {portal.link_enabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+          </Button>
+          <Button size="icon" variant="ghost" title="Rotate token"
+            onClick={() => { if (confirm("Rotate the link? The old URL will stop working.")) rotate.mutate(); }}>
+            <RotateCw className="h-3.5 w-3.5" />
+          </Button>
+        </>}
       </TableCell>
     </TableRow>
   );
 }
 
-function StatementDialogButton({ portalId, portalName }: { portalId: string; portalName: string }) {
+function PortalPasswordAccessButton({ portal }: { portal: any }) {
+  const updateFn = useServerFn(updatePortal);
+  const resetFn = useServerFn(resetPortalClientPassword);
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const claimed = Array.isArray(portal.portal_company_passwords)
+    ? portal.portal_company_passwords.length > 0
+    : !!portal.portal_company_passwords;
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["portals"] });
+    setOpen(false);
+  };
+  const toggle = useMutation({
+    mutationFn: (required: boolean) =>
+      updateFn({ data: { id: portal.id, patch: { password_required: required } } }),
+    onSuccess: (_data, required) => {
+      toast.success(required ? "Client password enabled" : "Client password disabled");
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const reset = useMutation({
+    mutationFn: () => resetFn({ data: { id: portal.id } }),
+    onSuccess: () => {
+      toast.success("Password reset. The client will create a new password on the next visit.");
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="icon" variant="ghost" title="Client password access">
+          <KeyRound className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Client password — {portal.name}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {!portal.password_required
+            ? "Password protection is off."
+            : claimed
+              ? "The client has created a password. Coordinators cannot see it."
+              : "Password protection is on. The client will create the password on the first visit."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {!portal.password_required ? (
+            <Button disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
+              Enable password
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" disabled={reset.isPending} onClick={() => reset.mutate()}>
+                Reset client password
+              </Button>
+              <Button variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate(false)}>
+                Disable password
+              </Button>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StatementDialogButton({ portalId, portalName, portalCreatedAt, archived, archiving, onArchive }: {
+  portalId: string;
+  portalName: string;
+  portalCreatedAt?: string | null;
+  archived: boolean;
+  archiving: boolean;
+  onArchive: () => void;
+}) {
   const genFn = useServerFn(generatePortalStatement);
   const [open, setOpen] = useState(false);
-  const [start, setStart] = useState(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [start, setStart] = useState(() => portalCreatedAt
+    ? new Date(portalCreatedAt).toISOString().slice(0, 10)
+    : new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
   const [stmt, setStmt] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   async function generate() {
     setBusy(true);
+    setDownloaded(false);
     try {
       const r = await genFn({ data: {
         portal_id: portalId,
@@ -645,10 +809,12 @@ function StatementDialogButton({ portalId, portalName }: { portalId: string; por
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `statement_${start}_${end}.csv`; a.click();
     URL.revokeObjectURL(url);
+    setDownloaded(true);
+    toast.success("Final statement downloaded. You can now close and archive this portal.");
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setStmt(null); }}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setStmt(null); setDownloaded(false); } }}>
       <DialogTrigger asChild>
         <Button size="icon" variant="ghost" title="Statement">
           <Receipt className="h-3.5 w-3.5" />
@@ -658,10 +824,10 @@ function StatementDialogButton({ portalId, portalName }: { portalId: string; por
         <DialogHeader><DialogTitle>Statement — {portalName}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2 items-end">
-            <div><Label className="text-xs">From</Label><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div><Label className="text-xs">To</Label><Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+            <div><Label className="text-xs">From</Label><Input type="date" value={start} onChange={(e) => { setStart(e.target.value); setStmt(null); setDownloaded(false); }} /></div>
+            <div><Label className="text-xs">To</Label><Input type="date" value={end} onChange={(e) => { setEnd(e.target.value); setStmt(null); setDownloaded(false); }} /></div>
             <Button onClick={generate} disabled={busy}>Generate</Button>
-            {stmt && <Button variant="outline" onClick={downloadCsv}>Download CSV</Button>}
+            {stmt && <Button variant="outline" onClick={downloadCsv}>Download final CSV</Button>}
           </div>
           {stmt && (
             <div className="text-sm grid grid-cols-2 gap-3">
@@ -671,18 +837,32 @@ function StatementDialogButton({ portalId, portalName }: { portalId: string; por
               <div>Revenue<div className="font-semibold text-base">€{Number(stmt.statement.totals.revenue).toFixed(2)}</div></div>
             </div>
           )}
+          {stmt && !archived && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            {downloaded ? "The final statement is downloaded. Closing will disable the client link and preserve all bookings, chats, statements, and audit history." : "Download the final statement to enable Close & archive."}
+          </div>}
+          {stmt && downloaded && !archived && <Button
+            variant="secondary"
+            disabled={archiving}
+            onClick={() => {
+              if (confirm("Close and archive this portal? The client link will stop working, but all records will be preserved.")) onArchive();
+            }}
+          >
+            <Archive className="mr-2 h-4 w-4" />{archiving ? "Archiving…" : "Close & archive portal"}
+          </Button>}
+          {archived && <Badge variant="secondary">Portal archived · records preserved</Badge>}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function StatusBadge({ status }: { status: "live" | "dormant" | "expired" | "disabled" }) {
+function StatusBadge({ status }: { status: "live" | "dormant" | "expired" | "disabled" | "archived" }) {
   const map = {
     live: { label: "Live", cls: "bg-green-500/20 text-green-700" },
     dormant: { label: "Dormant", cls: "bg-slate-500/20 text-slate-700" },
     expired: { label: "Expired", cls: "bg-red-500/20 text-red-700" },
     disabled: { label: "Off", cls: "bg-slate-500/20 text-slate-700" },
+    archived: { label: "Archived", cls: "bg-violet-500/20 text-violet-700" },
   } as const;
   const c = map[status];
   return <Badge className={c.cls}>{c.label}</Badge>;

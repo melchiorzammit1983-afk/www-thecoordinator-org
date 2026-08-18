@@ -21,6 +21,7 @@ export type AddressPick = {
   lat: number | null;
   lng: number | null;
   display_name?: string | null;
+  place_types?: string[];
 };
 
 type Suggestion = {
@@ -46,6 +47,9 @@ type Props = {
   // If the parent already has a locked-in place_id (e.g. after selection),
   // we skip the suggestions dropdown until the user edits again.
   placeId?: string | null;
+  // Public (unauthenticated) surfaces must pass the page's magic token so the
+  // paid Places proxy can bind the call to a real portal/booking/trip link.
+  publicToken?: string;
 };
 
 function makeSessionToken(): string {
@@ -66,6 +70,7 @@ export function AddressAutocomplete({
   onBlur,
   hideBadge,
   placeId,
+  publicToken,
 }: Props) {
   const { settings } = useAddressSettings();
   const bias = React.useMemo(() => toBias(settings), [settings]);
@@ -96,7 +101,7 @@ export function AddressAutocomplete({
     const t = setTimeout(async () => {
       try {
         const res = await autocompleteFn({
-          data: { input: q, session_token: sessionRef.current, bias },
+          data: { input: q, session_token: sessionRef.current, bias, public_token: publicToken },
         });
         if (rev !== revRef.current) return;
         setItems(res.items ?? []);
@@ -112,7 +117,7 @@ export function AddressAutocomplete({
       }
     }, 250);
     return () => clearTimeout(t);
-  }, [value, open, bias, autocompleteFn]);
+  }, [value, open, bias, autocompleteFn, publicToken]);
 
   // Close on outside click.
   React.useEffect(() => {
@@ -137,7 +142,7 @@ export function AddressAutocomplete({
     });
     try {
       const det = await detailsFn({
-        data: { place_id: s.place_id, session_token: sessionRef.current },
+        data: { place_id: s.place_id, session_token: sessionRef.current, public_token: publicToken },
       });
       // Google sometimes resolves an imprecise location to a Plus Code
       // formatted address — never let that replace what the user picked.
@@ -148,6 +153,7 @@ export function AddressAutocomplete({
         lat: det.lat,
         lng: det.lng,
         display_name: det.display_name ?? s.main ?? null,
+        place_types: det.place_types ?? [],
       });
     } catch {
       /* keep the optimistic pick — coords just aren't stored */
@@ -203,7 +209,7 @@ export function AddressAutocomplete({
             if (q.length >= 3 && !placeId) {
               try {
                 const res: any = await resolveFn({
-                  data: { items: [{ key: "q", text: q }], bias },
+                  data: { items: [{ key: "q", text: q }], bias, public_token: publicToken },
                 });
                 const hit = res?.results?.q;
                 if (hit && hit.place_id) {
@@ -214,6 +220,7 @@ export function AddressAutocomplete({
                     lat: hit.lat ?? null,
                     lng: hit.lng ?? null,
                     display_name: hit.display_name ?? null,
+                    place_types: hit.place_types ?? [],
                   });
                 }
               } catch { /* best-effort */ }

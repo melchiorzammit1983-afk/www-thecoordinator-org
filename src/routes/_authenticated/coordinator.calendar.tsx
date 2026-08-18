@@ -71,6 +71,7 @@ import {
 } from "@/lib/portal.functions";
 import {
   displayLocation,
+  displayJobLocation,
   formatEta,
   formatEtaMinutes,
   formatFriendlyDateTime,
@@ -86,6 +87,7 @@ import type {
 } from "@/components/coordinator/calendar/types";
 import { GroupStopsPanel } from "@/components/coordinator/GroupStopsPanel";
 import { listGroupStops } from "@/lib/groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourClasses } from "@/lib/operation-group-colours";
 
 import {
   listJobs,
@@ -114,6 +116,8 @@ import {
   dismissTripFlag,
   refreshJobLiveStatus,
   listPendingBoardingApprovals,
+  getShipEtaTripReview,
+  resolveShipEtaTripReview,
 } from "@/lib/coordinator.functions";
 import { MergeTripsDialog, type MergeCandidate } from "@/components/coordinator/MergeTripsDialog";
 
@@ -311,6 +315,16 @@ function CalendarPage() {
     queryKey: ["jobs", range.from, range.to],
     queryFn: () => jobsFn({ data: { from: range.from, to: range.to } }) as Promise<Job[]>,
   });
+  // The details drawer is opened with a snapshot of the row that was
+  // clicked; without this it never picks up server-side changes (e.g. a
+  // flight-status Refresh) made while it's open, since invalidating the
+  // "jobs" query only updates the list behind it, not this frozen copy.
+  useEffect(() => {
+    if (!detailsJob) return;
+    const fresh = (jobs ?? []).find((j) => j.id === detailsJob.id);
+    if (fresh) setDetailsJob(fresh);
+  }, [jobs]);
+
   const pendingBoardingFn = useServerFn(listPendingBoardingApprovals);
   const boardingScopeJobIds = useMemo(
     () => (jobs ?? []).map((j) => j.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
@@ -2279,7 +2293,7 @@ function EtaChip({ point, job }: { point: LiveEtaPoint | null; job: Job }) {
   if (!fresh) return null;
   if (point.wait_started_at) return null;
   const status = job.status;
-  if (!["en_route", "arrived", "in_progress"].includes(status)) return null;
+  if (["pending", "completed", "cancelled"].includes(status)) return null;
   if (status === "arrived") {
     return (
       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
@@ -2340,6 +2354,15 @@ function WaitTimerChip({ startedAt, pickupAt }: { startedAt: string; pickupAt: s
   );
 }
 
+function formatEtaDifference(previousEta: string, newEta: string) {
+  const minutes = Math.round((new Date(newEta).getTime() - new Date(previousEta).getTime()) / 60000);
+  const sign = minutes >= 0 ? "+" : "−";
+  const absolute = Math.abs(minutes);
+  const hours = Math.floor(absolute / 60);
+  const remainder = absolute % 60;
+  return `${sign}${hours ? `${hours}h ` : ""}${remainder ? `${remainder}m` : hours ? "" : "0m"}`.trim();
+}
+
 
 function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
@@ -2365,6 +2388,23 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
   const sosOpen = !!sig?.sos_open;
   const driverStatusNew = !!sig?.driver_status_new && !!job.driver_id;
   const rejected = !!(sig as any)?.rejected;
+  const shipEtaReviewFn = useServerFn(getShipEtaTripReview);
+  const resolveShipEtaReviewFn = useServerFn(resolveShipEtaTripReview);
+  const queryClient = useQueryClient();
+  const { data: shipEtaReview } = useQuery({
+    queryKey: ["ship-eta-trip-review", job.id],
+    queryFn: () => shipEtaReviewFn({ data: { job_id: job.id } }) as Promise<{ previous_eta: string; new_eta: string; suggested_date: string | null; suggested_time: string | null; driver_locked: boolean } | null>,
+    enabled: !!job.needs_review && !!job.ship_event_id,
+  });
+  const shipEtaReviewMutation = useMutation({
+    mutationFn: (action: "apply" | "keep") => resolveShipEtaReviewFn({ data: { job_id: job.id, action } }),
+    onSuccess: (result: any) => {
+      toast.success(result.pending ? "Change request sent to driver" : "ETA review resolved");
+      queryClient.invalidateQueries({ queryKey: ["ship-eta-trip-review", job.id] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   // Partnership state: amber = handed off & pending, green = partner accepted, red = partner rejected.
   const partnerPending =
@@ -2409,6 +2449,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
 
   const delayed = flightIssue;
   const flightCode = job.from_flight || job.to_flight || job.flightorship;
+  const hasLinkedFlightSchedule = !!job.flight_schedule_record_id;
   const flightGlyph = job.tracking_kind === "vessel" ? "🚢" : "✈";
   const newTime = (() => {
     const iso = job.flight_estimated_at || job.flight_scheduled_at;
@@ -2483,7 +2524,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
       ref={setNodeRef}
       data-job-id={job.id}
       style={style}
-      className={`relative rounded-md border-2 pl-8 pr-12 sm:pr-2 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
+      className={`relative rounded-md border-2 pl-8 pr-12 sm:pr-2 py-2 shadow-sm transition-shadow ${tone} ${uClass} ${isSelected ? "ring-2 ring-primary" : ""} ${ctx.highlightId === job.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""} ${flightIssue ? "animate-pulse" : ""}`}
     >
       <LabelStripe labels={labels} />
 
@@ -2535,6 +2576,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
               <span className="font-medium text-foreground">{job.time?.slice(0, 5)}</span>
               <span>·</span>
               <span>{job.date}</span>
+              {job.operation_groups ? <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${operationGroupColourClasses[normaliseOperationGroupColour(job.operation_groups.colour)]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{job.operation_groups.reference}</span> : null}
               {job.client_confirmed_at && (
                 <span
                   title="Client confirmed"
@@ -2579,11 +2621,21 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 )}
               </span>
             </div>
+            {job.clientcompanyname && (
+              <div className="text-sm font-semibold text-foreground truncate mt-1" title={job.clientcompanyname}>
+                {job.clientcompanyname}
+              </div>
+            )}
             <div className="text-sm font-semibold truncate mt-0.5">
-              {displayLocation(job.from_location, job.pickup_display_name)}{" "}
+                  {displayJobLocation(job.from_location, job.pickup_display_name, job.from_port, job.from_berth)}{" "}
               <span className="text-muted-foreground">→</span>{" "}
-              {displayLocation(job.to_location, job.dropoff_display_name)}
+              {displayJobLocation(job.to_location, job.dropoff_display_name, job.to_port, job.to_berth)}
             </div>
+            {job.ship_event_id && job.onward_flight_schedule_record_id && job.to_flight && (
+              <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300 border border-sky-500/40 bg-sky-500/10 truncate max-w-full">
+                Connecting flight: {job.to_flight} · pickup {job.time?.slice(0, 5)}
+              </div>
+            )}
             {(job.route_duration_sec ?? 0) > 0 && (
               <div className="mt-1 flex items-center gap-2 text-[11px] tabular-nums">
                 <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -2615,14 +2667,6 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 )}
               </div>
             )}
-            {expanded && job.clientcompanyname && (
-              <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
-                {sig?.portal_logo_url && (
-                  <img src={sig.portal_logo_url} alt="" className="h-3.5 w-3.5 rounded-sm object-contain bg-white shrink-0" />
-                )}
-                <span className="truncate">{job.clientcompanyname}</span>
-              </div>
-            )}
             {shownDriver && (
               <div className="text-[11px] mt-0.5 truncate">
                 <span className="text-muted-foreground">Driver:</span>{" "}
@@ -2652,7 +2696,7 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 {flightGlyph} {flightCode} · {flightMsg}
               </div>
             )}
-            {!delayed && !flightEarly && hasFlightCode && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+            {!delayed && !flightEarly && hasFlightCode && !hasLinkedFlightSchedule && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -2669,7 +2713,12 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                 {flightGlyph} {flightCode} · Not tracked · fix code
               </button>
             )}
-            {job.status && job.status !== "pending" && job.status !== "active" && (
+            {!delayed && !flightEarly && hasFlightCode && hasLinkedFlightSchedule && (job.flight_status === "unknown" || !job.flight_status) && !schedTime && (
+              <div className="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border bg-muted/30 truncate max-w-full">
+                {flightGlyph} {flightCode} · Scheduled flight linked · live status unavailable
+              </div>
+            )}
+            {(livePoint || (job.status && job.status !== "pending" && job.status !== "active")) && (
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <TripProgress status={job.status} compact />
                 <EtaChip point={livePoint} job={job} />
@@ -2734,14 +2783,32 @@ function TripCard({ job, ctx, driverName }: { job: Job; ctx: CardCtx; driverName
                   Track
                 </Badge>
               )}
-              {job.needs_review && (
-                <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/15">
-                  {job.auto_created_from_crew_itinerary
+            {job.needs_review && (
+                <Badge className={`text-[10px] border ${job.ship_event_id ? "bg-destructive/15 text-destructive border-destructive/40 hover:bg-destructive/15" : "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/15"}`}>
+                  {job.ship_event_id ? "Ship ETA review" : job.auto_created_from_crew_itinerary
                     ? "Auto-created from crew · needs review"
                     : job.created_by_driver
                       ? "Driver trip · needs review"
                       : "Needs review"}
                 </Badge>
+              )}
+              {shipEtaReview && (
+                <div className="mt-1 w-full space-y-1.5 rounded-md border-2 border-destructive/60 bg-destructive/10 p-2 text-[11px]" role="alert">
+                  <div className="font-semibold text-destructive">Ship ETA changed — review pickup</div>
+                  <div className="grid gap-0.5 text-muted-foreground">
+                    <span>Previous ETA: {shipEtaReview.previous_eta}</span>
+                    <span>New ETA: {shipEtaReview.new_eta}</span>
+                    <span>ETA difference: {formatEtaDifference(shipEtaReview.previous_eta, shipEtaReview.new_eta)}</span>
+                    <span>Current pickup: {job.date} {job.time?.slice(0, 5)}</span>
+                    <span>Suggested pickup: {shipEtaReview.suggested_date ?? "—"} {shipEtaReview.suggested_time ?? "—"}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); shipEtaReviewMutation.mutate("apply"); }} disabled={shipEtaReviewMutation.isPending || !shipEtaReview.suggested_time}>Apply suggested time</Button>
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); ctx.onEdit(job); }}>Edit manually</Button>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); shipEtaReviewMutation.mutate("keep"); }} disabled={shipEtaReviewMutation.isPending}>Keep current</Button>
+                  </div>
+                  {shipEtaReview.driver_locked ? <span className="block text-muted-foreground">Driver-locked: applying requests approval.</span> : null}
+                </div>
               )}
               {job.auto_created_from_crew_itinerary && (
                 <Badge variant="outline" className="text-[10px] gap-1">
@@ -3714,7 +3781,19 @@ function DispatchTripList({
               ? formatMaltaTime(String(job.pickup_at))
               : job.time?.slice(0, 5) ?? null;
           const paxCount = job.pax?.length ?? 0;
-          const flight = job.from_flight || job.to_flight;
+          const legacyTransportCode = job.from_flight || job.to_flight;
+          const transportKind: "flight" | "vessel" | null = job.ship_event_id
+            ? "vessel"
+            : job.flight_schedule_record_id
+              ? "flight"
+              : legacyTransportCode && (job.tracking_kind === "flight" || job.tracking_kind === "vessel")
+                ? job.tracking_kind
+                : null;
+          const transportLabel = transportKind === "vessel"
+            ? "Ship ETA"
+            : transportKind === "flight"
+              ? (legacyTransportCode || "Scheduled flight")
+              : null;
           const driverName = job.drivers?.name ?? job.external_driver_name ?? null;
           const isOpen = expandedId === job.id;
 
@@ -3776,10 +3855,10 @@ function DispatchTripList({
                         {paxCount}
                       </span>
                     )}
-                    {flight && (
+                    {transportLabel && transportKind && (
                       <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
-                        {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
-                        {flight}
+                        {transportKind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
+                        {transportLabel}
                       </span>
                     )}
                   </div>
@@ -3850,15 +3929,15 @@ function DispatchTripList({
 
                       {/* Actions */}
                       <div className="flex flex-col gap-2">
-                        {flight && (
+                        {transportLabel && transportKind && (
                           <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
                             <span className="inline-flex items-center gap-1 truncate text-muted-foreground">
-                              {job.tracking_kind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
-                              <span className="truncate">{flight}</span>
+                              {transportKind === "vessel" ? <Ship className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
+                              <span className="truncate">{transportLabel}</span>
                             </span>
                             <RefreshFlightButton
                               jobId={job.id}
-                              kind={job.tracking_kind === "vessel" ? "vessel" : "flight"}
+                              kind={transportKind}
                             />
                           </div>
                         )}

@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddressAutocomplete } from "@/components/address/AddressAutocomplete";
+import { classifyProviderEndpoint, type JourneyEndpoint } from "@/lib/journey-resolver";
 import { Loader2, Send, MessageCircle, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { PastTripsCard } from "@/components/client/PastTripsCard";
+import { TokenPortPicker } from "@/components/address/TokenPortPicker";
 
 
 export const Route = createFileRoute("/b/$token")({
@@ -69,6 +71,12 @@ function PublicBookingPage() {
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [flight, setFlight] = useState("");
+  const [fromLocationType, setFromLocationType] = useState<JourneyEndpoint>("local");
+  const [toLocationType, setToLocationType] = useState<JourneyEndpoint>("local");
+  const [fromPortId, setFromPortId] = useState<string | null>(null);
+  const [fromBerthId, setFromBerthId] = useState<string | null>(null);
+  const [toPortId, setToPortId] = useState<string | null>(null);
+  const [toBerthId, setToBerthId] = useState<string | null>(null);
 
   useEffect(() => {
     const v = getVisitorId(token);
@@ -105,6 +113,12 @@ function PublicBookingPage() {
           visitor_id: visitorId,
           from_location: from,
           to_location: to,
+          from_location_type: fromLocationType,
+          to_location_type: toLocationType,
+          from_port_id: fromPortId,
+          from_berth_id: fromBerthId,
+          to_port_id: toPortId,
+          to_berth_id: toBerthId,
           pickup_at, date, time,
           name: name || null,
           client_phone: phone || null,
@@ -119,6 +133,7 @@ function PublicBookingPage() {
       toast.success(`Request sent — ref #${json.ref}`);
       setFrom(""); setTo(""); setDate(""); setTime(""); setName(""); setPhone("");
       setEmail(""); setNotes(""); setFlight(""); setPax("1");
+      setFromLocationType("local"); setToLocationType("local"); setFromPortId(null); setFromBerthId(null); setToPortId(null); setToBerthId(null);
       void loadBootstrap(visitorId);
     } catch (e: any) {
       toast.error(e?.message ?? "Submit failed");
@@ -155,11 +170,13 @@ function PublicBookingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Pickup</Label>
-              <AddressAutocomplete value={from} onChange={(v) => setFrom(v.address)} placeholder="Hotel, airport, address…" />
+              <AddressAutocomplete publicToken={token} value={from} onChange={(v) => { setFrom(v.address); setFromLocationType(classifyProviderEndpoint(v.place_types)); }} placeholder="Hotel, airport, address…" />
+              <TokenPortPicker ports={bootstrap?.ports} portId={fromPortId} berthId={fromBerthId} onChange={({ portId, berthId, address }) => { setFromPortId(portId); setFromBerthId(berthId); setFromLocationType(portId ? "port" : "local"); if (address) setFrom(address); }} />
             </div>
             <div className="space-y-1.5">
               <Label>Drop-off</Label>
-              <AddressAutocomplete value={to} onChange={(v) => setTo(v.address)} placeholder="Destination" />
+              <AddressAutocomplete publicToken={token} value={to} onChange={(v) => { setTo(v.address); setToLocationType(classifyProviderEndpoint(v.place_types)); }} placeholder="Destination" />
+              <TokenPortPicker ports={bootstrap?.ports} portId={toPortId} berthId={toBerthId} onChange={({ portId, berthId, address }) => { setToPortId(portId); setToBerthId(berthId); setToLocationType(portId ? "port" : "local"); if (address) setTo(address); }} />
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>

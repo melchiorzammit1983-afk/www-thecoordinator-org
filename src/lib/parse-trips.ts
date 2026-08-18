@@ -17,7 +17,10 @@ export type ParsedTrip = {
   notes: string;
   email: string;
   immigration_needed: boolean;
+  immigration_required?: "yes" | "no" | "unknown";
   pax: string[];
+  /** Optional per-passenger phone, positionally aligned with `pax`. */
+  pax_phones?: string[];
   contact_phone: string;
   errors: string[];
   from_place_id?: string | null;
@@ -26,6 +29,12 @@ export type ParsedTrip = {
   to_place_id?: string | null;
   to_lat?: number | null;
   to_lng?: number | null;
+  from_location_type?: "airport" | "port" | "local";
+  to_location_type?: "airport" | "port" | "local";
+  from_port_id?: string | null;
+  from_berth_id?: string | null;
+  to_port_id?: string | null;
+  to_berth_id?: string | null;
   autoFixed?: {
     from_location?: string;
     to_location?: string;

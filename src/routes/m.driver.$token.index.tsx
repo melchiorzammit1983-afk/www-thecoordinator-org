@@ -13,11 +13,13 @@ import {
   getBoardingApprovalStatusDriver,
   updateDriverProfile, setJobPaymentStatus, hideJobForDriver, unhideJobForDriver, getDriverStatement, driverMarkPayoutReceived,
   getClientLiveLocationDriver,
+  acknowledgeDriverTripUpdate,
   listGroupStopsForDriver, requestStopReorderByDriver,
   driverSnapPickupToHere,
   driverSnapDropoffToHere,
   logDriverAction,
 } from "@/lib/coordinator-public.functions";
+import type { DriverTripUpdate } from "@/lib/driver-trip-updates.server";
 import { supabase } from "@/integrations/supabase/client";
 import { useAutoNextJob } from "@/hooks/use-auto-next-job";
 import { AutoNextJobSheet } from "@/components/driver/AutoNextJobSheet";
@@ -59,7 +61,7 @@ import {
   CheckCircle2, Check, Clock, Download, X, FileText, MessageCircle, MoreVertical,
   Plane, MapPin, Car, Users, Navigation, QrCode, AlertTriangle, User, ThumbsDown,
   Timer, UserX, Maximize2, Minimize2, Volume2, VolumeX, Megaphone,
-  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone, Filter,
+  ArrowUp, ArrowUpLeft, ArrowUpRight, ArrowLeft, ArrowRight, CornerDownLeft, CornerDownRight, Route as RouteIcon, TrafficCone, Filter, Home,
 } from "lucide-react";
 import { computeDriverRoute } from "@/lib/routing.functions";
 import { decodePolyline, distanceToPathMeters } from "@/lib/polyline";
@@ -142,6 +144,7 @@ type Job = {
   dropoff_lng?: number | null;
   created_by_driver?: boolean | null;
   needs_review?: boolean | null;
+  trip_updates?: DriverTripUpdate[];
 };
 
 type Driver = {
@@ -544,6 +547,8 @@ function DriverManifest() {
   const [statementOpen, setStatementOpen] = useState(false);
   const [otgOpen, setOtgOpen] = useState(false);
   const [chatJob, setChatJob] = useState<Job | null>(null);
+  const [routeUpdateNotice, setRouteUpdateNotice] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
 
   useEffect(() => {
     if (data?.driver && !data.driver.onboarded_at) setProfileOpen(true);
@@ -559,10 +564,31 @@ function DriverManifest() {
       .channel(`driver:${driverId}`, { config: { broadcast: { self: false } } })
       .on("broadcast", { event: "jobs_updated" }, () => {
         qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] });
+        qcTop.invalidateQueries({ queryKey: ["driver-live-route"] });
+        setRouteUpdateNotice(true);
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [driverId, token, qcTop]);
+  useEffect(() => {
+    if (!routeUpdateNotice) return;
+    const timer = window.setTimeout(() => setRouteUpdateNotice(false), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [routeUpdateNotice]);
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true);
+      qcTop.invalidateQueries({ queryKey: ["driver-manifest", token] });
+      qcTop.invalidateQueries({ queryKey: ["driver-live-route"] });
+    };
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [qcTop, token]);
 
 
   const [showArchived, setShowArchived] = useState(false);
@@ -687,6 +713,12 @@ function DriverManifest() {
   });
 
   const [navigateMode, setNavigateMode] = useState(false);
+  const goToCoordinatorDashboard = useCallback(() => {
+    setOpenJob(null);
+    setChatJob(null);
+    setNavigateMode(false);
+    navigate({ to: "/coordinator" });
+  }, [navigate]);
   useEffect(() => {
     if (!inMotion && navigateMode) setNavigateMode(false);
   }, [inMotion, navigateMode]);
@@ -850,6 +882,7 @@ function DriverManifest() {
 
   return (
     <div className={`relative min-h-screen ${navigateMode ? "pb-0" : "pb-28"} ${isSafetyMode && !navigateMode ? "pt-16 sm:pt-20" : ""}`}>
+      {!isOnline && !navigateMode && <div className="sticky top-0 z-40 border-b border-amber-500/40 bg-amber-50 px-4 py-2 text-center text-xs font-semibold text-amber-900 dark:bg-amber-950/80 dark:text-amber-100" role="status">Offline — updates will sync when connection returns.</div>}
       {!navigateMode && isSafetyMode && (
         <SafetyModeOverlay
           speedKmh={speedKmh}
@@ -900,6 +933,9 @@ function DriverManifest() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button type="button" size="icon" variant="outline" aria-label="Home" onClick={goToCoordinatorDashboard}>
+                <Home className="h-4 w-4" />
+              </Button>
               {audio.speechSupported && (
                 <Button
                   type="button"
@@ -1110,6 +1146,8 @@ function DriverManifest() {
           onExit={() => setNavigateMode(false)}
           onSpeak={audio.speechSupported ? speakLatest : null}
           isSpeaking={audio.isSpeaking}
+          routeUpdated={routeUpdateNotice}
+          onHome={goToCoordinatorDashboard}
         />
       )}
 
@@ -1219,6 +1257,41 @@ function DriverStatusPill({
       <span className="truncate">{tone.label}</span>
     </span>
   );
+}
+
+function DriverTripUpdateAlert({ job, token, isSafetyMode, isOnline, onAcknowledged }: { job: Job; token: string; isSafetyMode: boolean; isOnline: boolean; onAcknowledged: () => void }) {
+  const updates = job.trip_updates ?? [];
+  const acknowledgeFn = useServerFn(acknowledgeDriverTripUpdate);
+  const audio = useDriverAudio({ storageKey: `driver:update-audio:${token}` });
+  const acknowledge = useMutation({
+    mutationFn: (updateId: string) => acknowledgeFn({ data: { token, update_id: updateId } }),
+    onSuccess: onAcknowledged,
+    onError: (error: Error) => toast.error(error.message),
+  });
+  useEffect(() => {
+    for (const update of updates) {
+      const key = `driver-trip-update-seen:${update.id}`;
+      let seen = false;
+      try { seen = window.localStorage.getItem(key) === "1"; } catch { /* ignore */ }
+      if (seen) continue;
+      try { window.localStorage.setItem(key, "1"); } catch { /* ignore */ }
+      audio.playChime("dispatch");
+      if (audio.autoRead) audio.speak("Trip updated. Please review the new trip details and acknowledge.");
+      break;
+    }
+  }, [updates, audio]);
+  if (!updates.length) return null;
+  const update = updates[0];
+  const formatValue = (value: unknown) => value == null || value === "" ? "—" : String(value);
+  return <div className={`mx-3 mb-2 rounded-xl border-2 border-rose-500 bg-rose-50 text-rose-950 shadow-sm dark:bg-rose-950/30 dark:text-rose-100 ${isSafetyMode ? "p-2" : "p-3"}`} role="alert">
+    <div className="font-bold text-sm">{isSafetyMode ? "Trip changed" : "Trip updated"}</div>
+    <div className="mt-1 text-xs">{isSafetyMode ? "New route or time received. Acknowledge when safe." : "Review the coordinator&apos;s change before continuing."}</div>
+    <div className="mt-2 space-y-1 text-xs">
+      {Object.entries(update.changed_fields).map(([field, label]) => <div key={field}><span className="font-semibold">{label}:</span> {formatValue(update.previous_values[field])} → {formatValue(update.new_values[field])}</div>)}
+    </div>
+    <div className="mt-2 text-[11px] opacity-75">Updated {new Date(update.created_at).toLocaleString()}</div>
+    <Button className="mt-3 h-11 w-full bg-rose-600 text-white hover:bg-rose-700" disabled={acknowledge.isPending || !isOnline} onClick={() => acknowledge.mutate(update.id)}>{isOnline ? "Acknowledge update" : "Waiting for connection"}</Button>
+  </div>;
 }
 
 
@@ -1476,19 +1549,10 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
       } });
     },
-    onSuccess: (_res, input) => {
+    onSuccess: (res: any, input) => {
       const status = typeof input === "string" ? input : input.status;
-      toast.success("Status updated");
-      if (status === "en_route") void fireDriverActionLog("en_route");
-      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
-      invalidate();
-    },
-    onError: (e: Error, input) => {
-      const status = typeof input === "string" ? input : input.status;
-      const msg = e.message ?? "";
-      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
-        const parts = msg.split(":");
-        const dist = Number(parts[1] ?? 0);
+      if (res?.needs_override && res?.code === "too_far_from_pickup") {
+        const dist = Number(res.distance_m ?? 0);
         const ok = typeof window !== "undefined" && window.confirm(
           `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
         );
@@ -1497,8 +1561,15 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
         }
         return;
       }
+      toast.success("Status updated");
+      if (status === "en_route") void fireDriverActionLog("en_route");
+      else if (status === "pending") void fireDriverActionLog("back_to_waiting");
+      invalidate();
+    },
+    onError: (e: Error) => {
       toast.error(formatDriverStatusError(e));
     },
+
   });
   const payMut = useMutation({
     mutationFn: (status: "paid" | "pending") => payFn({ data: { token, job_id: job.id, status } }),
@@ -1552,10 +1623,11 @@ function JobCard({ job, token, driverPos, arrivalRadiusM, isSafetyMode, onOpen, 
   return (
     <article
       id={`job-card-${job.id}`}
-      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
+      className={`rounded-2xl border-2 shadow-lg overflow-hidden transition ${borderClass} ${job.trip_updates?.length ? "ring-2 ring-rose-500 animate-pulse" : ""} ${job.status === "in_progress" ? "animate-trip-flash" : ""}`}
       style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" }}
     >
       {stripeStyle && <div aria-hidden className="h-1.5 w-full" style={stripeStyle} />}
+      <DriverTripUpdateAlert job={job} token={token} isSafetyMode={isSafetyMode} isOnline={typeof navigator === "undefined" ? true : navigator.onLine} onAcknowledged={() => qc.invalidateQueries({ queryKey: ["driver-manifest", token] })} />
       {/* Header strip */}
       <div className={`px-4 py-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${problem ? "bg-destructive/10" : accepted ? "bg-emerald-500/10" : "bg-muted/50"}`}>
         <div className="flex min-w-0 items-center gap-2">
@@ -2430,12 +2502,9 @@ function NextInstructionCard({ job, token, onOpenSummary, live, driverPos, canEn
         ...(arg.override_reason ? { override_reason: arg.override_reason as never, override_note: arg.override_note } : {}),
       } });
     },
-    onSuccess: () => { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["driver-manifest", token] }); },
-    onError: (e: Error, input) => {
-      const status = typeof input === "string" ? input : input.status;
-      const msg = e.message ?? "";
-      if (status === "arrived" && msg.startsWith("too_far_from_pickup:")) {
-        const dist = Number(msg.split(":")[1] ?? 0);
+    onSuccess: (res: any) => {
+      if (res?.needs_override && res?.code === "too_far_from_pickup") {
+        const dist = Number(res.distance_m ?? 0);
         const ok = typeof window !== "undefined" && window.confirm(
           `You appear to be ~${dist}m from the pickup point. Confirm you are actually here (wrong pin / blocked access / passenger elsewhere)?`,
         );
@@ -2444,8 +2513,13 @@ function NextInstructionCard({ job, token, onOpenSummary, live, driverPos, canEn
         }
         return;
       }
+      toast.success("Status updated");
+      qc.invalidateQueries({ queryKey: ["driver-manifest", token] });
+    },
+    onError: (e: Error) => {
       toast.error(formatDriverStatusError(e));
     },
+
   });
 
   const currentIdx = STATUS_FLOW.findIndex((s) => s.value === job.status);
@@ -3483,7 +3557,7 @@ function TripExecutionDialog({
 
           
             <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}><ArrowLeft className="h-4 w-4 mr-1" /> Back to manifest</Button>
               {job?.status === "arrived" && (
       <Button onClick={handleStartTrip} disabled={startTripMut.isPending}>
                 {startTripMut.isPending ? "Starting…" : "Passengers on board — en route"}

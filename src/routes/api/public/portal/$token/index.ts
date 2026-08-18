@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-token.server";
+import { listTokenScopedPorts } from "@/lib/port-directory-token.server";
+import { listTokenScopedShips } from "@/lib/ship-events-token.server";
 
 /**
  * GET /api/public/portal/$token  — returns the hotel dashboard bootstrap
@@ -9,10 +11,12 @@ import { resolvePortalByToken, checkRateLimit, getAdmin } from "@/lib/portal-tok
 export const Route = createFileRoute("/api/public/portal/$token/")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
-        const r = await resolvePortalByToken(params.token);
+      GET: async ({ params, request }) => {
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         const admin = await getAdmin();
+        const ports = await listTokenScopedPorts(admin, r.portal.coordinator_company_id);
+        const ships = await listTokenScopedShips(admin, r.portal.coordinator_company_id);
         const { data: operation_groups } = await admin.from("operation_groups")
           .select("id, reference, name, status")
           .eq("company_id", r.portal.coordinator_company_id)
@@ -44,15 +48,19 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
             brand_color: r.portal.brand_color,
             display_name_for_passenger: r.portal.display_name_for_passenger ?? r.portal.name,
             link_expires_at: r.portal.link_expires_at,
+            template_name: r.portal.portals?.name ?? null,
+            configuration: r.portal.portals?.configuration ?? null,
           },
           bookings: bookings ?? [],
           jobs,
+          ports,
+          ships,
           operation_groups: operation_groups ?? [],
         });
       },
       POST: async ({ params, request }) => {
         // Toggle link off from hotel side (they can turn their own link off)
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token))) return Response.json({ error: "rate_limited" }, { status: 429 });
         const body = await request.json().catch(() => ({}));

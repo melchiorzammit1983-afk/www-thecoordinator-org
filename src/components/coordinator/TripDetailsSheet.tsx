@@ -17,10 +17,11 @@ import { ChainTimeline } from "./ChainTimeline";
 import { LabelChip, type Label as TLabel } from "./LabelChip";
 import { TrafficBadge } from "./TrafficBadge";
 import { PriceProposalsPanel } from "./PriceProposalsPanel";
-import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord } from "@/lib/coordinator.functions";
+import { normalizeJobData, listPaxActivityCoord, listSosForJob, acknowledgeSosCoord, acknowledgeAllSosForJob, getTripPricing, coordinatorSetTripPrice, rescheduleJobToFlight, autoShiftEarlyFlight, getClientTripLink, listJobAdjustments, listOpenWaitSessions, listWaitProposals, proposeWaitAdjustment, cancelWaitProposal, refreshJobLiveStatus, getBoardingApprovalStatus, respondBoardingApproval, clearJobSafetyFlags, coordinatorOverrideJobStatus, getFlightScheduleRecordImpact, getLinkedFlightScheduleRecord, getShipEtaTripReview, resolveShipEtaTripReview } from "@/lib/coordinator.functions";
 import { CoordinatorStatusOverride } from "./CoordinatorStatusOverride";
-import { displayLocation, formatEta } from "@/lib/trip-display";
+import { displayJobLocation, displayLocation, formatEta } from "@/lib/trip-display";
 import { useMutation } from "@tanstack/react-query";
+import { normaliseOperationGroupColour, operationGroupColourClasses } from "@/lib/operation-group-colours";
 import { toast } from "sonner";
 import { TripChatDialog } from "@/components/trip/TripChatDialog";
 import { TripAuditTimeline } from "./TripAuditTimeline";
@@ -67,6 +68,8 @@ export type DetailsJob = {
   id: string;
   trip_no?: number | null;
   from_location: string; to_location: string;
+  from_port?: { name: string } | null; from_berth?: { name: string } | null;
+  to_port?: { name: string } | null; to_berth?: { name: string } | null;
   date: string; time: string; pickup_at: string | null;
   status: string;
   vehicle: string | null;
@@ -81,6 +84,9 @@ export type DetailsJob = {
   tracking_enabled: boolean; qr_strict_mode: boolean;
   from_flight: string | null; to_flight: string | null;
   flight_schedule_record_id?: string | null;
+  ship_event_id?: string | null;
+  operation_group_id?: string | null;
+  operation_groups?: { reference: string; name: string; colour?: string | null } | null;
   scheduled_transport_pickup_offset_minutes?: number | null;
   tracking_kind?: string | null;
   flight_status: string | null; flight_status_note: string | null;
@@ -151,11 +157,20 @@ export function TripDetailsSheet({
     try { return isoToMaltaDateTime(iso).time; } catch { return ""; }
   })();
   const flightCode = job.from_flight || job.to_flight;
+  const transportKind: "flight" | "vessel" | null = job.ship_event_id
+    ? "vessel"
+    : job.flight_schedule_record_id
+      ? "flight"
+      : flightCode && (job.tracking_kind === "flight" || job.tracking_kind === "vessel")
+        ? job.tracking_kind
+        : null;
   const shownDriver = driverName ?? job.drivers?.name ?? job.external_driver_name ?? null;
   const paid = job.payment_status === "paid";
 
   const qc = useQueryClient();
   const normalizeFn = useServerFn(normalizeJobData);
+  const shipEtaReviewFn = useServerFn(getShipEtaTripReview);
+  const resolveShipEtaReviewFn = useServerFn(resolveShipEtaTripReview);
   const paxActivityFn = useServerFn(listPaxActivityCoord);
   const linkedFlightFn = useServerFn(getLinkedFlightScheduleRecord);
   const flightImpactFn = useServerFn(getFlightScheduleRecordImpact);
@@ -165,6 +180,16 @@ export function TripDetailsSheet({
   const [boardingNote, setBoardingNote] = useState("");
 
   const isRealJobIdRaw = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job.id);
+  const { data: shipEtaReview } = useQuery({
+    queryKey: ["ship-eta-trip-review", job.id],
+    queryFn: () => shipEtaReviewFn({ data: { job_id: job.id } }) as Promise<{ previous_eta: string; new_eta: string; changed_at: string; suggested_date: string | null; suggested_time: string | null; driver_locked: boolean } | null>,
+    enabled: open && isRealJobIdRaw && !!job.ship_event_id,
+  });
+  const shipEtaReviewMutation = useMutation({
+    mutationFn: (action: "apply" | "keep") => resolveShipEtaReviewFn({ data: { job_id: job.id, action } }),
+    onSuccess: (result: any) => { toast.success(result.pending ? "Change request sent to driver" : "ETA review resolved"); qc.invalidateQueries({ queryKey: ["ship-eta-trip-review", job.id] }); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   // Protected server fns 401 when there is no session (e.g. after sign-out while
   // the sheet is mounted, or on the /auth screen). Gate every polling query on it.
@@ -390,7 +415,7 @@ export function TripDetailsSheet({
               )}
             </div>
             <SheetTitle className="text-base leading-tight">
-              {displayLocation(job.from_location, job.pickup_display_name)} → {displayLocation(job.to_location, job.dropoff_display_name)}
+              {displayJobLocation(job.from_location, job.pickup_display_name, job.from_port, job.from_berth)} → {displayJobLocation(job.to_location, job.dropoff_display_name, job.to_port, job.to_berth)}
             </SheetTitle>
             {(job.route_duration_sec ?? 0) > 0 && (
               <div className="text-[11px] text-muted-foreground">
@@ -412,6 +437,13 @@ export function TripDetailsSheet({
               </div>
             )}
             <SafetyFlagBadges job={job} />
+            {shipEtaReview ? <div className="space-y-2 rounded-md border-2 border-destructive/60 bg-destructive/10 p-3 text-sm" role="alert">
+              <div className="font-semibold text-destructive">Ship ETA changed — review pickup</div>
+              <div className="grid gap-1 text-xs"><span>Current pickup: {job.date} {job.time?.slice(0, 5)}</span><span>Suggested pickup: {shipEtaReview.suggested_date ?? "—"} {shipEtaReview.suggested_time ?? "—"}</span><span>ETA change: {Math.round((new Date(shipEtaReview.new_eta).getTime() - new Date(shipEtaReview.previous_eta).getTime()) / 60000)} minutes</span></div>
+              <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => shipEtaReviewMutation.mutate("apply")} disabled={shipEtaReviewMutation.isPending || !shipEtaReview.suggested_time}>Apply suggested time</Button><Button size="sm" variant="outline" onClick={onEdit}>Edit</Button><Button size="sm" variant="ghost" onClick={() => shipEtaReviewMutation.mutate("keep")} disabled={shipEtaReviewMutation.isPending}>Keep current</Button></div>
+              {shipEtaReview.driver_locked ? <p className="text-xs text-muted-foreground">This trip is driver-locked; applying the suggestion requests driver approval.</p> : null}
+            </div> : null}
+            {job.operation_groups ? <div className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${operationGroupColourClasses[normaliseOperationGroupColour(job.operation_groups.colour)]}`}><span className="h-2 w-2 rounded-full bg-current" />{job.operation_groups.reference} · {job.operation_groups.name}</div> : null}
             {(job as any).group_id && (
               <GroupStopsPanel groupId={(job as any).group_id} groupName={(job as any).group_name} />
             )}
@@ -844,19 +876,19 @@ export function TripDetailsSheet({
           </section>
 
           {/* Live flight tracking */}
-          {(job.from_flight || job.to_flight) && (
+          {transportKind && (
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                  {job.tracking_kind === "vessel" ? "Vessel" : "Flight"}
+                  {transportKind === "vessel" ? "Vessel" : "Flight"}
                 </div>
                 <RefreshLiveStatusButton jobId={job.id} label="Refresh" />
               </div>
               <div className={`rounded-md border p-3 space-y-1.5 text-xs ${flightIssue ? "border-destructive/50 bg-destructive/5" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
-                    {job.from_flight && <div>From: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.from_flight}</b></div>}
-                    {job.to_flight && <div>To: <b>{job.tracking_kind === "vessel" ? "🚢" : "✈"} {job.to_flight}</b></div>}
+                    {job.from_flight && <div>From: <b>{transportKind === "vessel" ? "🚢" : "✈"} {job.from_flight}</b></div>}
+                    {job.to_flight && <div>To: <b>{transportKind === "vessel" ? "🚢" : "✈"} {job.to_flight}</b></div>}
                   </div>
                   <FlightStatusPill status={job.flight_status} />
                 </div>
@@ -879,7 +911,7 @@ export function TripDetailsSheet({
                       ? `Updated ${formatMaltaTime(job.flight_status_updated_at)}`
                       : "Not checked yet"}
                   </span>
-                  {job.tracking_kind !== "vessel" && (
+                  {transportKind === "flight" && (
                     <div className="flex items-center gap-2">
                       <a
                         href={`https://maltairport.com/flights/${job.from_flight ? "arrivals" : "departures"}/`}
@@ -892,7 +924,7 @@ export function TripDetailsSheet({
                   )}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  Automatic live updates are temporarily unavailable. Check the {job.tracking_kind === "vessel" ? "port" : "airport"} board before dispatch.
+                  Automatic live updates are temporarily unavailable. Check the {transportKind === "vessel" ? "port" : "airport"} board before dispatch.
                 </p>
               </div>
             </section>

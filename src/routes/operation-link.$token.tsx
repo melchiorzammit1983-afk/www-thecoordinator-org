@@ -1,0 +1,49 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { createFileRoute } from "@tanstack/react-router";
+import { getOperationLinkView, submitOperationLinkUpdate } from "@/lib/operation-links.server";
+import { useState } from "react";
+
+type OperationLinkUpdateInput = {
+  token: string;
+  action:
+    | "update_ship_eta"
+    | "update_expected_departure"
+    | "request_port_change"
+    | "submit_operational_update"
+    | "mark_passenger_onboard"
+    | "undo_passenger_onboard";
+  value?: string;
+  port_id?: string;
+  berth_id?: string | null;
+  passenger_id?: string;
+};
+
+export const Route = createFileRoute("/operation-link/$token")({
+  head: () => ({ meta: [{ title: "Operation Link" }] }),
+  component: OperationLinkPage,
+});
+
+function OperationLinkPage() {
+  const { token } = Route.useParams();
+  const viewFn = useServerFn(getOperationLinkView);
+  const updateFn = useServerFn(submitOperationLinkUpdate);
+  const [eta, setEta] = useState("");
+  const [departure, setDeparture] = useState("");
+  const [note, setNote] = useState("");
+  const [portId, setPortId] = useState("");
+  const [berthId, setBerthId] = useState("");
+  const updateMutation = useMutation({ mutationFn: (input: OperationLinkUpdateInput) => updateFn({ data: input } as never), onSuccess: () => { setNote(""); query.refetch(); } });
+  const query = useQuery({ queryKey: ["operation-link", token], queryFn: () => viewFn({ data: { token } }) });
+  if (query.isLoading) return <main className="grid min-h-screen place-items-center p-6 text-sm text-muted-foreground">Loading Operation Link…</main>;
+  if (query.error || !query.data) return <main className="grid min-h-screen place-items-center bg-muted/20 p-6"><div className="w-full max-w-md rounded-2xl border bg-card p-6 text-center"><h1 className="text-xl font-semibold">Operation Link unavailable</h1><p className="mt-2 text-sm text-muted-foreground">This link is expired, revoked, or invalid.</p></div></main>;
+  const { group, link, ships, flights, jobs, passengers } = query.data;
+  return <main className="min-h-screen bg-muted/20 px-4 py-6 sm:px-6"><div className="mx-auto max-w-2xl space-y-4"><header className="rounded-2xl border bg-card p-5"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Operation Link</p><h1 className="mt-1 text-2xl font-semibold">{group.name}</h1><p className="mt-1 text-sm text-muted-foreground">{group.reference} · {group.type.replaceAll("_", " ")} · {group.status}</p><p className="mt-2 text-xs text-muted-foreground">For {link.recipient_name} · Updated {new Date().toLocaleString()}</p></header>
+    <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Schedule</h2><p className="mt-2 text-sm">{group.start_date ?? "No start date"} → {group.end_date ?? "No end date"}</p></section>
+    {ships.length > 0 && <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Ship</h2><div className="mt-3 space-y-2 text-sm">{ships.map((row: any, index: number) => <div key={index} className="rounded-lg border p-3"><p className="font-medium">{row.ship_events?.ship_name}</p><p className="text-xs text-muted-foreground">ETA {row.ship_events?.eta ?? "—"} · Departure {row.ship_events?.expected_departure ?? "—"}</p><p className="text-xs text-muted-foreground">{row.ship_events?.port ?? "—"} · {row.ship_events?.berths?.name ?? "No pickup point"} · {row.ship_events?.status ?? "Scheduled"}</p></div>)}</div></section>}
+    {flights.length > 0 && <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Flights</h2><div className="mt-3 space-y-2 text-sm">{flights.map((row: any, index: number) => <div key={index} className="rounded-lg border p-3"><p className="font-medium">{row.flight_schedule_records?.flight_number} · {row.flight_schedule_records?.airline}</p><p className="text-xs text-muted-foreground">{row.flight_schedule_records?.origin} → {row.flight_schedule_records?.destination} · {row.flight_schedule_records?.scheduled_date} {row.flight_schedule_records?.scheduled_time}</p></div>)}</div></section>}
+    {jobs.length > 0 && <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Trip progress</h2><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{jobs.map((job: any) => <div key={job.id} className="rounded-lg border p-3 text-center text-sm"><p className="font-medium capitalize">{job.status}</p><p className="text-xs text-muted-foreground">{job.date} {String(job.time ?? "").slice(0, 5)}</p></div>)}</div></section>}
+    {passengers.length > 0 && <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Passengers / crew</h2><div className="mt-3 space-y-2">{passengers.map((passenger: any) => <div key={passenger.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><div><p className="font-medium">{passenger.name}</p><p className="text-xs text-muted-foreground">{passenger.company ?? "Company not specified"} · {passenger.status}</p></div>{link.permissions?.mark_passenger_onboard && <button className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate({ token, action: passenger.boarded_at ? "undo_passenger_onboard" : "mark_passenger_onboard", passenger_id: passenger.id })}>{passenger.boarded_at ? "Undo onboard" : "Mark onboard"}</button>}</div>)}</div></section>}
+    {(link.permissions?.update_ship_eta || link.permissions?.update_expected_departure || link.permissions?.request_port_change || link.permissions?.submit_operational_update) && <section className="rounded-2xl border bg-card p-5"><h2 className="font-semibold">Operational updates</h2><div className="mt-3 space-y-3">{link.permissions?.update_ship_eta && <div><label className="text-xs font-medium">Update Ship ETA</label><div className="mt-1 flex gap-2"><input className="h-10 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} /><button className="rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={!eta || updateMutation.isPending} onClick={() => updateMutation.mutate({ token, action: "update_ship_eta", value: new Date(eta).toISOString() })}>Submit</button></div></div>}{link.permissions?.update_expected_departure && <div><label className="text-xs font-medium">Update Expected Departure</label><div className="mt-1 flex gap-2"><input className="h-10 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" type="datetime-local" value={departure} onChange={(e) => setDeparture(e.target.value)} /><button className="rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={!departure || updateMutation.isPending} onClick={() => updateMutation.mutate({ token, action: "update_expected_departure", value: new Date(departure).toISOString() })}>Submit</button></div></div>}{link.permissions?.request_port_change && <div><label className="text-xs font-medium">Request Port / Pickup point change</label><div className="mt-1 grid gap-2 sm:grid-cols-2"><input className="h-10 rounded-md border bg-background px-2 text-sm" value={portId} onChange={(e) => setPortId(e.target.value)} placeholder="Port ID" /><input className="h-10 rounded-md border bg-background px-2 text-sm" value={berthId} onChange={(e) => setBerthId(e.target.value)} placeholder="Pickup point ID (optional)" /></div><button className="mt-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={!portId || updateMutation.isPending} onClick={() => updateMutation.mutate({ token, action: "request_port_change", port_id: portId, berth_id: berthId || null })}>Submit request</button></div>}{link.permissions?.submit_operational_update && <div><label className="text-xs font-medium">Operational note</label><div className="mt-1 flex gap-2"><input className="h-10 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Enter update" /><button className="rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={!note.trim() || updateMutation.isPending} onClick={() => updateMutation.mutate({ token, action: "submit_operational_update", value: note.trim() })}>Submit</button></div></div>}{updateMutation.error && <p className="text-sm text-destructive">{updateMutation.error instanceof Error ? updateMutation.error.message : "Update failed"}</p>}</div></section>}
+  </div></main>;
+}

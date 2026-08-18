@@ -232,6 +232,8 @@ export function liveStatusFailureMessage(reason: string | null | undefined, code
       return "Flight provider rejected the API key — check the key and that the account is subscribed";
     case "aero_429":
       return "Flight provider quota reached — try again shortly";
+    case "aero_no_subscription":
+      return "Flight provider subscription isn't active — renew the AeroDataBox plan to restore live tracking";
     case "provider_unavailable":
       return "Flight provider is unavailable right now";
     case "aero_unreachable":

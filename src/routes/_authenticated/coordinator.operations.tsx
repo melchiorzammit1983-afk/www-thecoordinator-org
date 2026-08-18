@@ -1,11 +1,14 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertCircle, Anchor, CalendarClock, Plane, RefreshCw, Route as RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { completeShipEtaReview, getOperationsInbox } from "@/lib/coordinator.functions";
+import { completeShipEtaReview, completeTransportConflictReview, getOperationsInbox, listJobs } from "@/lib/coordinator.functions";
+import { listOperationGroups, getOperationGroup } from "@/lib/operation-groups.functions";
+import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operations")({
@@ -16,15 +19,91 @@ export const Route = createFileRoute("/_authenticated/coordinator/operations")({
 function OperationsCentrePage() {
   const inboxFn = useServerFn(getOperationsInbox);
   const completeShipEtaReviewFn = useServerFn(completeShipEtaReview);
+  const completeTransportConflictReviewFn = useServerFn(completeTransportConflictReview);
+  const jobsFn = useServerFn(listJobs);
+  const groupsFn = useServerFn(listOperationGroups);
+  const groupDetailFn = useServerFn(getOperationGroup);
+  const [groupFilter, setGroupFilter] = useState<"all" | "grouped" | "ungrouped">("all");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupStatus, setGroupStatus] = useState("live");
+  const [groupType, setGroupType] = useState("all");
+  const [transportFilter, setTransportFilter] = useState("all");
+  const [tripStatus, setTripStatus] = useState("all");
+  const [needsAttention, setNeedsAttention] = useState(false);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("operations-centre-filters") ?? "null");
+      if (!saved) return;
+      if (["all", "grouped", "ungrouped"].includes(saved.groupFilter)) setGroupFilter(saved.groupFilter);
+      if (typeof saved.groupSearch === "string") setGroupSearch(saved.groupSearch);
+      if (typeof saved.groupStatus === "string") setGroupStatus(saved.groupStatus);
+      if (typeof saved.groupType === "string") setGroupType(saved.groupType);
+      if (typeof saved.transportFilter === "string") setTransportFilter(saved.transportFilter);
+      if (typeof saved.tripStatus === "string") setTripStatus(saved.tripStatus);
+      if (typeof saved.needsAttention === "boolean") setNeedsAttention(saved.needsAttention);
+      if (typeof saved.fromDate === "string") setFromDate(saved.fromDate);
+      if (typeof saved.toDate === "string") setToDate(saved.toDate);
+    } catch {
+      /* Ignore stale or malformed browser state. */
+    }
+    setFiltersHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    sessionStorage.setItem("operations-centre-filters", JSON.stringify({ groupFilter, groupSearch, groupStatus, groupType, transportFilter, tripStatus, needsAttention, fromDate, toDate }));
+  }, [filtersHydrated, fromDate, groupFilter, groupSearch, groupStatus, groupType, needsAttention, toDate, transportFilter, tripStatus]);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["operations-inbox"],
     queryFn: () => inboxFn(),
     refetchInterval: 60_000,
   });
+  const jobsQuery = useQuery({ queryKey: ["operations-jobs"], queryFn: () => jobsFn({ data: {} }) as Promise<any[]> });
+  const groupsQuery = useQuery({ queryKey: ["operations-groups"], queryFn: () => groupsFn() });
+  const selectedGroupQuery = useQuery({ queryKey: ["operations-group", selectedGroupId], queryFn: () => groupDetailFn({ data: { id: selectedGroupId! } }), enabled: !!selectedGroupId });
+  const filteredJobs = useMemo(() => {
+    const term = groupSearch.trim().toLowerCase();
+    return (jobsQuery.data ?? []).filter((job: any) => {
+      const grouped = Boolean(job.operation_group_id);
+      const group = job.operation_groups;
+      const matchesFilter = groupFilter === "all" || (groupFilter === "grouped" ? grouped : !grouped);
+      const flight = job.flight_schedule_records;
+      const ship = job.ship_events;
+      const passengers = Array.isArray(job.pax) ? job.pax.map((item: any) => item.name).join(" ") : "";
+      const searchable = [
+        group?.reference,
+        group?.name,
+        ship?.ship_name,
+        flight?.flight_number,
+        flight?.airline,
+        flight?.origin,
+        flight?.destination,
+        passengers,
+        job.drivers?.name,
+        job.trip_no,
+        job.clientcompanyname,
+        job.from_location,
+        job.to_location,
+      ].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !term || searchable.includes(term);
+      const matchesGroupStatus = groupStatus === "all" || (groupStatus === "live" ? ["draft", "active"].includes(group?.status ?? "") : group?.status === groupStatus);
+      const matchesGroupType = groupType === "all" || group?.type === groupType;
+      const matchesTransport = transportFilter === "all" || (transportFilter === "flight" ? Boolean(job.flight_schedule_record_id) : transportFilter === "ship" ? Boolean(job.ship_event_id) : !job.flight_schedule_record_id && !job.ship_event_id);
+      const matchesTripStatus = tripStatus === "all" || job.status === tripStatus;
+      const matchesAttention = !needsAttention || Boolean(job.needs_review) || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase());
+      const matchesDate = (!fromDate || String(job.date ?? "") >= fromDate) && (!toDate || String(job.date ?? "") <= toDate);
+      return matchesFilter && matchesSearch && matchesGroupStatus && matchesGroupType && matchesTransport && matchesTripStatus && matchesAttention && matchesDate;
+    });
+  }, [fromDate, groupFilter, groupSearch, groupStatus, groupType, jobsQuery.data, needsAttention, toDate, transportFilter, tripStatus]);
   const completeReview = useMutation({
-    mutationFn: (etaHistoryId: string) => completeShipEtaReviewFn({ data: { eta_history_id: etaHistoryId } }),
+    mutationFn: ({ kind, id }: { kind: "ship_eta" | "transport_conflict"; id: string }) => kind === "ship_eta"
+      ? completeShipEtaReviewFn({ data: { eta_history_id: id } })
+      : completeTransportConflictReviewFn({ data: { job_id: id } }),
     onSuccess: (result) => {
-      toast.success(result.alreadyCompleted ? "This Ship ETA review was already completed." : "Ship ETA review marked complete.");
+      toast.success(result.alreadyCompleted ? "This review was already completed." : "Review marked complete.");
       refetch();
     },
     onError: (reason: Error) => toast.error(reason.message || "Ship ETA review could not be completed."),
@@ -85,7 +164,7 @@ function OperationsCentrePage() {
                     <span className="text-xs text-muted-foreground">
                       {item.affectedTrips} affected trip{item.affectedTrips === 1 ? "" : "s"}
                     </span>
-                    {item.reviewHistoryId ? (
+                    {item.reviewKind && item.reviewTargetId ? (
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button asChild type="button" variant="outline" size="sm">
                           <Link to={item.href}>{item.action}</Link>
@@ -93,7 +172,7 @@ function OperationsCentrePage() {
                         <Button
                           type="button"
                           size="sm"
-                          onClick={() => completeReview.mutate(item.reviewHistoryId)}
+                          onClick={() => completeReview.mutate({ kind: item.reviewKind, id: item.reviewTargetId })}
                           disabled={completeReview.isPending}
                         >
                           {completeReview.isPending ? "Markingâ€¦" : "Mark Review Complete"}
@@ -115,9 +194,51 @@ function OperationsCentrePage() {
           )}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Operation Groups</CardTitle>
+          <CardDescription>Work grouped explicitly by the coordinator. Existing ordering and calculations are unchanged.</CardDescription>
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+            <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm" value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder="Search group, ship, flight, passenger, driver, or booking" />
+            <div className="flex flex-wrap gap-2">
+              {(["all", "grouped", "ungrouped"] as const).map((value) => <Button key={value} type="button" size="sm" variant={groupFilter === value ? "default" : "outline"} onClick={() => setGroupFilter(value)}>{value[0].toUpperCase() + value.slice(1)}</Button>)}
+            </div>
+          <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={groupStatus} onChange={(event) => setGroupStatus(event.target.value)} aria-label="Group status filter"><option value="live">Draft + Active</option><option value="all">All group statuses</option><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={groupType} onChange={(event) => setGroupType(event.target.value)} aria-label="Group type filter"><option value="all">All group types</option>{["crew_change", "conference", "event", "charter", "hotel_operation", "airport_operation", "vip_movement", "other"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={transportFilter} onChange={(event) => setTransportFilter(event.target.value)} aria-label="Transport filter"><option value="all">All transport</option><option value="flight">Flight</option><option value="ship">Ship</option><option value="road">Road / none</option></select>
+            <select className="h-9 rounded-md border bg-background px-2 text-sm" value={tripStatus} onChange={(event) => setTripStatus(event.target.value)} aria-label="Trip status filter"><option value="all">All trip statuses</option><option value="pending">Pending</option><option value="assigned">Assigned</option><option value="en_route">En route</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={needsAttention} onChange={(event) => setNeedsAttention(event.target.checked)} />Needs attention</label>
+            <input className="h-9 rounded-md border bg-background px-2 text-sm" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} aria-label="From date" />
+            <input className="h-9 rounded-md border bg-background px-2 text-sm" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} aria-label="To date" />
+          </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {jobsQuery.isLoading || groupsQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading grouped work…</p> : filteredJobs.length === 0 ? <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">No matching grouped work.</p> : filteredJobs.map((job: any) => {
+            const group = job.operation_groups;
+            return <div key={job.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0"><p className="truncate text-sm">{job.from_location} → {job.to_location}</p><p className="text-xs text-muted-foreground">{job.date} {String(job.time ?? "").slice(0, 5)} · {job.status ?? "scheduled"}</p></div>
+              {group ? <Link className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:opacity-90 ${operationGroupColourClasses[normaliseOperationGroupColour(group.colour)]}`} to="/coordinator/operation-groups" onClick={() => setSelectedGroupId(job.operation_group_id)}><span className={`h-2 w-2 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</Link> : <span className="text-xs text-muted-foreground">Ungrouped</span>}
+            </div>;
+          })}
+        </CardContent>
+      </Card>
+      {groupsQuery.data?.length ? <div className="grid gap-3 md:grid-cols-2">
+        {groupsQuery.data.map((group) => {
+          const jobs = (jobsQuery.data ?? []).filter((job: any) => job.operation_group_id === group.id);
+          const detail = selectedGroupQuery.data?.id === group.id ? selectedGroupQuery.data : null;
+          return <Card key={group.id}>
+            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between gap-2 text-base"><span className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${operationGroupColourDotClasses[normaliseOperationGroupColour(group.colour)]}`} />{group.reference} · {group.name}</span><Badge variant="outline">{group.status}</Badge></CardTitle><CardDescription>{group.type.replaceAll("_", " ")}</CardDescription></CardHeader>
+            <CardContent className="space-y-2 text-sm"><div className="grid grid-cols-2 gap-2"><Summary label="Jobs" value={jobs.length} /><Summary label="Trips" value={jobs.length} /></div>{detail ? <><p className="text-xs text-muted-foreground">Ships: {detail.ship_events?.map((item: any) => item.ship_events?.ship_name).filter(Boolean).join(", ") || "None"}</p><p className="text-xs text-muted-foreground">Flights: {detail.flight_records?.map((item: any) => item.flight_schedule_records?.flight_number).filter(Boolean).join(", ") || "None"}</p></> : null}<Button asChild type="button" size="sm" variant="outline" onClick={() => setSelectedGroupId(group.id)}><Link to="/coordinator/operation-groups">Open Operation Group</Link></Button></CardContent>
+          </Card>;
+        })}
+      </div> : null}
     </div>
   );
 }
+
+function Summary({ label, value }: { label: string; value: number }) { return <div className="rounded-md bg-muted/30 px-3 py-2"><p className="text-xs text-muted-foreground">{label}</p><p className="text-lg font-semibold">{value}</p></div>; }
 
 function InboxIcon({ type }: { type: string }) {
   const Icon = type.startsWith("Flight") ? Plane : type.startsWith("Ship") ? Anchor : type.startsWith("Draft") ? CalendarClock : RouteIcon;

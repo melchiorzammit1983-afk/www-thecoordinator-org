@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, useRouterState, useNavigate } from "@tan
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, KeyRound, Gift, AlertTriangle, MapPin, Clock, Plane, Ship, Settings as SettingsIcon, ListChecks } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Inbox, Users, Link2, LogOut, Tag, Handshake, Car, FileText, Palette, KeyRound, Gift, AlertTriangle, MapPin, Clock, Plane, Ship, Anchor, Layers3, Settings as SettingsIcon, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,8 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
       { to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null },
       { to: "/coordinator/ship-operations", label: "Ship Operations", icon: Ship, exact: false, feature: null },
+      { to: "/coordinator/ports", label: "Port Directory", icon: Anchor, exact: false, feature: null },
+      { to: "/coordinator/operation-groups", label: "Operation Groups", icon: Layers3, exact: false, feature: null },
       { to: "/coordinator/my-driving", label: "My Driving", icon: Car, exact: false, feature: "my_driving" },
       { to: "/coordinator/labels", label: "Labels", icon: Tag, exact: false, feature: "labels" },
       { to: "/coordinator/availability", label: "Availability", icon: Clock, exact: false, feature: "availability_autoforward" },
@@ -59,7 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Clients & Partners",
     items: [
-      { to: "/coordinator/portal-links", label: "Portal Links", icon: Link2, exact: false, feature: "portal_links" },
+      { to: "/coordinator/portal-links", label: "Client Portals", icon: Link2, exact: false, feature: "portal_links" },
       { to: "/coordinator/collaborate", label: "Collaborate", icon: Handshake, exact: false, feature: "collaborate" },
       { to: "/coordinator/statements", label: "Statements", icon: FileText, exact: false, feature: "statements" },
     ],

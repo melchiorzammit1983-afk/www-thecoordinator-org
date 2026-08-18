@@ -5,6 +5,9 @@ import { maltaWallTimeToUtcIso, isoToMaltaDateTime, formatMaltaDateTime, formatM
 import { getIsAdmin } from "./admin.functions";
 import { parseFlightCode, looksLikeVessel, liveStatusFailureMessage } from "./flight-code";
 import { assertOptionalAiModuleEnabled } from "./optional-ai.server";
+import { normalizeBookingEndpointTypes, resolveBookingJourney, type JourneyEndpoint } from "./journey-resolver";
+import { recordDriverTripUpdate } from "./driver-trip-updates.server";
+import { assertTokenShipSelection } from "./ship-events-token.server";
 
 type Ctx = { supabase: any; userId: string };
 type CompanyRecord = {
@@ -487,7 +490,7 @@ export const listJobs = createServerFn({ method: "GET" })
     }
     const supabaseAdmin = await getAdminClient();
     const cols =
-      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color))";
+      "id, trip_no, company_id, executor_company_id, dispatch_chain_company_ids, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, pickup_display_name, dropoff_display_name, pickup_place_id, dropoff_place_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, route_duration_sec, route_distance_m, route_computed_at, live_eta_sec, live_eta_updated_at, date, time, pickup_at, flightorship, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, operation_groups(reference,name,type,status,colour), scheduled_transport_pickup_offset_minutes, immigration_required, tracking_kind, flight_status, flight_status_note, flight_status_updated_at, flight_scheduled_at, flight_estimated_at, tracking_enabled, qr_strict_mode, status, driver_id, vehicle, notes, contact_phone, email, clientcompanyname, driver_accepted_at, deletion_requested_at, payment_status, grouped_count, grouped_at, group_id, group_name, group_note, client_confirmed_at, client_link_token, source, coord_approved_at, parent_job_id, promo_note, traffic_delay_minutes, traffic_severity, leave_by_at, pickup_shift_reason, created_by_driver, needs_review, auto_created_from_crew_itinerary, drivers(name,vehicle,phone,seats_available,availability_note), pax(id,name,status,boarded_at), job_labels(trip_labels(id,name,color)), ship_events!jobs_ship_event_id_fkey(ship_name), flight_schedule_records!jobs_flight_schedule_record_id_fkey(flight_number,airline,origin,destination), from_port:ports!jobs_from_port_id_fkey(name), from_berth:berths!jobs_from_berth_id_fkey(name), to_port:ports!jobs_to_port_id_fkey(name), to_berth:berths!jobs_to_berth_id_fkey(name)";
 
     let mineQ = supabaseAdmin.from("jobs").select(cols).eq("company_id", c.id).order("pickup_at", { ascending: true });
     if (data.from) mineQ = mineQ.gte("date", data.from);
@@ -637,6 +640,37 @@ export const listJobs = createServerFn({ method: "GET" })
       }
     }
 
+    // A linked schedule record is authoritative for the flight code and
+    // scheduled time.  Fill the legacy display fields when they are absent so
+    // cards remain recognisable even for older rows created before those
+    // denormalised values were populated.
+    const linkedFlightIds = Array.from(
+      new Set(combined.map((row) => row.flight_schedule_record_id).filter(Boolean)),
+    ) as string[];
+    if (linkedFlightIds.length) {
+      const { data: scheduleRecords } = await supabaseAdmin
+        .from("flight_schedule_records")
+        .select("id, scheduled_date, scheduled_time, direction, flight_number")
+        .in("id", linkedFlightIds);
+      const scheduleById = new Map((scheduleRecords ?? []).map((record: any) => [record.id, record]));
+      for (const row of combined) {
+        const record = scheduleById.get(row.flight_schedule_record_id);
+        if (!record) continue;
+        const code = record.flight_number ? String(record.flight_number).trim() : null;
+        if (code) {
+          if (record.direction === "arrival" && !row.from_flight) row.from_flight = code;
+          if (record.direction === "departure" && !row.to_flight) row.to_flight = code;
+        }
+        if (!row.flight_scheduled_at && record.scheduled_date && record.scheduled_time) {
+          try {
+            row.flight_scheduled_at = maltaWallTimeToUtcIso(record.scheduled_date, record.scheduled_time);
+          } catch {
+            // Keep the card usable if a legacy schedule has malformed time data.
+          }
+        }
+      }
+    }
+
     return combined;
   });
 
@@ -648,9 +682,17 @@ const passengerInput = z.object({
 
 type PassengerInput = z.infer<typeof passengerInput>;
 
+const bookingEndpointTypeInput = z.enum(["airport", "port", "local"]);
+
 const jobInput = z.object({
   from_location: z.string().trim().min(1).max(255),
   to_location: z.string().trim().min(1).max(255),
+  from_location_type: bookingEndpointTypeInput.optional(),
+  to_location_type: bookingEndpointTypeInput.optional(),
+  from_port_id: z.string().uuid().nullable().optional(),
+  from_berth_id: z.string().uuid().nullable().optional(),
+  to_port_id: z.string().uuid().nullable().optional(),
+  to_berth_id: z.string().uuid().nullable().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   flightorship: z.string().trim().max(120).optional().or(z.literal("")),
@@ -659,7 +701,9 @@ const jobInput = z.object({
   flight_schedule_record_id: z.string().uuid().nullable().optional(),
   ship_event_id: z.string().uuid().nullable().optional(),
   onward_flight_schedule_record_id: z.string().uuid().nullable().optional(),
+  onward_ship_event_id: z.string().uuid().nullable().optional(),
   scheduled_transport_pickup_offset_minutes: pickupOffsetMinutesInput.nullable().optional(),
+  immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
   clientcompanyname: z.string().trim().max(200).optional().or(z.literal("")),
   qr_strict_mode: z.boolean().default(false),
   tracking_enabled: z.boolean().default(false),
@@ -667,6 +711,7 @@ const jobInput = z.object({
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
   contact_phone: z.string().trim().max(40).optional().or(z.literal("")),
   driver_id: z.string().uuid().optional().nullable(),
+  operation_group_id: z.string().uuid().nullable().optional(),
   operation_name: z.string().trim().max(200).optional().or(z.literal("")),
   label_ids: z.array(z.string().uuid()).max(20).optional(),
   // From Google Places pick — persisted so we can render the hotel/business
@@ -693,6 +738,32 @@ const jobInput = z.object({
 const createJobInput = jobInput.extend({
   passengers: z.array(passengerInput).max(200).optional(),
 });
+
+function resolveJourneyForBookingInput(data: {
+  from_location_type?: JourneyEndpoint;
+  to_location_type?: JourneyEndpoint;
+}) {
+  if (!data.from_location_type || !data.to_location_type) return null;
+  return resolveBookingJourney(data.from_location_type, data.to_location_type);
+}
+
+function assertCompleteBookingEndpointTypes(data: {
+  from_location_type?: JourneyEndpoint;
+  to_location_type?: JourneyEndpoint;
+}) {
+  if ((data.from_location_type === undefined) !== (data.to_location_type === undefined)) {
+    throw new Error("Both endpoint types are required when providing journey classification.");
+  }
+}
+
+
+async function validateOperationGroupAssignment(supabaseAdmin: any, companyId: string, operationGroupId: string | null | undefined) {
+  if (operationGroupId === undefined || operationGroupId === null) return;
+  const { data, error } = await supabaseAdmin.from("operation_groups").select("id, status").eq("id", operationGroupId).eq("company_id", companyId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Operation Group not found.");
+  if (data.status === "completed" || data.status === "cancelled") throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
+}
 
 type LinkedFlightScheduleRecord = {
   id: string;
@@ -768,6 +839,186 @@ type OperationsInboxShipEtaChange = {
   } | null;
 };
 
+type OperationsInboxShipPortChange = {
+  id: string;
+  ship_event_id: string;
+  previous_port_name: string | null;
+  previous_berth_name: string | null;
+  new_port_name: string;
+  new_berth_name: string | null;
+  changed_at: string;
+  ship_events: { ship_name: string; company_id: string } | null;
+};
+
+type OperationsInboxShipDepartureWarning = {
+  id: string;
+  ship_event_id: string;
+  expected_departure: string;
+  incomplete_trip_count: number;
+  unresolved_status_count: number;
+  trips_needing_review_count: number;
+  ship_event: { ship_name: string } | null;
+};
+
+const READINESS_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Reconciles the one current departure-readiness warning per ship. This is a
+ * warning-only side effect: it never changes jobs, trips, passengers, or ship
+ * lifecycle state. The immutable audit records each transition.
+ */
+async function refreshShipDepartureReadinessWarnings(
+  tables: any,
+  companyId: string,
+  jobScope: string,
+): Promise<OperationsInboxShipDepartureWarning[]> {
+  const [eventsResult, jobsResult, paxResult, warningsResult] = await Promise.all([
+    tables
+      .from("ship_events")
+      .select("id, expected_departure, status, archived_at, ship_name")
+      .eq("company_id", companyId)
+      .limit(10_000),
+    tables
+      .from("jobs")
+      .select("id, ship_event_id, status, needs_review")
+      .or(jobScope)
+      .not("ship_event_id", "is", null)
+      .limit(10_000),
+    tables.from("pax").select("id, job_id, status").limit(10_000),
+    tables
+      .from("ship_departure_readiness_warnings")
+      .select("id, company_id, ship_event_id, active, expected_departure, incomplete_trip_count, unresolved_status_count, trips_needing_review_count")
+      .eq("company_id", companyId)
+      .limit(10_000),
+  ]);
+  for (const result of [eventsResult, jobsResult, paxResult, warningsResult]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  const jobs = (jobsResult.data ?? []) as Array<{ id: string; ship_event_id: string; status: string | null; needs_review: boolean | null }>;
+  const jobIds = new Set(jobs.map((job) => job.id));
+  const pax = ((paxResult.data ?? []) as Array<{ id: string; job_id: string; status: string | null }>).filter((row) => jobIds.has(row.job_id));
+  const jobsByShip = new Map<string, typeof jobs>();
+  for (const job of jobs) {
+    const current = jobsByShip.get(job.ship_event_id) ?? [];
+    current.push(job);
+    jobsByShip.set(job.ship_event_id, current);
+  }
+  const paxByJob = new Map<string, typeof pax>();
+  for (const row of pax) {
+    const current = paxByJob.get(row.job_id) ?? [];
+    current.push(row);
+    paxByJob.set(row.job_id, current);
+  }
+  const existingByShip = new Map<string, any>(
+    ((warningsResult.data ?? []) as any[]).map((warning) => [warning.ship_event_id, warning]),
+  );
+  const now = Date.now();
+
+  for (const event of (eventsResult.data ?? []) as Array<{ id: string; expected_departure: string | null; status: string | null; archived_at: string | null; ship_name: string }>) {
+    const existing = existingByShip.get(event.id);
+    const linkedJobs = jobsByShip.get(event.id) ?? [];
+    const incompleteJobs = linkedJobs.filter((job) => !["completed", "cancelled"].includes((job.status ?? "").toLowerCase()));
+    const needsReview = linkedJobs.filter((job) => job.needs_review === true).length;
+    const unresolvedStatuses = incompleteJobs.reduce((count, job) => count + (paxByJob.get(job.id) ?? []).filter((row) => !["completed", "cancelled"].includes((row.status ?? "").toLowerCase())).length, 0);
+    const departureMs = event.expected_departure ? new Date(event.expected_departure).getTime() : NaN;
+    const remainingMs = departureMs - now;
+    const scheduleChanged = !!existing && event.expected_departure !== existing.expected_departure;
+    const withinWindow = Number.isFinite(departureMs) && remainingMs >= 0 && remainingMs <= READINESS_WINDOW_MS;
+    const previousWarningStillRelevant = existing?.active === true && !scheduleChanged && Number.isFinite(departureMs) && remainingMs < 0;
+    const lifecycleClosed = !!event.archived_at || ["cancelled", "departed", "archived"].includes((event.status ?? "").toLowerCase());
+    const shouldWarn = !lifecycleClosed && incompleteJobs.length > 0 && (withinWindow || previousWarningStillRelevant);
+
+    if (shouldWarn && existing?.active === true) {
+      const { error } = await tables
+        .from("ship_departure_readiness_warnings")
+        .update({
+          expected_departure: event.expected_departure,
+          incomplete_trip_count: incompleteJobs.length,
+          unresolved_status_count: unresolvedStatuses,
+          trips_needing_review_count: needsReview,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .eq("company_id", companyId);
+      if (error) throw new Error(error.message);
+    } else if (shouldWarn && (!existing || existing.active === false)) {
+      let warningId = existing?.id as string | undefined;
+      if (warningId) {
+        const { error } = await tables
+          .from("ship_departure_readiness_warnings")
+          .update({
+            active: true,
+            expected_departure: event.expected_departure,
+            incomplete_trip_count: incompleteJobs.length,
+            unresolved_status_count: unresolvedStatuses,
+            trips_needing_review_count: needsReview,
+            updated_at: new Date().toISOString(),
+            resolved_at: null,
+          })
+          .eq("id", warningId)
+          .eq("company_id", companyId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { data: warning, error } = await tables
+          .from("ship_departure_readiness_warnings")
+          .insert({
+            company_id: companyId,
+            ship_event_id: event.id,
+            expected_departure: event.expected_departure,
+            incomplete_trip_count: incompleteJobs.length,
+            unresolved_status_count: unresolvedStatuses,
+            trips_needing_review_count: needsReview,
+          })
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        warningId = warning.id as string;
+      }
+      const { error } = await tables.from("ship_departure_readiness_warning_audit").insert({
+        company_id: companyId,
+        warning_id: warningId,
+        ship_event_id: event.id,
+        event_type: "created",
+        expected_departure: event.expected_departure,
+        incomplete_trip_count: incompleteJobs.length,
+        unresolved_status_count: unresolvedStatuses,
+        trips_needing_review_count: needsReview,
+      });
+      if (error) throw new Error(error.message);
+    } else if (existing?.active === true) {
+      const { error } = await tables
+        .from("ship_departure_readiness_warnings")
+        .update({ active: false, updated_at: new Date().toISOString(), resolved_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .eq("company_id", companyId);
+      if (error) throw new Error(error.message);
+      const { error: auditError } = await tables.from("ship_departure_readiness_warning_audit").insert({
+        company_id: companyId,
+        warning_id: existing.id,
+        ship_event_id: event.id,
+        event_type: "resolved",
+        expected_departure: existing.expected_departure,
+        incomplete_trip_count: incompleteJobs.length,
+        unresolved_status_count: unresolvedStatuses,
+        trips_needing_review_count: needsReview,
+      });
+      if (auditError) throw new Error(auditError.message);
+    }
+  }
+
+  const { data: activeWarnings, error: activeError } = await tables
+    .from("ship_departure_readiness_warnings")
+    .select("id, ship_event_id, expected_departure, incomplete_trip_count, unresolved_status_count, trips_needing_review_count, ship_event:ship_events!inner(ship_name, company_id)")
+    .eq("company_id", companyId)
+    .eq("active", true)
+    .eq("ship_events.company_id", companyId)
+    .order("expected_departure", { ascending: true })
+    .limit(10_000);
+  if (activeError) throw new Error(activeError.message);
+  return (activeWarnings ?? []) as OperationsInboxShipDepartureWarning[];
+}
+
 function safeFlightSearchTerm(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9 -]/g, " ").replace(/\s+/g, " ");
 }
@@ -799,27 +1050,133 @@ async function assertActiveDepartureFlightScheduleRecord(supabaseAdmin: any, rec
   if (!data) throw new Error("Choose a departure from the active schedule.");
 }
 
+async function assertCompanyShipEvent(supabaseAdmin: any, companyId: string, eventId: string) {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("ship_events")
+    .select("id, company_id")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.company_id !== companyId) throw new Error("Choose a Ship from your company.");
+}
+
+async function assertCompanyPortSelection(
+  supabaseAdmin: any,
+  companyId: string,
+  portId: string | null | undefined,
+  berthId: string | null | undefined,
+) {
+  if (berthId && !portId) throw new Error("A berth must belong to a selected Port.");
+  if (!portId) return null;
+  const { data: port, error: portError } = await supabaseAdmin
+    .from("ports")
+    .select("id, name, address, immigration_available, active")
+    .eq("id", portId)
+    .eq("company_id", companyId)
+    .eq("active", true)
+    .maybeSingle();
+  if (portError) throw new Error(portError.message);
+  if (!port) throw new Error("Choose an active Port from your company.");
+  if (berthId) {
+    const { data: berth, error: berthError } = await supabaseAdmin
+      .from("berths")
+      .select("id, address_override, active")
+      .eq("id", berthId)
+      .eq("port_id", portId)
+      .eq("active", true)
+      .maybeSingle();
+    if (berthError) throw new Error(berthError.message);
+    if (!berth) throw new Error("Choose an active Berth belonging to the selected Port.");
+    return { ...port, address: berth.address_override || port.address };
+  }
+  return port;
+}
+
+const VALLETTA_IMMIGRATION_STOP = "Immigration Office, Valletta";
+
+/** Add the immigration stop once for a Ship Arrival route when the selected
+ * port does not handle immigration. The existing stop editor remains the
+ * coordinator's override: removing or editing this stop is never undone on
+ * later saves. */
+async function ensureShipArrivalImmigrationStop(
+  supabaseAdmin: any,
+  jobId: string,
+  journey: { journeyType: string } | null,
+  fromPort: { immigration_available?: boolean } | null,
+  immigrationRequired: "yes" | "no" | "unknown",
+) {
+  if (immigrationRequired !== "yes" || !fromPort || fromPort.immigration_available || !journey) return;
+  if (journey.journeyType !== "ship_arrival" && journey.journeyType !== "ship_to_flight") return;
+  const { data: group, error: groupError } = await supabaseAdmin
+    .from("groups")
+    .select("id")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (groupError) throw new Error(groupError.message);
+  let groupId = group?.id as string | undefined;
+  if (!groupId) {
+    const { data: created, error } = await supabaseAdmin
+      .from("groups")
+      .insert({ job_id: jobId, name: "Trip stops", status: "pending" })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    groupId = created.id as string;
+  }
+  const { data: existingStop, error: stopLookupError } = await supabaseAdmin
+    .from("group_stops")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("address", VALLETTA_IMMIGRATION_STOP)
+    .maybeSingle();
+  if (stopLookupError) throw new Error(stopLookupError.message);
+  if (existingStop) return;
+  const { data: stops, error: stopsError } = await supabaseAdmin
+    .from("group_stops")
+    .select("id, stop_index")
+    .eq("group_id", groupId)
+    .order("stop_index", { ascending: true });
+  if (stopsError) throw new Error(stopsError.message);
+  for (const stop of (stops ?? []) as Array<{ id: string; stop_index: number }>) {
+    const { error } = await supabaseAdmin
+      .from("group_stops")
+      .update({ stop_index: stop.stop_index + 1 })
+      .eq("id", stop.id);
+    if (error) throw new Error(error.message);
+  }
+  const { error: insertError } = await supabaseAdmin
+    .from("group_stops")
+    .insert({ group_id: groupId, stop_index: 0, address: VALLETTA_IMMIGRATION_STOP, lat: null, lng: null, place_id: null });
+  if (insertError) throw new Error(insertError.message);
+}
+
 async function resolveScheduledTransportPickup(
   supabaseAdmin: any,
   companyId: string,
   flightScheduleRecordId: string | null | undefined,
   shipEventId: string | null | undefined,
+  onwardFlightScheduleRecordId: string | null | undefined,
   requestedOffsetMinutes: number | null | undefined,
   fallbackDate: string,
   fallbackTime: string,
 ) {
   if (flightScheduleRecordId && shipEventId) throw new Error("Choose either a Flight or a Ship, not both.");
-  if (shipEventId) {
+  if (shipEventId && !onwardFlightScheduleRecordId) {
     const { data: ship, error } = await (supabaseAdmin as any).from("ship_events").select("eta, company_id").eq("id", shipEventId).maybeSingle();
     if (error) throw new Error(error.message);
     if (!ship || ship.company_id !== companyId) throw new Error("Choose a Ship from your company.");
     const { data: company, error: companyError } = await (supabaseAdmin as any).from("companies").select("default_arrival_pickup_offset_minutes").eq("id", companyId).single();
     if (companyError) throw new Error(companyError.message);
     const offset_minutes = requestedOffsetMinutes ?? (company?.default_arrival_pickup_offset_minutes ?? 0);
-    const pickup_at = new Date(new Date(ship.eta).getTime() + offset_minutes * 60_000).toISOString();
-    return { ...isoToMaltaDateTime(pickup_at), pickup_at, offset_minutes };
+    // The client applies the offset as an initial suggestion. An explicit
+    // coordinator date/time is authoritative during persistence.
+    const pickup_at = makePickupIso(fallbackDate, fallbackTime);
+    return { date: fallbackDate, time: fallbackTime, pickup_at, offset_minutes };
   }
-  if (!flightScheduleRecordId) {
+  const scheduleRecordId = onwardFlightScheduleRecordId ?? flightScheduleRecordId;
+  if (!scheduleRecordId) {
     return {
       date: fallbackDate,
       time: fallbackTime,
@@ -831,7 +1188,7 @@ async function resolveScheduledTransportPickup(
   const { data: record, error: recordError } = await (supabaseAdmin as any)
     .from("flight_schedule_records")
     .select("scheduled_date, scheduled_time, direction")
-    .eq("id", flightScheduleRecordId)
+    .eq("id", scheduleRecordId)
     .maybeSingle();
   if (recordError) throw new Error(recordError.message);
   if (!record) throw new Error("The linked flight record no longer exists.");
@@ -848,11 +1205,10 @@ async function resolveScheduledTransportPickup(
     ? (company?.default_departure_pickup_offset_minutes ?? 180)
     : (company?.default_arrival_pickup_offset_minutes ?? 0);
   const offset_minutes = requestedOffsetMinutes ?? defaultOffset;
-  const scheduledAt = makePickupIso(record.scheduled_date, record.scheduled_time);
-  const adjustmentMinutes = isDeparture ? -offset_minutes : offset_minutes;
-  const pickup_at = new Date(new Date(scheduledAt).getTime() + adjustmentMinutes * 60_000).toISOString();
-  const { date, time } = isoToMaltaDateTime(pickup_at);
-  return { date, time, pickup_at, offset_minutes };
+  // The client applies the offset as an initial suggestion. An explicit
+  // coordinator date/time is authoritative during persistence.
+  const pickup_at = makePickupIso(fallbackDate, fallbackTime);
+  return { date: fallbackDate, time: fallbackTime, pickup_at, offset_minutes };
 }
 
 /** Shared schedule reference records available to authenticated coordinators. */
@@ -1059,10 +1415,11 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
     const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
 
     const isAdmin = await getIsAdmin(context.userId);
-    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult] = await Promise.all([
+    const shipDepartureWarnings = await refreshShipDepartureReadinessWarnings(tables, c.id, jobScope);
+    const [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult, shipPortChangeReviewsResult, allShipJobsResult] = await Promise.all([
       tables
         .from("flight_schedule_records")
-        .select("id, scheduled_date, scheduled_time, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
+        .select("id, scheduled_date, scheduled_time, direction, airline, flight_number, origin, destination, flight_schedule_versions!inner(status)")
         .eq("flight_schedule_versions.status", "active")
         .gte("scheduled_date", today)
         .order("scheduled_date", { ascending: true })
@@ -1070,7 +1427,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         .limit(10_000),
       tables
         .from("jobs")
-        .select("id, flight_schedule_record_id, ship_event_id, date, time, from_location, to_location")
+        .select("id, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, date, time, from_location, to_location")
         .gte("date", today)
         .or(jobScope)
         .order("date", { ascending: true })
@@ -1102,8 +1459,22 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         .select("eta_history_id")
         .eq("company_id", c.id)
         .limit(10_000),
+      tables.from("companies").select("minimum_connection_buffer_minutes").eq("id", c.id).single(),
+      tables.from("transport_conflict_reviews").select("job_id").eq("company_id", c.id).limit(10_000),
+      tables
+        .from("ship_event_port_change_reviews")
+        .select("id, ship_event_id, previous_port_name, previous_berth_name, new_port_name, new_berth_name, changed_at, ship_events!inner(ship_name, company_id)")
+        .eq("ship_events.company_id", c.id)
+        .order("changed_at", { ascending: false })
+        .limit(10_000),
+      tables
+        .from("jobs")
+        .select("id, ship_event_id")
+        .or(jobScope)
+        .not("ship_event_id", "is", null)
+        .limit(10_000),
     ]);
-    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult]) {
+    for (const result of [activeFlightsResult, jobsResult, shipsResult, draftVersionsResult, shipEtaHistoryResult, shipEtaReviewCompletionsResult, companyResult, transportConflictReviewsResult, shipPortChangeReviewsResult, allShipJobsResult]) {
       if (result.error) throw new Error(result.error.message);
     }
 
@@ -1115,6 +1486,15 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       if (!job.ship_event_id) continue;
       linkedTripCountByShipId.set(job.ship_event_id, (linkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
     }
+    const allLinkedTripCountByShipId = new Map<string, number>();
+    for (const job of (allShipJobsResult.data ?? []) as Array<{ ship_event_id: string | null }>) {
+      if (!job.ship_event_id) continue;
+      allLinkedTripCountByShipId.set(job.ship_event_id, (allLinkedTripCountByShipId.get(job.ship_event_id) ?? 0) + 1);
+    }
+    const activeFlights = (activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>;
+    const flightsById = new Map(activeFlights.map((flight) => [flight.id, flight]));
+    const shipsById = new Map(((shipsResult.data ?? []) as OperationsInboxShip[]).map((ship) => [ship.id, ship]));
+    const connectionBufferMinutes = (companyResult.data as { minimum_connection_buffer_minutes?: number } | null)?.minimum_connection_buffer_minutes ?? 60;
     const drafts = (draftVersionsResult.data ?? []) as Array<{ id: string; name: string; created_at: string }>;
     const draftRecordCounts = new Map<string, number>();
     if (drafts.length) {
@@ -1129,7 +1509,7 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       }
     }
 
-    const flightsWithoutTrips = ((activeFlightsResult.data ?? []) as Array<AirportOperationsFlight>)
+    const flightsWithoutTrips = activeFlights
       .filter((flight) => !linkedFlightIds.has(flight.id))
       .map((flight) => ({
         id: `flight-${flight.id}`,
@@ -1141,6 +1521,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Link a trip",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const shipsWithoutTrips = ((shipsResult.data ?? []) as OperationsInboxShip[])
       .filter((ship) => !linkedShipIds.has(ship.id))
@@ -1154,6 +1536,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Link a trip",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const tripsWithoutTransport = jobs
       .filter((job) => !job.flight_schedule_record_id && !job.ship_event_id)
@@ -1167,6 +1551,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
         action: "Add transport",
         href: "/coordinator/calendar",
         reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
       }));
     const draftSchedules = drafts.map((draft) => ({
       id: `draft-${draft.id}`,
@@ -1178,6 +1564,8 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
       action: "Review schedule",
       href: "/admin/flight-schedule",
       reviewHistoryId: null,
+      reviewKind: null,
+      reviewTargetId: null,
     }));
     // History is newest first. Only the latest uncompleted change for a ship is
     // actionable; older changes are superseded by the current ETA.
@@ -1208,12 +1596,85 @@ export const getOperationsInbox = createServerFn({ method: "GET" })
           action: "Review trip(s)",
           href: "/coordinator/calendar",
           reviewHistoryId: change.id,
+          reviewKind: "ship_eta" as const,
+          reviewTargetId: change.id,
         };
       });
 
+    const reviewedPortShipIds = new Set<string>();
+    const shipPortChanges = ((shipPortChangeReviewsResult.data ?? []) as OperationsInboxShipPortChange[])
+      .filter((change) => (allLinkedTripCountByShipId.get(change.ship_event_id) ?? 0) > 0)
+      .filter((change) => {
+        if (reviewedPortShipIds.has(change.ship_event_id)) return false;
+        reviewedPortShipIds.add(change.ship_event_id);
+        return true;
+      })
+      .map((change) => {
+        const linkedTrips = allLinkedTripCountByShipId.get(change.ship_event_id) ?? 0;
+        const ship = change.ship_events;
+        const previous = `${change.previous_port_name ?? "—"}${change.previous_berth_name ? ` · ${change.previous_berth_name}` : ""}`;
+        const current = `${change.new_port_name}${change.new_berth_name ? ` · ${change.new_berth_name}` : ""}`;
+        return {
+          id: `ship-port-${change.id}`,
+          type: "Ship Port/Berth changed" as const,
+          priority: "high" as const,
+          transport: ship?.ship_name ?? "Ship event",
+          detail: `Previous ${previous} · Current ${current} · Changed ${formatMaltaDateTime(change.changed_at, { dateStyle: "medium", timeStyle: "short" })}`,
+          affectedTrips: linkedTrips,
+          action: "Review trip(s)",
+          href: "/coordinator/calendar",
+          reviewHistoryId: change.id,
+          reviewKind: null,
+          reviewTargetId: null,
+        };
+      });
+
+    const departureReadinessItems = shipDepartureWarnings.map((warning) => {
+      const remainingMinutes = Math.max(0, Math.ceil((new Date(warning.expected_departure).getTime() - Date.now()) / 60_000));
+      const hours = Math.floor(remainingMinutes / 60);
+      const minutes = remainingMinutes % 60;
+      const remaining = hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+      return {
+        id: `ship-departure-readiness-${warning.id}`,
+        type: "Ship departure readiness warning" as const,
+        priority: "high" as const,
+        transport: warning.ship_event?.ship_name ?? "Ship event",
+        detail: `Expected departure ${formatMaltaDateTime(warning.expected_departure, { dateStyle: "medium", timeStyle: "short" })} · ${remaining} remaining · ${warning.incomplete_trip_count} incomplete trip${warning.incomplete_trip_count === 1 ? "" : "s"} · ${warning.unresolved_status_count} unresolved passenger/crew status${warning.unresolved_status_count === 1 ? "" : "es"} · ${warning.trips_needing_review_count} needing review`,
+        affectedTrips: warning.incomplete_trip_count,
+        action: "Review trip(s)",
+        href: "/coordinator/calendar",
+        reviewHistoryId: null,
+        reviewKind: null,
+        reviewTargetId: null,
+      };
+    });
+
+    const reviewedConflictJobIds = new Set(
+      ((transportConflictReviewsResult.data ?? []) as Array<{ job_id: string }>).map((review) => review.job_id),
+    );
+    const transportConflicts = jobs
+      .filter((job) => !!job.ship_event_id && !!job.onward_flight_schedule_record_id)
+      .filter((job) => !reviewedConflictJobIds.has(job.id))
+      .map((job) => ({ job, ship: shipsById.get(job.ship_event_id!), flight: flightsById.get(job.onward_flight_schedule_record_id!) }))
+      .filter((entry): entry is { job: OperationsInboxJob; ship: OperationsInboxShip; flight: AirportOperationsFlight } => !!entry.ship && !!entry.flight && entry.flight.direction === "departure")
+      .filter(({ ship, flight }) => new Date(ship.eta).getTime() + connectionBufferMinutes * 60_000 > new Date(maltaWallTimeToUtcIso(flight.scheduled_date, flight.scheduled_time)).getTime())
+      .map(({ job, ship, flight }) => ({
+        id: `transport-conflict-${job.id}`,
+        type: "Ship-to-flight connection conflict" as const,
+        priority: "high" as const,
+        transport: `${ship.ship_name} → ${flight.flight_number}`,
+        detail: `Ship ETA ${formatMaltaDateTime(ship.eta, { dateStyle: "medium", timeStyle: "short" })} + ${connectionBufferMinutes} min exceeds flight departure ${flight.scheduled_date} ${flight.scheduled_time.slice(0, 5)}`,
+        affectedTrips: 1,
+        action: "Review trip",
+        href: "/coordinator/calendar",
+        reviewHistoryId: null,
+        reviewKind: "transport_conflict" as const,
+        reviewTargetId: job.id,
+      }));
+
     return {
-      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length,
-      items: [...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
+      total: flightsWithoutTrips.length + shipsWithoutTrips.length + tripsWithoutTransport.length + draftSchedules.length + shipEtaChanges.length + shipPortChanges.length + departureReadinessItems.length + transportConflicts.length,
+      items: [...transportConflicts, ...departureReadinessItems, ...shipPortChanges, ...shipEtaChanges, ...tripsWithoutTransport, ...flightsWithoutTrips, ...shipsWithoutTrips, ...draftSchedules].slice(0, 100),
     };
   });
 
@@ -1228,7 +1689,7 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
-    const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
+    
     const today = isoToMaltaDateTime(new Date().toISOString()).date;
     // Generated types can lag the Lovable-managed migration state.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1274,7 +1735,120 @@ export const completeShipEtaReview = createServerFn({ method: "POST" })
     return { completed: completionError?.code !== "23505", alreadyCompleted: completionError?.code === "23505" };
   });
 
-async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelIds: string[] | undefined) {
+/** Returns the latest actionable ETA change for one linked ship trip. */
+export const getShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs")
+      .select("id, company_id, ship_event_id, pickup_at, date, time, driver_id, driver_accepted_at, status")
+      .eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) return null;
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history")
+      .select("id, previous_eta, new_eta, changed_at")
+      .eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    if (!history || history.previous_eta === history.new_eta) return null;
+    const { data: completion, error: completionError } = await tables.from("ship_eta_review_completions")
+      .select("id").eq("eta_history_id", history.id).maybeSingle();
+    if (completionError) throw new Error(completionError.message);
+    if (completion) return null;
+    const deltaMs = new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime();
+    const currentPickupMs = job.pickup_at ? new Date(job.pickup_at).getTime() : NaN;
+    const suggestedPickupMs = Number.isFinite(currentPickupMs) ? currentPickupMs + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    return { job_id: job.id, history_id: history.id, previous_eta: history.previous_eta, new_eta: history.new_eta, changed_at: history.changed_at, current_pickup_at: job.pickup_at, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) };
+  });
+
+/** Applies or keeps a reviewed ETA suggestion; locked trips use the existing driver approval path. */
+export const resolveShipEtaTripReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid(), action: z.enum(["apply", "keep"]) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const sb = await getAdminClient();
+    const tables = sb as any;
+    const { data: job, error: jobError } = await tables.from("jobs").select("id, company_id, ship_event_id, pickup_at, driver_id, driver_accepted_at, status").eq("id", data.job_id).eq("company_id", c.id).maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id) throw new Error("No active Ship ETA review was found.");
+    const { data: history, error: historyError } = await tables.from("ship_event_eta_history").select("id, previous_eta, new_eta, changed_at").eq("ship_event_id", job.ship_event_id).order("changed_at", { ascending: false }).limit(1).maybeSingle();
+    if (historyError) throw new Error(historyError.message);
+    const { data: completion, error: completionError } = history ? await tables.from("ship_eta_review_completions").select("id").eq("eta_history_id", history.id).maybeSingle() : { data: null, error: null };
+    if (completionError) throw new Error(completionError.message);
+    const deltaMs = history ? new Date(history.new_eta).getTime() - new Date(history.previous_eta).getTime() : NaN;
+    const suggestedPickupMs = history && job.pickup_at ? new Date(job.pickup_at).getTime() + deltaMs : NaN;
+    const suggested = Number.isFinite(suggestedPickupMs) ? isoToMaltaDateTime(new Date(suggestedPickupMs).toISOString()) : null;
+    const review = history && !completion && history.previous_eta !== history.new_eta ? { job_id: job.id, suggested_date: suggested?.date ?? null, suggested_time: suggested?.time ?? null, driver_locked: isJobLocked(job) } : null;
+    if (!review) throw new Error("No active Ship ETA review was found.");
+    if (data.action === "apply" && review.driver_locked) {
+      const job = await loadLockableJob(data.job_id, c.id);
+      return createChangeRequest({ jobId: data.job_id, companyId: c.id, requestedBy: context.userId, kind: "edit", requestedChanges: { date: review.suggested_date, time: review.suggested_time, pickup_at: review.suggested_date && review.suggested_time ? maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time) : null }, driverId: job?.driver_id }).then((result) => ({ ...result, pending: true as const }));
+    }
+    if (data.action === "apply") {
+      if (!review.suggested_date || !review.suggested_time) throw new Error("Suggested pickup time is unavailable.");
+      const { error } = await tables.from("jobs").update({ date: review.suggested_date, time: review.suggested_time, pickup_at: maltaWallTimeToUtcIso(review.suggested_date, review.suggested_time), needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await tables.from("jobs").update({ needs_review: false }).eq("id", data.job_id).eq("company_id", c.id);
+      if (error) throw new Error(error.message);
+    }
+    const { error: auditError } = await tables.from("ship_eta_review_completions").insert({
+      eta_history_id: history.id,
+      company_id: c.id,
+      reviewed_by: context.userId,
+    });
+    if (auditError && auditError.code !== "23505") throw new Error(auditError.message);
+    return { ok: true, pending: false };
+  });
+
+/**
+ * Completes an explicitly linked Ship-to-Flight conflict review. The conflict
+ * itself is never stored: it is recalculated against current ETA, active
+ * departure, and the company buffer before the immutable audit is written.
+ */
+export const completeTransportConflictReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ job_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCompany(context);
+    const supabaseAdmin = await getAdminClient();
+    const tables = supabaseAdmin as any;
+    const jobScope = `company_id.eq.${c.id},executor_company_id.eq.${c.id},origin_company_id.eq.${c.id},dispatch_chain_company_ids.cs.{${c.id}}`;
+    const { data: job, error: jobError } = await tables
+      .from("jobs")
+      .select("id, ship_event_id, onward_flight_schedule_record_id")
+      .eq("id", data.job_id)
+      .or(jobScope)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job?.ship_event_id || !job?.onward_flight_schedule_record_id) throw new Error("This trip has no explicit Ship-to-Flight connection to review.");
+
+    const [shipResult, flightResult, companyResult] = await Promise.all([
+      tables.from("ship_events").select("eta, company_id").eq("id", job.ship_event_id).maybeSingle(),
+      tables.from("flight_schedule_records").select("scheduled_date, scheduled_time, direction, flight_schedule_versions!inner(status)").eq("id", job.onward_flight_schedule_record_id).eq("direction", "departure").eq("flight_schedule_versions.status", "active").maybeSingle(),
+      tables.from("companies").select("minimum_connection_buffer_minutes").eq("id", c.id).single(),
+    ]);
+    for (const result of [shipResult, flightResult, companyResult]) if (result.error) throw new Error(result.error.message);
+    if (!shipResult.data || shipResult.data.company_id !== c.id || !flightResult.data) throw new Error("The explicit transport connection is no longer available for review.");
+    const buffer = companyResult.data?.minimum_connection_buffer_minutes ?? 60;
+    const shipReadyAt = new Date(shipResult.data.eta).getTime() + buffer * 60_000;
+    const flightDepartureAt = new Date(maltaWallTimeToUtcIso(flightResult.data.scheduled_date, flightResult.data.scheduled_time)).getTime();
+    if (shipReadyAt <= flightDepartureAt) throw new Error("This connection is no longer in conflict.");
+
+    const { error: reviewError } = await tables.from("transport_conflict_reviews").insert({
+      job_id: job.id,
+      company_id: c.id,
+      reviewed_by: context.userId,
+    });
+    if (reviewError && reviewError.code !== "23505") throw new Error(reviewError.message);
+    return { completed: reviewError?.code !== "23505", alreadyCompleted: reviewError?.code === "23505" };
+  });
+
+async function syncJobLabels(_ctx: Ctx | null, companyId: string, jobId: string, labelIds: string[] | undefined) {
   if (!labelIds) return;
   const supabaseAdmin = await getAdminClient();
   // Verify labels belong to the same company
@@ -1291,6 +1865,122 @@ async function syncJobLabels(ctx: Ctx, companyId: string, jobId: string, labelId
   if (allowed.length) {
     await supabaseAdmin.from("job_labels").insert(allowed.map((id) => ({ job_id: jobId, label_id: id })));
   }
+}
+
+/**
+ * Trusted server context for the authoritative booking service.  Callers must
+ * prove identity, company ownership and any portal capabilities before they
+ * invoke this function; no browser-supplied company or actor identifiers are
+ * trusted here.
+ */
+export type BookingActorContext = {
+  company_id: string;
+  actor_type: "coordinator" | "portal" | "bulk" | "client" | "system";
+  actor_user_id?: string | null;
+  source: string;
+  origin_company_id?: string | null;
+  executor_company_id?: string | null;
+};
+
+export type AuthoritativeBookingInput = z.infer<typeof createJobInput>;
+
+/**
+ * The single server-only Job creation path.  It owns booking-domain side
+ * effects; public handlers remain responsible for authenticating and building
+ * the trusted context passed here.
+ */
+export async function createAuthoritativeJob(
+  data: AuthoritativeBookingInput,
+  trusted: BookingActorContext,
+  labelContext: Ctx | null = null,
+) {
+  const supabaseAdmin = await getAdminClient();
+  assertCompleteBookingEndpointTypes(data);
+  await validateOperationGroupAssignment(supabaseAdmin, trusted.company_id, data.operation_group_id);
+  const journey = resolveJourneyForBookingInput(data);
+  const immigrationRequired = data.immigration_required ?? "unknown";
+  const fromPort = await assertCompanyPortSelection(supabaseAdmin, trusted.company_id, data.from_port_id, data.from_berth_id);
+  const toPort = await assertCompanyPortSelection(supabaseAdmin, trusted.company_id, data.to_port_id, data.to_berth_id);
+  if (fromPort && data.from_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+  if (toPort && data.to_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+  if (data.flight_schedule_record_id && data.ship_event_id) throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+  const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
+  if (data.flight_schedule_record_id) await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
+  if (data.onward_flight_schedule_record_id) {
+    if (!data.ship_event_id) throw new Error("An onward Flight can only be linked to a Ship trip.");
+    await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, data.onward_flight_schedule_record_id);
+  }
+  if (data.onward_ship_event_id) {
+    if (!data.flight_schedule_record_id) throw new Error("An onward Ship can only be linked to a Flight trip.");
+    await assertCompanyShipEvent(supabaseAdmin, trusted.company_id, data.onward_ship_event_id);
+  }
+  const scheduledPickup = await resolveScheduledTransportPickup(
+    supabaseAdmin,
+    trusted.company_id,
+    data.flight_schedule_record_id,
+    data.ship_event_id,
+    data.onward_flight_schedule_record_id,
+    data.scheduled_transport_pickup_offset_minutes,
+    data.date,
+    data.time,
+  );
+  const { data: row, error } = await supabaseAdmin.from("jobs").insert({
+    company_id: trusted.company_id,
+    origin_company_id: trusted.origin_company_id ?? trusted.company_id,
+    executor_company_id: trusted.executor_company_id ?? trusted.company_id,
+    source: trusted.source,
+    from_location: fromPort?.address ?? data.from_location,
+    to_location: toPort?.address ?? data.to_location,
+    from_location_type: data.from_location_type ?? null,
+    to_location_type: data.to_location_type ?? null,
+    from_port_id: data.from_port_id ?? null,
+    from_berth_id: data.from_berth_id ?? null,
+    to_port_id: data.to_port_id ?? null,
+    to_berth_id: data.to_berth_id ?? null,
+    date: scheduledPickup.date,
+    time: scheduledPickup.time,
+    pickup_at: scheduledPickup.pickup_at,
+    flightorship: data.flightorship || data.from_flight || data.to_flight || null,
+    from_flight: (data.from_flight || "").toUpperCase() || null,
+    to_flight: (data.to_flight || "").toUpperCase() || null,
+    flight_schedule_record_id: data.flight_schedule_record_id ?? null,
+    ship_event_id: data.ship_event_id ?? null,
+    onward_flight_schedule_record_id: data.onward_flight_schedule_record_id ?? null,
+    onward_ship_event_id: data.onward_ship_event_id ?? null,
+    scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
+    immigration_required: immigrationRequired,
+    clientcompanyname: data.clientcompanyname || null,
+    qr_strict_mode: data.qr_strict_mode,
+    tracking_enabled: !!transportTrackingKind && data.tracking_enabled,
+    vehicle: data.vehicle || null,
+    notes: data.notes || null,
+    contact_phone: data.contact_phone || null,
+    driver_id: data.driver_id || null,
+    operation_group_id: data.operation_group_id ?? null,
+    pickup_place_id: data.pickup_place_id || null,
+    dropoff_place_id: data.dropoff_place_id || null,
+    pickup_display_name: data.pickup_display_name || null,
+    dropoff_display_name: data.dropoff_display_name || null,
+    pickup_lat: data.pickup_lat ?? null,
+    pickup_lng: data.pickup_lng ?? null,
+    dropoff_lat: data.dropoff_lat ?? null,
+    dropoff_lng: data.dropoff_lng ?? null,
+    tracking_kind: transportTrackingKind,
+  } as any).select().single();
+  if (error) throw new Error(error.message);
+  await ensureShipArrivalImmigrationStop(supabaseAdmin, row.id, journey, fromPort, immigrationRequired);
+  let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
+  if (!paxToSync || paxToSync.length === 0) {
+    const { extractPaxNames } = await import("./pax-extract");
+    const auto = extractPaxNames({ clientcompanyname: data.clientcompanyname });
+    if (auto.length) paxToSync = passengerNamesOnly(auto);
+  }
+  await syncJobPax(row.id, paxToSync);
+  await syncJobLabels(labelContext, trusted.company_id, row.id, data.label_ids);
+  if (data.flight_schedule_record_id && (data.from_flight || data.to_flight)) applyLiveStatusToJobBg(row.id as string);
+  const { autoPriceJobBg } = await import("./auto-price.server");
+  autoPriceJobBg(row.id);
+  return { ...row, journey };
 }
 
 function passengerNamesOnly(names: string[] | undefined): PassengerInput[] | undefined {
@@ -1353,7 +2043,27 @@ export const createJob = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => createJobInput.parse(i))
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
+    return createAuthoritativeJob(data, {
+      company_id: c.id,
+      actor_type: "coordinator",
+      actor_user_id: context.userId,
+      source: "coordinator",
+    }, context);
+    /* Legacy inline implementation retained temporarily while downstream
+       booking callers are moved to the shared service.
     const supabaseAdmin = await getAdminClient();
+    assertCompleteBookingEndpointTypes(data);
+    await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
+    const journey = resolveJourneyForBookingInput(data);
+    const immigrationRequired = data.immigration_required ?? "unknown";
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, data.from_port_id, data.from_berth_id);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, data.to_port_id, data.to_berth_id);
+    if (fromPort && data.from_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (toPort && data.to_location_type !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (data.flight_schedule_record_id && data.ship_event_id) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
+    const transportTrackingKind = data.ship_event_id ? "vessel" : data.flight_schedule_record_id ? "flight" : null;
     if (data.flight_schedule_record_id) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, data.flight_schedule_record_id);
     }
@@ -1361,11 +2071,16 @@ export const createJob = createServerFn({ method: "POST" })
       if (!data.ship_event_id) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, data.onward_flight_schedule_record_id);
     }
+    if (data.onward_ship_event_id) {
+      if (!data.flight_schedule_record_id) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, data.onward_ship_event_id);
+    }
     const scheduledPickup = await resolveScheduledTransportPickup(
       supabaseAdmin,
       c.id,
       data.flight_schedule_record_id,
       data.ship_event_id,
+      data.onward_flight_schedule_record_id,
       data.scheduled_transport_pickup_offset_minutes,
       data.date,
       data.time,
@@ -1374,8 +2089,14 @@ export const createJob = createServerFn({ method: "POST" })
       .from("jobs")
       .insert({
         company_id: c.id,
-        from_location: data.from_location,
-        to_location: data.to_location,
+        from_location: fromPort?.address ?? data.from_location,
+        to_location: toPort?.address ?? data.to_location,
+        from_location_type: data.from_location_type ?? null,
+        to_location_type: data.to_location_type ?? null,
+        from_port_id: data.from_port_id ?? null,
+        from_berth_id: data.from_berth_id ?? null,
+        to_port_id: data.to_port_id ?? null,
+        to_berth_id: data.to_berth_id ?? null,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         pickup_at: scheduledPickup.pickup_at,
@@ -1385,7 +2106,9 @@ export const createJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id ?? null,
         ship_event_id: data.ship_event_id ?? null,
         onward_flight_schedule_record_id: data.onward_flight_schedule_record_id ?? null,
+        onward_ship_event_id: data.onward_ship_event_id ?? null,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
+        immigration_required: immigrationRequired,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: data.qr_strict_mode,
         tracking_enabled: !!transportTrackingKind && data.tracking_enabled,
@@ -1393,6 +2116,7 @@ export const createJob = createServerFn({ method: "POST" })
         notes: data.notes || null,
         contact_phone: data.contact_phone || null,
         driver_id: data.driver_id || null,
+        operation_group_id: data.operation_group_id ?? null,
         pickup_place_id: data.pickup_place_id || null,
         dropoff_place_id: data.dropoff_place_id || null,
         pickup_display_name: data.pickup_display_name || null,
@@ -1406,6 +2130,7 @@ export const createJob = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
+    await ensureShipArrivalImmigrationStop(supabaseAdmin, row.id, journey, fromPort, immigrationRequired);
     // If the caller didn't send explicit passenger names, try to auto-fill
     // from the client/company field (e.g. "MV Ocean Pioneer (John, Jane)").
     let paxToSync = data.passengers ?? passengerNamesOnly(data.pax);
@@ -1416,14 +2141,14 @@ export const createJob = createServerFn({ method: "POST" })
     }
     await syncJobPax(row.id, paxToSync);
     await syncJobLabels(context, c.id, row.id, data.label_ids);
-    if (data.from_flight || data.to_flight) {
+    if (data.flight_schedule_record_id && (data.from_flight || data.to_flight)) {
       applyLiveStatusToJobBg(row.id as string);
     }
     // Auto-estimate the fare from company pricing + service areas. Route
     // data may not exist yet — the batch enricher will refresh once cached.
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(row.id);
-    return row;
+    return { ...row, journey }; */
   });
 
 export const updateJob = createServerFn({ method: "POST" })
@@ -1437,28 +2162,62 @@ export const updateJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const c = await resolveCompany(context);
     const supabaseAdmin = await getAdminClient();
+    assertCompleteBookingEndpointTypes(data);
     const { data: existing, error: e1 } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, from_location, to_location, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, scheduled_transport_pickup_offset_minutes, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
+        "id, company_id, from_location, to_location, from_location_type, to_location_type, from_port_id, from_berth_id, to_port_id, to_berth_id, date, time, pickup_at, driver_id, driver_accepted_at, status, vehicle, notes, contact_phone, from_flight, to_flight, flight_schedule_record_id, ship_event_id, onward_flight_schedule_record_id, onward_ship_event_id, operation_group_id, scheduled_transport_pickup_offset_minutes, immigration_required, clientcompanyname, qr_strict_mode, tracking_enabled, created_by_driver, needs_review, auto_created_from_crew_itinerary",
       )
       .eq("id", data.id)
       .or(`company_id.eq.${c.id},executor_company_id.eq.${c.id}`)
       .single();
     if (e1 || !existing) throw new Error("Job not found");
+    if (data.operation_group_id !== undefined && data.operation_group_id !== (existing as any).operation_group_id) await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
     const selectedFlightId = data.flight_schedule_record_id;
     const existingFlightId = (existing as any).flight_schedule_record_id as string | null;
     const existingShipId = (existing as any).ship_event_id as string | null;
+    const existingFromPortId = (existing as any).from_port_id as string | null;
     const existingOnwardFlightId = (existing as any).onward_flight_schedule_record_id as string | null;
+    const existingOnwardShipId = (existing as any).onward_ship_event_id as string | null;
+    const existingImmigrationRequired = (existing as any).immigration_required as "yes" | "no" | "unknown" | null;
+    const existingFromEndpointType = (existing as any).from_location_type as JourneyEndpoint | null;
+    const existingToEndpointType = (existing as any).to_location_type as JourneyEndpoint | null;
+    const effectiveFromEndpointType = data.from_location_type === undefined ? existingFromEndpointType : data.from_location_type;
+    const effectiveToEndpointType = data.to_location_type === undefined ? existingToEndpointType : data.to_location_type;
+    const journey = resolveJourneyForBookingInput({
+      from_location_type: effectiveFromEndpointType ?? undefined,
+      to_location_type: effectiveToEndpointType ?? undefined,
+    });
     if (selectedFlightId && selectedFlightId !== existingFlightId) {
       await assertActiveFlightScheduleRecord(supabaseAdmin, selectedFlightId);
     }
     const effectiveFlightId = data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id;
     const effectiveShipId = data.ship_event_id === undefined ? existingShipId : data.ship_event_id;
     const effectiveOnwardFlightId = data.onward_flight_schedule_record_id === undefined ? existingOnwardFlightId : data.onward_flight_schedule_record_id;
+    const effectiveOnwardShipId = data.onward_ship_event_id === undefined ? existingOnwardShipId : data.onward_ship_event_id;
+    const effectiveImmigrationRequired = data.immigration_required === undefined
+      ? (existingImmigrationRequired ?? "unknown")
+      : data.immigration_required;
+    const effectiveFromPortId = data.from_port_id === undefined ? (existing as any).from_port_id : data.from_port_id;
+    const effectiveFromBerthId = data.from_berth_id === undefined ? (existing as any).from_berth_id : data.from_berth_id;
+    const effectiveToPortId = data.to_port_id === undefined ? (existing as any).to_port_id : data.to_port_id;
+    const effectiveToBerthId = data.to_berth_id === undefined ? (existing as any).to_berth_id : data.to_berth_id;
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, effectiveFromPortId, effectiveFromBerthId);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, effectiveToPortId, effectiveToBerthId);
+    const nextFromLocation = fromPort?.address ?? data.from_location;
+    const nextToLocation = toPort?.address ?? data.to_location;
+    if (fromPort && effectiveFromEndpointType !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (toPort && effectiveToEndpointType !== "port") throw new Error("A Port location must use endpoint type Port.");
+    if (effectiveFlightId && effectiveShipId) {
+      throw new Error("A trip cannot link both a primary Flight and a primary Ship.");
+    }
     if (effectiveOnwardFlightId) {
       if (!effectiveShipId) throw new Error("An onward Flight can only be linked to a Ship trip.");
       await assertActiveDepartureFlightScheduleRecord(supabaseAdmin, effectiveOnwardFlightId);
+    }
+    if (effectiveOnwardShipId) {
+      if (!effectiveFlightId) throw new Error("An onward Ship can only be linked to a Flight trip.");
+      await assertCompanyShipEvent(supabaseAdmin, c.id, effectiveOnwardShipId);
     }
     const transportTrackingKind = effectiveShipId ? "vessel" : effectiveFlightId ? "flight" : null;
     const scheduledPickup = await resolveScheduledTransportPickup(
@@ -1466,6 +2225,7 @@ export const updateJob = createServerFn({ method: "POST" })
       c.id,
       effectiveFlightId,
       effectiveShipId,
+      effectiveOnwardFlightId,
       data.scheduled_transport_pickup_offset_minutes === undefined
         ? ((existing as any).scheduled_transport_pickup_offset_minutes ?? null)
         : data.scheduled_transport_pickup_offset_minutes,
@@ -1486,8 +2246,14 @@ export const updateJob = createServerFn({ method: "POST" })
     if (!c.isAdmin && isJobLocked(lockable)) {
       // Compare and stage only actually changed fields.
       const proposed: Record<string, unknown> = {
-        from_location: data.from_location,
-        to_location: data.to_location,
+        from_location: nextFromLocation,
+        to_location: nextToLocation,
+        from_location_type: effectiveFromEndpointType,
+        to_location_type: effectiveToEndpointType,
+        from_port_id: effectiveFromPortId,
+        from_berth_id: effectiveFromBerthId,
+        to_port_id: effectiveToPortId,
+        to_berth_id: effectiveToBerthId,
         date: scheduledPickup.date,
         time: scheduledPickup.time,
         vehicle: data.vehicle || null,
@@ -1498,6 +2264,8 @@ export const updateJob = createServerFn({ method: "POST" })
         flight_schedule_record_id: data.flight_schedule_record_id === undefined ? existingFlightId : data.flight_schedule_record_id,
         ship_event_id: data.ship_event_id === undefined ? existingShipId : data.ship_event_id,
         onward_flight_schedule_record_id: effectiveOnwardFlightId,
+        onward_ship_event_id: effectiveOnwardShipId,
+        operation_group_id: data.operation_group_id === undefined ? (existing as any).operation_group_id : data.operation_group_id,
         scheduled_transport_pickup_offset_minutes: scheduledPickup.offset_minutes,
         clientcompanyname: data.clientcompanyname || null,
         qr_strict_mode: !!data.qr_strict_mode,
@@ -1515,7 +2283,7 @@ export const updateJob = createServerFn({ method: "POST" })
       if (Object.keys(diff).length === 0) {
         await syncJobPax(data.id, passengerNamesOnly(data.pax));
         await syncJobLabels(context, c.id, data.id, data.label_ids);
-        return { ok: true };
+        return { ok: true, journey };
       }
       const res = await createChangeRequest({
         jobId: data.id,
@@ -1528,15 +2296,15 @@ export const updateJob = createServerFn({ method: "POST" })
       // Labels can still be updated immediately (coordinator-only metadata).
       await syncJobPax(data.id, passengerNamesOnly(data.pax));
       await syncJobLabels(context, c.id, data.id, data.label_ids);
-      return { ok: true, ...res };
+      return { ok: true, journey, ...res };
     }
 
     // If the address changed, invalidate cached name + ETA so we recompute.
-    const fromChanged = (existing as any).from_location !== data.from_location;
-    const toChanged = (existing as any).to_location !== data.to_location;
+    const fromChanged = (existing as any).from_location !== nextFromLocation;
+    const toChanged = (existing as any).to_location !== nextToLocation;
     const patch: Record<string, any> = {
-      from_location: data.from_location,
-      to_location: data.to_location,
+      from_location: nextFromLocation,
+      to_location: nextToLocation,
       date: scheduledPickup.date,
       time: scheduledPickup.time,
       pickup_at: scheduledPickup.pickup_at,
@@ -1550,9 +2318,15 @@ export const updateJob = createServerFn({ method: "POST" })
       notes: data.notes || null,
       contact_phone: data.contact_phone || null,
       driver_id: data.driver_id || null,
+      from_port_id: effectiveFromPortId,
+      from_berth_id: effectiveFromBerthId,
+      to_port_id: effectiveToPortId,
+      to_berth_id: effectiveToBerthId,
     };
     if (data.pickup_place_id !== undefined) patch.pickup_place_id = data.pickup_place_id || null;
     if (data.dropoff_place_id !== undefined) patch.dropoff_place_id = data.dropoff_place_id || null;
+    if (data.from_location_type !== undefined) patch.from_location_type = data.from_location_type;
+    if (data.to_location_type !== undefined) patch.to_location_type = data.to_location_type;
     if (data.pickup_display_name !== undefined) patch.pickup_display_name = data.pickup_display_name || null;
     if (data.dropoff_display_name !== undefined) patch.dropoff_display_name = data.dropoff_display_name || null;
     patch.tracking_kind = transportTrackingKind;
@@ -1560,7 +2334,10 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.flight_schedule_record_id !== undefined) patch.flight_schedule_record_id = data.flight_schedule_record_id;
     if (data.ship_event_id !== undefined) patch.ship_event_id = data.ship_event_id;
     if (data.onward_flight_schedule_record_id !== undefined) patch.onward_flight_schedule_record_id = data.onward_flight_schedule_record_id;
+    if (data.onward_ship_event_id !== undefined) patch.onward_ship_event_id = data.onward_ship_event_id;
+    if (data.operation_group_id !== undefined) patch.operation_group_id = data.operation_group_id;
     patch.scheduled_transport_pickup_offset_minutes = scheduledPickup.offset_minutes;
+    patch.immigration_required = effectiveImmigrationRequired;
     if (data.pickup_lat !== undefined) patch.pickup_lat = data.pickup_lat;
     if (data.pickup_lng !== undefined) patch.pickup_lng = data.pickup_lng;
     if (data.dropoff_lat !== undefined) patch.dropoff_lat = data.dropoff_lat;
@@ -1621,6 +2398,13 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       throw new Error(error.message);
     }
+    await recordDriverTripUpdate(supabaseAdmin, existing as any, patch, data.id, c.id);
+    // A newly selected arrival port gets the automatic immigration stop once.
+    // If the coordinator later removes or edits that stop, unchanged saves do
+    // not recreate it.
+    if (effectiveFromPortId !== existingFromPortId) {
+      await ensureShipArrivalImmigrationStop(supabaseAdmin, data.id, journey, fromPort, effectiveImmigrationRequired);
+    }
     // Auto-fill from client/company parentheses only when caller passed
     // no explicit pax array AND the trip has no existing passenger rows.
     let paxToSync = passengerNamesOnly(data.pax);
@@ -1640,7 +2424,7 @@ export const updateJob = createServerFn({ method: "POST" })
     // Refresh auto-estimate (no-op when a manual price is already set).
     const { autoPriceJobBg } = await import("./auto-price.server");
     autoPriceJobBg(data.id);
-    return { ok: true };
+    return { ok: true, journey };
   });
 
 export const rescheduleJobToFlight = createServerFn({ method: "POST" })
@@ -2722,24 +3506,60 @@ export const approveBooking = createServerFn({ method: "POST" })
     if (error || !b) throw new Error("Booking not found");
     const pickup_at = b.pickup_at ?? (b.date && b.time ? makePickupIso(b.date, b.time) : new Date().toISOString());
     const fromFlight = ((b as any).from_flight || "").toUpperCase() || null;
-    const { data: job, error: jErr } = await supabaseAdmin
+    const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, (b as any).from_port_id, (b as any).from_berth_id);
+    const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, (b as any).to_port_id, (b as any).to_berth_id);
+    const fromLocationType = (b as any).from_location_type ?? (fromPort ? "port" : null);
+    const toLocationType = (b as any).to_location_type ?? (toPort ? "port" : null);
+    if ((fromPort && fromLocationType !== "port") || (toPort && toLocationType !== "port")) throw new Error("port_endpoint_type_required");
+    const ship = await assertTokenShipSelection(supabaseAdmin, c.id, (b as any).ship_event_id);
+    const job = await createAuthoritativeJob({
+      from_location: b.from_location,
+      to_location: b.to_location,
+      from_location_type: fromLocationType ?? "local",
+      to_location_type: toLocationType ?? "local",
+      from_port_id: (b as any).from_port_id ?? null,
+      from_berth_id: (b as any).from_berth_id ?? null,
+      to_port_id: (b as any).to_port_id ?? null,
+      to_berth_id: (b as any).to_berth_id ?? null,
+      date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
+      time: b.time ?? "12:00",
+      from_flight: fromFlight ?? "",
+      clientcompanyname: `${b.name} ${b.surname}`.trim(),
+      ship_event_id: ship?.id ?? null,
+      immigration_required: (b as any).immigration_required ?? "unknown",
+      notes: (b as any).notes ?? "",
+      qr_strict_mode: false,
+      tracking_enabled: false,
+      passengers: [],
+    }, { company_id: c.id, actor_type: "client", actor_user_id: context.userId, source: "client" }, context);
+    /* Legacy inline Job insert retained as a compatibility reference only.
+    const { data: legacyJob, error: jErr } = await supabaseAdmin
       .from("jobs")
       .insert({
         company_id: c.id,
-        from_location: b.from_location,
-        to_location: b.to_location,
+        from_location: fromPort?.address ?? b.from_location,
+        to_location: toPort?.address ?? b.to_location,
+        from_location_type: fromLocationType,
+        to_location_type: toLocationType,
+        from_port_id: (b as any).from_port_id ?? null,
+        from_berth_id: (b as any).from_berth_id ?? null,
+        to_port_id: (b as any).to_port_id ?? null,
+        to_berth_id: (b as any).to_berth_id ?? null,
         date: b.date ?? new Date(pickup_at).toISOString().slice(0, 10),
         time: b.time,
         pickup_at,
         clientcompanyname: `${b.name} ${b.surname}`.trim(),
         from_flight: fromFlight,
         flightorship: fromFlight,
+        ship_event_id: ship?.id ?? null,
+        tracking_kind: ship ? "vessel" : (b as any).tracking_kind ?? undefined,
         notes: (b as any).notes ?? null,
         promo_note: (b as any).promo_note ?? null,
       } as any)
       .select()
       .single();
     if (jErr) throw new Error(jErr.message);
+    */
     const { padWithGuests } = await import("./pax-extract");
     const paxName = `${b.name} ${b.surname}`.trim() || "Guest";
     const paxNames = padWithGuests([paxName], (b as any).pax_count);
@@ -3013,11 +3833,18 @@ export const shareJobToDriver = createServerFn({ method: "POST" })
 
 const bulkTripInput = z.object({
   operation_name: z.string().trim().max(200).optional().or(z.literal("")),
+  operation_group_id: z.string().uuid().nullable().optional(),
   trips: z
     .array(
       z.object({
         from_location: z.string().trim().min(1).max(255),
         to_location: z.string().trim().min(1).max(255),
+        from_location_type: bookingEndpointTypeInput.optional(),
+        to_location_type: bookingEndpointTypeInput.optional(),
+        from_port_id: z.string().uuid().nullable().optional(),
+        from_berth_id: z.string().uuid().nullable().optional(),
+        to_port_id: z.string().uuid().nullable().optional(),
+        to_berth_id: z.string().uuid().nullable().optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
         flightorship: z.string().trim().max(120).optional().default(""),
@@ -3028,9 +3855,13 @@ const bulkTripInput = z.object({
         email: z.string().trim().max(255).optional().default(""),
         vehicle: z.string().trim().max(120).optional().default(""),
         notes: z.string().trim().max(2000).optional().default(""),
+        immigration_required: z.enum(["yes", "no", "unknown"]).optional(),
         immigration_needed: z.boolean().optional().default(false),
         tracking_kind: z.enum(["flight", "vessel"]).optional(),
+        operation_group_id: z.string().uuid().nullable().optional(),
         pax: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
+        // Positionally aligned with `pax` — blank entries mean "no phone".
+        pax_phones: z.array(z.string().trim().max(40)).max(200).optional(),
       }),
     )
     .min(1)
@@ -3081,17 +3912,58 @@ export const createJobsBulk = createServerFn({ method: "POST" })
 
     const firstTrip = data.trips[0];
     const operationName = deriveOperationNameSeed(firstTrip, data.operation_name);
+    await validateOperationGroupAssignment(supabaseAdmin, c.id, data.operation_group_id);
 
     const created: string[] = [];
     for (const t of data.trips) {
+      const endpointTypes = normalizeBookingEndpointTypes(t, { defaultMissingToLocal: true });
+      await validateOperationGroupAssignment(supabaseAdmin, c.id, t.operation_group_id ?? data.operation_group_id);
+      const journey = resolveBookingJourney(endpointTypes.fromLocationType, endpointTypes.toLocationType);
+      const immigrationRequired = t.immigration_required ?? (t.immigration_needed ? "yes" : "unknown");
+      const fromPort = await assertCompanyPortSelection(supabaseAdmin, c.id, t.from_port_id, t.from_berth_id);
+      const toPort = await assertCompanyPortSelection(supabaseAdmin, c.id, t.to_port_id, t.to_berth_id);
+      if (fromPort && endpointTypes.fromLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
+      if (toPort && endpointTypes.toLocationType !== "port") throw new Error("A Port location must use endpoint type Port.");
       const time = t.time.length === 5 ? `${t.time}:00` : t.time;
+      const sharedJob = await createAuthoritativeJob({
+        from_location: t.from_location,
+        to_location: t.to_location,
+        from_location_type: endpointTypes.fromLocationType,
+        to_location_type: endpointTypes.toLocationType,
+        from_port_id: t.from_port_id,
+        from_berth_id: t.from_berth_id,
+        to_port_id: t.to_port_id,
+        to_berth_id: t.to_berth_id,
+        date: t.date,
+        time,
+        flightorship: t.flightorship,
+        from_flight: t.from_flight,
+        to_flight: t.to_flight,
+        immigration_required: immigrationRequired,
+        clientcompanyname: t.clientcompanyname,
+        vehicle: t.vehicle,
+        notes: t.notes,
+        contact_phone: t.contact_phone,
+        operation_group_id: t.operation_group_id ?? data.operation_group_id ?? null,
+        passengers: t.pax.map((name, i) => ({ name, phone: t.pax_phones?.[i]?.trim() || null })),
+        qr_strict_mode: false,
+        tracking_enabled: false,
+      }, { company_id: c.id, actor_type: "bulk", source: "bulk" }, context);
+      created.push(sharedJob.id);
+      continue;
       const pickup_at = makePickupIso(t.date, time);
       const { data: job, error } = await (supabaseAdmin as any)
         .from("jobs")
         .insert({
           company_id: c.id,
-          from_location: t.from_location,
-          to_location: t.to_location,
+          from_location: fromPort?.address ?? t.from_location,
+          to_location: toPort?.address ?? t.to_location,
+          from_location_type: endpointTypes.fromLocationType,
+          to_location_type: endpointTypes.toLocationType,
+          from_port_id: t.from_port_id ?? null,
+          from_berth_id: t.from_berth_id ?? null,
+          to_port_id: t.to_port_id ?? null,
+          to_berth_id: t.to_berth_id ?? null,
           date: t.date,
           time,
           pickup_at,
@@ -3106,21 +3978,30 @@ export const createJobsBulk = createServerFn({ method: "POST" })
           vehicle: t.vehicle || null,
           notes: t.notes || null,
           driver_id: null,
-          tracking_kind: t.tracking_kind ?? "flight",
+          // Explicit legacy tracking values still win. Unclassified bulk
+          // rows are deterministically local/local and therefore untracked.
+          tracking_kind: t.tracking_kind ?? journey.trackingKind,
+          immigration_required: immigrationRequired,
+          operation_group_id: t.operation_group_id ?? data.operation_group_id ?? null,
         })
         .select("id")
         .single();
       if (error) throw new Error(error.message);
       created.push((job as { id: string }).id);
+      await ensureShipArrivalImmigrationStop(supabaseAdmin, job.id, journey, fromPort, immigrationRequired);
       if (t.pax.length) {
         // NOTE: `pax` has no `operation_id` column — see syncJobPax for details.
-        const rows = t.pax.map((name) => ({ job_id: job.id, name }));
+        const rows = t.pax.map((name, i) => ({
+          job_id: job.id,
+          name,
+          phone: t.pax_phones?.[i]?.trim() || null,
+        }));
         const { error: pErr } = await (supabaseAdmin as any).from("pax").insert(rows);
         if (pErr) throw new Error(pErr.message);
       }
       // Immigration Needed rule: skip when the pickup is the Freeport — it
       // never requires the immigration-office stop, regardless of the flag.
-      if (t.immigration_needed && !/freeport/i.test(t.from_location)) {
+      if (!fromPort && immigrationRequired === "yes" && !/freeport/i.test(t.from_location)) {
         const { data: group, error: gErr } = await supabaseAdmin
           .from("groups")
           .insert({ job_id: job.id, name: "Trip stops", status: "pending" } as any)
@@ -3170,6 +4051,7 @@ type LiveStatusResult = {
   estimated?: string | null;
   confidence?: "high" | "low";
   reason?: string;
+  error?: string;
   source?: "aerodatabox";
 };
 type FlightSide = "arr" | "dep";
@@ -3235,6 +4117,10 @@ const AERODATABOX_TTL_MS = 20 * 60_000;
 // button is free (already-paid cached answer).
 const FLIGHT_REFRESH_FREE_MS = 10 * 60_000;
 const FLIGHT_TIME_MISMATCH_MS = 15 * 60_000;
+// How far actual-vs-scheduled has to drift before the card calls it out as
+// early/delayed rather than leaving the provider's own (often stale) status
+// label standing. Matches the coordinator-visible "10 min" threshold.
+const FLIGHT_DRIFT_ALERT_MIN = 10;
 
 type AeroEndpoint = {
   airport?: { iata?: string; icao?: string; name?: string; municipalityName?: string };
@@ -3548,6 +4434,94 @@ async function fetchLiveStatus(
   return r;
 }
 
+/**
+ * A scheduled flight record is the source of truth for a linked flight.  The
+ * copied from/to code fields are retained for backwards compatibility, but
+ * tracking must not reject a valid schedule just because those legacy fields
+ * are stale or empty.
+ */
+async function resolveLinkedFlightForTracking(
+  supabaseAdmin: any,
+  job: { flight_schedule_record_id?: string | null; from_flight?: string | null; to_flight?: string | null },
+): Promise<{ code: string | null; side: FlightSide | undefined; scheduledDate: string | null }> {
+  let code = job.from_flight?.trim() || job.to_flight?.trim() || null;
+  let side: FlightSide | undefined = job.from_flight ? "arr" : job.to_flight ? "dep" : undefined;
+  if (!job.flight_schedule_record_id) return { code, side, scheduledDate: null };
+
+  const { data: record } = await supabaseAdmin
+    .from("flight_schedule_records")
+    .select("flight_number, direction, scheduled_date")
+    .eq("id", job.flight_schedule_record_id)
+    .maybeSingle();
+  if (record?.flight_number) code = String(record.flight_number).trim();
+  if (record?.direction === "arrival") side = "arr";
+  if (record?.direction === "departure") side = "dep";
+  return { code, side, scheduledDate: record?.scheduled_date ?? null };
+}
+
+/**
+ * The single funnel every schedule-linked flight check goes through —
+ * background create, manual refresh, the bulk sweep, and the T-30 cron all
+ * call this instead of hitting AeroDataBox directly. Two guards keep the
+ * provider bill down and the data honest:
+ *
+ *  - A flight already in the past (Malta calendar day) is never checked —
+ *    there's nothing "live" left to report, and it would just burn a request
+ *    on every trip touch for the rest of the day.
+ *  - One shared row per flight_schedule_record_id, refreshed at most once
+ *    per AERODATABOX_TTL_MS. Ten trips on the same KM101 cost one provider
+ *    request, not ten — every caller after the first reads the row the
+ *    first caller just wrote.
+ */
+async function getSharedFlightLiveStatus(
+  supabaseAdmin: any,
+  flightScheduleRecordId: string,
+  scheduledDate: string | null,
+  code: string,
+  pickupIso: string | null,
+  side: FlightSide | undefined,
+): Promise<LiveStatusResult> {
+  if (scheduledDate) {
+    const todayMalta = isoToMaltaDateTime(new Date().toISOString()).date;
+    if (scheduledDate < todayMalta) return notTracked("Flight date has passed");
+  }
+
+  const { data: cached } = await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .select("status, note, scheduled_at, estimated_at, updated_at")
+    .eq("flight_schedule_record_id", flightScheduleRecordId)
+    .maybeSingle();
+  if (cached?.updated_at && Date.now() - new Date(cached.updated_at).getTime() < AERODATABOX_TTL_MS) {
+    return {
+      ok: true,
+      status: cached.status ?? "unknown",
+      note: cached.note ?? "",
+      scheduled: cached.scheduled_at ?? null,
+      estimated: cached.estimated_at ?? null,
+      confidence: "high",
+      source: "aerodatabox",
+    };
+  }
+
+  // Cache is stale or this flight has never been checked — the one request
+  // that actually reaches the provider for this flight this cycle.
+  const result = await fetchLiveStatus("flight", code, pickupIso, side);
+  await supabaseAdmin
+    .from("flight_schedule_record_live_status")
+    .upsert(
+      {
+        flight_schedule_record_id: flightScheduleRecordId,
+        status: result.ok ? result.status ?? "unknown" : "unknown",
+        note: result.ok ? result.note ?? null : liveStatusFailureMessage(result.reason, code),
+        scheduled_at: result.ok ? result.scheduled ?? null : null,
+        estimated_at: result.ok ? result.estimated ?? null : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "flight_schedule_record_id" },
+    );
+  return result;
+}
+
 
 // Persist the live status onto a job row, applying the 15-min
 // "time_mismatch" override when the scheduled time drifts from the pickup.
@@ -3565,6 +4539,7 @@ export async function applyLiveStatusToJob(
     tracking_kind?: string | null;
     flight_schedule_record_id?: string | null;
     ship_event_id?: string | null;
+    scheduled_transport_pickup_offset_minutes?: number | null;
   },
 ): Promise<LiveStatusResult> {
   if (job.ship_event_id) {
@@ -3578,16 +4553,25 @@ export async function applyLiveStatusToJob(
     return notTracked(`Ship ETA ${formatMaltaTime(ship.eta)}`);
   }
   if (!job.flight_schedule_record_id) return notTracked("No transport linked");
-  const code = job.from_flight || job.to_flight;
+  const linkedFlight = await resolveLinkedFlightForTracking(supabaseAdmin, job);
+  const code = linkedFlight.code;
   if (!code) return { ok: false, reason: "no_code" };
   if (!liveStatusProviderEnabled()) {
     return { ok: false, reason: "provider_unavailable" };
   }
-  const kind: "flight" = "flight";
   // from_flight = passenger arriving → anchor to arrival; to_flight = departing → anchor to departure.
-  const side: FlightSide | undefined =
-    kind === "flight" ? (job.from_flight ? "arr" : job.to_flight ? "dep" : undefined) : undefined;
-  const result = await fetchLiveStatus(kind, code, job.pickup_at, side);
+  const side: FlightSide | undefined = linkedFlight.side;
+  // Shared per-flight check, not per-job: every trip on this same flight
+  // (any company, any coordinator) reads the one cached answer instead of
+  // each triggering its own provider request. See getSharedFlightLiveStatus.
+  const result = await getSharedFlightLiveStatus(
+    supabaseAdmin,
+    job.flight_schedule_record_id,
+    linkedFlight.scheduledDate,
+    code,
+    job.pickup_at,
+    side,
+  );
 
   if (!result.ok) {
     const reasonNote = liveStatusFailureMessage(result.reason, code);
@@ -3604,16 +4588,33 @@ export async function applyLiveStatusToJob(
 
   let status = result.status ?? "unknown";
   let note = result.note ?? "";
-  // Derive "early" from actual-vs-scheduled drift when the provider didn't
-  // explicitly say so. 10+ min ahead counts as early.
+  // Derive early/delayed from actual-vs-scheduled drift when the provider's
+  // own status string doesn't already say so — providers are often slow to
+  // flip the categorical status even once the times already show the gap
+  // (e.g. still "Expected" after landing 10+ min late).
   if (result.scheduled && result.estimated && (status === "on_time" || status === "unknown")) {
     const drift = Math.round((new Date(result.estimated).getTime() - new Date(result.scheduled).getTime()) / 60000);
-    if (drift <= -10) status = "early";
+    if (drift <= -FLIGHT_DRIFT_ALERT_MIN) status = "early";
+    else if (drift >= FLIGHT_DRIFT_ALERT_MIN) status = "delayed";
   }
+  // Compare pickup against the EXPECTED pickup time, not the raw flight
+  // time. A departure pickup is deliberately offset ahead of the flight
+  // (default 180 min, or whatever the coordinator/company configured) —
+  // comparing pickup directly to departure would flag every correctly
+  // booked departure trip as a mismatch. Arrivals default to a 0-minute
+  // offset, so this reduces to the old direct comparison for them.
   if (result.scheduled && job.pickup_at) {
-    const s = new Date(result.scheduled).getTime();
+    const offsetMinutes =
+      job.scheduled_transport_pickup_offset_minutes ?? (side === "dep" ? 180 : 0);
+    const scheduledMs = new Date(result.scheduled).getTime();
+    const expectedPickupMs =
+      side === "dep" ? scheduledMs - offsetMinutes * 60_000 : scheduledMs + offsetMinutes * 60_000;
     const p = new Date(job.pickup_at).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(p) && Math.abs(s - p) > FLIGHT_TIME_MISMATCH_MS) {
+    if (
+      !Number.isNaN(expectedPickupMs) &&
+      !Number.isNaN(p) &&
+      Math.abs(expectedPickupMs - p) > FLIGHT_TIME_MISMATCH_MS
+    ) {
       status = "time_mismatch";
       note = `Scheduled ${formatMaltaTime(result.scheduled)} vs pickup ${formatMaltaTime(job.pickup_at)}`;
     }
@@ -3649,7 +4650,7 @@ export async function applyLiveStatusToJobBg(jobId: string): Promise<void> {
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, tracking_kind, flight_schedule_record_id, ship_event_id, status, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", jobId)
       .maybeSingle();
@@ -3721,7 +4722,7 @@ export const updateJobFlightCode = createServerFn({ method: "POST" })
     const { data: job } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, tracking_kind, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
@@ -3743,10 +4744,13 @@ export const checkFlightStatus = createServerFn({ method: "POST" })
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("company_id", c.id)
-      .or("from_flight.not.is.null,to_flight.not.is.null")
+      // Include trips linked to an imported schedule record even when the
+      // legacy from_flight/to_flight text is empty — otherwise those trips
+      // are silently skipped by this sweep (same gap as the T-30 cron had).
+      .or("from_flight.not.is.null,to_flight.not.is.null,flight_schedule_record_id.not.is.null")
       .not("status", "in", "(completed,cancelled)")
       .gte("pickup_at", fromIso)
       .lte("pickup_at", toIso);
@@ -3804,13 +4808,18 @@ export const getMaltaFlightStatus = createServerFn({ method: "POST" })
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
       .select(
-        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status",
+        "id, company_id, driver_id, from_flight, to_flight, from_location, to_location, pickup_at, flight_status, flight_status_updated_at, tracking_kind, status, flight_schedule_record_id, scheduled_transport_pickup_offset_minutes",
       )
       .eq("id", data.job_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) throw new Error("Job not found");
-    if (!job.from_flight && !job.to_flight) return { ok: false, reason: "no_flight" as const };
+    // A schedule-linked trip can have no legacy from_flight/to_flight text at
+    // all — the display copy is only backfilled when read, not written. Only
+    // reject when there's truly nothing to track.
+    if (!job.from_flight && !job.to_flight && !(job as any).flight_schedule_record_id) {
+      return { ok: false, reason: "no_flight" as const };
+    }
     if (!liveStatusProviderEnabled()) {
       return { ok: false as const, reason: "provider_unavailable" as const };
     }
@@ -4057,15 +5066,22 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
     // Never lookup for finished trips — they're archived, status is frozen.
     const finished = (job as any).status === "completed" || (job as any).status === "cancelled";
 
-    // Only meter when a flight/vessel identifier is attached, the trip
-    // isn't finished, and the last lookup is older than the free cache
-    // window — otherwise the provider cache returns the same answer and we'd
-    // burn refresh points.
-    const hasCode = !finished && !!(job as any).flight_schedule_record_id && !!((job as any).from_flight || (job as any).to_flight);
+    // Only meter when a Flight identifier is attached, the trip isn't
+    // finished, and the last lookup is older than the free cache window.
+    const linkedShipId = (job as any).ship_event_id as string | null;
+    const linkedFlightId = (job as any).flight_schedule_record_id as string | null;
+    const storedTrackingKind = (job as any).tracking_kind as "flight" | "vessel" | null;
+    const transportKind: "flight" | "vessel" | null = linkedShipId
+      ? "vessel"
+      : linkedFlightId
+        ? "flight"
+        : storedTrackingKind;
+    // Vessel refreshes read Ship Operations below. Only Flight journeys may
+    // enter the external Flight provider path or consume Flight refresh points.
+    const hasCode = !finished && transportKind === "flight" && !!((job as any).from_flight || (job as any).to_flight);
     const lastFlightAt = (job as any).flight_status_updated_at as string | null;
     const flightFresh = !!lastFlightAt && Date.now() - new Date(lastFlightAt).getTime() < FLIGHT_REFRESH_FREE_MS;
     const shouldMeterFlight = liveStatusProviderEnabled() && hasCode && !flightFresh;
-    const flightMeterKey = (job as any).tracking_kind === "vessel" ? "flight_lookup_vessel" : "flight_lookup_refresh";
     if (shouldMeterFlight) {
       await assertFeatureEnabled(c.id, "flight_vessel_tracking");
       {
@@ -4085,18 +5101,18 @@ export const refreshJobLiveStatus = createServerFn({ method: "POST" })
         to_location: (job as any).to_location ?? undefined,
         date: (job as any).date ?? undefined,
         time: ((job as any).time ?? "").slice(0, 5) || undefined,
-        from_flight: finished ? undefined : ((job as any).from_flight ?? undefined),
-        to_flight: finished ? undefined : ((job as any).to_flight ?? undefined),
-        tracking_kind: (job as any).ship_event_id ? "vessel" : (job as any).flight_schedule_record_id ? "flight" : undefined,
+        from_flight: finished || transportKind !== "flight" ? undefined : ((job as any).from_flight ?? undefined),
+        to_flight: finished || transportKind !== "flight" ? undefined : ((job as any).to_flight ?? undefined),
+        tracking_kind: transportKind === "flight" ? "flight" : undefined,
       });
     } catch (e) {
       throw e;
     }
-    if ((job as any).ship_event_id) {
+    if (linkedShipId) {
       const { data: ship, error: shipError } = await (supabaseAdmin as any)
         .from("ship_events")
         .select("eta, company_id")
-        .eq("id", (job as any).ship_event_id)
+        .eq("id", linkedShipId)
         .maybeSingle();
       if (shipError) throw new Error(shipError.message);
       if (!ship || ship.company_id !== c.id) throw new Error("Linked Ship Event not found.");
@@ -5433,7 +6449,7 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
     // have any driver activity recently. Then pull the latest point per driver.
     const { data: jobs, error: jobsErr } = await supabaseAdmin
       .from("jobs")
-      .select("id, driver_id, from_location, to_location, status, drivers(id,name)")
+      .select("id, trip_no, driver_id, from_location, to_location, date, time, pickup_at, status, operation_group_id, operation_groups(reference,name,colour), ship_event_id, ship_events!jobs_ship_event_id_fkey(eta), flight_schedule_record_id, flight_schedule_records!jobs_flight_schedule_record_id_fkey(scheduled_date,scheduled_time), pax(id), drivers(id,name)")
       .not("driver_id", "is", null)
       .in("status", ["en_route", "arrived", "in_progress"])
       .or(
@@ -5472,12 +6488,24 @@ export const listActiveDriverLocations = createServerFn({ method: "GET" })
       if (!p.job_id) continue;
       if (!latest.has(p.driver_id)) {
         const job = jobMap.get(p.job_id);
-        latest.set(p.driver_id, {
+          latest.set(p.driver_id, {
           driver_id: p.driver_id,
           job_id: p.job_id,
           driver_name: job?.drivers?.name ?? "Driver",
+          trip_no: job?.trip_no ?? null,
           from_location: job?.from_location ?? null,
           to_location: job?.to_location ?? null,
+          date: job?.date ?? null,
+          time: job?.time ?? null,
+          pickup_at: job?.pickup_at ?? null,
+          status: job?.status ?? null,
+          passenger_count: Array.isArray(job?.pax) ? job.pax.length : 0,
+          operation_group_id: job?.operation_group_id ?? null,
+          operation_group: job?.operation_groups ?? null,
+          ship_eta: job?.ship_events?.eta ?? null,
+          flight_scheduled_at: job?.flight_schedule_records?.scheduled_date && job?.flight_schedule_records?.scheduled_time
+            ? `${job.flight_schedule_records.scheduled_date}T${job.flight_schedule_records.scheduled_time}`
+            : null,
           latitude: Number(p.latitude),
           longitude: Number(p.longitude),
           accuracy_m: p.accuracy_m ?? null,

@@ -391,8 +391,7 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       const { data: group, error: groupError } = await a.from("operation_groups")
         .select("id, status").eq("id", payload.operation_group_id).eq("company_id", cid).maybeSingle();
       if (groupError) throw new Error(groupError.message);
-      if (!group) throw new Error("Operation Group not found.");
-      if (!["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
+      if (!group || !["draft", "active"].includes(group.status)) throw new Error("Completed or cancelled Operation Groups cannot accept new Jobs.");
     }
     const fullName = `${payload.name ?? ""} ${payload.surname ?? ""}`.trim();
     await syncBookingPeopleToOperation(a, payload, payload.operation_group_id, cid, (b as any).portal_company_id);

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -24,8 +24,13 @@ function portalKindLabel(kind: string): string {
 
 export const Route = createFileRoute("/_authenticated/coordinator/portals")({
   head: () => ({ meta: [{ title: "Company Portals — Coordinator" }] }),
-  component: PortalsPage,
+  component: PortalsRoute,
 });
+
+function PortalsRoute() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  return pathname.startsWith("/coordinator/portals/") ? <Outlet /> : <PortalsPage />;
+}
 
 function PortalsPage() {
   const listFn = useServerFn(listPortals);

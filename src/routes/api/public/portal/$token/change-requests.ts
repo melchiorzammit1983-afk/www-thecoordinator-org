@@ -6,7 +6,7 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
   server: {
     handlers: {
       POST: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         if (!(await checkRateLimit(params.token))) return Response.json({ error: "rate_limited" }, { status: 429 });
 

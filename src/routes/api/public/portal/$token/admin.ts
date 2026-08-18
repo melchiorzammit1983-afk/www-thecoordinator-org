@@ -37,14 +37,14 @@ function json(body: unknown, status = 200) {
 export const Route = createFileRoute("/api/public/portal/$token/admin")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
-        const r = await resolvePortalByToken(params.token);
+      GET: async ({ params, request }) => {
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return json({ error: r.error }, r.status);
         const data = await loadHotelAdminData(r.portal.id);
         return json(data);
       },
       POST: async ({ params, request }) => {
-        const r = await resolvePortalByToken(params.token);
+        const r = await resolvePortalByToken(params.token, request);
         if (!r.ok) return json({ error: r.error }, r.status);
         if (!(await checkRateLimit(params.token, 120))) return json({ error: "rate_limited" }, 429);
         const body = (await request.json().catch(() => null)) as any;

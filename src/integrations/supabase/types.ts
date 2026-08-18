@@ -1175,6 +1175,50 @@ export type Database = {
           },
         ]
       }
+      berths: {
+        Row: {
+          active: boolean
+          address_override: string | null
+          created_at: string
+          id: string
+          latitude_override: number | null
+          longitude_override: number | null
+          name: string
+          port_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address_override?: string | null
+          created_at?: string
+          id?: string
+          latitude_override?: number | null
+          longitude_override?: number | null
+          name: string
+          port_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address_override?: string | null
+          created_at?: string
+          id?: string
+          latitude_override?: number | null
+          longitude_override?: number | null
+          name?: string
+          port_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "berths_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_booking_modifications: {
         Row: {
           acknowledged_at: string | null
@@ -1248,8 +1292,11 @@ export type Database = {
           created_at: string
           created_via: string | null
           date: string | null
+          from_berth_id: string | null
           from_location: string
+          from_port_id: string | null
           id: string
+          immigration_required: string | null
           job_id: string | null
           name: string
           parent_job_id: string | null
@@ -1259,7 +1306,9 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           surname: string
           time: string
+          to_berth_id: string | null
           to_location: string
+          to_port_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1269,8 +1318,11 @@ export type Database = {
           created_at?: string
           created_via?: string | null
           date?: string | null
+          from_berth_id?: string | null
           from_location: string
+          from_port_id?: string | null
           id?: string
+          immigration_required?: string | null
           job_id?: string | null
           name: string
           parent_job_id?: string | null
@@ -1280,7 +1332,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           surname: string
           time: string
+          to_berth_id?: string | null
           to_location: string
+          to_port_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1290,8 +1344,11 @@ export type Database = {
           created_at?: string
           created_via?: string | null
           date?: string | null
+          from_berth_id?: string | null
           from_location?: string
+          from_port_id?: string | null
           id?: string
+          immigration_required?: string | null
           job_id?: string | null
           name?: string
           parent_job_id?: string | null
@@ -1301,7 +1358,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           surname?: string
           time?: string
+          to_berth_id?: string | null
           to_location?: string
+          to_port_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1310,6 +1369,20 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
           {
@@ -1324,6 +1397,20 @@ export type Database = {
             columns: ["parent_job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_bookings_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -1575,6 +1662,7 @@ export type Database = {
           grace_reset_at: string
           id: string
           logo_url: string | null
+          minimum_connection_buffer_minutes: number
           minimum_fare: number
           name: string
           operations_phone: string | null
@@ -1591,6 +1679,7 @@ export type Database = {
           safety_mode_allow_override: boolean
           safety_mode_enabled: boolean
           safety_mode_threshold_kmh: number
+          slug: string | null
           status: Database["public"]["Enums"]["company_status"]
           trial_ends_at: string | null
           updated_at: string
@@ -1628,6 +1717,7 @@ export type Database = {
           grace_reset_at?: string
           id?: string
           logo_url?: string | null
+          minimum_connection_buffer_minutes?: number
           minimum_fare?: number
           name: string
           operations_phone?: string | null
@@ -1644,6 +1734,7 @@ export type Database = {
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
+          slug?: string | null
           status?: Database["public"]["Enums"]["company_status"]
           trial_ends_at?: string | null
           updated_at?: string
@@ -1681,6 +1772,7 @@ export type Database = {
           grace_reset_at?: string
           id?: string
           logo_url?: string | null
+          minimum_connection_buffer_minutes?: number
           minimum_fare?: number
           name?: string
           operations_phone?: string | null
@@ -1697,6 +1789,7 @@ export type Database = {
           safety_mode_allow_override?: boolean
           safety_mode_enabled?: boolean
           safety_mode_threshold_kmh?: number
+          slug?: string | null
           status?: Database["public"]["Enums"]["company_status"]
           trial_ends_at?: string | null
           updated_at?: string
@@ -2657,6 +2750,74 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_trip_updates: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by_driver_id: string | null
+          changed_fields: Json
+          company_id: string
+          created_at: string
+          driver_id: string
+          id: string
+          job_id: string
+          new_values: Json
+          previous_values: Json
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by_driver_id?: string | null
+          changed_fields?: Json
+          company_id: string
+          created_at?: string
+          driver_id: string
+          id?: string
+          job_id: string
+          new_values?: Json
+          previous_values?: Json
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by_driver_id?: string | null
+          changed_fields?: Json
+          company_id?: string
+          created_at?: string
+          driver_id?: string
+          id?: string
+          job_id?: string
+          new_values?: Json
+          previous_values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_trip_updates_acknowledged_by_driver_id_fkey"
+            columns: ["acknowledged_by_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_trip_updates_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -4260,14 +4421,18 @@ export type Database = {
           forward_after: string | null
           forward_hop_count: number
           forward_tried_company_ids: string[]
+          from_berth_id: string | null
           from_flight: string | null
           from_location: string
+          from_location_type: string | null
+          from_port_id: string | null
           group_id: string | null
           group_name: string | null
           group_note: string | null
           grouped_at: string | null
           grouped_count: number | null
           id: string
+          immigration_required: string | null
           leave_by_at: string | null
           live_eta_from_lat: number | null
           live_eta_from_lng: number | null
@@ -4275,6 +4440,9 @@ export type Database = {
           live_eta_updated_at: string | null
           needs_review: boolean
           notes: string | null
+          onward_flight_schedule_record_id: string | null
+          onward_ship_event_id: string | null
+          operation_group_id: string | null
           operation_id: string
           origin_company_id: string | null
           paid_amount: number | null
@@ -4309,11 +4477,15 @@ export type Database = {
           safety_flag_note: string | null
           scheduled_transport_pickup_offset_minutes: number | null
           self_assigned_user_id: string | null
+          ship_event_id: string | null
           source: string
           status: Database["public"]["Enums"]["job_status"]
           time: string
+          to_berth_id: string | null
           to_flight: string | null
           to_location: string
+          to_location_type: string | null
+          to_port_id: string | null
           tracking_enabled: boolean
           tracking_kind: string | null
           traffic_delay_minutes: number | null
@@ -4402,14 +4574,18 @@ export type Database = {
           forward_after?: string | null
           forward_hop_count?: number
           forward_tried_company_ids?: string[]
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location: string
+          from_location_type?: string | null
+          from_port_id?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          immigration_required?: string | null
           leave_by_at?: string | null
           live_eta_from_lat?: number | null
           live_eta_from_lng?: number | null
@@ -4417,6 +4593,9 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          onward_flight_schedule_record_id?: string | null
+          onward_ship_event_id?: string | null
+          operation_group_id?: string | null
           operation_id: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4451,11 +4630,15 @@ export type Database = {
           safety_flag_note?: string | null
           scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location: string
+          to_location_type?: string | null
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4544,14 +4727,18 @@ export type Database = {
           forward_after?: string | null
           forward_hop_count?: number
           forward_tried_company_ids?: string[]
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location?: string
+          from_location_type?: string | null
+          from_port_id?: string | null
           group_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
           grouped_count?: number | null
           id?: string
+          immigration_required?: string | null
           leave_by_at?: string | null
           live_eta_from_lat?: number | null
           live_eta_from_lng?: number | null
@@ -4559,6 +4746,9 @@ export type Database = {
           live_eta_updated_at?: string | null
           needs_review?: boolean
           notes?: string | null
+          onward_flight_schedule_record_id?: string | null
+          onward_ship_event_id?: string | null
+          operation_group_id?: string | null
           operation_id?: string
           origin_company_id?: string | null
           paid_amount?: number | null
@@ -4593,11 +4783,15 @@ export type Database = {
           safety_flag_note?: string | null
           scheduled_transport_pickup_offset_minutes?: number | null
           self_assigned_user_id?: string | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["job_status"]
           time?: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location?: string
+          to_location_type?: string | null
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -4637,6 +4831,41 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "jobs_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_onward_flight_schedule_record_id_fkey"
+            columns: ["onward_flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_onward_ship_event_id_fkey"
+            columns: ["onward_ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "jobs_operation_id_fkey"
             columns: ["operation_id"]
             isOneToOne: false
@@ -4655,6 +4884,27 @@ export type Database = {
             columns: ["parent_job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -4819,6 +5069,269 @@ export type Database = {
           waiting?: boolean
         }
         Relationships: []
+      }
+      operation_group_flight_records: {
+        Row: {
+          company_id: string
+          created_at: string
+          flight_schedule_record_id: string
+          id: string
+          operation_group_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          flight_schedule_record_id: string
+          id?: string
+          operation_group_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          flight_schedule_record_id?: string
+          id?: string
+          operation_group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_group_flight_records_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_flight_records_flight_schedule_record_id_fkey"
+            columns: ["flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_flight_records_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_group_ship_events: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          operation_group_id: string
+          ship_event_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          operation_group_id: string
+          ship_event_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          operation_group_id?: string
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_group_ship_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_ship_events_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_group_ship_events_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_groups: {
+        Row: {
+          colour: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          id: string
+          name: string
+          notes: string | null
+          reference: string
+          start_date: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          colour?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          reference: string
+          start_date?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          colour?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          reference?: string
+          start_date?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_groups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_link_activity: {
+        Row: {
+          action_type: string
+          company_id: string
+          created_at: string
+          id: string
+          new_values: Json
+          operation_group_id: string
+          operation_link_id: string
+          previous_values: Json
+        }
+        Insert: {
+          action_type: string
+          company_id: string
+          created_at?: string
+          id?: string
+          new_values?: Json
+          operation_group_id: string
+          operation_link_id: string
+          previous_values?: Json
+        }
+        Update: {
+          action_type?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          new_values?: Json
+          operation_group_id?: string
+          operation_link_id?: string
+          previous_values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_link_activity_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_link_activity_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_link_activity_operation_link_id_fkey"
+            columns: ["operation_link_id"]
+            isOneToOne: false
+            referencedRelation: "operation_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_links: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          last_accessed_at: string | null
+          operation_group_id: string
+          permissions: Json
+          recipient_name: string
+          recipient_type: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          last_accessed_at?: string | null
+          operation_group_id: string
+          permissions?: Json
+          recipient_name: string
+          recipient_type: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          last_accessed_at?: string | null
+          operation_group_id?: string
+          permissions?: Json
+          recipient_name?: string
+          recipient_type?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_links_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_links_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       operations: {
         Row: {
@@ -5508,7 +6021,10 @@ export type Database = {
           monthly_seat_points: number
           name: string
           notification_email: string | null
+          password_required: boolean
           points_per_booking: number
+          portal_definition_id: string | null
+          portal_slug: string | null
           pricing_mode: string
           slug: string | null
           updated_at: string
@@ -5531,7 +6047,10 @@ export type Database = {
           monthly_seat_points?: number
           name: string
           notification_email?: string | null
+          password_required?: boolean
           points_per_booking?: number
+          portal_definition_id?: string | null
+          portal_slug?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -5554,7 +6073,10 @@ export type Database = {
           monthly_seat_points?: number
           name?: string
           notification_email?: string | null
+          password_required?: boolean
           points_per_booking?: number
+          portal_definition_id?: string | null
+          portal_slug?: string | null
           pricing_mode?: string
           slug?: string | null
           updated_at?: string
@@ -5565,6 +6087,48 @@ export type Database = {
             columns: ["coordinator_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_companies_portal_definition_id_fkey"
+            columns: ["portal_definition_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_company_passwords: {
+        Row: {
+          claimed_at: string
+          failed_attempts: number
+          locked_until: string | null
+          password_hash: string
+          portal_company_id: string
+          updated_at: string
+        }
+        Insert: {
+          claimed_at?: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash: string
+          portal_company_id: string
+          updated_at?: string
+        }
+        Update: {
+          claimed_at?: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash?: string
+          portal_company_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_company_passwords_portal_company_id_fkey"
+            columns: ["portal_company_id"]
+            isOneToOne: true
+            referencedRelation: "portal_companies"
             referencedColumns: ["id"]
           },
         ]
@@ -5912,6 +6476,121 @@ export type Database = {
         }
         Relationships: []
       }
+      portal_recipient_activity: {
+        Row: {
+          action: string
+          company_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          portal_id: string
+          portal_recipient_id: string
+        }
+        Insert: {
+          action: string
+          company_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          portal_id: string
+          portal_recipient_id: string
+        }
+        Update: {
+          action?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          portal_id?: string
+          portal_recipient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_recipient_activity_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipient_activity_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipient_activity_portal_recipient_id_fkey"
+            columns: ["portal_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "portal_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_recipients: {
+        Row: {
+          company_id: string
+          contact_display_name: string | null
+          created_at: string
+          created_by: string | null
+          disabled_at: string | null
+          expires_at: string | null
+          id: string
+          last_accessed_at: string | null
+          portal_id: string
+          recipient_company: string
+          recipient_name: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          company_id: string
+          contact_display_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          disabled_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          portal_id: string
+          recipient_company: string
+          recipient_name: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          company_id?: string
+          contact_display_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          disabled_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          portal_id?: string
+          recipient_company?: string
+          recipient_name?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_recipients_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_recipients_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portal_rooms: {
         Row: {
           active: boolean
@@ -5984,6 +6663,80 @@ export type Database = {
             columns: ["portal_company_id"]
             isOneToOne: false
             referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_submissions: {
+        Row: {
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          job_id: string | null
+          payload: Json
+          portal_id: string
+          portal_recipient_id: string | null
+          rejection_reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id: string
+          portal_recipient_id?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          job_id?: string | null
+          payload?: Json
+          portal_id?: string
+          portal_recipient_id?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_submissions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_portal_id_fkey"
+            columns: ["portal_id"]
+            isOneToOne: false
+            referencedRelation: "portals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_submissions_portal_recipient_id_fkey"
+            columns: ["portal_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "portal_recipients"
             referencedColumns: ["id"]
           },
         ]
@@ -6112,6 +6865,106 @@ export type Database = {
             columns: ["portal_company_id"]
             isOneToOne: false
             referencedRelation: "portal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portals: {
+        Row: {
+          company_id: string
+          configuration: Json
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          portal_type: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          configuration?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          portal_type: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          configuration?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          portal_type?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ports: {
+        Row: {
+          active: boolean
+          address: string
+          code: string | null
+          company_id: string
+          country: string
+          created_at: string
+          id: string
+          immigration_available: boolean
+          latitude: number | null
+          longitude: number | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address: string
+          code?: string | null
+          company_id: string
+          country: string
+          created_at?: string
+          id?: string
+          immigration_available?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string
+          code?: string | null
+          company_id?: string
+          country?: string
+          created_at?: string
+          id?: string
+          immigration_available?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -6392,46 +7245,407 @@ export type Database = {
           },
         ]
       }
+      ship_departure_readiness_warning_audit: {
+        Row: {
+          company_id: string
+          event_at: string
+          event_type: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          warning_id: string
+        }
+        Insert: {
+          company_id: string
+          event_at?: string
+          event_type: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id: string
+        }
+        Update: {
+          company_id?: string
+          event_at?: string
+          event_type?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          warning_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warning_audit_warning_id_fkey"
+            columns: ["warning_id"]
+            isOneToOne: false
+            referencedRelation: "ship_departure_readiness_warnings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_departure_readiness_warnings: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          expected_departure: string
+          id: string
+          incomplete_trip_count: number
+          resolved_at: string | null
+          ship_event_id: string
+          trips_needing_review_count: number
+          unresolved_status_count: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          expected_departure: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          expected_departure?: string
+          id?: string
+          incomplete_trip_count?: number
+          resolved_at?: string | null
+          ship_event_id?: string
+          trips_needing_review_count?: number
+          unresolved_status_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_departure_readiness_warnings_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_eta_review_completions: {
+        Row: {
+          company_id: string
+          eta_history_id: string
+          id: string
+          reviewed_at: string
+          reviewed_by: string | null
+        }
+        Insert: {
+          company_id: string
+          eta_history_id: string
+          id?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          eta_history_id?: string
+          id?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_eta_review_completions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_eta_review_completions_eta_history_id_fkey"
+            columns: ["eta_history_id"]
+            isOneToOne: true
+            referencedRelation: "ship_event_eta_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_eta_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          id: string
+          new_eta: string
+          previous_eta: string
+          ship_event_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_eta: string
+          previous_eta: string
+          ship_event_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_eta?: string
+          previous_eta?: string
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_eta_history_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_port_change_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          id: string
+          new_berth_id: string | null
+          new_berth_name: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id: string | null
+          previous_berth_name: string | null
+          previous_port_id: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id: string
+          new_port_name: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          id?: string
+          new_berth_id?: string | null
+          new_berth_name?: string | null
+          new_port_id?: string
+          new_port_name?: string
+          previous_berth_id?: string | null
+          previous_berth_name?: string | null
+          previous_port_id?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_new_port_id_fkey"
+            columns: ["new_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_history_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ship_event_port_change_reviews: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          company_id: string
+          history_id: string
+          id: string
+          new_berth_name: string | null
+          new_port_name: string
+          previous_berth_name: string | null
+          previous_port_name: string | null
+          ship_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          changed_at: string
+          changed_by?: string | null
+          company_id: string
+          history_id: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          company_id?: string
+          history_id?: string
+          id?: string
+          new_berth_name?: string | null
+          new_port_name?: string
+          previous_berth_name?: string | null
+          previous_port_name?: string | null
+          ship_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ship_event_port_change_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_history_id_fkey"
+            columns: ["history_id"]
+            isOneToOne: false
+            referencedRelation: "ship_event_port_change_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_event_port_change_reviews_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: true
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ship_events: {
         Row: {
+          actual_arrival: string | null
+          actual_departure: string | null
+          archived_at: string | null
+          archived_by: string | null
+          berth_id: string | null
           company_id: string
           created_at: string
           created_by: string | null
           eta: string
+          expected_departure: string | null
           id: string
           port: string
+          port_id: string | null
           ship_name: string
           status: string
           updated_at: string
         }
         Insert: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          berth_id?: string | null
           company_id: string
           created_at?: string
           created_by?: string | null
           eta: string
+          expected_departure?: string | null
           id?: string
           port: string
+          port_id?: string | null
           ship_name: string
           status?: string
           updated_at?: string
         }
         Update: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          berth_id?: string | null
           company_id?: string
           created_at?: string
           created_by?: string | null
           eta?: string
+          expected_departure?: string | null
           id?: string
           port?: string
+          port_id?: string | null
           ship_name?: string
           status?: string
           updated_at?: string
         }
         Relationships: [
           {
+            foreignKeyName: "ship_events_berth_id_fkey"
+            columns: ["berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ship_events_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ship_events_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -6604,6 +7818,48 @@ export type Database = {
             columns: ["pack_id"]
             isOneToOne: false
             referencedRelation: "point_packs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transport_conflict_reviews: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          job_id: string
+          reviewed_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          job_id: string
+          reviewed_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          reviewed_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transport_conflict_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transport_conflict_reviews_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -6961,8 +8217,10 @@ export type Database = {
           flight_status_note: string | null
           flight_status_updated_at: string | null
           flightorship: string | null
+          from_berth_id: string | null
           from_flight: string | null
           from_location: string
+          from_port_id: string | null
           group_name: string | null
           group_note: string | null
           grouped_at: string | null
@@ -6974,6 +8232,8 @@ export type Database = {
           live_eta_updated_at: string | null
           metadata: Json
           needs_review: boolean
+          onward_flight_schedule_record_id: string | null
+          operation_group_id: string | null
           operation_id: string
           parent_trip_id: string | null
           pickup_at: string | null
@@ -6985,11 +8245,14 @@ export type Database = {
           route_distance_m: number | null
           route_duration_sec: number | null
           scheduled_transport_pickup_offset_minutes: number | null
+          ship_event_id: string | null
           source: string
           status: Database["public"]["Enums"]["trip_status_v2"]
           time: string
+          to_berth_id: string | null
           to_flight: string | null
           to_location: string
+          to_port_id: string | null
           tracking_enabled: boolean
           tracking_kind: string | null
           traffic_delay_minutes: number | null
@@ -7017,8 +8280,10 @@ export type Database = {
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location: string
+          from_port_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
@@ -7030,6 +8295,8 @@ export type Database = {
           live_eta_updated_at?: string | null
           metadata?: Json
           needs_review?: boolean
+          onward_flight_schedule_record_id?: string | null
+          operation_group_id?: string | null
           operation_id: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7041,11 +8308,14 @@ export type Database = {
           route_distance_m?: number | null
           route_duration_sec?: number | null
           scheduled_transport_pickup_offset_minutes?: number | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location: string
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -7073,8 +8343,10 @@ export type Database = {
           flight_status_note?: string | null
           flight_status_updated_at?: string | null
           flightorship?: string | null
+          from_berth_id?: string | null
           from_flight?: string | null
           from_location?: string
+          from_port_id?: string | null
           group_name?: string | null
           group_note?: string | null
           grouped_at?: string | null
@@ -7086,6 +8358,8 @@ export type Database = {
           live_eta_updated_at?: string | null
           metadata?: Json
           needs_review?: boolean
+          onward_flight_schedule_record_id?: string | null
+          operation_group_id?: string | null
           operation_id?: string
           parent_trip_id?: string | null
           pickup_at?: string | null
@@ -7097,11 +8371,14 @@ export type Database = {
           route_distance_m?: number | null
           route_duration_sec?: number | null
           scheduled_transport_pickup_offset_minutes?: number | null
+          ship_event_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["trip_status_v2"]
           time?: string
+          to_berth_id?: string | null
           to_flight?: string | null
           to_location?: string
+          to_port_id?: string | null
           tracking_enabled?: boolean
           tracking_kind?: string | null
           traffic_delay_minutes?: number | null
@@ -7133,10 +8410,38 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "trips_from_berth_id_fkey"
+            columns: ["from_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_from_port_id_fkey"
+            columns: ["from_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "trips_legacy_job_id_fkey"
             columns: ["legacy_job_id"]
             isOneToOne: true
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_onward_flight_schedule_record_id_fkey"
+            columns: ["onward_flight_schedule_record_id"]
+            isOneToOne: false
+            referencedRelation: "flight_schedule_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_operation_group_id_fkey"
+            columns: ["operation_group_id"]
+            isOneToOne: false
+            referencedRelation: "operation_groups"
             referencedColumns: ["id"]
           },
           {
@@ -7151,6 +8456,27 @@ export type Database = {
             columns: ["parent_trip_id"]
             isOneToOne: false
             referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_ship_event_id_fkey"
+            columns: ["ship_event_id"]
+            isOneToOne: false
+            referencedRelation: "ship_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_to_berth_id_fkey"
+            columns: ["to_berth_id"]
+            isOneToOne: false
+            referencedRelation: "berths"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_to_port_id_fkey"
+            columns: ["to_port_id"]
+            isOneToOne: false
+            referencedRelation: "ports"
             referencedColumns: ["id"]
           },
         ]
@@ -7523,6 +8849,13 @@ export type Database = {
         Args: { _driver_id: string; _job_id: string }
         Returns: undefined
       }
+      record_portal_password_failure: {
+        Args: { p_portal_company_id: string }
+        Returns: {
+          failed_attempts: number
+          locked_until: string
+        }[]
+      }
       record_trip_audit: {
         Args: {
           _accuracy?: number
@@ -7584,6 +8917,48 @@ export type Database = {
         }
         Returns: number
       }
+      update_ship_event_eta_with_history: {
+        Args: {
+          p_changed_by: string
+          p_company_id: string
+          p_eta: string
+          p_ship_event_id: string
+        }
+        Returns: {
+          actual_arrival: string | null
+          actual_departure: string | null
+          archived_at: string | null
+          archived_by: string | null
+          berth_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          eta: string
+          expected_departure: string | null
+          id: string
+          port: string
+          port_id: string | null
+          ship_name: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "ship_events"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      update_ship_event_port_with_review: {
+        Args: {
+          p_berth_id: string
+          p_changed_by: string
+          p_company_id: string
+          p_port_id: string
+          p_ship_event_id: string
+        }
+        Returns: Json
+      }
       verify_trip_audit_chain: {
         Args: { _job_id: string }
         Returns: {
@@ -7593,6 +8968,7 @@ export type Database = {
           row_id: string
         }[]
       }
+      web_slugify: { Args: { _input: string }; Returns: string }
     }
     Enums: {
       booking_status:

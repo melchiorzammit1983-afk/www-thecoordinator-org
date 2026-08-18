@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -6,7 +6,11 @@ import {
   getDashboardSummary,
   getDashboardActivity,
   listDrivers,
+  getOperationsInbox,
+  listJobs,
+  listActiveDriverLocations,
 } from "@/lib/coordinator.functions";
+import { listOperationGroups } from "@/lib/operation-groups.functions";
 import {
   CalendarDays,
   Inbox,
@@ -16,6 +20,15 @@ import {
   Plus,
   ArrowRight,
   Clock,
+  Activity,
+  Anchor,
+  Plane,
+  CheckCircle2,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  MonitorPlay,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { JobFormDialog } from "@/components/coordinator/JobFormDialog";
@@ -25,6 +38,8 @@ import { TrafficBadge } from "@/components/coordinator/TrafficBadge";
 import { formatEtaMinutes } from "@/lib/trip-display";
 import { useEnrichVisibleJobs } from "@/hooks/use-enrich-jobs";
 import { cn } from "@/lib/utils";
+import { normaliseOperationGroupColour, operationGroupColourClasses, operationGroupColourDotClasses } from "@/lib/operation-group-colours";
+import { DriverLiveMap, type LivePoint } from "@/components/coordinator/DriverLiveMap";
 
 
 export const Route = createFileRoute("/_authenticated/coordinator/")({
@@ -36,6 +51,10 @@ function DashboardPage() {
   const summaryFn = useServerFn(getDashboardSummary);
   const activityFn = useServerFn(getDashboardActivity);
   const driversFn = useServerFn(listDrivers);
+  const inboxFn = useServerFn(getOperationsInbox);
+  const jobsFn = useServerFn(listJobs);
+  const groupsFn = useServerFn(listOperationGroups);
+  const liveLocationsFn = useServerFn(listActiveDriverLocations);
 
   const { data } = useQuery({ queryKey: ["coord-summary"], queryFn: () => summaryFn() });
   const { data: activity, refetch: refetchActivity } = useQuery({
@@ -44,8 +63,13 @@ function DashboardPage() {
     refetchInterval: 30_000,
   });
   const { data: drivers } = useQuery({ queryKey: ["drivers"], queryFn: () => driversFn() });
+  const { data: operationsInbox } = useQuery({ queryKey: ["operations-inbox"], queryFn: () => inboxFn(), refetchInterval: 60_000 });
+  const { data: operationJobs } = useQuery({ queryKey: ["operations-jobs"], queryFn: () => jobsFn({ data: {} }) as Promise<any[]> });
+  const { data: operationGroups } = useQuery({ queryKey: ["operations-groups"], queryFn: () => groupsFn() });
+  const { data: liveLocations } = useQuery({ queryKey: ["live-locations"], queryFn: () => liveLocationsFn({ data: { since_minutes: 30 } }) as Promise<LivePoint[]>, refetchInterval: 60_000 });
 
   const [addOpen, setAddOpen] = useState(false);
+  const [wallboardOpen, setWallboardOpen] = useState(false);
 
   const enrichable = [
     ...((activity?.pending ?? []) as any[]),
@@ -71,7 +95,7 @@ function DashboardPage() {
           <p className="text-sm text-muted-foreground mt-1">Live summary of your operations.</p>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <WatchtowerToggle />
+          <div className="flex items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setWallboardOpen(true)}><MonitorPlay className="mr-1.5 h-4 w-4" />Wallboard</Button><WatchtowerToggle /></div>
         </div>
       </div>
 
@@ -118,6 +142,8 @@ function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      <LiveOperationsHome jobs={(operationJobs ?? []) as any[]} groups={(operationGroups ?? []) as any[]} attentionCount={operationsInbox?.total ?? 0} liveLocations={(liveLocations ?? []) as LivePoint[]} />
 
       {/* New trips – recent pending client bookings */}
       <SectionHeader
@@ -191,8 +217,78 @@ function DashboardPage() {
           refetchActivity();
         }}
       />
+      {wallboardOpen && <WallboardMode jobs={(operationJobs ?? []) as any[]} groups={(operationGroups ?? []) as any[]} attentionCount={operationsInbox?.total ?? 0} liveLocations={(liveLocations ?? []) as LivePoint[]} onClose={() => setWallboardOpen(false)} />}
     </div>
   );
+}
+
+function WallboardMode({ jobs, groups, attentionCount, liveLocations, onClose }: { jobs: any[]; groups: any[]; attentionCount: number; liveLocations: LivePoint[]; onClose: () => void }) {
+  const [groupId, setGroupId] = useState("all");
+  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [shipOnly, setShipOnly] = useState(false);
+  const [date, setDate] = useState(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Malta" }).format(new Date()));
+  const filteredJobs = jobs.filter((job) => {
+    if (date && job.date !== date) return false;
+    if (groupId !== "all" && job.operation_group_id !== groupId) return false;
+    if (attentionOnly && !(job.needs_review || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase()))) return false;
+    if (shipOnly && !job.ship_event_id) return false;
+    return true;
+  });
+  const filteredGroups = groups.filter((group) => groupId === "all" || group.id === groupId);
+  const filteredAttention = attentionOnly ? filteredJobs.filter((job) => job.needs_review || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase())).length : attentionCount;
+  return <div className="fixed inset-0 z-50 overflow-auto bg-background p-4 text-foreground sm:p-8" role="dialog" aria-label="Operations wallboard">
+    <div className="mx-auto max-w-[1800px] space-y-5"><header className="flex items-center justify-between gap-3"><div><h1 className="text-3xl font-bold tracking-tight sm:text-5xl">Live Operations</h1><p className="mt-1 text-sm text-muted-foreground">Read-only wallboard · auto-refresh enabled</p></div><Button type="button" size="lg" variant="outline" onClick={onClose}><X className="mr-2 h-5 w-5" />Exit Wallboard</Button></header>
+      <div className="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-4"><select className="h-10 rounded-md border bg-background px-2 text-sm" value={groupId} onChange={(event) => setGroupId(event.target.value)} aria-label="Wallboard operation group"><option value="all">All Operations</option>{groups.filter((group) => ["draft", "active"].includes(group.status)).map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name}</option>)}</select><select className="h-10 rounded-md border bg-background px-2 text-sm" value={attentionOnly ? "attention" : "active"} onChange={(event) => setAttentionOnly(event.target.value === "attention")} aria-label="Wallboard status"><option value="active">Active</option><option value="attention">Needs Attention</option></select><label className="flex items-center gap-2 rounded-md border px-3 text-sm"><input type="checkbox" checked={shipOnly} onChange={(event) => setShipOnly(event.target.checked)} />Ships only</label><input className="h-10 rounded-md border bg-background px-2 text-sm" type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Wallboard date" /></div>
+      <LiveOperationsHome jobs={filteredJobs} groups={filteredGroups} attentionCount={filteredAttention} liveLocations={liveLocations} wallboard displayDate={date} />
+    </div>
+  </div>;
+}
+
+function LiveOperationsHome({ jobs, groups, attentionCount, liveLocations, wallboard = false, displayDate }: { jobs: any[]; groups: any[]; attentionCount: number; liveLocations: LivePoint[]; wallboard?: boolean; displayDate?: string }) {
+  const today = displayDate ?? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Malta" }).format(new Date());
+  const activeGroups = groups.filter((group) => ["draft", "active"].includes(group.status));
+  const activeGroupCount = groups.filter((group) => group.status === "active").length;
+  const activeTrips = jobs.filter((job) => job.date === today && !["completed", "cancelled"].includes(job.status));
+  const todayJobs = jobs.filter((job) => job.date === today && job.status !== "cancelled");
+  const completedToday = todayJobs.filter((job) => job.status === "completed").length;
+  const pendingToday = todayJobs.filter((job) => ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase())).length;
+  const unassignedToday = todayJobs.filter((job) => !job.driver_id && !["completed", "cancelled"].includes(job.status)).length;
+  const reviewToday = todayJobs.filter((job) => job.needs_review).length;
+  const shipsToday = jobs.filter((job) => job.date === today && job.ship_event_id).length;
+  const flightsToday = jobs.filter((job) => job.date === today && (job.flight_schedule_record_id || job.from_flight || job.to_flight)).length;
+  const hasShip = activeGroups.some((group) => jobs.some((job) => job.operation_group_id === group.id && job.ship_event_id));
+  const hasFlight = activeGroups.some((group) => jobs.some((job) => job.operation_group_id === group.id && (job.flight_schedule_record_id || job.from_flight || job.to_flight)));
+  const [sections, setSections] = useState<Record<string, boolean>>({ operations: true, trips: true, ships: false, flights: false, reviews: true });
+  const totalToday = todayJobs.length;
+  const allComplete = totalToday > 0 && completedToday === totalToday;
+  const allClear = attentionCount === 0 && reviewToday === 0;
+  const toggleSection = (key: string) => setSections((current) => ({ ...current, [key]: !current[key] }));
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const jobsByGroup = useMemo(() => new Map(activeGroups.map((group) => [group.id, jobs.filter((job) => job.operation_group_id === group.id)])), [activeGroups, jobs]);
+
+  return <section className={`${wallboard ? "mt-0 space-y-5" : "mt-6 space-y-3"}`} aria-label="Live operations">
+    <div className="flex items-end justify-between gap-2"><div><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold">Live operations</h2></div><p className="text-[11px] text-muted-foreground mt-0.5">Today&apos;s workspace, using Operations Centre data.</p></div><Link to="/coordinator/operations" className="text-xs font-medium text-primary inline-flex items-center gap-1">Open filters <ArrowRight className="h-3 w-3" /></Link></div>
+    <div className={`grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8 ${wallboard ? "text-lg" : ""}`}><LiveMetric label="Active trips" value={activeTrips.length} tone="text-blue-600" icon={Truck} large={wallboard} /><LiveMetric label="Completed trips" value={completedToday} tone="text-emerald-600" icon={CheckCircle2} large={wallboard} /><LiveMetric label="Needs attention" value={attentionCount} tone="text-destructive" icon={AlertCircle} large={wallboard} /><LiveMetric label="Active groups" value={activeGroupCount} tone="text-primary" icon={Activity} large={wallboard} /><LiveMetric label="Ships today" value={shipsToday} tone="text-cyan-700" icon={Anchor} large={wallboard} /><LiveMetric label="Flights today" value={flightsToday} tone="text-indigo-600" icon={Plane} large={wallboard} /><LiveMetric label="Unassigned" value={unassignedToday} tone="text-amber-600" icon={Truck} large={wallboard} /><LiveMetric label="Needs review" value={reviewToday} tone="text-rose-600" icon={AlertCircle} large={wallboard} /></div>
+    <div className="rounded-xl border bg-card p-3"><div className="flex items-center justify-between text-sm"><span className="font-medium">Today&apos;s progress</span><span className="text-muted-foreground">{completedToday} / {totalToday} completed</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${totalToday ? Math.min(100, (completedToday / totalToday) * 100) : 0}%` }} /></div><div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span>Active {activeTrips.length}</span><span>Pending {pendingToday}</span><span>Completed {completedToday}</span></div></div>
+    {!wallboard && <div className="flex flex-wrap gap-2"><Button asChild size="sm"><Link to="/coordinator/operations">Open Operations Centre</Link></Button><Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Create Trip</Link></Button><Button asChild size="sm" variant="outline"><Link to="/coordinator/operation-groups">Create Operation Group</Link></Button><Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Open Ship Operations</Link></Button><Button asChild size="sm" variant="outline"><Link to="/coordinator/airport-operations">Open Flight Operations</Link></Button></div>}
+    <div className={`rounded-xl border p-3 text-sm ${allComplete ? "border-emerald-500/40 bg-emerald-500/5" : allClear ? "border-emerald-500/30 bg-emerald-500/5" : "border-muted bg-card"}`}>{allComplete ? "Today's operations complete" : allClear ? "Operations running normally" : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need coordinator attention.`}</div>
+    <div className="space-y-2">{([["operations", "Operations", `${activeGroupCount} active groups`], ["trips", "Trips", `${activeTrips.length} active · ${unassignedToday} unassigned`], ["ships", "Ships", `${shipsToday} today`], ["flights", "Flights", `${flightsToday} relevant today`], ["reviews", "Reviews", `${attentionCount + reviewToday} needing attention`]] as const).map(([key, label, summary]) => <div key={key} className="rounded-xl border bg-card"><button type="button" className="flex w-full items-center justify-between p-3 text-left" onClick={() => toggleSection(key)} aria-expanded={sections[key]}><span className="font-medium">{label}</span><span className="flex items-center gap-2 text-xs text-muted-foreground">{summary}{sections[key] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span></button>{sections[key] && <div className="border-t px-3 pb-3 pt-2 text-xs text-muted-foreground">{key === "operations" ? "Active and draft Operation Groups are shown below with their current counts." : key === "trips" ? `${activeTrips.length} active trips are in the live view.` : key === "ships" ? `${shipsToday} linked ship trip${shipsToday === 1 ? "" : "s"} scheduled today.` : key === "flights" ? `${flightsToday} relevant flight trip${flightsToday === 1 ? "" : "s"} scheduled today.` : `${attentionCount} Operations Centre item${attentionCount === 1 ? "" : "s"} and ${reviewToday} trip review${reviewToday === 1 ? "" : "s"}.`}</div>}</div>)}</div>
+    <ActiveOperationsMap jobs={activeTrips} points={liveLocations} />
+    {activeGroups.length === 0 ? <div className="rounded-xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">No active Operation Groups.</div> : <div className="grid gap-2 md:grid-cols-2">{activeGroups.map((group) => { const groupJobs = jobsByGroup.get(group.id) ?? []; const active = groupJobs.filter((job) => !["completed", "cancelled"].includes(job.status)); const passengers = groupJobs.reduce((total, job) => total + (job.pax?.length ?? 0), 0); const attention = groupJobs.filter((job) => job.needs_review || ["pending", "unassigned"].includes(String(job.status ?? "").toLowerCase())).length; const open = !!expanded[group.id]; const colour = normaliseOperationGroupColour(group.colour); return <div key={group.id} className={`rounded-xl border bg-card p-3 ${operationGroupColourClasses[colour]}`}><button type="button" className="w-full text-left" onClick={() => setExpanded((current) => ({ ...current, [group.id]: !open }))} aria-expanded={open}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${operationGroupColourDotClasses[colour]}`} /><span className="truncate text-sm font-semibold">{group.reference} · {group.name}</span></div><div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span className="capitalize">{group.status}</span><span>{groupJobs.length} trips</span><span>{passengers} passengers</span>{attention > 0 && <span className="font-semibold text-destructive">{attention} needs attention</span>}</div></div>{open ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}</div></button>{open && <div className="mt-3 space-y-2 border-t border-current/10 pt-3 text-xs"><div className="flex flex-wrap gap-2"><span>{active.length} active trips</span><span>{groupJobs.filter((job) => job.driver_id).length} drivers assigned</span></div><div className="flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to="/coordinator/operation-groups">Open Operation</Link></Button>{groupJobs[0] && <Button asChild size="sm" variant="outline"><Link to="/coordinator/calendar">Open Trip</Link></Button>}<Button asChild size="sm" variant="outline"><Link to="/coordinator/operations">Open Review</Link></Button></div></div>}</div>; })}</div>}
+    {!wallboard && <div className="flex flex-wrap gap-2">{hasShip && <Button asChild size="sm" variant="outline"><Link to="/coordinator/ship-operations">Open Ship</Link></Button>}{hasFlight && <Button asChild size="sm" variant="outline"><Link to="/coordinator/airport-operations">Open Flight</Link></Button>}</div>}
+  </section>;
+}
+
+function ActiveOperationsMap({ jobs, points }: { jobs: any[]; points: LivePoint[] }) {
+  const [open, setOpen] = useState(false);
+  const liveJobIds = new Set(jobs.map((job) => job.id));
+  const visiblePoints = points.filter((point) => liveJobIds.has(point.job_id));
+  const withoutLocation = jobs.filter((job) => !visiblePoints.some((point) => point.job_id === job.id));
+  return <div className="rounded-xl border bg-card p-3"><div className="flex items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">Active trips map</h3><p className="text-[11px] text-muted-foreground">Live driver positions only; completed and cancelled work is hidden.</p></div><Button type="button" size="sm" variant="outline" onClick={() => setOpen((value) => !value)}>{open ? "Hide map" : "Show map"}</Button></div>{open && <div className="mt-3 space-y-2"><DriverLiveMap points={visiblePoints} height={300} />{withoutLocation.length > 0 && <div className="space-y-1 rounded-md border border-dashed p-2 text-xs"><p className="text-muted-foreground">{withoutLocation.length} active trip{withoutLocation.length === 1 ? " has" : "s have"} no current driver location.</p>{withoutLocation.slice(0, 5).map((job) => <div key={job.id} className="flex justify-between gap-2"><span className="truncate">{job.from_location} → {job.to_location}</span><span className="shrink-0 text-muted-foreground">{job.status}</span></div>)}</div>}</div>}</div>;
+}
+
+function LiveMetric({ label, value, tone, icon: Icon, large = false }: { label: string; value: number; tone: string; icon: typeof Activity; large?: boolean }) {
+  return <div className="rounded-xl border bg-card p-3 sm:p-5"><div className="flex items-center justify-between gap-2"><span className={`${large ? "text-sm" : "text-[11px]"} font-medium text-muted-foreground`}>{label}</span><Icon className={`${large ? "h-6 w-6" : "h-4 w-4"} ${tone}`} /></div><div className={`${large ? "text-4xl sm:text-6xl" : "text-2xl"} mt-1.5 font-semibold tabular-nums`}>{value}</div></div>;
 }
 
 function SectionHeader({
