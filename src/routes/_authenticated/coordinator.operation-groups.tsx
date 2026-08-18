@@ -505,6 +505,25 @@ function OperationLinksSection({ operationGroupId, links, onChanged }: { operati
   const [canRequestPort, setCanRequestPort] = useState(false);
   const [canViewPassengers, setCanViewPassengers] = useState(false);
   const [canMarkOnboard, setCanMarkOnboard] = useState(false);
+  const [accessPreset, setAccessPreset] = useState("custom");
+  const applyPreset = (preset: string) => {
+    setAccessPreset(preset);
+    const grants = {
+      view_operation_summary: true,
+      view_transport: false,
+      update_ship_eta: false,
+      update_expected_departure: false,
+      request_port_change: false,
+      view_passengers: false,
+      mark_passenger_onboard: false,
+      submit_operational_update: false,
+    };
+    if (preset === "hr") Object.assign(grants, { view_transport: true, view_passengers: true, submit_operational_update: true });
+    if (preset === "ship_agent") Object.assign(grants, { view_transport: true, update_ship_eta: true, update_expected_departure: true, request_port_change: true });
+    if (preset === "read_only") Object.assign(grants, { view_transport: true });
+    if (preset === "captain") Object.assign(grants, { view_transport: true, update_ship_eta: true, update_expected_departure: true, view_passengers: true, mark_passenger_onboard: true });
+    setCanViewSummary(grants.view_operation_summary); setCanViewTransport(grants.view_transport); setCanUpdateEta(grants.update_ship_eta); setCanUpdateDeparture(grants.update_expected_departure); setCanRequestPort(grants.request_port_change); setCanViewPassengers(grants.view_passengers); setCanMarkOnboard(grants.mark_passenger_onboard); setCanSubmitUpdate(grants.submit_operational_update);
+  };
   const createMutation = useMutation({
     mutationFn: () => createFn({ data: { operation_group_id: operationGroupId, recipient_name: name, recipient_type: recipientType, expires_at: new Date(expiresAt).toISOString(), permissions: { view_operation_summary: canViewSummary, view_transport: canViewTransport, update_ship_eta: canUpdateEta, update_expected_departure: canUpdateDeparture, request_port_change: canRequestPort, view_passengers: canViewPassengers, mark_passenger_onboard: canMarkOnboard, submit_operational_update: canSubmitUpdate } } }),
     onSuccess: ({ token }) => { setLastLink(`${window.location.origin}/operation-link/${token}`); setName(""); onChanged(); toast.success("Operation Link created"); },
@@ -516,11 +535,12 @@ function OperationLinksSection({ operationGroupId, links, onChanged }: { operati
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not revoke Operation Link"),
   });
   return <section className="space-y-3 border-t pt-5">
-    <div><h3 className="text-sm font-semibold">Operation Links</h3><p className="text-xs text-muted-foreground">Time-limited external access to this Operation Group.</p></div>
+    <div><h3 className="text-sm font-semibold">Manage Access</h3><p className="text-xs text-muted-foreground">Create time-limited, least-privilege access to this Operation Group. Access is company-scoped and can be revoked at any time.</p></div>
     <div className="grid gap-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-2">
       <div><Label htmlFor="operation-link-name">Recipient name</Label><Input id="operation-link-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Captain Smith" /></div>
       <div><Label htmlFor="operation-link-type">Recipient type</Label><select id="operation-link-type" className="mt-1 h-10 w-full rounded-md border bg-background px-2 text-sm" value={recipientType} onChange={(e) => setRecipientType(e.target.value as typeof recipientType)}>{operationLinkRecipientTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></div>
       <div><Label htmlFor="operation-link-expiry">Expires</Label><Input id="operation-link-expiry" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} /></div>
+      <div><Label htmlFor="operation-link-preset">Permission preset</Label><select id="operation-link-preset" className="mt-1 h-10 w-full rounded-md border bg-background px-2 text-sm" value={accessPreset} onChange={(e) => applyPreset(e.target.value)}><option value="custom">Custom</option><option value="captain">Captain</option><option value="hr">HR / crew coordinator</option><option value="ship_agent">Ship agent</option><option value="read_only">Read only</option></select></div>
       <div className="flex flex-wrap items-end gap-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={canViewSummary} onChange={(e) => setCanViewSummary(e.target.checked)} />View summary</label><label className="flex items-center gap-2"><input type="checkbox" checked={canViewTransport} onChange={(e) => setCanViewTransport(e.target.checked)} />View transport</label><label className="flex items-center gap-2"><input type="checkbox" checked={canUpdateEta} onChange={(e) => setCanUpdateEta(e.target.checked)} />Update ETA</label><label className="flex items-center gap-2"><input type="checkbox" checked={canUpdateDeparture} onChange={(e) => setCanUpdateDeparture(e.target.checked)} />Update departure</label><label className="flex items-center gap-2"><input type="checkbox" checked={canRequestPort} onChange={(e) => setCanRequestPort(e.target.checked)} />Request port change</label><label className="flex items-center gap-2"><input type="checkbox" checked={canViewPassengers} onChange={(e) => setCanViewPassengers(e.target.checked)} />View passengers/crew</label><label className="flex items-center gap-2"><input type="checkbox" checked={canMarkOnboard} onChange={(e) => setCanMarkOnboard(e.target.checked)} />Mark onboard</label><label className="flex items-center gap-2"><input type="checkbox" checked={canSubmitUpdate} onChange={(e) => setCanSubmitUpdate(e.target.checked)} />Submit update</label></div>
       <Button className="min-h-11 sm:col-span-2" disabled={!name.trim() || createMutation.isPending} onClick={() => createMutation.mutate()}><Plus className="mr-1.5 h-4 w-4" />Create Operation Link</Button>
     </div>
