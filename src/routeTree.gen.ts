@@ -62,6 +62,7 @@ import { Route as AuthenticatedCoordinatorPortalsRouteImport } from './routes/_a
 import { Route as AuthenticatedCoordinatorPortalLinksRouteImport } from './routes/_authenticated/coordinator.portal-links'
 import { Route as AuthenticatedCoordinatorPortalCreatorRouteImport } from './routes/_authenticated/coordinator.portal-creator'
 import { Route as AuthenticatedCoordinatorPendingRouteImport } from './routes/_authenticated/coordinator.pending'
+import { Route as AuthenticatedCoordinatorPlanningRouteImport } from './routes/_authenticated/coordinator.planning'
 import { Route as AuthenticatedCoordinatorOperationsRouteImport } from './routes/_authenticated/coordinator.operations'
 import { Route as AuthenticatedCoordinatorOperationGroupsRouteImport } from './routes/_authenticated/coordinator.operation-groups'
 import { Route as AuthenticatedCoordinatorMyDrivingRouteImport } from './routes/_authenticated/coordinator.my-driving'
@@ -403,6 +404,12 @@ const AuthenticatedCoordinatorPendingRoute =
   AuthenticatedCoordinatorPendingRouteImport.update({
     id: '/pending',
     path: '/pending',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPlanningRoute =
+  AuthenticatedCoordinatorPlanningRouteImport.update({
+    id: '/planning',
+    path: '/planning',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 const AuthenticatedCoordinatorOperationsRoute =
@@ -835,6 +842,7 @@ export interface FileRoutesByFullPath {
   '/coordinator/operation-groups': typeof AuthenticatedCoordinatorOperationGroupsRoute
   '/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/coordinator/planning': typeof AuthenticatedCoordinatorPlanningRoute
   '/coordinator/portal-creator': typeof AuthenticatedCoordinatorPortalCreatorRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
@@ -949,6 +957,7 @@ export interface FileRoutesByTo {
   '/coordinator/operation-groups': typeof AuthenticatedCoordinatorOperationGroupsRoute
   '/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/coordinator/planning': typeof AuthenticatedCoordinatorPlanningRoute
   '/coordinator/portal-creator': typeof AuthenticatedCoordinatorPortalCreatorRoute
   '/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
@@ -1068,6 +1077,7 @@ export interface FileRoutesById {
   '/_authenticated/coordinator/operation-groups': typeof AuthenticatedCoordinatorOperationGroupsRoute
   '/_authenticated/coordinator/operations': typeof AuthenticatedCoordinatorOperationsRoute
   '/_authenticated/coordinator/pending': typeof AuthenticatedCoordinatorPendingRoute
+  '/_authenticated/coordinator/planning': typeof AuthenticatedCoordinatorPlanningRoute
   '/_authenticated/coordinator/portal-creator': typeof AuthenticatedCoordinatorPortalCreatorRoute
   '/_authenticated/coordinator/portal-links': typeof AuthenticatedCoordinatorPortalLinksRoute
   '/_authenticated/coordinator/portals': typeof AuthenticatedCoordinatorPortalsRouteWithChildren
@@ -1188,6 +1198,7 @@ export interface FileRouteTypes {
     | '/coordinator/operation-groups'
     | '/coordinator/operations'
     | '/coordinator/pending'
+    | '/coordinator/planning'
     | '/coordinator/portal-creator'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
@@ -1302,6 +1313,7 @@ export interface FileRouteTypes {
     | '/coordinator/operation-groups'
     | '/coordinator/operations'
     | '/coordinator/pending'
+    | '/coordinator/planning'
     | '/coordinator/portal-creator'
     | '/coordinator/portal-links'
     | '/coordinator/portals'
@@ -1420,6 +1432,7 @@ export interface FileRouteTypes {
     | '/_authenticated/coordinator/operation-groups'
     | '/_authenticated/coordinator/operations'
     | '/_authenticated/coordinator/pending'
+    | '/_authenticated/coordinator/planning'
     | '/_authenticated/coordinator/portal-creator'
     | '/_authenticated/coordinator/portal-links'
     | '/_authenticated/coordinator/portals'
@@ -1934,6 +1947,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorPendingRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/coordinator/planning': {
+      id: '/_authenticated/coordinator/planning'
+      path: '/planning'
+      fullPath: '/coordinator/planning'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPlanningRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/coordinator/operations': {
       id: '/_authenticated/coordinator/operations'
       path: '/operations'
@@ -2439,6 +2459,7 @@ interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorOperationGroupsRoute: typeof AuthenticatedCoordinatorOperationGroupsRoute
   AuthenticatedCoordinatorOperationsRoute: typeof AuthenticatedCoordinatorOperationsRoute
   AuthenticatedCoordinatorPendingRoute: typeof AuthenticatedCoordinatorPendingRoute
+  AuthenticatedCoordinatorPlanningRoute: typeof AuthenticatedCoordinatorPlanningRoute
   AuthenticatedCoordinatorPortalCreatorRoute: typeof AuthenticatedCoordinatorPortalCreatorRoute
   AuthenticatedCoordinatorPortalLinksRoute: typeof AuthenticatedCoordinatorPortalLinksRoute
   AuthenticatedCoordinatorPortalsRoute: typeof AuthenticatedCoordinatorPortalsRouteWithChildren
@@ -2479,6 +2500,7 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorOperationsRoute:
       AuthenticatedCoordinatorOperationsRoute,
     AuthenticatedCoordinatorPendingRoute: AuthenticatedCoordinatorPendingRoute,
+    AuthenticatedCoordinatorPlanningRoute: AuthenticatedCoordinatorPlanningRoute,
     AuthenticatedCoordinatorPortalCreatorRoute:
       AuthenticatedCoordinatorPortalCreatorRoute,
     AuthenticatedCoordinatorPortalLinksRoute:

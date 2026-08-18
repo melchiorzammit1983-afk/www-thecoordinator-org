@@ -364,8 +364,15 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
                     {selectedGroup.notes}
                   </CardContent>
                 )}
+                <CardContent className="pt-0">
+                  <div className={`rounded-md border px-3 py-2 text-sm ${selectedGroup.status === "draft" ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-300 bg-emerald-50 text-emerald-950"}`}>
+                    <div className="font-medium">{selectedGroup.status === "draft" ? "DRAFT" : "CONFIRMED"}</div>
+                    <div className="text-xs opacity-80">{selectedGroup.status === "draft" ? "Planning only — no live Trips have been created." : "Approved transport is available to operations."}</div>
+                  </div>
+                </CardContent>
               </Card>
 
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">People</h2>
               {mode === "coordinator" ? (
                 <MembersCard
                   groupId={selectedGroup.id}
@@ -382,6 +389,7 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
                 />
               )}
 
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Transport</h2>
               <ServiceEditor
                 mode={mode}
                 token={token}
@@ -396,7 +404,7 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Services and approvals</CardTitle>
+                  <CardTitle className="text-base">Approvals</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {services.length === 0 && (
@@ -425,7 +433,7 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Audit history</CardTitle>
+                  <CardTitle className="text-base">Activity</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {events.slice(0, 20).map((event) => (

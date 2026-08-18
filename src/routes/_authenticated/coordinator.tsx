@@ -48,6 +48,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { to: "/coordinator/operations", label: "Operations Centre", icon: ListChecks, exact: false, feature: null },
+      { to: "/coordinator/planning", label: "Operations Planning", icon: CalendarDays, exact: false, feature: null },
       { to: "/coordinator/drivers", label: "Drivers", icon: Users, exact: false, feature: "drivers" },
       { to: "/coordinator/airport-operations", label: "Airport Operations", icon: Plane, exact: false, feature: null },
       { to: "/coordinator/ship-operations", label: "Ship Operations", icon: Ship, exact: false, feature: null },
