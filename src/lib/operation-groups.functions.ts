@@ -31,6 +31,7 @@ export type OperationGroup = {
   created_at: string;
   updated_at: string;
   colour: OperationGroupColour | null;
+  portal_company_id: string | null;
 };
 
 export const operationLinkRecipientTypes = ["captain", "ship_agent", "conference_organiser", "hotel", "corporate", "event_organiser", "other"] as const;
@@ -87,6 +88,7 @@ const groupFields = {
   end_date: z.string().date().nullable().optional(),
   notes: z.string().trim().max(5000).nullable().optional(),
   colour: z.enum(operationGroupColours).nullable().optional(),
+  portal_company_id: z.string().uuid().nullable().optional(),
 };
 const createInput = z.object(groupFields).superRefine((value, ctx) => {
   if (value.start_date && value.end_date && value.end_date < value.start_date) {
@@ -132,13 +134,38 @@ function mutationError(error: { code?: string | null; message: string }, noun: s
 async function requireGroup(sb: any, id: string, companyId: string): Promise<OperationGroup> {
   const { data, error } = await sb
     .from("operation_groups")
-    .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
+    .select("id, company_id, portal_company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
     .eq("id", id)
     .eq("company_id", companyId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Operation Group not found");
   return data as OperationGroup;
+}
+
+async function requirePortalCompany(sb: any, id: string, companyId: string) {
+  const { data, error } = await groupsTable(sb)
+    .from("portal_companies")
+    .select("id, name")
+    .eq("id", id)
+    .eq("coordinator_company_id", companyId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Client/HR portal not found for this company.");
+  return data as { id: string; name: string };
+}
+
+async function assertPortalAccessChangeAllowed(sb: any, group: OperationGroup, nextPortalCompanyId: string | null | undefined) {
+  if (nextPortalCompanyId === undefined || nextPortalCompanyId === group.portal_company_id) return;
+  const [members, services] = await Promise.all([
+    groupsTable(sb).from("operation_group_members").select("id", { count: "exact", head: true }).eq("operation_group_id", group.id),
+    groupsTable(sb).from("operation_group_services").select("id", { count: "exact", head: true }).eq("operation_group_id", group.id),
+  ]);
+  if (members.error) throw new Error(members.error.message);
+  if (services.error) throw new Error(services.error.message);
+  if ((members.count ?? 0) > 0 || (services.count ?? 0) > 0) {
+    throw new Error("Client/HR access cannot change after collaboration has started. Create a new Draft Operation if a different client is required.");
+  }
 }
 
 async function requireShipEvent(sb: any, id: string, companyId: string) {
@@ -173,7 +200,7 @@ export const listOperationGroups = createServerFn({ method: "GET" })
     const sb = await getAdmin();
     const { data, error } = await groupsTable(sb)
       .from("operation_groups")
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
+      .select("id, company_id, portal_company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .eq("company_id", companyId)
       .order("start_date", { ascending: true, nullsFirst: false })
       .order("reference", { ascending: true });
@@ -225,10 +252,11 @@ export const createOperationGroup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
+    if (data.portal_company_id) await requirePortalCompany(sb, data.portal_company_id, companyId);
     const { data: group, error } = await groupsTable(sb)
       .from("operation_groups")
       .insert({ ...data, company_id: companyId, created_by: context.userId })
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
+      .select("id, company_id, portal_company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) mutationError(error, "Operation Group");
     return group as OperationGroup;
@@ -240,14 +268,16 @@ export const updateOperationGroup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const companyId = await getMyCompanyId(context.userId);
     const sb = await getAdmin();
-    await requireGroup(sb, data.id, companyId);
+    const existing = await requireGroup(sb, data.id, companyId);
+    if (data.portal_company_id) await requirePortalCompany(sb, data.portal_company_id, companyId);
+    await assertPortalAccessChangeAllowed(sb, existing, data.portal_company_id);
     const { id, ...patch } = data;
     const { data: group, error } = await groupsTable(sb)
       .from("operation_groups")
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("company_id", companyId)
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
+      .select("id, company_id, portal_company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) mutationError(error, "Operation Group");
     return group as OperationGroup;
@@ -265,7 +295,7 @@ export const changeOperationGroupStatus = createServerFn({ method: "POST" })
       .update({ status: data.status, updated_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("company_id", companyId)
-      .select("id, company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
+      .select("id, company_id, portal_company_id, reference, name, type, status, start_date, end_date, notes, colour, created_by, created_at, updated_at")
       .single();
     if (error) throw new Error(error.message);
     return group as OperationGroup;
