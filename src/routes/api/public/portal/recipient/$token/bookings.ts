@@ -22,6 +22,7 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
         const { data, error } = await supabaseAdmin.from("operation_groups")
           .select("id, reference, name, status")
           .eq("company_id", access.recipient.company_id)
+          .eq("portal_company_id", access.portal.id)
           .in("status", ["draft", "active"])
           .order("name", { ascending: true });
         if (error) return Response.json({ error: "operation_groups_unavailable" }, { status: 500 });
@@ -72,6 +73,18 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
         if (hasShipFields && config.capabilities?.enter_ship_details !== true) return Response.json({ error: "ship_details_not_allowed" }, { status: 403 });
         if (input.passengers?.length && config.capabilities?.add_passengers !== true) return Response.json({ error: "passengers_not_allowed" }, { status: 403 });
         try {
+          if (input.operation_group_id) {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            const { data: group } = await supabaseAdmin.from("operation_groups").select("id, status")
+              .eq("id", input.operation_group_id)
+              .eq("company_id", access.recipient.company_id)
+              .eq("portal_company_id", access.portal.id)
+              .maybeSingle();
+            if (!group) return Response.json({ error: "operation_group_not_found" }, { status: 400 });
+            if (!["draft", "active"].includes((group as any).status)) {
+              return Response.json({ error: "operation_group_not_accepting_bookings" }, { status: 400 });
+            }
+          }
           if (config.submission_mode === "approval_required") {
             const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
             const { data: submission, error } = await (supabaseAdmin as any).from("portal_submissions").insert({

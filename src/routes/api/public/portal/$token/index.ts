@@ -20,6 +20,7 @@ export const Route = createFileRoute("/api/public/portal/$token/")({
         const { data: operation_groups } = await admin.from("operation_groups")
           .select("id, reference, name, status")
           .eq("company_id", r.portal.coordinator_company_id)
+          .eq("portal_company_id", r.portal.id)
           .in("status", ["draft", "active"])
           .order("name", { ascending: true });
         const { data: bookings } = await admin

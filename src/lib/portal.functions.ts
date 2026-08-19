@@ -603,17 +603,20 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
         const {
           from_location, to_location, pickup_at, notes, pax_names, pax_count,
           from_lat, from_lng, to_lat, to_lng, from_display_name, to_display_name,
+          operation_group_id,
         } = changes as {
           from_location?: string; to_location?: string; pickup_at?: string | null;
           notes?: string | null; pax_names?: string[] | null; pax_count?: number | null;
           from_lat?: number | null; from_lng?: number | null; to_lat?: number | null; to_lng?: number | null;
           from_display_name?: string | null; to_display_name?: string | null;
+          operation_group_id?: string | null;
         };
         const jobPatch: Record<string, unknown> = {};
         if (from_location != null) { jobPatch.from_location = from_location; jobPatch.pickup_display_name = from_display_name || from_location; }
         if (to_location != null) { jobPatch.to_location = to_location; jobPatch.dropoff_display_name = to_display_name || to_location; }
         if (pickup_at !== undefined) jobPatch.pickup_at = pickup_at;
         if (notes !== undefined) jobPatch.notes = notes;
+        if (operation_group_id !== undefined) jobPatch.operation_group_id = operation_group_id;
         // Refresh the map pins whenever the address actually changed —
         // otherwise a reschedule would silently leave stale pickup/dropoff
         // pins pointing at the old address while the text label updates.
@@ -625,7 +628,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
           await a.from("jobs").update(jobPatch as any).eq("id", (cr as any).job_id);
         }
 
-        const { data: booking } = await a.from("portal_bookings" as any).select("payload").eq("id", bookingId).maybeSingle();
+        const { data: booking } = await a.from("portal_bookings" as any).select("payload, portal_company_id, company_id").eq("id", bookingId).maybeSingle();
         const payloadPatch: Record<string, unknown> = {};
         if (notes !== undefined) payloadPatch.notes = notes;
         if (pax_names !== undefined) payloadPatch.pax_names = pax_names;
@@ -659,6 +662,17 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
           if (toAdd.length) {
             await a.from("pax").insert(toAdd.map((name) => ({ job_id: (cr as any).job_id, name })) as any);
           }
+        }
+
+        if (operation_group_id) {
+          const finalPayload = { ...((booking as any)?.payload ?? {}), ...payloadPatch, operation_group_id };
+          await syncBookingPeopleToOperation(
+            a,
+            finalPayload,
+            operation_group_id,
+            (booking as any).company_id,
+            (booking as any).portal_company_id,
+          );
         }
 
         await a.from("portal_bookings" as any).update({ status: "accepted" } as any).eq("id", bookingId);

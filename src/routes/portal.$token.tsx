@@ -183,7 +183,7 @@ function PortalPage() {
 
           {showBookings && <TabsContent value="bookings" className="mt-4 space-y-4">
             {capabilityEnabled("create_booking") && <BookingEntry token={token} kind={boot.portal.kind} operationGroups={boot.operation_groups ?? []} onCreated={reload} />}
-            {capabilityEnabled("view_own_submissions") && <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} onChanged={reload} />}
+            {capabilityEnabled("view_own_submissions") && <BookingsList bookings={boot.bookings} jobs={boot.jobs} token={token} operationGroups={boot.operation_groups ?? []} onChanged={reload} />}
           </TabsContent>}
 
           {showOperations && <TabsContent value="operations" className="mt-4">
@@ -455,7 +455,7 @@ function NewBookingForm({ token, operationGroups, onCreated }: { token: string; 
         </Field>
         <Field label="Vehicle preference (optional)"><Input value={f.vehicle} onChange={(e) => setF({ ...f, vehicle: e.target.value })} placeholder="e.g. Minivan, Sedan" /></Field>
         <Field label="Ship (optional)"><TokenShipPicker ships={ships} shipEventId={shipEventId} onChange={setShipEventId} /></Field>
-        {operationGroups.length > 0 && <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>}
+        <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>
         <Field label="Person type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.person_type} onChange={(e) => setF({ ...f, person_type: e.target.value as "crew" | "visitor" })}><option value="crew">Crew</option><option value="visitor">Visitor</option></select></Field>
         <Field label="Movement type"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={f.movement_type} onChange={(e) => setF({ ...f, movement_type: e.target.value as "on_signing" | "off_signing" | "visitor" | "other" })}><option value="on_signing">On-signing</option><option value="off_signing">Off-signing</option><option value="visitor">Visitor</option><option value="other">Other</option></select></Field>
         <Field label="Organisation (optional)"><Input value={f.organisation} onChange={(e) => setF({ ...f, organisation: e.target.value })} /></Field>
@@ -496,7 +496,7 @@ function groupBookings(bookings: any[]): { batchId: string | null; items: any[] 
   return groups;
 }
 
-function BookingsList({ bookings, jobs, token, onChanged }: { bookings: any[]; jobs: any[]; token: string; onChanged: () => void }) {
+function BookingsList({ bookings, jobs, token, operationGroups, onChanged }: { bookings: any[]; jobs: any[]; token: string; operationGroups: Boot["operation_groups"]; onChanged: () => void }) {
   const groups = groupBookings(bookings);
   return (
     <div className="space-y-3">
@@ -519,18 +519,18 @@ function BookingsList({ bookings, jobs, token, onChanged }: { bookings: any[]; j
           <div key={gi} className="rounded-lg border border-dashed p-2 space-y-2">
             <div className="text-xs text-muted-foreground px-1">Batch of {g.items.length}</div>
             {g.items.map((b) => (
-              <BookingCard key={b.id} booking={b} job={jobs.find((j) => j.id === b.job_id)} token={token} onChanged={onChanged} />
+              <BookingCard key={b.id} booking={b} job={jobs.find((j) => j.id === b.job_id)} token={token} operationGroups={operationGroups} onChanged={onChanged} />
             ))}
           </div>
         ) : (
-          <BookingCard key={g.items[0].id} booking={g.items[0]} job={jobs.find((j) => j.id === g.items[0].job_id)} token={token} onChanged={onChanged} />
+          <BookingCard key={g.items[0].id} booking={g.items[0]} job={jobs.find((j) => j.id === g.items[0].job_id)} token={token} operationGroups={operationGroups} onChanged={onChanged} />
         )
       ))}
     </div>
   );
 }
 
-function BookingCard({ booking: b, job, token, onChanged }: { booking: any; job: any; token: string; onChanged: () => void }) {
+function BookingCard({ booking: b, job, token, operationGroups, onChanged }: { booking: any; job: any; token: string; operationGroups: Boot["operation_groups"]; onChanged: () => void }) {
   return (
     <Card>
       <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -548,7 +548,7 @@ function BookingCard({ booking: b, job, token, onChanged }: { booking: any; job:
         <div className="flex items-center gap-2">
           <StatusBadge status={b.status} />
           {job && b.status === "accepted" && <PaxLinkButton bookingId={b.id} token={token} />}
-          <BookingActions booking={b} token={token} onChanged={onChanged} />
+          <BookingActions booking={b} token={token} operationGroups={operationGroups} onChanged={onChanged} />
         </div>
       </CardContent>
     </Card>
@@ -560,7 +560,7 @@ function BookingCard({ booking: b, job, token, onChanged }: { booking: any; job:
 // a portal_change_requests row (same mechanism the coordinator already uses
 // for accepted-booking edits, extended here to also cover still-pending
 // bookings, and given an actual UI for the first time).
-function BookingActions({ booking, token, onChanged }: { booking: any; token: string; onChanged: () => void }) {
+function BookingActions({ booking, token, operationGroups, onChanged }: { booking: any; token: string; operationGroups: Boot["operation_groups"]; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const payload = booking.payload ?? {};
@@ -584,6 +584,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
     lat: payload.to_lat ?? null, lng: payload.to_lng ?? null,
   });
   const [pickupAt, setPickupAt] = useState(payload.pickup_at ? new Date(payload.pickup_at).toISOString().slice(0, 16) : "");
+  const [operationGroupId, setOperationGroupId] = useState<string | null>(payload.operation_group_id ?? null);
 
   if (!isPending && !isAccepted) {
     return booking.status === "change_requested"
@@ -612,6 +613,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             vehicle: form.vehicle.trim() || null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
             notes: form.notes.trim() || null,
+            operation_group_id: operationGroupId,
           }
         : {
             from_location: fromPick.address, from_lat: fromPick.lat, from_lng: fromPick.lng,
@@ -621,6 +623,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             pickup_at: pickupAt ? new Date(pickupAt).toISOString() : null,
             pax_count: paxCount, pax_names: paxNames.length ? paxNames : null,
             notes: form.notes.trim() || null,
+            operation_group_id: operationGroupId,
           };
       const r = await fetch(`/api/public/portal/${token}/change-requests`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -666,6 +669,7 @@ function BookingActions({ booking, token, onChanged }: { booking: any; token: st
             <Field label="From"><AddressAutocomplete publicToken={token} value={fromPick.address} placeId={fromPick.place_id} onChange={setFromPick} /></Field>
             <Field label="To"><AddressAutocomplete publicToken={token} value={toPick.address} placeId={toPick.place_id} onChange={setToPick} /></Field>
             <Field label="Pickup date & time"><Input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /></Field>
+            <Field label="Operation (optional)"><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={operationGroupId ?? ""} onChange={(e) => setOperationGroupId(e.target.value || null)}><option value="">No Operation</option>{operationGroups.map((group) => <option key={group.id} value={group.id}>{group.reference} · {group.name} ({group.status})</option>)}</select></Field>
             {isPending && (
               <>
                 <Field label="Room"><Input value={form.room_number} onChange={(e) => setForm({ ...form, room_number: e.target.value })} /></Field>
