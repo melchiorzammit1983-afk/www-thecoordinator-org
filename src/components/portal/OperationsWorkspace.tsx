@@ -108,6 +108,7 @@ type EventRow = {
   actor_name: string;
   event_type: string;
   service_revision: number | null;
+  details?: Record<string, unknown>;
   created_at: string;
 };
 type EmergencyPolicyRow = {
@@ -158,6 +159,32 @@ function localFromIso(value: string | null | undefined) {
   const date = new Date(value);
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function activitySummary(event: EventRow) {
+  const labels: Record<string, string> = {
+    operation_created: "Operation created",
+    member_added: "Person added",
+    member_updated: "Person updated",
+    member_removed: "Person removed",
+    booking_assigned: "Booking assigned to this Operation",
+    service_created: "Draft plan item added",
+    service_updated: "Draft plan changed",
+    service_submitted: "Plan item submitted for approval",
+    service_approved: "Plan item approved",
+    service_confirmed: "Plan item confirmed",
+    change_requested: "Change requested for coordinator review",
+    emergency_booked: "Emergency booking confirmed",
+    emergency_acknowledged: "Emergency booking acknowledged",
+  };
+  const before = event.details?.before as Record<string, unknown> | undefined;
+  const after = event.details?.after as Record<string, unknown> | undefined;
+  if (event.event_type === "member_updated" && before && after) {
+    const changed = ["person_type", "movement_type", "flight_information", "hotel_required", "transport_required"]
+      .filter((key) => before[key] !== after[key]);
+    if (changed.length) return `Person updated: ${changed.map((key) => key.replaceAll("_", " ")).join(", ")}`;
+  }
+  return labels[event.event_type] ?? "Operation updated";
 }
 
 export function CoordinatorOperationsButton({
@@ -427,7 +454,7 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
                       {events.length === 0 && <p className="text-sm text-muted-foreground">No activity recorded yet.</p>}
                       {events.slice(0, 20).map((event) => (
                         <div key={event.id} className="flex items-start justify-between gap-3 border-b py-2 text-xs last:border-0">
-                          <div><span className="font-medium">{event.actor_name}</span> · {event.event_type.replaceAll("_", " ")} {event.service_revision ? `· revision ${event.service_revision}` : ""}</div>
+                          <div><span className="font-medium">{event.actor_name}</span> · {activitySummary(event)} {event.service_revision ? `· revision ${event.service_revision}` : ""}</div>
                           <span className="shrink-0 text-muted-foreground">{displayDate(event.created_at)}</span>
                         </div>
                       ))}

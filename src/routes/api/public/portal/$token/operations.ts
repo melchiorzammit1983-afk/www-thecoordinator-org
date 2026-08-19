@@ -11,7 +11,7 @@ export const Route = createFileRoute("/api/public/portal/$token/operations")({
         if (!resolved.ok)
           return Response.json({ error: resolved.error }, { status: resolved.status });
         try {
-          return Response.json(await loadPortalOperations(await getAdmin(), resolved.portal));
+          return Response.json(await loadPortalOperations(await getAdmin(), resolved.portal, { clientSafe: true }));
         } catch (error) {
           return Response.json(
             { error: error instanceof Error ? error.message : "operations_load_failed" },

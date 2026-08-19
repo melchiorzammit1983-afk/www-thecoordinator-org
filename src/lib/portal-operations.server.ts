@@ -216,6 +216,46 @@ async function insertEvent(
   if (error) throw new Error(error.message);
 }
 
+/** Records a meaningful operation event for an already-authorized action. */
+export async function recordOperationActivity(
+  admin: AdminClient,
+  input: {
+    operationGroupId: string;
+    companyId: string;
+    portalCompanyId: string;
+    actorSide: OperationActorSide | "system";
+    actorName: string;
+    eventType: string;
+    details?: Record<string, unknown>;
+  },
+) {
+  await insertEvent(admin, {
+    id: input.portalCompanyId,
+    coordinator_company_id: input.companyId,
+    name: "",
+  }, {
+    operationGroupId: input.operationGroupId,
+    actorSide: input.actorSide,
+    actorName: input.actorName,
+    eventType: input.eventType,
+    details: input.details,
+  });
+}
+
+function memberActivitySnapshot(member: Record<string, unknown>) {
+  return {
+    name: member.name,
+    person_type: member.person_type,
+    organisation: member.organisation,
+    movement_type: member.movement_type,
+    flight_information: member.flight_information,
+    hotel_required: member.hotel_required,
+    transport_required: member.transport_required,
+    visit_start_date: member.visit_start_date,
+    visit_end_date: member.visit_end_date,
+  };
+}
+
 async function setGroupActive(admin: AdminClient, groupId: string) {
   await admin
     .from("operation_groups")
@@ -224,7 +264,7 @@ async function setGroupActive(admin: AdminClient, groupId: string) {
     .eq("status", "draft");
 }
 
-export async function loadPortalOperations(admin: AdminClient, portal: PortalScope) {
+export async function loadPortalOperations(admin: AdminClient, portal: PortalScope, options?: { clientSafe?: boolean }) {
   const groups = await admin
     .from("operation_groups")
     .select(GROUP_SELECT)
@@ -276,7 +316,9 @@ export async function loadPortalOperations(admin: AdminClient, portal: PortalSco
     groups: groups.data ?? [],
     members: members.data ?? [],
     services: services.data ?? [],
-    events: events.data ?? [],
+    events: options?.clientSafe
+      ? (events.data ?? []).map(({ details: _details, ...event }: Record<string, unknown>) => event)
+      : events.data ?? [],
     emergency_policy: policy.data ?? null,
   };
 }
@@ -398,7 +440,7 @@ export async function performPortalOperationAction(args: {
       actorSide: side,
       actorName,
       eventType: "member_added",
-      details: { member_name: member.name, role: member.role, side: member.side },
+      details: { after: memberActivitySnapshot(member), role: member.role, side: member.side },
     });
     return { ok: true, member };
   }
@@ -445,7 +487,7 @@ export async function performPortalOperationAction(args: {
         actorSide: side,
         actorName,
         eventType: hasLiveTransport ? "change_requested" : "member_removed",
-        details: { member_id: existing.data.id, member_name: existing.data.name, live_transport: hasLiveTransport },
+        details: { before: memberActivitySnapshot(existing.data), live_transport: hasLiveTransport },
       });
       return { ok: true, review_required: hasLiveTransport };
     }
@@ -475,7 +517,11 @@ export async function performPortalOperationAction(args: {
       actorSide: side,
       actorName,
       eventType: hasLiveTransport ? "change_requested" : "member_updated",
-      details: { member_id: existing.data.id, member_name: input.name, live_transport: hasLiveTransport },
+      details: {
+        before: memberActivitySnapshot(existing.data),
+        after: memberActivitySnapshot(input),
+        live_transport: hasLiveTransport,
+      },
     });
     return { ok: true, review_required: hasLiveTransport };
   }
@@ -654,7 +700,11 @@ export async function performPortalOperationAction(args: {
       actorName,
       eventType: "service_updated",
       revision: updated.revision,
-      details: { changed_fields: Object.keys(input.patch) },
+      details: {
+        changed_fields: Object.keys(input.patch),
+        before: Object.fromEntries(Object.keys(input.patch).map((key) => [key, (service as Record<string, unknown>)[key]])),
+        after: input.patch,
+      },
     });
     await setGroupActive(admin, service.operation_group_id);
     return { ok: true, service: updated };

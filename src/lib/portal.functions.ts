@@ -7,6 +7,7 @@ import { assertTokenPortSelection } from "@/lib/port-directory-token.server";
 import { assertTokenShipSelection } from "@/lib/ship-events-token.server";
 import { createAuthoritativeJob } from "@/lib/coordinator.functions";
 import { syncBookingPeopleToOperation } from "@/lib/portal-booking-people.server";
+import { recordOperationActivity } from "@/lib/portal-operations.server";
 import {
   PORTAL_SLUG_RE, RESERVED_SLUGS, coordinatorNameSlug, portalNameSlug, slugifyWeb,
 } from "@/lib/portal-slug";
@@ -424,6 +425,17 @@ export const acceptPortalBooking = createServerFn({ method: "POST" })
       actor_type: "portal",
       source: `portal:${(b as any).portal_company_id}`,
     });
+    if (payload.operation_group_id) {
+      await recordOperationActivity(a, {
+        operationGroupId: payload.operation_group_id,
+        companyId: cid,
+        portalCompanyId: (b as any).portal_company_id,
+        actorSide: "client",
+        actorName: (b as any).portal_companies.name || "Portal booking",
+        eventType: "booking_assigned",
+        details: { job_id: job.id, source: "portal_booking" },
+      });
+    }
     /*
     const { data: legacyJob, error: jerr } = await a.from("jobs").insert({
       company_id: cid,
@@ -673,6 +685,15 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
             (booking as any).company_id,
             (booking as any).portal_company_id,
           );
+          await recordOperationActivity(a, {
+            operationGroupId: operation_group_id,
+            companyId: (booking as any).company_id,
+            portalCompanyId: (booking as any).portal_company_id,
+            actorSide: "coordinator",
+            actorName: "Coordinator",
+            eventType: "booking_assigned",
+            details: { job_id: (cr as any).job_id, source: "approved_booking_change" },
+          });
         }
 
         await a.from("portal_bookings" as any).update({ status: "accepted" } as any).eq("id", bookingId);

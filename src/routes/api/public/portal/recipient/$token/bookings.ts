@@ -4,6 +4,7 @@ import { resolvePortalRecipientAccess } from "@/lib/portal-definitions.functions
 import { normalizePortalRecipientBooking, portalRecipientBookingInput } from "@/lib/portal-recipient-booking";
 import { isPortalFieldRequired, isPortalFieldVisible, normalizePortalBookingFields, type PortalBookingFieldConfiguration } from "@/lib/portal-field-configuration";
 import { syncBookingPeopleToOperation } from "@/lib/portal-booking-people.server";
+import { recordOperationActivity } from "@/lib/portal-operations.server";
 
 export const Route = createFileRoute("/api/public/portal/recipient/$token/bookings")({
   server: {
@@ -116,6 +117,20 @@ export const Route = createFileRoute("/api/public/portal/recipient/$token/bookin
             actor_user_id: null,
             source: `portal:${access.portal.id}:${access.recipient.id}`,
           });
+          if (input.operation_group_id) {
+            await recordOperationActivity(
+              (await import("@/integrations/supabase/client.server")).supabaseAdmin,
+              {
+                operationGroupId: input.operation_group_id,
+                companyId: access.recipient.company_id,
+                portalCompanyId: access.portal.id,
+                actorSide: "client",
+                actorName: access.recipient.contact_display_name || access.recipient.recipient_name || "Portal booking",
+                eventType: "booking_assigned",
+                details: { job_id: job.id, source: "portal_recipient_booking" },
+              },
+            );
+          }
           return Response.json({ id: job.id, journey: job.journey, requires_approval: false }, { status: 201 });
         } catch (error) {
           return Response.json({ error: error instanceof Error ? error.message : "booking_failed" }, { status: 400 });
