@@ -100,7 +100,10 @@ export const Route = createFileRoute("/api/public/portal/$token/bookings")({
         const admin = await getAdmin();
         const selected = (bulk.success ? bulk.data.bookings : [single.data!]).map((booking) => booking.operation_group_id).filter(Boolean) as string[];
         if (selected.length) {
-          const { data: groups } = await admin.from("operation_groups").select("id, status").eq("company_id", r.portal.coordinator_company_id).in("id", [...new Set(selected)]);
+          const { data: groups } = await admin.from("operation_groups").select("id, status")
+            .eq("company_id", r.portal.coordinator_company_id)
+            .eq("portal_company_id", r.portal.id)
+            .in("id", [...new Set(selected)]);
           const byId = new Map((groups ?? []).map((group: any) => [group.id, group]));
           for (const id of selected) {
             const group = byId.get(id);

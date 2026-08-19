@@ -37,7 +37,7 @@ const CAPABILITIES = [
   ["view_trips", "View trips and live status"], ["chat", "Client chat"],
   ["view_statements", "View statements"], ["manage_profile", "Manage portal profile"],
   ["manage_crew", "Manage hotel crew"],
-  ["create_operation_group", "Create Operation Group"], ["select_operation_group", "Select Operation Group"],
+  ["select_operation_group", "View assigned Operations"],
   ["add_passengers", "Add passengers"], ["add_stops", "Add stops"],
   ["enter_flight_details", "Enter flight details"], ["enter_ship_details", "Enter Ship details"],
   ["add_notes", "Add notes"],
@@ -46,7 +46,7 @@ type PortalRow = { id: string; name: string; description: string | null; portal_
 const DEFAULT_CAPABILITIES: Record<string, boolean> = {
   create_booking: true, view_own_submissions: true, view_trips: true,
   chat: true, view_statements: true, manage_profile: true, manage_crew: false,
-  create_operation_group: true, select_operation_group: true,
+  select_operation_group: true,
   add_passengers: true, add_stops: true, enter_flight_details: true,
   enter_ship_details: true, add_notes: true,
 };

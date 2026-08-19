@@ -27,6 +27,7 @@ import {
   type OperationGroup,
 } from "@/lib/operation-groups.functions";
 import { searchShipEvents, type ShipEvent } from "@/lib/ship-events.functions";
+import { listPortals } from "@/lib/portal.functions";
 import { operationGroupColours, operationGroupColourDotClasses, operationGroupColourLabels, normaliseOperationGroupColour, type OperationGroupColour } from "@/lib/operation-group-colours";
 
 export const Route = createFileRoute("/_authenticated/coordinator/operation-groups")({
@@ -99,6 +100,7 @@ function OperationGroupsPage() {
   const createFn = useServerFn(createOperationGroup);
   const updateFn = useServerFn(updateOperationGroup);
   const statusFn = useServerFn(changeOperationGroupStatus);
+  const portalsFn = useServerFn(listPortals);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<(typeof operationGroupStatuses)[number] | "all" | "live">("live");
   const [typeFilter, setTypeFilter] = useState<(typeof operationGroupTypes)[number] | "all">("all");
@@ -106,6 +108,8 @@ function OperationGroupsPage() {
   const [newForm, setNewForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState(emptyForm);
   const [editing, setEditing] = useState(false);
+  const [newPortalCompanyId, setNewPortalCompanyId] = useState("");
+  const [editPortalCompanyId, setEditPortalCompanyId] = useState("");
 
   const groupsQuery = useQuery({
     queryKey: ["operation-groups"],
@@ -116,6 +120,13 @@ function OperationGroupsPage() {
     queryFn: () => detailFn({ data: { id: selectedId! } }) as Promise<GroupDetails>,
     enabled: Boolean(selectedId),
   });
+  const portalsQuery = useQuery({
+    queryKey: ["portals", "operation-access"],
+    queryFn: () => portalsFn() as Promise<Array<{ id: string; name: string; active: boolean }>>,
+  });
+  const portalOptions = portalsQuery.data ?? [];
+  const portals = portalOptions.filter((portal) => portal.active || portal.id === editPortalCompanyId);
+  const portalNameById = new Map(portalOptions.map((portal) => [portal.id, portal.name]));
   const groups = groupsQuery.data ?? [];
   const filteredGroups = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -142,6 +153,7 @@ function OperationGroupsPage() {
       notes: group.notes ?? "",
       colour: normaliseOperationGroupColour(group.colour),
     });
+    setEditPortalCompanyId(group.portal_company_id ?? "");
   }, [detailQuery.data, editing]);
 
   const refresh = () => {
@@ -158,9 +170,10 @@ function OperationGroupsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createFn({ data: payload(newForm) }),
+    mutationFn: () => createFn({ data: { ...payload(newForm), portal_company_id: newPortalCompanyId || null } }),
     onSuccess: (group) => {
       setNewForm(emptyForm);
+      setNewPortalCompanyId("");
       setSelectedId(group.id);
       refresh();
       toast.success("Operation Group created");
@@ -168,7 +181,7 @@ function OperationGroupsPage() {
     onError: (error) => toast.error(errorMessage(error)),
   });
   const updateMutation = useMutation({
-    mutationFn: () => updateFn({ data: { id: selectedId!, ...payload(editForm) } }),
+    mutationFn: () => updateFn({ data: { id: selectedId!, ...payload(editForm), portal_company_id: editPortalCompanyId || null } }),
     onSuccess: () => {
       setEditing(false);
       refresh();
@@ -221,11 +234,12 @@ function OperationGroupsPage() {
         <CardHeader>
           <CardTitle className="text-base">Create Operation Group</CardTitle>
           <CardDescription>
-            Grouping is always explicit. Existing Jobs and Trips are not changed automatically.
+            The Coordinator owns every Operation. Share a Draft with one Client/HR portal only when collaboration is needed.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <GroupFields value={newForm} onChange={setNewForm} prefix="new-operation-group" />
+          <PortalAccessField value={newPortalCompanyId} onChange={setNewPortalCompanyId} portals={portals} prefix="new-operation-group" />
           <div className="mt-4 flex justify-end">
             <Button
               className="min-h-11"
@@ -348,6 +362,7 @@ function OperationGroupsPage() {
                       onChange={setEditForm}
                       prefix="edit-operation-group"
                     />
+                    <PortalAccessField value={editPortalCompanyId} onChange={setEditPortalCompanyId} portals={portals} prefix="edit-operation-group" />
                     <div className="mt-4 flex justify-end gap-2">
                       <Button
                         variant="outline"
@@ -374,6 +389,7 @@ function OperationGroupsPage() {
                         label="Dates"
                         value={`${detailQuery.data.start_date ?? "No start"} → ${detailQuery.data.end_date ?? "No end"}`}
                       />
+                      <Info label="Client / HR access" value={detailQuery.data.portal_company_id ? portalNameById.get(detailQuery.data.portal_company_id) ?? "Shared portal" : "Not shared"} />
                       <Info label="Notes" value={detailQuery.data.notes ?? "No notes"} />
                     </div>
                     <div>
@@ -733,6 +749,37 @@ function GroupFields({
           onChange={(event) => set("notes", event.target.value)}
         />
       </Field>
+    </div>
+  );
+}
+
+function PortalAccessField({
+  value,
+  onChange,
+  portals,
+  prefix,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  portals: Array<{ id: string; name: string }>;
+  prefix: string;
+}) {
+  return (
+    <div className="mt-4 rounded-lg border bg-muted/20 p-3">
+      <Field label="Client / HR access" htmlFor={`${prefix}-portal-access`}>
+        <select
+          id={`${prefix}-portal-access`}
+          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">No Client/HR access</option>
+          {portals.map((portal) => <option key={portal.id} value={portal.id}>{portal.name}</option>)}
+        </select>
+      </Field>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Only the selected Client/HR portal can view and collaborate on this Draft. Access can be revoked while no collaboration data exists.
+      </p>
     </div>
   );
 }

@@ -35,6 +35,20 @@ export const Route = createFileRoute("/api/public/portal/$token/change-requests"
           if (isChangeLocked(job as any)) return Response.json({ error: "too_close_to_pickup" }, { status: 409 });
         }
 
+        const selectedOperationId = parsed.data.requested_changes?.operation_group_id;
+        if (selectedOperationId !== undefined && selectedOperationId !== null) {
+          if (typeof selectedOperationId !== "string") return Response.json({ error: "bad_operation_group" }, { status: 400 });
+          const { data: group } = await admin.from("operation_groups").select("id, status")
+            .eq("id", selectedOperationId)
+            .eq("company_id", r.portal.coordinator_company_id)
+            .eq("portal_company_id", r.portal.id)
+            .maybeSingle();
+          if (!group) return Response.json({ error: "operation_group_not_found" }, { status: 400 });
+          if (!["draft", "active"].includes((group as any).status)) {
+            return Response.json({ error: "operation_group_not_accepting_bookings" }, { status: 400 });
+          }
+        }
+
         const { error } = await admin.from("portal_change_requests" as any).insert({
           portal_booking_id: parsed.data.booking_id,
           job_id: (b as any).job_id,

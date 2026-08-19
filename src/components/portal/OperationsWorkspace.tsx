@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   coordinatorPortalOperationAction,
   listCoordinatorPortalOperations,
@@ -297,25 +298,28 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
         </Card>
       )}
 
-      <EmergencyPolicyCard
-        mode={mode}
-        policy={query.data?.emergency_policy}
-        actorReady={!!actorName.trim()}
-        busy={action.isPending}
-        onAction={(value) => action.mutateAsync(value)}
-      />
-
-      <CreateOperationCard
-        mode={mode}
-        portalName={portalName}
-        actorReady={!!actorName.trim()}
-        busy={action.isPending}
-        onCreated={async (value) => {
-          const result = await action.mutateAsync(value);
-          if (hasCreatedGroup(result)) setSelectedGroupId(result.group.id);
-          toast.success("Crew-change draft created");
-        }}
-      />
+      {mode === "coordinator" ? (
+        <CreateOperationCard
+          mode={mode}
+          portalName={portalName}
+          actorReady={!!actorName.trim()}
+          busy={action.isPending}
+          onCreated={async (value) => {
+            const result = await action.mutateAsync(value);
+            if (hasCreatedGroup(result)) setSelectedGroupId(result.group.id);
+            toast.success("Crew-change draft created");
+          }}
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Assigned Operations</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Your coordinator creates Operations and grants access here. You can collaborate only on the Drafts assigned to your company.
+            </p>
+          </CardHeader>
+        </Card>
+      )}
 
       {groups.length > 0 && (
         <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -372,92 +376,108 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
                 </CardContent>
               </Card>
 
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">People</h2>
-              {mode === "coordinator" ? (
-                <MembersCard
-                  groupId={selectedGroup.id}
-                  members={members}
-                  busy={action.isPending}
-                  onAction={(value) => action.mutateAsync(value)}
-                />
-              ) : (
-                <ClientPeopleCard
-                  groupId={selectedGroup.id}
-                  members={members}
-                  busy={action.isPending}
-                  onAction={(value) => action.mutateAsync(value)}
-                />
-              )}
-
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Transport</h2>
-              <ServiceEditor
-                mode={mode}
-                token={token}
-                operationGroupId={selectedGroup.id}
-                actorReady={!!actorName.trim()}
-                busy={action.isPending}
-                onAction={async (value) => {
-                  await action.mutateAsync(value);
-                  toast.success("Service draft added");
-                }}
-              />
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Approvals</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {services.length === 0 && (
-                    <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                      No services yet. Add the client’s flight first, then hotel, transfers and
-                      visitor arrangements.
-                    </p>
+              <Tabs defaultValue="people" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="people">People</TabsTrigger>
+                  <TabsTrigger value="plan">Plan</TabsTrigger>
+                  <TabsTrigger value="statement">Statement</TabsTrigger>
+                  <TabsTrigger value="activity">Activity</TabsTrigger>
+                </TabsList>
+                <TabsContent value="people" className="mt-0">
+                  {mode === "coordinator" ? (
+                    <MembersCard groupId={selectedGroup.id} members={members} busy={action.isPending} onAction={(value) => action.mutateAsync(value)} />
+                  ) : (
+                    <ClientPeopleCard groupId={selectedGroup.id} members={members} busy={action.isPending} onAction={(value) => action.mutateAsync(value)} />
                   )}
-                  {services.map((service) => (
-                    <ServiceCard
-                      key={service.id}
-                      mode={mode}
-                      token={token}
-                      service={service}
-                      policy={query.data?.emergency_policy}
-                      actorReady={!!actorName.trim()}
-                      busy={action.isPending}
-                      onAction={async (value, message) => {
-                        await action.mutateAsync(value);
-                        toast.success(message);
-                      }}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Activity</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {events.slice(0, 20).map((event) => (
-                    <div
-                      key={event.id}
-                      className="flex items-start justify-between gap-3 border-b py-2 text-xs last:border-0"
-                    >
-                      <div>
-                        <span className="font-medium">{event.actor_name}</span> ·{" "}
-                        {event.event_type.replaceAll("_", " ")}{" "}
-                        {event.service_revision ? `· revision ${event.service_revision}` : ""}
-                      </div>
-                      <span className="shrink-0 text-muted-foreground">
-                        {displayDate(event.created_at)}
-                      </span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+                </TabsContent>
+                <TabsContent value="plan" className="mt-0 space-y-5">
+                  <EmergencyPolicyCard mode={mode} policy={query.data?.emergency_policy} actorReady={!!actorName.trim()} busy={action.isPending} onAction={(value) => action.mutateAsync(value)} />
+                  <ServiceEditor
+                    mode={mode}
+                    token={token}
+                    operationGroupId={selectedGroup.id}
+                    actorReady={!!actorName.trim()}
+                    busy={action.isPending}
+                    onAction={async (value) => { await action.mutateAsync(value); toast.success("Plan item added"); }}
+                  />
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Plan items</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {services.length === 0 && <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No plan items yet. Adding one stays in this Draft and never creates a Trip automatically.</p>}
+                      {services.map((service) => (
+                        <ServiceCard
+                          key={service.id}
+                          mode={mode}
+                          token={token}
+                          service={service}
+                          policy={query.data?.emergency_policy}
+                          actorReady={!!actorName.trim()}
+                          busy={action.isPending}
+                          onAction={async (value, message) => { await action.mutateAsync(value); toast.success(message); }}
+                        />
+                      ))}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                <TabsContent value="statement" className="mt-0"><OperationStatement services={services} /></TabsContent>
+                <TabsContent value="activity" className="mt-0">
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Activity</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {events.length === 0 && <p className="text-sm text-muted-foreground">No activity recorded yet.</p>}
+                      {events.slice(0, 20).map((event) => (
+                        <div key={event.id} className="flex items-start justify-between gap-3 border-b py-2 text-xs last:border-0">
+                          <div><span className="font-medium">{event.actor_name}</span> · {event.event_type.replaceAll("_", " ")} {event.service_revision ? `· revision ${event.service_revision}` : ""}</div>
+                          <span className="shrink-0 text-muted-foreground">{displayDate(event.created_at)}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+function OperationStatement({ services }: { services: ServiceRow[] }) {
+  const totals = services.reduce<Record<string, number>>((result, service) => {
+    if (service.amount == null || Number.isNaN(Number(service.amount))) return result;
+    result[service.currency] = (result[service.currency] ?? 0) + Number(service.amount);
+    return result;
+  }, {});
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Statement</CardTitle>
+        <p className="text-xs text-muted-foreground">Read-only plan values. Draft plan items remain outside Dispatch.</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {services.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No planned services yet.</p>
+        ) : (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {Object.entries(totals).map(([currency, total]) => (
+                <div key={currency} className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Planned total</div><div className="font-semibold">{currency} {total.toFixed(2)}</div></div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              {services.map((service) => (
+                <div key={service.id} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <div><div className="font-medium">{service.title}</div><div className="text-xs text-muted-foreground">{service.service_type.replaceAll("_", " ")} · {service.approval_status.replaceAll("_", " ")}</div></div>
+                  <div className="text-right text-xs">{service.amount == null ? "—" : `${service.currency} ${Number(service.amount).toFixed(2)}`}<div className="text-muted-foreground">{service.booking_state.replaceAll("_", " ")}</div></div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -562,7 +582,7 @@ function CreateOperationCard({
                 setOpen(false);
               }}
             >
-              {mode === "client" ? "Save client draft" : "Save coordinator draft"}
+              Save coordinator draft
             </Button>
           </div>
         </CardContent>
