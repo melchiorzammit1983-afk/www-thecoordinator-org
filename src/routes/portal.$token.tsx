@@ -135,8 +135,7 @@ function PortalPage() {
   const capabilityEnabled = (key: string, fallback = true) => capabilities?.[key] ?? fallback;
   const showBookings = capabilityEnabled("create_booking") || capabilityEnabled("view_own_submissions");
   const showTrips = capabilityEnabled("view_trips");
-  const showOperations = capabilityEnabled("create_operation_group", true)
-    || capabilityEnabled("select_operation_group", true);
+  const showOperations = capabilityEnabled("select_operation_group", true);
   const showChat = capabilityEnabled("chat");
   const showStatements = capabilityEnabled("view_statements");
   const showManage = boot?.portal.kind === "hotel"

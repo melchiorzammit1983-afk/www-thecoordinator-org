@@ -305,17 +305,28 @@ export function OperationsWorkspace({ mode, portalName, portalCompanyId, token }
         onAction={(value) => action.mutateAsync(value)}
       />
 
-      <CreateOperationCard
-        mode={mode}
-        portalName={portalName}
-        actorReady={!!actorName.trim()}
-        busy={action.isPending}
-        onCreated={async (value) => {
-          const result = await action.mutateAsync(value);
-          if (hasCreatedGroup(result)) setSelectedGroupId(result.group.id);
-          toast.success("Crew-change draft created");
-        }}
-      />
+      {mode === "coordinator" ? (
+        <CreateOperationCard
+          mode={mode}
+          portalName={portalName}
+          actorReady={!!actorName.trim()}
+          busy={action.isPending}
+          onCreated={async (value) => {
+            const result = await action.mutateAsync(value);
+            if (hasCreatedGroup(result)) setSelectedGroupId(result.group.id);
+            toast.success("Crew-change draft created");
+          }}
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Assigned Operations</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Your coordinator creates Operations and grants access here. You can collaborate only on the Drafts assigned to your company.
+            </p>
+          </CardHeader>
+        </Card>
+      )}
 
       {groups.length > 0 && (
         <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -562,7 +573,7 @@ function CreateOperationCard({
                 setOpen(false);
               }}
             >
-              {mode === "client" ? "Save client draft" : "Save coordinator draft"}
+              Save coordinator draft
             </Button>
           </div>
         </CardContent>

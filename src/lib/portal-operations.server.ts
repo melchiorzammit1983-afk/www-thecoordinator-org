@@ -293,6 +293,9 @@ export async function performPortalOperationAction(args: {
   const actorName = input.actor_name.trim();
 
   if (input.action === "create_operation") {
+    if (side !== "coordinator") {
+      throw new Error("Only the coordinator can create an Operation.");
+    }
     if (input.start_date && input.end_date && input.end_date < input.start_date) {
       throw new Error("End date must be on or after the start date.");
     }
